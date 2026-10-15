@@ -25,6 +25,14 @@ Local login and explicitly linked OIDC accounts use the same project permissions
 
 Attachment selection uses the native document picker. Uploads and downloads use the authenticated API. Downloaded files open through the system share sheet, and temporary attachment copies are removed afterward.
 
+## Push notifications
+
+Set the public `EXPO_PUBLIC_EAS_PROJECT_ID` UUID when generating/building the native project. This populates Expo's `extra.eas.projectId`; it is an identifier, not a secret. Use your Expo project and configure APNs and FCM credentials following the [Expo push setup guide](https://docs.expo.dev/push-notifications/push-notifications-setup/). Enable the optional server transport as described in [self-hosting](self-hosting.md).
+
+Settings has a global push preference and an action to enable or disable this device. Permission is requested only when enabling. Device tokens are stored in SecureStore, refreshed after app activation/token changes, and bound to the server login session. Sign-out clears the local token marker and server session revocation removes the registration. Notification taps open a ticket only on the currently connected server; the normal API still checks access. Without a configured push project, the app keeps Inbox and realtime available and explains the missing build configuration.
+
+Outbox commits, receipt processing, retry/restart behavior, membership revocation during delivery, account changes on a shared device, and session revocation are tested with an isolated transport. Native Inbox/push preference changes were checked against a second HTTP client on the iOS simulator. Real APNs/FCM delivery and notification-tap routing have not been validated; they need signing/push configuration and an authorized notification source. The unconfigured simulator rejected an injected notification with `UNErrorDomain 2003: Source is not authorized`.
+
 ## Checks
 
 ```sh

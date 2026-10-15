@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { user } from "./auth-schema.ts";
+import { session, user } from "./auth-schema.ts";
 
 const time = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
 const actor = () =>
@@ -233,6 +233,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   inApp: boolean("in_app").notNull().default(true),
+  push: boolean("push").notNull().default(false),
 });
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -244,8 +245,41 @@ export const notifications = pgTable("notifications", {
     .references(() => projects.id, { onDelete: "cascade" }),
   eventId: bigint("event_id", { mode: "bigint" }).notNull(),
   readAt: timestamp("read_at", { withTimezone: true }),
+  inbox: boolean("inbox").notNull().default(true),
   createdAt: time("created_at"),
 });
+export const pushDevices = pgTable("push_devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => session.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  createdAt: time("created_at"),
+});
+export const pushDeliveries = pgTable(
+  "push_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    notificationId: uuid("notification_id")
+      .notNull()
+      .references(() => notifications.id, { onDelete: "cascade" }),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => pushDevices.id, { onDelete: "cascade" }),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: time("available_at"),
+    receiptId: text("receipt_id"),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (table) => [
+    index("push_pending_idx").on(table.finishedAt, table.availableAt),
+    unique().on(table.notificationId, table.deviceId),
+  ],
+);
 export const views = pgTable("saved_views", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")

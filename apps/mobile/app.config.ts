@@ -8,6 +8,9 @@ const config: ExpoConfig = {
   orientation: "default",
   platforms: ["ios", "android"],
   userInterfaceStyle: "automatic",
+  ...(process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+    ? { extra: { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } } }
+    : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
     supportsTablet: true,

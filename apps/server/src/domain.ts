@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
   ApiError,
   operations,
@@ -19,6 +19,8 @@ import {
   members,
   notifications,
   notificationPreferences,
+  pushDevices,
+  pushDeliveries,
   projects,
   receipts,
   subscriptions,
@@ -179,9 +181,14 @@ export async function publish(
   );
   if (ticketId) {
     const followers = await ctx.db
-      .select({ userId: subscriptions.userId })
+      .select({
+        userId: subscriptions.userId,
+        inApp: notificationPreferences.inApp,
+        push: notificationPreferences.push,
+      })
       .from(subscriptions)
-      .innerJoin(
+      .innerJoin(user, eq(user.id, subscriptions.userId))
+      .leftJoin(
         members,
         and(
           eq(members.projectId, subscriptions.projectId),
@@ -192,18 +199,42 @@ export async function publish(
       .where(
         and(
           eq(subscriptions.ticketId, ticketId),
+          or(isNotNull(members.userId), sql`'admin' = any(string_to_array(${user.role}, ','))`),
+          sql`not coalesce(${user.banned}, false)`,
           ctx.actor.machine ? undefined : ne(subscriptions.userId, ctx.actor.id),
-          sql`coalesce(${notificationPreferences.inApp}, true)`,
+          or(
+            sql`coalesce(${notificationPreferences.inApp}, true)`,
+            eq(notificationPreferences.push, true),
+          ),
         ),
       );
-    if (followers.length)
-      await ctx.db.insert(notifications).values(
-        followers.map((row) => ({
-          userId: row.userId,
-          projectId: project(ctx).id,
-          eventId: event.id,
-        })),
+    for (const follower of followers) {
+      const notification = requireRow(
+        (
+          await ctx.db
+            .insert(notifications)
+            .values({
+              userId: follower.userId,
+              projectId: project(ctx).id,
+              eventId: event.id,
+              inbox: follower.inApp ?? true,
+            })
+            .returning()
+        )[0],
       );
+      if (follower.push) {
+        const devices = await ctx.db
+          .select({ id: pushDevices.id })
+          .from(pushDevices)
+          .where(eq(pushDevices.userId, follower.userId));
+        if (devices.length)
+          await ctx.db
+            .insert(pushDeliveries)
+            .values(
+              devices.map((device) => ({ notificationId: notification.id, deviceId: device.id })),
+            );
+      }
+    }
   }
   await ctx.db.execute(sql`SELECT pg_notify('kanvil_events', ${event.id.toString()})`);
   return event;

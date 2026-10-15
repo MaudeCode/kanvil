@@ -33,6 +33,7 @@ const application = await createApplication(fixture.database, {
   KANVIL_URL: `http://localhost:${port}`,
   trustedOrigins: [`http://localhost:${port}`, "kanvil://"],
   KANVIL_SETUP_TOKEN: "kanvil-browser-tests-only-setup-token",
+  KANVIL_PUSH_ENABLED: process.env.KANVIL_TEST_PUSH === "1",
   ...(oidc
     ? {
         OIDC_DISCOVERY_URL: `${pocketUrl}/.well-known/openid-configuration`,

@@ -388,6 +388,10 @@ describe("HTTP, realtime, and MCP", () => {
       body: "My own browser edit",
     });
     const issued = await credential(project.id);
+    // Instance administrators retain project access without an explicit membership.
+    await fixture.database.pool.query("DELETE FROM project_members WHERE project_id = $1", [
+      project.id,
+    ]);
     const machine = createClient({
       baseUrl: fixture.config.KANVIL_URL,
       headers: () => ({ Authorization: `Bearer ${issued.key}` }),
@@ -411,7 +415,7 @@ describe("HTTP, realtime, and MCP", () => {
       title: ticket.title,
       source: { kind: "credential", id: issued.id },
     });
-    expect(await human.notificationPreferences().queryFn()).toEqual({ inApp: true });
+    expect(await human.notificationPreferences().queryFn()).toEqual({ inApp: true, push: false });
     await expect(machine.setNotificationPreferences({ inApp: false })).rejects.toMatchObject({
       status: 403,
     });
@@ -425,7 +429,10 @@ describe("HTTP, realtime, and MCP", () => {
       ).status,
     ).toBe(403);
     try {
-      expect(await human.setNotificationPreferences({ inApp: false })).toEqual({ inApp: false });
+      expect(await human.setNotificationPreferences({ inApp: false })).toEqual({
+        inApp: false,
+        push: false,
+      });
       await machine.call("add_comment", {
         projectId: project.id,
         ticketId: ticket.id,

@@ -1,5 +1,5 @@
 import { attachmentLimit } from "@kanvil/contracts";
-import { and, asc, count, desc, eq, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   attachmentContent,
   attachments,
@@ -8,6 +8,8 @@ import {
   evidence,
   relations,
   subscriptions,
+  notifications,
+  pushDeliveries,
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
 import {
@@ -271,10 +273,27 @@ export const collaborationHandlers: Pick<
         .insert(subscriptions)
         .values({ projectId: project(ctx).id, ticketId: ticket.id, userId: ctx.actor.id })
         .onConflictDoNothing();
-    else
+    else {
       await ctx.db
         .delete(subscriptions)
         .where(and(eq(subscriptions.ticketId, ticket.id), eq(subscriptions.userId, ctx.actor.id)));
+      await ctx.db
+        .update(pushDeliveries)
+        .set({ finishedAt: new Date(), error: "unsubscribed" })
+        .where(
+          and(
+            isNull(pushDeliveries.finishedAt),
+            inArray(
+              pushDeliveries.notificationId,
+              ctx.db
+                .select({ id: notifications.id })
+                .from(notifications)
+                .innerJoin(events, eq(events.id, notifications.eventId))
+                .where(and(eq(notifications.userId, ctx.actor.id), eq(events.ticketId, ticket.id))),
+            ),
+          ),
+        );
+    }
     return { ok: true };
   },
 };

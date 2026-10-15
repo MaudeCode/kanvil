@@ -15,6 +15,8 @@ import {
   isOperation,
   scopes,
   notificationPreferencesSchema,
+  notificationPreferencesInput,
+  pushDeviceInput,
 } from "@kanvil/contracts";
 import { createAuth } from "./auth.ts";
 import { createAccess, requireSession } from "./access.ts";
@@ -29,9 +31,12 @@ import {
   events,
   notifications,
   notificationPreferences,
+  pushDevices,
 } from "./schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
+import { Expo } from "expo-server-sdk";
+import { createPushDelivery } from "./push.ts";
 
 type Variables = { actor: Actor };
 const setupInput = z
@@ -57,6 +62,7 @@ export async function createApplication(database: Database, config: Config) {
     domain = createDomain(database),
     access = createAccess(auth, domain, config),
     realtime = await createRealtime(config);
+  const push = createPushDelivery(database, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
       if (!result.success)
@@ -156,6 +162,7 @@ export async function createApplication(database: Database, config: Config) {
       name: "Kanvil",
       version: "0.1.0",
       setupRequired: await setupRequired(),
+      push: config.KANVIL_PUSH_ENABLED,
       oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,
     }),
   );
@@ -301,16 +308,54 @@ export async function createApplication(database: Database, config: Config) {
         .from(notificationPreferences)
         .where(eq(notificationPreferences.userId, c.get("actor").id))
     )[0];
-    return Response.json(notificationPreferencesSchema.parse(row ? { inApp: row.inApp } : {}));
+    return Response.json(
+      notificationPreferencesSchema.parse(row ? { inApp: row.inApp, push: row.push } : {}),
+    );
   });
   app.put("/api/v1/notifications/preferences", async (c) => {
     const identity = requireSession(c.get("actor"));
-    const input = notificationPreferencesSchema.parse(await c.req.json());
+    const input = notificationPreferencesInput.parse(await c.req.json());
+    const row = requireRow(
+      (
+        await database.db
+          .insert(notificationPreferences)
+          .values({ userId: identity.id, ...input })
+          .onConflictDoUpdate({ target: notificationPreferences.userId, set: input })
+          .returning({ inApp: notificationPreferences.inApp, push: notificationPreferences.push })
+      )[0],
+    );
+    return Response.json(notificationPreferencesSchema.parse(row));
+  });
+  app.post("/api/v1/notifications/device", async (c) => {
+    const identity = requireSession(c.get("actor"));
+    if (!config.KANVIL_PUSH_ENABLED)
+      fail(503, "push_disabled", "Push notifications are disabled on this server");
+    const input = pushDeviceInput.parse(await c.req.json());
+    if (!Expo.isExpoPushToken(input.token))
+      fail(400, "invalid_push_token", "Use an Expo push token");
+    const current = requireRow(
+      (await auth.api.getSession({ headers: c.req.raw.headers }))?.session,
+    );
+    await database.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+      const existing = (
+        await tx.select().from(pushDevices).where(eq(pushDevices.token, input.token))
+      )[0];
+      if (existing?.userId === identity.id && existing.sessionId === current.id) return;
+      if (existing) await tx.delete(pushDevices).where(eq(pushDevices.id, existing.id));
+      await tx
+        .insert(pushDevices)
+        .values({ userId: identity.id, sessionId: current.id, token: input.token });
+    });
+    return Response.json({ ok: true });
+  });
+  app.delete("/api/v1/notifications/device", async (c) => {
+    const identity = requireSession(c.get("actor")),
+      input = pushDeviceInput.parse(await c.req.json());
     await database.db
-      .insert(notificationPreferences)
-      .values({ userId: identity.id, ...input })
-      .onConflictDoUpdate({ target: notificationPreferences.userId, set: input });
-    return Response.json(input);
+      .delete(pushDevices)
+      .where(and(eq(pushDevices.userId, identity.id), eq(pushDevices.token, input.token)));
+    return Response.json({ ok: true });
   });
   app.get("/api/v1/notifications", async (c) => {
     const identity = c.get("actor"),
@@ -325,6 +370,7 @@ export async function createApplication(database: Database, config: Config) {
           .where(
             and(
               eq(notifications.userId, identity.id),
+              eq(notifications.inbox, true),
               inArray(
                 notifications.projectId,
                 allowed.map((row) => row.id),
@@ -531,5 +577,13 @@ export async function createApplication(database: Database, config: Config) {
     c.header("Cache-Control", "no-store");
     return serveStatic({ root: webRoot, path: "index.html" })(c, next);
   });
-  return { app, auth, domain, close: () => realtime.close() };
+  return {
+    app,
+    auth,
+    domain,
+    close: async () => {
+      await push.close();
+      await realtime.close();
+    },
+  };
 }

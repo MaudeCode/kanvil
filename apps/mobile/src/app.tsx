@@ -14,7 +14,12 @@ import {
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  DarkTheme,
+  DefaultTheme,
+  useNavigationContainerRef,
+} from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -33,6 +38,7 @@ import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
 import { Inbox, Settings } from "./settings.tsx";
 import type { Routes } from "./navigation.ts";
+import { usePushNavigation } from "./push.tsx";
 
 const Stack = createNativeStackNavigator<Routes>();
 const Tabs = createBottomTabNavigator<{
@@ -301,6 +307,8 @@ function PrivateWorkspace({
   );
 }
 function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
+  const navigationRef = useNavigationContainerRef<Routes>();
+  const onReady = usePushNavigation(navigationRef);
   const connection = useLive(),
     color = usePalette(),
     dark = useColorScheme() === "dark",
@@ -318,6 +326,8 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   };
   return (
     <NavigationContainer
+      ref={navigationRef}
+      onReady={onReady}
       theme={theme}
       linking={{
         prefixes: ["kanvil://", baseUrl],
