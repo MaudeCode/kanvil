@@ -3,7 +3,7 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
-import { checkpointSchema, snapshotSchema, type Operation } from "@kanvil/contracts";
+import { type Operation } from "@kanvil/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { palettes, type ThemeMode } from "@kanvil/contracts/theme";
 
@@ -24,30 +24,12 @@ export function useLive(projectId?: string) {
   const [state, setState] = useState("connecting");
   useEffect(() => {
     const controller = new AbortController();
-    let initialCheckpoint = true;
-    const reset = async () => {
-      const snapshot = projectId
-        ? await api.request(
-            `/api/v1/snapshot?projectId=${encodeURIComponent(projectId)}`,
-            snapshotSchema,
-          )
-        : await api.request("/api/v1/checkpoint", checkpointSchema);
-      await cache.invalidateQueries({ queryKey: ["kanvil"] });
-      return snapshot.cursor;
-    };
     void api
-      .subscribe({
+      .watch({
         ...(projectId ? { projectId } : {}),
         signal: controller.signal,
-        onEvent: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
+        invalidate: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
         onState: setState,
-        onCursor: async () => {
-          if (initialCheckpoint) {
-            initialCheckpoint = false;
-            await cache.invalidateQueries({ queryKey: ["kanvil"] });
-          }
-        },
-        onReset: reset,
       })
       .catch(() => setState("Sign in to reconnect"));
     return () => controller.abort();

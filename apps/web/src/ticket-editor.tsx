@@ -1,3 +1,9 @@
+import {
+  createTicketDraft,
+  ticketDraftSchema,
+  ticketDefaults,
+  splitTags,
+} from "@kanvil/contracts/drafts";
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -14,26 +20,6 @@ import {
 import { api, useIdentity, useOperation } from "./data.tsx";
 import { Button, Check, ErrorNotice, Input, Markdown, Select, Textarea } from "./ui.tsx";
 
-const empty: z.output<typeof ticketFields> = {
-  title: "",
-  description: "",
-  acceptanceCriteria: "",
-  status: "todo",
-  priority: "medium",
-  kind: "feature",
-  difficulty: null,
-  labels: [],
-  scopes: [],
-  assigneeId: null,
-  parentId: null,
-  automationReady: false,
-  holdReason: null,
-  archived: false,
-};
-const draftSchema = z.object({
-  fields: ticketFields.extend({ title: z.string() }),
-  version: z.number().int().positive().optional(),
-});
 export function TicketEditor({
   projectId,
   ticket,
@@ -47,15 +33,14 @@ export function TicketEditor({
   const draftKey = `kanvil:${identity.id}:draft:${projectId}:${ticket?.id ?? "new"}`;
   const [draft, setDraft] = useState(() => {
     try {
-      const saved = draftSchema.safeParse(JSON.parse(localStorage.getItem(draftKey) ?? "null"));
+      const saved = ticketDraftSchema.safeParse(
+        JSON.parse(localStorage.getItem(draftKey) ?? "null"),
+      );
       if (saved.success) return saved.data;
     } catch {
       /* A damaged draft must not block the editor. */
     }
-    return {
-      fields: ticket ? ticketFields.strip().parse(ticket) : empty,
-      ...(ticket ? { version: ticket.version } : {}),
-    };
+    return createTicketDraft(ticket);
   });
   const [validationError, setValidationError] = useState<unknown>();
   const [labels, setLabels] = useState(draft.fields.labels.join(", ")),
@@ -65,7 +50,7 @@ export function TicketEditor({
   const create = useOperation("create_ticket"),
     update = useOperation("update_ticket");
   const members = useQuery(api.query("list_members", { projectId }));
-  const set = <K extends keyof typeof empty>(key: K, value: (typeof empty)[K]) =>
+  const set = <K extends keyof typeof ticketDefaults>(key: K, value: (typeof ticketDefaults)[K]) =>
     changeDraft({ ...draft, fields: { ...draft.fields, [key]: value } });
   function changeDraft(next: typeof draft) {
     setDraft(next);
@@ -82,14 +67,8 @@ export function TicketEditor({
     event.preventDefault();
     const fields = ticketFields.parse({
       ...draft.fields,
-      labels: labels
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
-      scopes: scopesText
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
+      labels: splitTags(labels),
+      scopes: splitTags(scopesText),
     });
     const result = ticket
       ? await update.mutateAsync({
@@ -121,7 +100,7 @@ export function TicketEditor({
           </p>
           <Button
             onClick={() => {
-              changeDraft({ fields: ticketFields.strip().parse(ticket), version: ticket.version });
+              changeDraft(createTicketDraft(ticket));
               setLabels(ticket.labels.join(", "));
               setScopesText(ticket.scopes.join(", "));
             }}
@@ -209,13 +188,7 @@ export function TicketEditor({
           value={labels}
           onChange={(event) => {
             setLabels(event.target.value);
-            set(
-              "labels",
-              event.target.value
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean),
-            );
+            set("labels", splitTags(event.target.value));
           }}
         />
         <Input
@@ -223,13 +196,7 @@ export function TicketEditor({
           value={scopesText}
           onChange={(event) => {
             setScopesText(event.target.value);
-            set(
-              "scopes",
-              event.target.value
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean),
-            );
+            set("scopes", splitTags(event.target.value));
           }}
         />
       </div>

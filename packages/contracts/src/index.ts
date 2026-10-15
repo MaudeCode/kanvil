@@ -1,3 +1,4 @@
+import type { palettes } from "./theme.ts";
 import { z } from "zod";
 
 export const states = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
@@ -22,7 +23,7 @@ export const priorityLabels: Record<(typeof priorities)[number], string> = {
   low: "Low",
   none: "No priority",
 };
-export const stateTones: Record<(typeof states)[number], string> = {
+export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
   backlog: "muted",
   todo: "foreground",
   in_progress: "warning",
