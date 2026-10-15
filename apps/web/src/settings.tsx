@@ -1,6 +1,6 @@
 import { formText } from "./forms.ts";
 import { useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   credentialsSchema,
@@ -216,9 +216,35 @@ export function AccountSettings() {
           <ErrorNotice error={accounts.error} />
         </section>
         <Credentials />
+        <NotificationPreferences />
         {identity.admin && <AccountAdministration />}
       </div>
     </>
+  );
+}
+function NotificationPreferences() {
+  const cache = useQueryClient(),
+    options = api.notificationPreferences();
+  const preferences = useQuery(options);
+  const update = useMutation({
+    mutationFn: api.setNotificationPreferences,
+    networkMode: "always",
+    retry: false,
+    onSuccess: (value) => cache.setQueryData(options.queryKey, value),
+  });
+  return (
+    <section>
+      <h2>Notifications</h2>
+      <ErrorNotice error={preferences.error ?? update.error} />
+      {preferences.data && (
+        <Check
+          label="Subscribed ticket updates in Inbox"
+          checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
+          disabled={update.isPending}
+          onChange={(event) => update.mutate({ inApp: event.target.checked })}
+        />
+      )}
+    </section>
   );
 }
 function Credentials() {

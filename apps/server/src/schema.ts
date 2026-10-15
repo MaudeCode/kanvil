@@ -228,6 +228,12 @@ export const subscriptions = pgTable(
   },
   (table) => [primaryKey({ columns: [table.ticketId, table.userId] })],
 );
+export const notificationPreferences = pgTable("notification_preferences", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  inApp: boolean("in_app").notNull().default(true),
+});
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id")

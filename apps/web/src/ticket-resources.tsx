@@ -1,7 +1,7 @@
 import { formText } from "./forms.ts";
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { attachmentLimit, evidenceFields, type Ticket } from "@kanvil/contracts";
+import { formatEvent, attachmentLimit, evidenceFields, type Ticket } from "@kanvil/contracts";
 import { api, date, ActorName, useOperation } from "./data.tsx";
 import { Button, Confirm, ErrorNotice, Input, Markdown, Modal, Select, Textarea } from "./ui.tsx";
 
@@ -163,7 +163,7 @@ export function Activity({ ticket }: { ticket: Ticket }) {
       <ol className="activity">
         {activity.data?.items.map((event) => (
           <li key={event.id}>
-            <span>{event.type.replaceAll("_", " ").replaceAll(".", " · ")}</span>
+            <span>{formatEvent(event)}</span>
             <span className="muted">
               <ActorName projectId={ticket.projectId} actorId={event.actorId} /> ·{" "}
               {date(event.createdAt)}

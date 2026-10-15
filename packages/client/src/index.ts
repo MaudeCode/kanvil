@@ -6,6 +6,7 @@ import {
   streamErrorSchema,
   checkpointSchema,
   snapshotSchema,
+  notificationPreferencesSchema,
   type ChangeEvent,
   operations,
   parseOutput,
@@ -203,6 +204,20 @@ export function createClient(options: {
   };
   return {
     ...api,
+    notificationPreferences() {
+      return {
+        queryKey: ["kanvil", options.baseUrl, "notification-preferences"] as const,
+        queryFn: () =>
+          api.request("/api/v1/notifications/preferences", notificationPreferencesSchema),
+      };
+    },
+    setNotificationPreferences(this: void, input: { inApp: boolean }) {
+      return api.request("/api/v1/notifications/preferences", notificationPreferencesSchema, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notificationPreferencesSchema.parse(input)),
+      });
+    },
     watch(
       observer: Pick<Parameters<typeof api.subscribe>[0], "projectId" | "signal" | "onState"> & {
         invalidate: () => void | Promise<void>;

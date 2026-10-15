@@ -29,6 +29,13 @@
       "when": 1792038852842,
       "tag": "0003_durable_claim_fence",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792047012362,
+      "tag": "0004_lumpy_archangel",
+      "breakpoints": true
     }
   ]
 }

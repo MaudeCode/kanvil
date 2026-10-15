@@ -1,12 +1,23 @@
-import { formatTimestamp } from "@kanvil/contracts";
+import { formatEvent, formatTimestamp } from "@kanvil/contracts";
 import { useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import { infoSchema, notificationsSchema, okSchema } from "@kanvil/contracts";
 import { useConnection, useIdentity } from "./data.tsx";
-import { Body, List, Button, ErrorNotice, Field, Loading, Row, Screen, Section } from "./ui.tsx";
+import {
+  Body,
+  List,
+  Button,
+  Check,
+  ErrorNotice,
+  Field,
+  Loading,
+  Row,
+  Screen,
+  Section,
+} from "./ui.tsx";
 
 export function Inbox() {
   const { api } = useConnection(),
@@ -56,8 +67,8 @@ export function Inbox() {
           }
           renderItem={({ item }) => (
             <Row
-              title={`${item.readAt ? "" : "● "}${item.event.type.replaceAll(".", " · ").replaceAll("_", " ")}`}
-              caption={`${typeof item.event.data.key === "string" ? item.event.data.key : ""} · ${formatTimestamp(item.event.createdAt)}`}
+              title={`${item.readAt ? "" : "● "}${formatEvent(item.event, true)}`}
+              caption={formatTimestamp(item.event.createdAt)}
               onPress={() => {
                 if (item.event.ticketId)
                   navigation.navigate("Ticket", {
@@ -70,6 +81,33 @@ export function Inbox() {
         />
       )}
     </Screen>
+  );
+}
+function NotificationPreferences() {
+  const { api } = useConnection(),
+    cache = useQueryClient(),
+    options = api.notificationPreferences();
+  const preferences = useQuery(options);
+  const update = useMutation({
+    mutationFn: api.setNotificationPreferences,
+    networkMode: "always",
+    retry: false,
+    onSuccess: (value) => cache.setQueryData(options.queryKey, value),
+  });
+  return (
+    <Section title="Notifications">
+      <ErrorNotice error={preferences.error ?? update.error} />
+      {preferences.data && (
+        <Check
+          label="Subscribed ticket updates in Inbox"
+          checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
+          disabled={update.isPending}
+          onChange={(inApp) => {
+            if (!update.isPending) update.mutate({ inApp });
+          }}
+        />
+      )}
+    </Section>
   );
 }
 export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
@@ -189,6 +227,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           <ErrorNotice error={accounts.error} />
         </Section>
       )}
+      <NotificationPreferences />
       <Button
         title="Sign out"
         disabled={pending}
