@@ -412,7 +412,7 @@ legend {
   flex: 1;
   margin-bottom: 14px;
 }
-.toolbar .field:first-child {
+.toolbar > .field:first-child {
   flex: 2.5;
   min-width: 220px;
 }
@@ -1019,6 +1019,8 @@ small {
   .sidebar .brand {
     margin: 0;
     font-size: 21px;
+    align-self: start;
+    margin-top: 7px;
   }
   .brand-mark {
     width: 30px;
@@ -1047,7 +1049,7 @@ small {
     display: none;
   }
   .account-nav {
-    max-width: 174px;
+    max-width: 180px;
     flex-wrap: wrap;
     margin: 0;
     display: flex;
@@ -1055,7 +1057,10 @@ small {
     gap: 4px;
   }
   .account-nav > a {
-    padding: 10px !important;
+    padding: 0 !important;
+    width: 44px;
+    justify-content: center;
+    gap: 0;
     min-height: 44px;
     font-size: 0;
   }
@@ -1139,7 +1144,7 @@ small {
   .toolbar .field {
     min-width: 120px;
   }
-  .toolbar .field:first-child {
+  .toolbar > .field:first-child {
     flex: 1;
     min-width: 160px;
   }
