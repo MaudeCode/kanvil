@@ -240,14 +240,14 @@ function Home() {
           {matches.map((project) => (
             <ProjectContextMenu key={project.id} project={project}>
               <Item
-                className="rounded-none border-x-0 border-t-0 border-b-border py-5"
+                className="rounded-none border-x-0 border-t-0 border-b-border py-3"
                 render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
               >
                 <ItemMedia>
-                  <ProjectIcon project={project} className="size-9" />
+                  <ProjectIcon project={project} className="size-6" />
                 </ItemMedia>
                 <ItemMedia>
-                  <Badge variant="secondary" className="project-key">
+                  <Badge variant="ghost" className="project-key">
                     {project.key}
                   </Badge>
                 </ItemMedia>

@@ -5,7 +5,12 @@ import { z } from "zod";
 import { ticketFilter, states, priorities, stateLabels, priorityLabels } from "@kanvil/contracts";
 import { api } from "../data.tsx";
 import { Button, Check, ErrorNotice, Input, Select, SelectItem } from "../ui.tsx";
-import { searchSchema, type TicketSearch } from "../search.ts";
+import {
+  searchSchema,
+  ticketDensitySchema,
+  type TicketSearch,
+  type TicketDensity,
+} from "../search.ts";
 import { Popover, PopoverTrigger, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import {
   Command,
@@ -25,6 +30,8 @@ export function TicketListControls({
   columns,
   onColumnChange,
   onReset,
+  density,
+  onDensityChange,
 }: {
   projectId: string;
   search: TicketSearch;
@@ -32,6 +39,8 @@ export function TicketListControls({
   columns: { id: string; label: string; visible: boolean }[];
   onColumnChange: (id: string, visible: boolean) => void;
   onReset: () => void;
+  density: TicketDensity;
+  onDensityChange: (density: TicketDensity) => void;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false),
     [labelsOpen, setLabelsOpen] = useState(false);
@@ -190,6 +199,14 @@ export function TicketListControls({
               <SelectItem value="labels">Labels A–Z</SelectItem>
             </Select>
             <Separator />
+            <Select
+              label="Row spacing"
+              value={density}
+              onValueChange={(value) => onDensityChange(ticketDensitySchema.parse(value))}
+            >
+              <SelectItem value="compact">Compact</SelectItem>
+              <SelectItem value="comfortable">Comfortable</SelectItem>
+            </Select>
             <fieldset>
               <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>
               <div className="grid grid-cols-2 gap-x-3">

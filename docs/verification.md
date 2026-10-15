@@ -66,3 +66,18 @@ The workspace/account update was verified locally without publishing a branch or
 - Native account role parsing and persisted-cache versions share the same administrator-role rule. This update does not claim a new physical-device installation or validation.
 
 All integration fixtures use disposable test-owned databases/accounts. Existing project identifiers and ticket prefixes are retained. Local review remains separate from publication approval.
+
+## Linear layout and named palettes
+
+The web app now uses compact shared controls, navigation, table rows, settings rows, and typography. Compact and Comfortable ticket density are personal browser preferences. Table layout remains available on laptop widths, with the title taking the remaining space; phone layouts retain wrapping titles and larger touch targets. The shadcn inset sidebar, resizing, keyboard access, and contextual actions remain in use.
+
+The default palette is Linear. Eighteen named themes have light/dark mappings and a searchable gallery. Built-in palette checks cover body, sidebar, muted, secondary, popover, primary-button, and status-text contrast. Custom JSON import/export remains version one, and old built-in IDs resolve to named replacements. Sources and notices are listed in [themes](themes.md).
+
+Validation for this pass:
+
+- `pnpm check` passes formatting, linting, all workspace type checks, and 80 tests. Two optional live-service suites remain skipped.
+- `pnpm test:e2e` passes 24 browser workflows, including all 18 palettes in both appearances, system appearance, theme persistence, custom import/export, searchable theme choices, compact/comfortable density, list properties, selection, relationships, authentication, and the existing ticket/account/settings workflows.
+- Playwright captured the main page families in both modes at desktop and phone widths. Additional project/workspace/member/user/account/icon checks include 320px layouts. Captures are local under `dist/ui-review/linear-pages`, `dist/ui-review/workspaces-users`, and `dist/ui-review/linear-redesign`; they are not tracked.
+- Existing local preview content was checked through the LAN app. Selection caused zero row movement at 1440px, 390px, and 320px; these checks found no page-level horizontal overflow or browser exceptions.
+
+This pass validates the web app. It does not claim a new native build, physical-device validation, or production publication.

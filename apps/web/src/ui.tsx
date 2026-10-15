@@ -78,13 +78,13 @@ export function Brand() {
   return (
     <>
       <svg
-        className="brand-mark h-6 w-9 shrink-0 text-primary"
+        className="brand-mark h-5 w-7 shrink-0 text-primary"
         viewBox={brandMark.viewBox}
         aria-hidden="true"
       >
         <path d={brandMark.path} fill="currentColor" />
       </svg>
-      <span className="brand-word text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+      <span className="brand-word text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
         Kanvil
       </span>
     </>
@@ -201,7 +201,10 @@ export function Check({
   const id = useId();
   const compact = className === "sr-checkbox";
   return (
-    <Field orientation="horizontal" className={cn("check w-auto", compact && "justify-center")}>
+    <Field
+      orientation="horizontal"
+      className={cn("check w-auto", compact && "my-0 min-h-4 justify-center")}
+    >
       <Checkbox
         {...props}
         id={id}

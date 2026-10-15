@@ -65,7 +65,7 @@ export function AppSidebar() {
   );
   return (
     <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="pb-4 pt-3">
+      <SidebarHeader className="pb-2 pt-2">
         <Link
           to="/"
           aria-label="Kanvil"
@@ -105,7 +105,7 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          <SidebarGroup className="mt-3">
+          <SidebarGroup className="mt-1">
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <CreateProject sidebarAction />
             <SidebarGroupContent>
@@ -314,7 +314,7 @@ export function WorkspaceHeader() {
                 ? "Ticket"
                 : "Tickets";
   return (
-    <header className="workspace-header flex h-14 shrink-0 items-center gap-3 border-b px-4 md:px-6">
+    <header className="workspace-header flex h-11 shrink-0 items-center gap-3 border-b px-4 md:px-6">
       <SidebarTrigger />
       <Breadcrumb>
         <BreadcrumbList>

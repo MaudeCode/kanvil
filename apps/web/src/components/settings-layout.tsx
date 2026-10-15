@@ -27,7 +27,7 @@ export function SettingsLayout({
         orientation={mobile ? "horizontal" : "vertical"}
         value={value}
         onValueChange={(next) => onChange(String(next))}
-        className="grid min-w-0 items-start grid-cols-1 gap-7 lg:grid-cols-[170px_minmax(0,1fr)] lg:gap-12"
+        className="grid min-w-0 items-start grid-cols-1 gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:gap-9"
       >
         {mobile && (
           <Select
@@ -58,7 +58,7 @@ export function SettingsLayout({
             <TabsTrigger
               key={section.id}
               value={section.id}
-              className="h-10 flex-none justify-start gap-2 px-3 text-left lg:w-full"
+              className="h-8 flex-none justify-start gap-2 px-3 text-left lg:w-full"
             >
               <section.icon />
               {section.label}
@@ -81,7 +81,7 @@ export function SettingRow({
   children?: ReactNode;
 }) {
   return (
-    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-5 @max-[28rem]:flex-col @max-[28rem]:items-stretch">
+    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-3.5 @max-[28rem]:flex-col @max-[28rem]:items-stretch">
       <ItemContent>
         <ItemTitle>{title}</ItemTitle>
         {description && (

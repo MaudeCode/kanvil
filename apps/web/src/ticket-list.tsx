@@ -43,7 +43,12 @@ import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.ts
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TicketEditor } from "./ticket-editor.tsx";
 
-import { searchSchema, type TicketSearch } from "./search.ts";
+import {
+  searchSchema,
+  ticketDensitySchema,
+  type TicketSearch,
+  type TicketDensity,
+} from "./search.ts";
 const features = tableFeatures({
   columnSizingFeature,
   columnResizingFeature,
@@ -175,6 +180,14 @@ export function TicketList({
   const access = useProjectAccess(project.id);
   const identity = useIdentity();
   const storageKey = `kanvil:${identity.id}:ticket-columns`;
+  const densityKey = `kanvil:${identity.id}:ticket-density`;
+  const [density, setDensity] = useState<TicketDensity>(() => {
+    try {
+      return ticketDensitySchema.catch("compact").parse(localStorage.getItem(densityKey));
+    } catch {
+      return "compact";
+    }
+  });
   const [visibility, setVisibility] = useState<Record<string, boolean>>(() => {
     try {
       return {
@@ -190,10 +203,11 @@ export function TicketList({
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(visibility));
+      localStorage.setItem(densityKey, density);
     } catch {
       /* Display controls work without storage. */
     }
-  }, [storageKey, visibility]);
+  }, [storageKey, visibility, densityKey, density]);
   const tickets = useQuery(
     api.query("list_tickets", { projectId: project.id, ...search, limit: 50 }),
   );
@@ -227,7 +241,7 @@ export function TicketList({
       <header className="page-header">
         <div>
           <div className="project-title">
-            <ProjectIcon project={project} className="size-7" />
+            <ProjectIcon project={project} className="size-4" />
             <span className="project-prefix">{project.key}</span>
             <h1>{project.name}</h1>
           </div>
@@ -249,6 +263,8 @@ export function TicketList({
         projectId={project.id}
         search={search}
         onSearch={changeSearch}
+        density={density}
+        onDensityChange={setDensity}
         columns={table
           .getAllLeafColumns()
           .filter((column) => column.getCanHide())
@@ -260,6 +276,7 @@ export function TicketList({
         onColumnChange={(id, visible) => table.getColumn(id)?.toggleVisibility(visible)}
         onReset={() => {
           setVisibility(defaultVisibility);
+          setDensity("compact");
           changeSearch({ ...search, sort: "priority", offset: 0 });
         }}
       />
@@ -351,6 +368,7 @@ export function TicketList({
             className="ticket-table @min-[1051px]:w-(--table-width)"
             role="table"
             aria-label="Tickets"
+            data-density={density}
             style={{ "--table-width": `${table.getTotalSize()}px` }}
           >
             <TableHeader role="rowgroup">
@@ -397,6 +415,7 @@ export function TicketList({
                   <TableRow role="row" data-selected={row.getIsSelected()}>
                     {row.getVisibleCells().map((cell) => (
                       <TableCell
+                        className="in-data-[density=comfortable]:py-4"
                         key={cell.id}
                         role="cell"
                         data-column={cell.column.id}
