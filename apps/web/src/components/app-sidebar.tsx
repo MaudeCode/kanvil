@@ -1,16 +1,9 @@
+import { ProjectIcon } from "./project-icon.tsx";
+import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu } from "./object-context-menu.tsx";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import {
-  Bell,
-  ChevronsUpDown,
-  FolderOpen,
-  Layers,
-  LogOut,
-  Search,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
+import { Bell, ChevronsUpDown, Layers, LogOut, Search, Settings, ShieldCheck } from "lucide-react";
 import { auth, useIdentity, useProjects } from "../data.tsx";
 import { Brand, ErrorNotice } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
@@ -81,6 +74,7 @@ export function AppSidebar() {
         >
           <Brand />
         </Link>
+        <WorkspaceSwitcher />
         <ProjectSwitcher />
       </SidebarHeader>
       <SidebarContent>
@@ -122,17 +116,22 @@ export function AppSidebar() {
                       <SidebarMenuButton
                         isActive={pathname.startsWith(`/projects/${project.id}`)}
                         tooltip={project.name}
+                        title={project.name}
+                        className="grid grid-cols-[1rem_minmax(0,1fr)_auto] group-data-[collapsible=icon]:flex"
                         render={
                           <Link to="/projects/$projectId" params={{ projectId: project.id }} />
                         }
                       >
-                        <FolderOpen />
-                        <span>{project.name}</span>
+                        <ProjectIcon project={project} className="size-4" />
+                        <span className="min-w-0 truncate">{project.name}</span>
+                        <SidebarMenuBadge
+                          aria-hidden="true"
+                          className="static h-auto min-w-0 p-0 font-mono text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden"
+                        >
+                          {project.key}
+                        </SidebarMenuBadge>
                       </SidebarMenuButton>
                     </ProjectContextMenu>
-                    <SidebarMenuBadge className="font-mono text-[10px] text-muted-foreground">
-                      {project.key}
-                    </SidebarMenuBadge>
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
@@ -284,7 +283,7 @@ function ProjectSwitcher() {
                   value={`${project.name} ${project.key}`}
                   onSelect={() => go(`/projects/${project.id}`)}
                 >
-                  <FolderOpen />
+                  <ProjectIcon project={project} className="size-4" />
                   {project.name}
                   <CommandShortcut>{project.key}</CommandShortcut>
                 </CommandItem>
@@ -307,11 +306,13 @@ export function WorkspaceHeader() {
         ? "Inbox"
         : pathname === "/settings"
           ? "Settings"
-          : pathname.endsWith("/settings")
-            ? "Project settings"
-            : pathname.includes("/tickets/")
-              ? "Ticket"
-              : "Tickets";
+          : pathname.startsWith("/workspaces/")
+            ? "Workspace settings"
+            : pathname.endsWith("/settings")
+              ? "Project settings"
+              : pathname.includes("/tickets/")
+                ? "Ticket"
+                : "Tickets";
   return (
     <header className="workspace-header flex h-14 shrink-0 items-center gap-3 border-b px-4 md:px-6">
       <SidebarTrigger />

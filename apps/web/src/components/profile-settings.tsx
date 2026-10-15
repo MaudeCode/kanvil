@@ -6,40 +6,7 @@ import { api, auth, useIdentity } from "../data.tsx";
 import { Button, ErrorNotice, Input, Modal, SectionHeading } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
-import { blobToBase64 } from "../lib/browser.ts";
-async function normalizePhoto(file: File) {
-  if (file.size > 10000000) throw new Error("Choose a photo smaller than 10 MB.");
-  const bitmap = await createImageBitmap(file);
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("This browser cannot resize the photo.");
-    const side = Math.min(bitmap.width, bitmap.height);
-    ctx.drawImage(
-      bitmap,
-      (bitmap.width - side) / 2,
-      (bitmap.height - side) / 2,
-      side,
-      side,
-      0,
-      0,
-      256,
-      256,
-    );
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error("The photo could not be prepared."))),
-        "image/jpeg",
-        0.9,
-      ),
-    );
-    return { contentType: "image/jpeg", data: await blobToBase64(blob) };
-  } finally {
-    bitmap.close();
-  }
-}
+import { prepareSquareImage } from "../lib/browser.ts";
 export function ProfileSettings() {
   const cache = useQueryClient();
   const identity = useIdentity(),
@@ -65,7 +32,7 @@ export function ProfileSettings() {
           ? {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(await normalizePhoto(value)),
+              body: JSON.stringify(await prepareSquareImage(value)),
             }
           : { method: "DELETE" },
       );

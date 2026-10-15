@@ -18,7 +18,7 @@ import { requireSession } from "./access.ts";
 import { fail, requireRow, type Actor } from "./domain.ts";
 import type { Database } from "./database.ts";
 import type { Instance } from "./instance.ts";
-import { decodeBlobData, type BlobStorage } from "./blob-storage.ts";
+import { decodeImage, imageResponse, type BlobStorage } from "./blob-storage.ts";
 import { brokerEndpoint, type EventDelivery } from "./event-delivery.ts";
 import type { createTicketSearch } from "./search.ts";
 
@@ -88,11 +88,6 @@ export function registerInstanceRoutes(
       401: { description: "Session required" },
       404: { description: "No profile photo" },
     },
-  });
-  app.use("/api/v1/admin/*", async (c, next) => {
-    const actor = requireSession(c.get("actor"));
-    if (!actor.admin) fail(403, "forbidden", "Instance administrator access is required");
-    await next();
   });
   app.get("/api/v1/admin/instance", async () => {
     const row = await instance.read(),
@@ -219,15 +214,7 @@ export function registerInstanceRoutes(
   app.post("/api/v1/profile/photo", async (c) => {
     const actor = requireSession(c.get("actor")),
       input = photoInputSchema.parse(await c.req.json()),
-      bytes = decodeBlobData(input.data, 512000);
-    const valid =
-      input.contentType === "image/png"
-        ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-        : input.contentType === "image/jpeg"
-          ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-          : bytes.subarray(0, 4).toString() === "RIFF" &&
-            bytes.subarray(8, 12).toString() === "WEBP";
-    if (!valid) fail(400, "invalid_photo", "Choose a PNG, JPEG, or WebP photo");
+      bytes = decodeImage(input);
     const id = crypto.randomUUID(),
       image = `/api/v1/users/${actor.id}/photo?v=${id}`;
     await database.db.transaction(async (tx) => {
@@ -263,12 +250,6 @@ export function registerInstanceRoutes(
       )[0],
     );
     const blob = await blobs.get(photo.objectId);
-    return new Response(new Uint8Array(blob.data), {
-      headers: {
-        "Content-Type": blob.contentType,
-        "Cache-Control": "private, max-age=300",
-        ETag: `"${blob.sha256}"`,
-      },
-    });
+    return imageResponse(blob);
   });
 }

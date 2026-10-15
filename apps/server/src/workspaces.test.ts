@@ -293,3 +293,149 @@ it("upgrades populated project data without widening private access", async () =
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+it("restores inherited roles while a workspace administrator keeps the project manageable", async () => {
+  const fixture = await createFixture();
+  try {
+    const domain = createDomain(fixture.database),
+      people = await Promise.all(
+        ["admin", "creator"].map((name) =>
+          fixture.auth.api.createUser({
+            body: {
+              name,
+              email: `${name}@override.test`,
+              password: "Isolated override password 234!",
+              role: "user",
+            },
+          }),
+        ),
+      );
+    const admin = await domain.actor(people[0]!.user.id),
+      creator = await domain.actor(people[1]!.user.id);
+    const workspace = await domain.execute(
+      "create_workspace",
+      { name: "Inherited administration", slug: "inherited-administration" },
+      admin,
+    );
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId: workspace.id, email: people[1]!.user.email, role: "writer" },
+      admin,
+    );
+    const project = await domain.execute(
+      "create_project",
+      {
+        workspaceId: workspace.id,
+        visibility: "workspace",
+        key: "OVERRIDE",
+        name: "Project override",
+      },
+      creator,
+    );
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: people[1]!.user.email, role: null },
+      admin,
+    );
+    expect(await domain.execute("list_members", { projectId: project.id }, creator)).toContainEqual(
+      expect.objectContaining({
+        userId: creator.id,
+        role: "writer",
+        source: "workspace",
+        inheritedRole: "writer",
+      }),
+    );
+    await expect(
+      domain.execute(
+        "update_project",
+        { projectId: project.id, expectedVersion: 1, name: "Restricted", description: "" },
+        creator,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      (
+        await domain.execute(
+          "update_project",
+          { projectId: project.id, expectedVersion: 1, name: "Still manageable", description: "" },
+          admin,
+        )
+      ).name,
+    ).toBe("Still manageable");
+  } finally {
+    await fixture.close();
+  }
+});
+
+it("reauthorizes workspace receipts after membership revocation and credential narrowing", async () => {
+  const fixture = await createFixture();
+  try {
+    const domain = createDomain(fixture.database),
+      people = await Promise.all(
+        ["creator", "successor"].map((name) =>
+          fixture.auth.api.createUser({
+            body: {
+              name,
+              email: `${name}@receipts.test`,
+              password: "Isolated receipt password 234!",
+              role: "user",
+            },
+          }),
+        ),
+      );
+    const creator = await domain.actor(people[0]!.user.id),
+      successor = await domain.actor(people[1]!.user.id);
+    const creation = {
+      name: "Receipt workspace",
+      slug: "receipt-workspace",
+      requestId: crypto.randomUUID(),
+    };
+    const space = await domain.execute("create_workspace", creation, creator);
+    const projectInput = {
+      workspaceId: space.id,
+      key: "RECEIPT",
+      name: "Receipt project",
+      requestId: crypto.randomUUID(),
+    };
+    const project = await domain.execute("create_project", projectInput, creator);
+    const scoped = await domain.actor(creator.id, {
+      ownerId: "project-bound",
+      scopes: ["admin"],
+      projectIds: [project.id],
+    });
+    await expect(domain.execute("create_workspace", creation, scoped)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(domain.execute("create_project", projectInput, scoped)).rejects.toMatchObject({
+      status: 403,
+    });
+    const edit = {
+      workspaceId: space.id,
+      expectedVersion: 1,
+      name: "Saved settings",
+      description: "Authorized at first write",
+      requestId: crypto.randomUUID(),
+    };
+    await domain.execute("update_workspace", edit, creator);
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId: space.id, email: people[1]!.user.email, role: "admin" },
+      creator,
+    );
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId: space.id, email: people[0]!.user.email, role: null },
+      successor,
+    );
+    await expect(domain.execute("update_workspace", edit, creator)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(domain.execute("create_workspace", creation, creator)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(domain.execute("create_project", projectInput, creator)).rejects.toMatchObject({
+      status: 404,
+    });
+  } finally {
+    await fixture.close();
+  }
+});

@@ -320,3 +320,72 @@ it("allows general settings changes when unchanged integrations are offline", as
     });
   }
 });
+
+it("serves private uploaded project icons and protects referenced bytes from cleanup", async () => {
+  const project = await readJson(projectSchema, "/api/v1/projects", "POST", {
+    key: "ICON",
+    name: "Icon storage",
+  });
+  const path = `/api/v1/projects/${project.id}/icon`;
+  const library = await readJson(projectSchema, path, "POST", {
+    expectedVersion: project.version,
+    icon: { kind: "library", name: "rocket", color: "purple" },
+  });
+  expect(library.iconName).toBe("rocket");
+  expect(
+    (
+      await request(path, "POST", {
+        expectedVersion: library.version,
+        icon: { kind: "library", name: "does-not-exist", color: "default" },
+      })
+    ).status,
+  ).toBe(400);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXpUAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const image = await readJson(projectSchema, path, "POST", {
+    expectedVersion: library.version,
+    icon: { kind: "image", contentType: "image/png", data: png.toString("base64") },
+  });
+  expect(image.image).toContain(path);
+  expect(Buffer.from(await (await request(image.image!)).arrayBuffer())).toEqual(png);
+  const person = await fixture.auth.api.createUser({
+    body: {
+      name: "Icon outsider",
+      email: "icon-outsider@example.test",
+      password: "Isolated outsider password 42!",
+      role: "user",
+    },
+  });
+  expect(person.user.id).toBeTruthy();
+  const outsider = cookieOf(
+    await request(
+      "/api/auth/sign-in/email",
+      "POST",
+      { email: person.user.email, password: "Isolated outsider password 42!" },
+      "",
+    ),
+  );
+  expect((await request(image.image!, "GET", undefined, outsider)).status).toBe(404);
+  await fixture.database.pool.query(
+    "UPDATE blob_objects SET created_at = now() - interval '2 days' WHERE id = (SELECT icon_object_id FROM projects WHERE id = $1)",
+    [project.id],
+  );
+  await request("/api/v1/admin/storage/cleanup", "POST");
+  expect((await request(image.image!)).status).toBe(200);
+  const reset = await readJson(projectSchema, path, "POST", {
+    expectedVersion: image.version,
+    icon: null,
+  });
+  expect(reset.image).toBeNull();
+  expect((await request(path)).status).toBe(404);
+  await request("/api/v1/admin/storage/cleanup", "POST");
+  expect(
+    (
+      await fixture.database.pool.query("SELECT icon_object_id FROM projects WHERE id = $1", [
+        project.id,
+      ])
+    ).rows[0]?.icon_object_id,
+  ).toBeNull();
+});

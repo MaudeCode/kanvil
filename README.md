@@ -15,6 +15,8 @@ The standalone backend, web workspace, and native app are implemented. Self-host
 
 See [self-hosting](docs/self-hosting.md), [agent/API interfaces](docs/api.md), [native builds](docs/mobile.md), and the [verification record](docs/verification.md).
 
+Projects can be grouped into separate [workspaces](docs/workspaces.md), with inherited or private access, library or uploaded project icons, and instance account administration.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and [AGENTS.md](AGENTS.md) for agent instructions.

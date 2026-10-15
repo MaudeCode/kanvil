@@ -45,20 +45,28 @@ export const workspaceMembers = pgTable(
     index("workspace_member_user").on(table.userId),
   ],
 );
-export const projects = pgTable("projects", {
-  workspaceId: uuid("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
-  visibility: text("visibility").notNull().default("private"),
-  id: uuid("id").primaryKey().defaultRandom(),
-  key: text("key").notNull().unique(),
-  name: text("name").notNull(),
-  description: text("description").notNull().default(""),
-  nextNumber: integer("next_number").notNull().default(1),
-  version: integer("version").notNull().default(1),
-  createdAt: time("created_at"),
-  updatedAt: time("updated_at"),
-});
+export const projects = pgTable(
+  "projects",
+  {
+    iconName: text("icon_name"),
+    iconColor: text("icon_color").notNull().default("default"),
+    image: text("image"),
+    iconObjectId: uuid("icon_object_id").references(() => blobObjects.id),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    visibility: text("visibility").notNull().default("private"),
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull().unique(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    nextNumber: integer("next_number").notNull().default(1),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [index("project_workspace").on(table.workspaceId)],
+);
 export const members = pgTable(
   "project_members",
   {

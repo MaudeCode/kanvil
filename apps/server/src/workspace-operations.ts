@@ -1,9 +1,17 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { projectSchema } from "@kanvil/contracts";
+import { projectSchema, workspaceSchema } from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { fail, publish, requireRow, type Context, type Handlers } from "./domain.ts";
+import {
+  accountByEmail,
+  workspace,
+  fail,
+  publish,
+  requireRow,
+  type Context,
+  type Handlers,
+} from "./domain.ts";
 export async function requireWorkspace(ctx: Context, workspaceId: string, admin = false) {
   if (ctx.actor.projectIds)
     fail(403, "workspace_scope_required", "Use an account with workspace access for this action");
@@ -27,7 +35,12 @@ export async function requireWorkspace(ctx: Context, workspaceId: string, admin 
       "workspace_access_required",
       admin ? "Workspace administrator access is required" : "Workspace was not found",
     );
-  return { ...row, role: ctx.actor.admin ? "admin" : membership!.role };
+  return workspaceSchema.parse({
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    role: ctx.actor.admin ? "admin" : membership!.role,
+  });
 }
 export async function publishWorkspace(
   ctx: Context,
@@ -113,7 +126,7 @@ export const workspaceHandlers: Pick<
     return { ...row, role: "admin" };
   },
   async update_workspace(ctx, input) {
-    const current = await requireWorkspace(ctx, input.workspaceId, true);
+    const current = workspace(ctx);
     if (current.version !== input.expectedVersion)
       fail(409, "version_conflict", "Workspace settings changed. Reopen the editor before saving.");
     const row = requireRow(
@@ -134,7 +147,7 @@ export const workspaceHandlers: Pick<
     return { ...row, role: current.role };
   },
   async list_workspace_members(ctx, input) {
-    await requireWorkspace(ctx, input.workspaceId);
+    workspace(ctx);
     return ctx.db
       .select({
         userId: user.id,
@@ -149,10 +162,8 @@ export const workspaceHandlers: Pick<
       .orderBy(user.name);
   },
   async set_workspace_member(ctx, input) {
-    await requireWorkspace(ctx, input.workspaceId, true);
-    const person = requireRow(
-      (await ctx.db.select().from(user).where(eq(user.email, input.email.toLowerCase())))[0],
-    );
+    workspace(ctx);
+    const person = await accountByEmail(ctx.db, input.email);
     const existing = (
       await ctx.db
         .select()

@@ -3,23 +3,30 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { formText } from "../forms.ts";
-import { useOperation } from "../data.tsx";
-import { Button, Input, Modal, Textarea, ErrorNotice } from "../ui.tsx";
+import { useOperation, useWorkspace } from "../data.tsx";
+import { Button, Input, Modal, Textarea, ErrorNotice, Select, SelectItem } from "../ui.tsx";
 
 export function CreateProject({ sidebarAction = false }: { sidebarAction?: boolean }) {
+  const { active: workspace } = useWorkspace();
+  const canCreate = !!workspace && (workspace.role === "writer" || workspace.role === "admin");
   const [open, setOpen] = useState(false),
     create = useOperation("create_project"),
     navigate = useNavigate();
   return (
     <>
       {sidebarAction ? (
-        <SidebarGroupAction aria-label="New project" onClick={() => setOpen(true)}>
+        <SidebarGroupAction
+          disabled={!canCreate}
+          aria-label="New project"
+          onClick={() => setOpen(true)}
+        >
           <Plus />
         </SidebarGroupAction>
       ) : (
         <Button
           variant="default"
           size="default"
+          disabled={!canCreate}
           aria-label="New project"
           onClick={() => setOpen(true)}
         >
@@ -34,6 +41,8 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             const values = new FormData(event.currentTarget);
             void create
               .mutateAsync({
+                workspaceId: workspace?.id,
+                visibility: formText(values, "visibility") === "private" ? "private" : "workspace",
                 key: formText(values, "key"),
                 name: formText(values, "name"),
                 description: formText(values, "description"),
@@ -56,6 +65,10 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             placeholder="KAN"
           />
           <Textarea label="Description" name="description" maxLength={5000} />
+          <Select label="Project access" name="visibility" defaultValue="workspace">
+            <SelectItem value="workspace">Everyone in this workspace</SelectItem>
+            <SelectItem value="private">Only project members</SelectItem>
+          </Select>
           <ErrorNotice error={create.error} />
           <Button type="submit" variant="default" disabled={create.isPending}>
             Create project

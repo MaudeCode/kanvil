@@ -10,7 +10,7 @@ import {
   scopes,
   type Project,
 } from "@kanvil/contracts";
-import { api, date, useProjects } from "../data.tsx";
+import { api, date, useAllProjects, useWorkspaces } from "../data.tsx";
 import {
   Button,
   Check,
@@ -75,7 +75,7 @@ function accessOf(credential: z.infer<typeof credentialsSchema>[number]) {
 }
 export function Credentials() {
   const cache = useQueryClient(),
-    projects = useProjects(),
+    projects = useAllProjects(),
     [open, setOpen] = useState(false),
     [pending, setPending] = useState(false),
     [secret, setSecret] = useState<z.infer<typeof createdCredentialSchema> | null>(null),
@@ -290,6 +290,8 @@ function CreateKey({
   onCreated: (value: z.infer<typeof createdCredentialSchema>) => Promise<void>;
   onCancel: () => void;
 }) {
+  const spaces = useWorkspaces();
+  const workspaceNames = new Map(spaces.data?.map((space) => [space.id, space.name]));
   const [projectIds, setProjectIds] = useState<string[]>(
       projects.length === 1 && projects[0] ? [projects[0].id] : [],
     ),
@@ -302,6 +304,11 @@ function CreateKey({
     [error, setError] = useState<unknown>(),
     [preset, setPreset] = useState("read"),
     [query, setQuery] = useState("");
+  const matches = projects.filter((project) =>
+    `${project.name} ${project.key} ${workspaceNames.get(project.workspaceId) ?? ""}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -359,24 +366,22 @@ function CreateKey({
             />
           )}
           <div className="max-h-44 overflow-y-auto rounded-md border px-3 py-1">
-            {projects
-              .filter((project) =>
-                `${project.name} ${project.key}`.toLowerCase().includes(query.toLowerCase()),
-              )
-              .map((project) => (
-                <Check
-                  key={project.id}
-                  label={project.name}
-                  checked={projectIds.includes(project.id)}
-                  onCheckedChange={(checked) =>
-                    setProjectIds((current) =>
-                      checked
-                        ? [...current, project.id]
-                        : current.filter((id) => id !== project.id),
-                    )
-                  }
-                />
-              ))}
+            {matches.map((project) => (
+              <Check
+                key={project.id}
+                label={project.name}
+                description={`${project.key} · ${workspaceNames.get(project.workspaceId) ?? "Workspace"}`}
+                checked={projectIds.includes(project.id)}
+                onCheckedChange={(checked) =>
+                  setProjectIds((current) =>
+                    checked ? [...current, project.id] : current.filter((id) => id !== project.id),
+                  )
+                }
+              />
+            ))}
+            {matches.length === 0 && (
+              <p className="my-4 text-sm text-muted-foreground">No matching projects</p>
+            )}
           </div>
           <FieldDescription>
             Your existing project role still limits what this key can do.

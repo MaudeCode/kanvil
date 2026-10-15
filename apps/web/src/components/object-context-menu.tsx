@@ -332,3 +332,38 @@ export function ProjectContextMenu({
     </>
   );
 }
+
+export function UserContextMenu({
+  name,
+  email,
+  onOpen,
+  children,
+}: {
+  name: string;
+  email: string;
+  onOpen: () => void;
+  children: ReactElement;
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={children} className="select-text" />
+      <ContextMenuContent className="w-56">
+        <ContextMenuGroup>
+          <ContextMenuLabel>{name}</ContextMenuLabel>
+          <ContextMenuItem onClick={onOpen}>
+            <Settings />
+            Manage account
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() => {
+              void copy(email, "Email");
+            }}
+          >
+            <Copy />
+            Copy email
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}

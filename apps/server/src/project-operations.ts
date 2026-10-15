@@ -1,13 +1,24 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { icons } from "@iconify-json/lucide";
+import { decodeImage } from "./blob-storage.ts";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { projectSchema } from "@kanvil/contracts";
-import { accessibleProjectRows } from "./project-access.ts";
-import { requireWorkspace } from "./workspace-operations.ts";
+import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { members, projects, views, workspaces, workspaceMembers } from "./schema.ts";
-import { fail, project, publish, requireRow, type Handlers } from "./domain.ts";
+import {
+  accountByEmail,
+  fail,
+  project,
+  publish,
+  requireRow,
+  workspace,
+  type Handlers,
+} from "./domain.ts";
 
 export const projectHandlers: Pick<
   Handlers,
+  | "get_project"
+  | "set_project_icon"
   | "list_projects"
   | "create_project"
   | "update_project"
@@ -17,6 +28,44 @@ export const projectHandlers: Pick<
   | "save_view"
   | "delete_view"
 > = {
+  async get_project(ctx) {
+    return project(ctx);
+  },
+  async set_project_icon(ctx, input) {
+    const current = project(ctx);
+    if (current.version !== input.expectedVersion)
+      fail(
+        409,
+        "version_conflict",
+        "Project appearance changed. Reopen the icon picker before saving.",
+      );
+    const icon = input.icon;
+    if (icon?.kind === "library" && !icons.icons[icon.name])
+      fail(400, "invalid_icon", "Choose an icon from the installed library");
+    let objectId: string | null = null;
+    if (icon?.kind === "image") {
+      objectId = crypto.randomUUID();
+      await ctx.blobs.put(ctx.db, objectId, decodeImage(icon), icon.contentType);
+    }
+    const row = requireRow(
+      (
+        await ctx.db
+          .update(projects)
+          .set({
+            iconName: icon?.kind === "library" ? icon.name : null,
+            iconColor: icon?.kind === "library" ? icon.color : "default",
+            image: objectId ? `/api/v1/projects/${current.id}/icon?v=${objectId}` : null,
+            iconObjectId: objectId,
+            version: current.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(projects.id, current.id))
+          .returning()
+      )[0],
+    );
+    await publish(ctx, "project.updated", null, { version: row.version });
+    return row;
+  },
   async list_projects(ctx, input) {
     return accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
   },
@@ -25,8 +74,8 @@ export const projectHandlers: Pick<
       fail(403, "insufficient_scope", "Project-bound credentials cannot create projects");
     let workspaceId = input.workspaceId;
     if (workspaceId) {
-      const workspace = await requireWorkspace(ctx, workspaceId);
-      if (workspace.role === "reader")
+      const currentWorkspace = workspace(ctx);
+      if (currentWorkspace.role === "reader")
         fail(403, "forbidden", "Project creation requires workspace write access");
     } else {
       const available = ctx.actor.admin
@@ -156,14 +205,13 @@ export const projectHandlers: Pick<
     for (const person of direct)
       if (people.get(person.userId)?.role !== "admin")
         people.set(person.userId, { ...person, source: "project" });
-    return [...people.values()].toSorted((a, b) => a.name.localeCompare(b.name));
+    const inheritedRoles = new Map(inherited.map((person) => [person.userId, person.role]));
+    return [...people.values()]
+      .map((person) => ({ ...person, inheritedRole: inheritedRoles.get(person.userId) ?? null }))
+      .toSorted((a, b) => a.name.localeCompare(b.name));
   },
   async set_member(ctx, input) {
-    const member = requireRow(
-      (
-        await ctx.db.select().from(user).where(eq(user.email, input.email.toLowerCase())).limit(1)
-      )[0],
-    );
+    const member = await accountByEmail(ctx.db, input.email);
     const projectId = project(ctx).id;
     const existing = (
       await ctx.db
@@ -173,11 +221,25 @@ export const projectHandlers: Pick<
     )[0];
     if (existing?.role === "admin" && input.role !== "admin") {
       const administrators = await ctx.db
-        .select()
-        .from(members)
-        .where(and(eq(members.projectId, projectId), eq(members.role, "admin")));
-      if (administrators.length === 1)
-        fail(409, "last_administrator", "Keep at least one project administrator");
+        .select({ id: user.id })
+        .from(user)
+        .leftJoin(
+          workspaceMembers,
+          and(
+            eq(workspaceMembers.workspaceId, project(ctx).workspaceId),
+            eq(workspaceMembers.userId, user.id),
+          ),
+        )
+        .where(
+          and(
+            eq(projectRoleSQL(user.id, projectId), "admin"),
+            sql`NOT coalesce(${user.banned},false)`,
+            or(ne(user.id, member.id), eq(workspaceMembers.role, "admin")),
+          ),
+        )
+        .limit(1);
+      if (!administrators.length)
+        fail(409, "last_administrator", "Keep at least one project or workspace administrator");
     }
     if (input.role)
       await ctx.db

@@ -20,3 +20,7 @@ export const settingsSearchSchema = z.object({
 export const adminSearchSchema = z.object({
   section: z.enum(adminSections).catch("general").default("general"),
 });
+
+export const groupSettingsSearchSchema = z.object({
+  section: z.enum(["general", "members"]).catch("general").default("general"),
+});

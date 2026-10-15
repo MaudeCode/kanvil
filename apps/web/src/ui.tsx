@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/input-group";
 import { Input as TextInput } from "@/components/ui/input";
 import { Textarea as TextareaInput } from "@/components/ui/textarea";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel, FieldContent, FieldDescription } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select as SelectRoot,
@@ -194,17 +194,37 @@ export function Select({
 }
 export function Check({
   label,
+  description,
   className,
   ...props
-}: ComponentProps<typeof Checkbox> & { label: string }) {
+}: ComponentProps<typeof Checkbox> & { label: string; description?: ReactNode }) {
   const id = useId();
   const compact = className === "sr-checkbox";
   return (
     <Field orientation="horizontal" className={cn("check w-auto", compact && "justify-center")}>
-      <Checkbox {...props} id={id} />
-      <FieldLabel htmlFor={id} className={cn("font-normal", compact && "sr-only")}>
-        {label}
-      </FieldLabel>
+      <Checkbox
+        {...props}
+        id={id}
+        aria-describedby={
+          description
+            ? [props["aria-describedby"], `${id}-description`].filter(Boolean).join(" ")
+            : props["aria-describedby"]
+        }
+      />
+      {description ? (
+        <FieldContent>
+          <FieldLabel htmlFor={id} className={cn("font-normal", compact && "sr-only")}>
+            {label}
+          </FieldLabel>
+          <FieldDescription id={`${id}-description`} className="text-xs">
+            {description}
+          </FieldDescription>
+        </FieldContent>
+      ) : (
+        <FieldLabel htmlFor={id} className={cn("font-normal", compact && "sr-only")}>
+          {label}
+        </FieldLabel>
+      )}
     </Field>
   );
 }

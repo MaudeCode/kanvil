@@ -65,7 +65,7 @@ export function SettingsLayout({
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="settings mx-0 min-w-0 max-w-5xl">{children}</div>
+        <div className="settings @container mx-0 min-w-0 max-w-5xl">{children}</div>
       </Tabs>
     </>
   );
@@ -81,7 +81,7 @@ export function SettingRow({
   children?: ReactNode;
 }) {
   return (
-    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-5">
+    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-5 @max-[28rem]:flex-col @max-[28rem]:items-stretch">
       <ItemContent>
         <ItemTitle>{title}</ItemTitle>
         {description && (
@@ -90,7 +90,7 @@ export function SettingRow({
           </ItemDescription>
         )}
       </ItemContent>
-      {children && <ItemActions>{children}</ItemActions>}
+      {children && <ItemActions className="@max-[28rem]:justify-start">{children}</ItemActions>}
     </Item>
   );
 }

@@ -1,3 +1,4 @@
+import { ProjectIcon } from "./components/project-icon.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
@@ -25,8 +26,19 @@ import {
   Bell,
   CheckCheck,
 } from "lucide-react";
-import { formatEvent, notificationsSchema, okSchema, infoSchema } from "@kanvil/contracts";
-import { settingsSearchSchema, adminSearchSchema, searchSchema } from "./search.ts";
+import {
+  hasAdminRole,
+  formatEvent,
+  notificationsSchema,
+  okSchema,
+  infoSchema,
+} from "@kanvil/contracts";
+import {
+  groupSettingsSearchSchema,
+  settingsSearchSchema,
+  adminSearchSchema,
+  searchSchema,
+} from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
 import {
@@ -36,11 +48,14 @@ import {
   Identity,
   useLive,
   useProjects,
+  useWorkspace,
   useIdentity,
   clearPrivateStorage,
 } from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading } from "./ui.tsx";
+import { WorkspaceProvider } from "./components/workspace-provider.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
+import { CreateWorkspace } from "./components/workspace-switcher.tsx";
 import { CreateProject } from "./components/create-project.tsx";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { ThemeProvider } from "./components/theme-provider.tsx";
@@ -70,15 +85,22 @@ const AdminSettings = lazy(() =>
   import("./components/admin-settings.tsx").then((module) => ({ default: module.AdminSettings })),
 );
 const ProjectSettings = lazy(() =>
-  import("./settings.tsx").then((module) => ({ default: module.ProjectSettings })),
+  import("./components/project-settings.tsx").then((module) => ({
+    default: module.ProjectSettings,
+  })),
 );
 function Root() {
   const session = auth.useSession();
   if (session.isPending) return <Loading />;
   if (!session.data) return <Login />;
-  return <Workspace key={session.data.user.id} user={session.data.user} />;
+  return (
+    <SignedInSession
+      key={`${session.data.user.id}:${session.data.user.role ?? "user"}`}
+      user={session.data.user}
+    />
+  );
 }
-function Workspace({
+function SignedInSession({
   user,
 }: {
   user: {
@@ -113,7 +135,7 @@ function Workspace({
       value={{
         ...user,
         image: user.image ?? null,
-        admin: user.role === "admin",
+        admin: hasAdminRole(user.role),
         clearPrivateData: () => {
           persistence.pause();
           cache.clear();
@@ -126,7 +148,7 @@ function Workspace({
         persistOptions={{
           persister: persistence.persister,
           maxAge: 7 * 86400000,
-          buster: "kanvil-v1",
+          buster: `kanvil-v2:${user.role ?? "user"}`,
           dehydrateOptions: {
             shouldDehydrateMutation: () => false,
             shouldDehydrateQuery: (query) =>
@@ -151,30 +173,33 @@ function Shell() {
   }, [info.data?.name]);
 
   return (
-    <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
-      <AppSidebar />
-      <SidebarInset className="min-w-0">
-        <WorkspaceHeader />
-        {connection !== "connected" && connection !== "connecting" && (
-          <Alert className="mx-6 mt-4 w-auto">
-            <WifiOff />
-            <AlertDescription>
-              {connection === "offline" ? "Connection lost. Reconnecting…" : connection}
-            </AlertDescription>
-          </Alert>
-        )}
-        <div id="main" className="content @container" tabIndex={-1}>
-          <Outlet />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <WorkspaceProvider>
+      <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        <AppSidebar />
+        <SidebarInset className="min-w-0">
+          <WorkspaceHeader />
+          {connection !== "connected" && connection !== "connecting" && (
+            <Alert className="mx-6 mt-4 w-auto">
+              <WifiOff />
+              <AlertDescription>
+                {connection === "offline" ? "Connection lost. Reconnecting…" : connection}
+              </AlertDescription>
+            </Alert>
+          )}
+          <div id="main" className="content @container" tabIndex={-1}>
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </WorkspaceProvider>
   );
 }
 function Home() {
   const projects = useProjects(),
+    workspace = useWorkspace(),
     [query, setQuery] = useState("");
   const matches =
     projects.data?.filter((project) =>
@@ -186,7 +211,7 @@ function Home() {
     <>
       <header className="page-header">
         <h1>Projects</h1>
-        <CreateProject />
+        {workspace.active ? <CreateProject /> : <CreateWorkspace />}
       </header>
       {!!projects.data?.length && (
         <div className="project-search">
@@ -207,8 +232,8 @@ function Home() {
           </span>
         </div>
       )}
-      <ErrorNotice error={projects.error} />
-      {projects.isPending ? (
+      <ErrorNotice error={projects.error ?? workspace.error} />
+      {projects.isPending || workspace.pending ? (
         <Loading />
       ) : (
         <ItemGroup className="project-list gap-0">
@@ -218,6 +243,9 @@ function Home() {
                 className="rounded-none border-x-0 border-t-0 border-b-border py-5"
                 render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
               >
+                <ItemMedia>
+                  <ProjectIcon project={project} className="size-9" />
+                </ItemMedia>
                 <ItemMedia>
                   <Badge variant="secondary" className="project-key">
                     {project.key}
@@ -242,10 +270,9 @@ function Home() {
               <Button onClick={() => setQuery("")}>Clear search</Button>
             </EmptyState>
           )}
-          {projects.data?.length === 0 && (
-            <EmptyState title="No projects yet" icon={FolderOpen}>
-              <CreateProject />
-            </EmptyState>
+          {!workspace.active && !workspace.pending && <EmptyState title="No workspaces yet" />}
+          {workspace.active && projects.data?.length === 0 && (
+            <EmptyState title="No projects yet" icon={FolderOpen} />
           )}
         </ItemGroup>
       )}
@@ -262,8 +289,12 @@ function Inbox() {
     queryKey: ["kanvil", "notifications"],
     queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
   });
-  const unread = items.data?.filter((item) => !item.readAt) ?? [],
-    visible = view === "unread" ? unread : (items.data ?? []);
+  const workspaceItems =
+    items.data?.filter((item) =>
+      projects.data?.some((project) => project.id === item.event.projectId),
+    ) ?? [];
+  const unread = workspaceItems.filter((item) => !item.readAt),
+    visible = view === "unread" ? unread : workspaceItems;
   async function mark(ids: string[]) {
     if (!ids.length) return;
     setPending(true);
@@ -474,17 +505,51 @@ function TicketPage() {
   const params = ticket.useParams();
   return <TicketDetail key={`${params.projectId}:${params.ticketId}`} {...params} />;
 }
+const WorkspaceSettings = lazy(() =>
+  import("./components/workspace-settings.tsx").then((module) => ({
+    default: module.WorkspaceSettings,
+  })),
+);
+const workspaceSettings = createRoute({
+  getParentRoute: () => shell,
+  path: "/workspaces/$workspaceId/settings",
+  validateSearch: groupSettingsSearchSchema,
+  component: WorkspaceSettingsPage,
+});
+function WorkspaceSettingsPage() {
+  const { workspaceId } = workspaceSettings.useParams(),
+    search = workspaceSettings.useSearch(),
+    navigate = workspaceSettings.useNavigate();
+  return (
+    <WorkspaceSettings
+      workspaceId={workspaceId}
+      section={search.section}
+      onSectionChange={(section) => {
+        void navigate({ search: groupSettingsSearchSchema.parse({ section }), replace: true });
+      }}
+    />
+  );
+}
 const projectSettings = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/settings",
+  validateSearch: groupSettingsSearchSchema,
   component: ProjectSettingsPage,
 });
 function ProjectSettingsPage() {
   const { projectId } = projectSettings.useParams(),
+    search = projectSettings.useSearch(),
+    navigate = projectSettings.useNavigate(),
     projects = useProjects(),
     project = projects.data?.find((item) => item.id === projectId);
   return project ? (
-    <ProjectSettings project={project} />
+    <ProjectSettings
+      project={project}
+      section={search.section}
+      onSectionChange={(section) => {
+        void navigate({ search: groupSettingsSearchSchema.parse({ section }), replace: true });
+      }}
+    />
   ) : projects.isPending ? (
     <Loading />
   ) : (
@@ -493,7 +558,16 @@ function ProjectSettingsPage() {
 }
 const router = createRouter({
   routeTree: root.addChildren([
-    shell.addChildren([home, projectRoute, ticket, projectSettings, inbox, settings, admin]),
+    shell.addChildren([
+      home,
+      projectRoute,
+      ticket,
+      projectSettings,
+      workspaceSettings,
+      inbox,
+      settings,
+      admin,
+    ]),
     login,
     consent,
   ]),

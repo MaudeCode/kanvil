@@ -1,3 +1,4 @@
+import { hasAdminRole } from "@kanvil/contracts";
 import { projectRoleSQL } from "./project-access.ts";
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { Expo, type ExpoPushTicket, type ExpoPushReceipt } from "expo-server-sdk";
@@ -75,7 +76,7 @@ export async function deliverPushBatch(database: Database, config: Config, trans
         row.session.expiresAt <= new Date() ||
         !row.preference?.push ||
         (!row.subscription && row.ticketId !== null) ||
-        (!row.projectRole && !row.account.role?.split(",").includes("admin"))
+        (!row.projectRole && !hasAdminRole(row.account.role))
       ) {
         await finish("access_revoked");
         continue;

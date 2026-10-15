@@ -96,6 +96,18 @@ try {
   );
   expect(uploaded.ok()).toBe(true);
   const attachment = attachmentSchema.parse(await uploaded.json());
+  const projectBeforeIcon = z
+    .object({ version: z.number(), workspaceId: z.uuid() })
+    .parse(await (await page.request.get(`${base}/api/v1/projects/${projectId}`)).json());
+  const iconBytes = await readFile("apps/web/public/brand/icon-192.png");
+  const savedIcon = await page.request.post(`${base}/api/v1/projects/${projectId}/icon`, {
+    data: {
+      expectedVersion: projectBeforeIcon.version,
+      icon: { kind: "image", contentType: "image/png", data: iconBytes.toString("base64") },
+    },
+  });
+  expect(savedIcon.ok()).toBe(true);
+
   const issued = await page.request.post(`${base}/api/v1/credentials`, {
     data: {
       name: "Container consumer",
@@ -183,6 +195,14 @@ try {
   );
   expect(content.ok()).toBe(true);
   expect(await content.body()).toEqual(bytes);
+  const projectAfterRestore = z
+    .object({ workspaceId: z.uuid(), image: z.string() })
+    .parse(await (await page.request.get(`${base}/api/v1/projects/${projectId}`)).json());
+  expect(projectAfterRestore.workspaceId).toBe(projectBeforeIcon.workspaceId);
+  const restoredIcon = await page.request.get(`${base}${projectAfterRestore.image}`);
+  expect(restoredIcon.ok()).toBe(true);
+  expect(await restoredIcon.body()).toEqual(iconBytes);
+
   const credentialRead = await page.request.get(`${base}/api/v1/projects/${projectId}/tickets`, {
     headers: { Authorization: `Bearer ${key.key}` },
   });
@@ -191,7 +211,7 @@ try {
   expect(icon.status()).toBe(200);
   expect(failures).toEqual([]);
   console.info(
-    "Container verification passed: browser setup, ticket writes, MCP, authenticated sessions, scoped credentials, and restored binary content.",
+    "Container verification passed: browser setup, ticket writes, MCP, authenticated sessions, scoped credentials, and restored workspace, attachment, and project icon content.",
   );
 } catch (error) {
   await run("docker", ["compose", "logs", "--no-color", "--tail", "80", "app"], env).catch(

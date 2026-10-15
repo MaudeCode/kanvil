@@ -64,6 +64,13 @@
       "when": 1792092747787,
       "tag": "0008_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792093576567,
+      "tag": "0009_project_icons",
+      "breakpoints": true
     }
   ]
 }

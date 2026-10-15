@@ -2,7 +2,7 @@ import { createPollingJob } from "./adapters/polling-jobs.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 import { createHash } from "node:crypto";
 import { and, eq, isNull, isNotNull, lt, sql, count } from "drizzle-orm";
-import { blobObjects, attachments, profilePhotos } from "./schema.ts";
+import { blobObjects, attachments, profilePhotos, projects } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
 import { fail, requireRow } from "./domain.ts";
@@ -154,10 +154,12 @@ export function createBlobStorage(
         .from(blobObjects)
         .leftJoin(attachments, eq(attachments.objectId, blobObjects.id))
         .leftJoin(profilePhotos, eq(profilePhotos.objectId, blobObjects.id))
+        .leftJoin(projects, eq(projects.iconObjectId, blobObjects.id))
         .where(
           and(
             isNull(attachments.id),
             isNull(profilePhotos.userId),
+            isNull(projects.id),
             lt(blobObjects.createdAt, new Date(Date.now() - 86400000)),
           ),
         )
@@ -201,3 +203,26 @@ export function createBlobStorage(
   };
 }
 export type BlobStorage = ReturnType<typeof createBlobStorage>;
+
+export function decodeImage(input: { data: string; contentType: string }) {
+  const bytes = decodeBlobData(input.data, 512000);
+  const valid =
+    input.contentType === "image/png"
+      ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      : input.contentType === "image/jpeg"
+        ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+        : input.contentType === "image/webp" &&
+          bytes.subarray(0, 4).toString() === "RIFF" &&
+          bytes.subarray(8, 12).toString() === "WEBP";
+  if (!valid) fail(400, "invalid_image", "Choose a PNG, JPEG, or WebP image");
+  return bytes;
+}
+export function imageResponse(blob: { data: Buffer; contentType: string; sha256: string }) {
+  return new Response(new Uint8Array(blob.data), {
+    headers: {
+      "Content-Type": blob.contentType,
+      "Cache-Control": "private, max-age=300",
+      ETag: `"${blob.sha256}"`,
+    },
+  });
+}

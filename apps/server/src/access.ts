@@ -13,6 +13,11 @@ export function requireSession(actor: Actor) {
   if (actor.machine) fail(403, "session_required", "Use a signed-in account for this action");
   return actor;
 }
+export function requireInstanceAdmin(actor: Actor) {
+  requireSession(actor);
+  if (!actor.admin) fail(403, "forbidden", "Instance administrator access is required");
+  return actor;
+}
 function storedJson(value: unknown): unknown {
   if (typeof value !== "string") return value;
   try {

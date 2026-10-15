@@ -9,9 +9,12 @@ import {
   type ParsedInput,
   type Output,
   type Project,
+  type Workspace,
+  workspaceSchema,
   scopes,
   snapshotSchema,
   projectSchema,
+  hasAdminRole,
 } from "@kanvil/contracts";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
@@ -30,7 +33,7 @@ import {
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
 import { projectRole, projectRoleSQL } from "./project-access.ts";
-import { workspaceHandlers } from "./workspace-operations.ts";
+import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
@@ -49,6 +52,7 @@ export interface Context {
   db: Connection | Transaction;
   actor: Actor;
   project: Project | null;
+  workspace: Workspace | null;
   role: "reader" | "writer" | "admin";
 }
 export type Handler<K extends Operation> = (
@@ -62,6 +66,21 @@ export function fail(status: number, code: string, message: string, details?: un
 export function requireRow<T>(row: T | undefined): T {
   if (!row) fail(404, "not_found", "The requested record was not found");
   return row;
+}
+export async function accountByEmail(db: Context["db"], email: string) {
+  const found = (
+    await db.select().from(user).where(eq(user.email, email.toLowerCase())).limit(1)
+  )[0];
+  if (!found)
+    fail(
+      404,
+      "account_not_found",
+      "No account uses this email. Ask an instance administrator to create one.",
+    );
+  return found;
+}
+export function workspace(ctx: Context): Workspace {
+  return requireRow(ctx.workspace ?? undefined);
 }
 export function project(ctx: Context): Project {
   return requireRow(ctx.project ?? undefined);
@@ -84,6 +103,7 @@ async function context(
   actor: Actor,
   scope: (typeof scopes)[number],
   projectId?: string,
+  workspaceId?: string,
 ): Promise<Context> {
   if (!hasScope(actor, scope))
     fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
@@ -91,10 +111,16 @@ async function context(
     db,
     actor,
     project: null,
+    workspace: null,
     role: "reader",
     blobs: { put: writeLocalBlob },
     search: { where: async (_db, _id, query) => postgresSearch(query) },
   };
+  if (workspaceId) {
+    ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
+    if ((scope === "write" || scope === "claim") && ctx.workspace.role === "reader")
+      fail(403, "forbidden", "Workspace write access is required");
+  }
   if (!projectId) return ctx;
   const row = requireRow(
     (
@@ -282,6 +308,14 @@ export function createDomain(
     const spec = operations[name];
     const input = spec.input.parse(value);
     const projectId = "projectId" in input ? input.projectId : undefined;
+    const workspaceId =
+      "workspaceId" in input && name !== "list_projects" ? input.workspaceId : undefined;
+    if (actor.projectIds && spec.method !== "GET" && !projectId)
+      fail(
+        403,
+        "insufficient_scope",
+        "Project-bound credentials can only change their configured projects",
+      );
     const invoke = async (ctx: Context) => {
       if (services.blobs) ctx.blobs = services.blobs;
       if (services.search) ctx.search = services.search;
@@ -290,11 +324,11 @@ export function createDomain(
       return parseOutput(name, json(await handler(ctx, input)));
     };
     if (spec.method === "GET")
-      return invoke(await context(database.db, actor, spec.scope, projectId));
+      return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
     return database.db.transaction(async (tx) => {
       // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
-      const ctx = await context(tx, actor, spec.scope, projectId);
+      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
       const requestId = "requestId" in input ? input.requestId : undefined;
       const hash = createHash("sha256").update(JSON.stringify({ name, input })).digest("hex");
       if (requestId) {
@@ -308,7 +342,13 @@ export function createDomain(
         if (receipt) {
           if (receipt.hash !== hash || receipt.operation !== name)
             fail(409, "idempotency_conflict", "This requestId was already used for another write");
-          return parseOutput(name, receipt.result);
+          const prior = parseOutput(name, receipt.result);
+          // Creation has no input subject ID, so its stored result must also be authorized on replay.
+          if (name === "create_project")
+            await context(tx, actor, "read", projectSchema.parse(prior).id);
+          if (name === "create_workspace")
+            await requireWorkspace(ctx, workspaceSchema.parse(prior).id);
+          return prior;
         }
       }
       const result = await invoke(ctx);
@@ -333,7 +373,7 @@ export function createDomain(
     if (row.banned) fail(403, "account_disabled", "This account is disabled");
     return {
       id,
-      admin: row.role?.split(",").includes("admin") ?? false,
+      admin: hasAdminRole(row.role),
       machine: !!credential,
       ownerId: credential?.ownerId ?? id,
       scopes: credential?.scopes ?? scopes,

@@ -1,3 +1,4 @@
+import { ProjectIcon } from "./components/project-icon.tsx";
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useState } from "react";
@@ -163,6 +164,7 @@ export function TicketList({
       <header className="page-header">
         <div>
           <div className="project-title">
+            <ProjectIcon project={project} className="size-7" />
             <span className="project-prefix">{project.key}</span>
             <h1>{project.name}</h1>
           </div>

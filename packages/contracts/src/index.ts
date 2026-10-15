@@ -6,6 +6,20 @@ export const priorities = ["urgent", "high", "medium", "low", "none"] as const;
 export const kinds = ["feature", "bug", "chore", "research", "documentation"] as const;
 export const difficulties = ["low", "med", "high"] as const;
 export const roles = ["reader", "writer", "admin"] as const;
+export const projectIconColors = [
+  "default",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "blue",
+  "purple",
+  "pink",
+  "gray",
+] as const;
+export const hasAdminRole = (role: string | null | undefined) =>
+  role?.split(",").includes("admin") ?? false;
 export const scopes = ["read", "write", "claim", "admin"] as const;
 export const attachmentLimit = 10_000_000;
 export const stateLabels: Record<(typeof states)[number], string> = {
@@ -100,8 +114,12 @@ export const memberSchema = z.object({
   role: z.enum(roles),
   image: z.string().nullable().optional(),
   source: z.enum(["project", "workspace"]).optional(),
+  inheritedRole: z.enum(roles).nullable().optional(),
 });
 export const projectSchema = z.object({
+  iconName: z.string().nullable().default(null),
+  iconColor: z.enum(projectIconColors).default("default"),
+  image: z.string().nullable().default(null),
   workspaceId: z.uuid(),
   visibility: z.enum(["workspace", "private"]),
   id: z.uuid(),
@@ -397,6 +415,44 @@ export const operations = {
     "/projects",
     "write",
     "Create a project with a permanent ticket prefix.",
+  ),
+  get_project: op(
+    projectInput,
+    projectSchema,
+    "GET",
+    "/projects/{projectId}",
+    "read",
+    "Read project details, workspace identity, and appearance.",
+  ),
+  set_project_icon: op(
+    projectInput
+      .extend({
+        ...mutation,
+        expectedVersion: version,
+        icon: z.union([
+          z
+            .object({
+              kind: z.literal("library"),
+              name: z.string().regex(/^[a-z0-9-]{1,80}$/),
+              color: z.enum(projectIconColors).default("default"),
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal("image"),
+              contentType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+              data: z.string().max(700000),
+            })
+            .strict(),
+          z.null(),
+        ]),
+      })
+      .strict(),
+    projectSchema,
+    "POST",
+    "/projects/{projectId}/icon",
+    "admin",
+    "Choose an installed library icon, upload an image, or reset the project icon.",
   ),
   update_project: op(
     projectInput

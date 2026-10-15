@@ -1,6 +1,6 @@
 import { createDatabase } from "./database.ts";
 import { createInstance } from "./instance.ts";
-import { createBlobStorage } from "./blob-storage.ts";
+import { createBlobStorage, imageResponse } from "./blob-storage.ts";
 import { createTicketSearch } from "./search.ts";
 import { registerInstanceRoutes } from "./instance-routes.ts";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
@@ -24,11 +24,12 @@ import {
   pushDeviceInput,
 } from "@kanvil/contracts";
 import { defaultAdapters, type RuntimeAdapters } from "./runtime-adapters.ts";
-import { createAccess, requireSession } from "./access.ts";
+import { createAccess, requireSession, requireInstanceAdmin } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
 import {
+  projects,
   workspaces,
   workspaceMembers,
   attachmentContent,
@@ -231,7 +232,45 @@ export async function createApplication(
     await next();
   });
 
+  app.use("/api/v1/admin/*", async (c, next) => {
+    requireInstanceAdmin(c.get("actor"));
+    await next();
+  });
   registerInstanceRoutes(app, database, instance, blobs, search, realtime);
+  app.openAPIRegistry.registerPath({
+    method: "get",
+    path: "/api/v1/projects/{projectId}/icon",
+    security: [{ sessionCookie: [] }],
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: {
+        description: "Private project icon",
+        content: {
+          "image/png": { schema: z.string() },
+          "image/jpeg": { schema: z.string() },
+          "image/webp": { schema: z.string() },
+        },
+      },
+      404: { description: "Project icon unavailable" },
+    },
+  });
+  app.get("/api/v1/projects/:projectId/icon", async (c) => {
+    const project = await domain.execute(
+      "get_project",
+      { projectId: c.req.param("projectId") },
+      c.get("actor"),
+    );
+    const row = requireRow(
+      (
+        await database.db
+          .select({ objectId: projects.iconObjectId })
+          .from(projects)
+          .where(eq(projects.id, project.id))
+      )[0],
+    );
+    if (!row.objectId) fail(404, "not_found", "This project has no uploaded icon");
+    return imageResponse(await blobs.get(row.objectId));
+  });
 
   app.get("/api/v1/credentials", async (c) => {
     const identity = c.get("actor");

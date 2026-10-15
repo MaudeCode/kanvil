@@ -4,7 +4,7 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
-import { type Operation } from "@kanvil/contracts";
+import { type Operation, type Workspace } from "@kanvil/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const auth = createAuthClient({ plugins: [adminClient(), oauthProviderClient()] });
@@ -25,7 +25,24 @@ export function useOperation<K extends Operation>(name: K) {
     onSuccess: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
   });
 }
-export const useProjects = () => useQuery(api.query("list_projects", {}));
+export const WorkspaceSelection = createContext<{
+  active: Workspace | undefined;
+  workspaces: Workspace[];
+  pending: boolean;
+  error: unknown;
+  select: (id: string) => void;
+}>({ active: undefined, workspaces: [], pending: true, error: undefined, select: () => {} });
+export const useWorkspace = () => useContext(WorkspaceSelection);
+export const useWorkspaces = () => useQuery(api.query("list_workspaces", {}));
+export const useAllProjects = () => useQuery(api.query("list_projects", {}));
+export function useProjects() {
+  const { active } = useWorkspace();
+  return useQuery({
+    ...api.query("list_projects", {}),
+    select: (projects) =>
+      active ? projects.filter((project) => project.workspaceId === active.id) : [],
+  });
+}
 export function useLive(projectId?: string) {
   const cache = useQueryClient();
   const [state, setState] = useState("connecting");

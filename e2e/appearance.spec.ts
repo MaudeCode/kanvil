@@ -155,12 +155,10 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await settings.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
   await settings.click();
-  await expect(
-    page.getByRole("heading", { name: "Navigation project settings", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Project settings", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Members", exact: true }).click();
   await page.getByRole("button", { name: "Add member", exact: true }).click();
-  await expect(page.getByLabel("Existing account email", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Account", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   for (const theme of ["Graphite", "Forest", "Ember", "Kanvil"]) {
     await appearance(page, theme);

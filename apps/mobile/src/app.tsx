@@ -1,3 +1,4 @@
+import { hasAdminRole } from "@kanvil/contracts";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useEffect, useState } from "react";
 import { AppState, View, useColorScheme } from "react-native";
@@ -159,7 +160,7 @@ function Session({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   if (session.isPending && !session.data) return <Loading />;
   return session.data ? (
     <PrivateWorkspace
-      key={session.data.user.id}
+      key={`${session.data.user.id}:${session.data.user.role ?? "user"}`}
       user={session.data.user}
       onDisconnect={onDisconnect}
     />
@@ -298,13 +299,13 @@ function PrivateWorkspace({
     createAsyncStoragePersister({ storage: AsyncStorage, key: `${prefix}:${user.id}:cache` }),
   );
   return (
-    <Identity value={{ ...user, admin: user.role === "admin" }}>
+    <Identity value={{ ...user, admin: hasAdminRole(user.role) }}>
       <PersistQueryClientProvider
         client={cache}
         persistOptions={{
           persister,
           maxAge: 7 * 86400000,
-          buster: "kanvil-v1",
+          buster: `kanvil-v2:${user.role ?? "user"}`,
           dehydrateOptions: {
             shouldDehydrateMutation: () => false,
             shouldDehydrateQuery: (query) =>
