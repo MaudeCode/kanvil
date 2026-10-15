@@ -18,10 +18,10 @@ test("approved branding and metadata are served by the self-hosted application",
   );
   const links = await page
     .locator(
-      'link[rel="icon"], link[rel="alternate icon"], link[rel="apple-touch-icon"], link[rel="manifest"]',
+      'link[rel="icon"], link[rel="alternate icon"], link[rel="apple-touch-icon"], link[rel="mask-icon"], link[rel="manifest"]',
     )
     .evaluateAll((elements) => elements.map((element) => element.getAttribute("href") ?? ""));
-  expect(links).toHaveLength(4);
+  expect(links).toHaveLength(5);
   for (const url of [
     ...links,
     "/brand/social.png",

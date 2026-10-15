@@ -4,7 +4,7 @@ The approved anvil is traced vector artwork. `brandMark` in [theme.ts](../packag
 
 The generator produces:
 
-- Web: SVG and ICO favicons, an Apple touch icon, a web manifest with regular/maskable icons, and a social-sharing image.
+- Web: SVG and ICO favicons, a Safari pinned-tab mark, an Apple touch icon, a web manifest with regular/maskable icons, and a social-sharing image.
 - Branding: transparent, blue, and white SVG marks in `apps/web/public/brand/`. The README selects a mark for the reader's theme.
 - Native: the opaque application icon, adaptive and monochrome foreground, notification mark, and light/dark launch-screen images. Expo configuration connects these files to the native builds.
 
