@@ -2,6 +2,8 @@
 
 The HTTP API, MCP tools, and apps execute the same ticket operations and permission checks. HTTP schemas are available at `/api/openapi.json`.
 
+Runnable MCP and durable realtime examples, plus the worker ownership sequence, are in [examples](../examples/README.md).
+
 ## Authentication
 
 Browser and native clients use Better Auth sessions with local login or configured OIDC. Public registration is closed. Initial owner setup requires `KANVIL_SETUP_TOKEN` and is available only before any account exists.

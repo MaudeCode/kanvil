@@ -22,6 +22,8 @@ Use `pnpm fmt` to format files, `pnpm lint` for linting, `pnpm typecheck` for ty
 
 Tests cover the shared contracts, PostgreSQL authentication and domain behavior, HTTP, MCP, realtime replay, and attachment bytes. An empty suite fails. Each workspace package has a TypeScript config extending the shared base.
 
+The same test run validates the [reference consumers](examples/README.md), including a mirror restart and expired-cursor recovery. Their command-line entry points are `pnpm example:mirror` and `pnpm example:mcp`.
+
 ## Changes
 
 Keep each pull request focused on one coherent change. Describe the resulting behavior and the validation performed. Add regression coverage for meaningful behavior changes and update relevant instructions when their commands change.
