@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-const { values } = parseArgs({ options: { simulator: { type: "string" } } });
+const { values } = parseArgs({
+  options: { simulator: { type: "string" }, https: { type: "boolean", default: false } },
+});
 const directory = await mkdtemp(join(tmpdir(), "kanvil-native-auth-"));
 await chmod(directory, 0o700);
 const certificate = join(directory, "cert.pem"),
@@ -50,6 +52,7 @@ try {
       KANVIL_TEST_PORT: "5188",
       KANVIL_TEST_POCKET_ID: "1",
       KANVIL_TEST_POCKET_TLS: "1",
+      ...(values.https ? { KANVIL_TEST_TLS_CERT: certificate, KANVIL_TEST_TLS_KEY: key } : {}),
     },
     stdio: "inherit",
   });

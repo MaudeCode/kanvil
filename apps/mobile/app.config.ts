@@ -13,10 +13,11 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
+    buildNumber: "1",
     supportsTablet: true,
     infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
   },
-  android: { package: "com.maudecode.kanvil" },
+  android: { package: "com.maudecode.kanvil", versionCode: 1 },
   plugins: [
     "expo-secure-store",
     "expo-document-picker",

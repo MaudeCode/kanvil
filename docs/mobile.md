@@ -45,6 +45,23 @@ Export checks both iOS and Android JavaScript bundles. It does not replace nativ
 
 Current local validation includes an iOS 27 simulator build, native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Android JavaScript exports pass; an Android SDK is not installed on the development host, so Android device execution has not been performed. Native PocketID linking and OIDC sign-in were also validated through the iOS system browser against an isolated HTTPS provider, using its login-code flow. Local password login still reaches the same account. Cold app startup with the backend stopped also retained cached projects and showed an offline state. Switching between cached ticket deep links kept each comment draft with its original ticket. Physical-device passkey behavior and release signing remain separate validation.
 
+## Release builds and signing
+
+`eas.json` provides `development`, `preview`, `simulator`, and `production` profiles, sharing the repository's Node/pnpm pins. `preview` produces an Android APK or an internally distributed iOS build; `simulator` produces an iOS simulator build. `production` uses store distribution defaults. Configure your Expo project ID, signing credentials, and push credentials before running an EAS build. Follow the [EAS build configuration guide](https://docs.expo.dev/build/eas-json/). Local builds do not require an Expo hosting account.
+
+Generate the native project and build an embedded iOS Release app locally:
+
+```sh
+pnpm --filter @kanvil/mobile exec expo prebuild --platform ios
+pnpm --filter @kanvil/mobile exec expo run:ios --configuration Release
+```
+
+A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unnecessary. For an isolated simulator backend using HTTPS, run `pnpm native:auth-fixture --https --simulator <udid>` and connect to `https://localhost:5188`. Only this test process and selected simulator trust the temporary certificate.
+
+The **Android preview build** GitHub workflow generates the Android project and compiles a standalone arm64 Release APK on a host with the Android SDK. It runs on demand and when that workflow itself changes, keeping native compilation outside routine PR checks. It verifies the APK signature and embedded JavaScript before retaining `kanvil-android-arm64-preview`. This verification artifact uses Expo's generated debug signing key; use your own signing credentials for distribution. See [Expo's APK guide](https://docs.expo.dev/build-reference/apk/).
+
+Increment `ios.buildNumber` and `android.versionCode` in `app.config.ts` for subsequent distributed builds. Keep signing material outside the repository. Building a simulator app or preview APK does not publish to an app store or install on a physical device.
+
 ## Native OIDC fixture
 
 The Expo authentication proxy requires an HTTPS identity provider, including during local development. For simulator checks, start the disposable TLS provider and backend with:
