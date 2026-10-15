@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  s3SettingsSchema,
+  searchSettingsSchema,
+  brokerSettingsSchema,
+} from "@kanvil/contracts/instance";
 
 const optionalEnv = <T extends z.ZodType>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
@@ -6,25 +11,26 @@ const envSchema = z
   .object({
     DATABASE_URL: z.url(),
     KANVIL_STORAGE_PROVIDER: optionalEnv(z.enum(["local", "s3"])),
-    S3_ENDPOINT: optionalEnv(z.url()),
-    S3_REGION: z.string().default("us-east-1"),
-    S3_BUCKET: optionalEnv(z.string().min(3)),
-    S3_PREFIX: z.string().default("kanvil/"),
-    S3_ACCESS_KEY_ID: optionalEnv(z.string()),
-    S3_SECRET_ACCESS_KEY: optionalEnv(z.string()),
+    S3_ENDPOINT: optionalEnv(s3SettingsSchema.shape.endpoint),
+    S3_REGION: s3SettingsSchema.shape.region,
+    S3_BUCKET: optionalEnv(s3SettingsSchema.shape.bucket),
+    S3_PREFIX: s3SettingsSchema.shape.prefix,
+    S3_ACCESS_KEY_ID: optionalEnv(s3SettingsSchema.shape.accessKeyId),
+    S3_SECRET_ACCESS_KEY: optionalEnv(s3SettingsSchema.shape.secretAccessKey),
     S3_FORCE_PATH_STYLE: z
       .enum(["true", "false"])
       .default("true")
       .transform((value) => value === "true"),
     KANVIL_SEARCH_PROVIDER: optionalEnv(z.enum(["postgres", "elasticsearch"])),
-    ELASTICSEARCH_URL: optionalEnv(z.url()),
-    ELASTICSEARCH_INDEX: optionalEnv(z.string()),
-    ELASTICSEARCH_API_KEY: optionalEnv(z.string()),
-    ELASTICSEARCH_USERNAME: z.string().default(""),
-    ELASTICSEARCH_PASSWORD: optionalEnv(z.string()),
+    ELASTICSEARCH_URL: optionalEnv(searchSettingsSchema.shape.url),
+    ELASTICSEARCH_INDEX: optionalEnv(searchSettingsSchema.shape.index),
+    ELASTICSEARCH_AUTH: optionalEnv(searchSettingsSchema.shape.auth),
+    ELASTICSEARCH_API_KEY: optionalEnv(searchSettingsSchema.shape.apiKey),
+    ELASTICSEARCH_USERNAME: searchSettingsSchema.shape.username,
+    ELASTICSEARCH_PASSWORD: optionalEnv(searchSettingsSchema.shape.password),
     KANVIL_BROKER_PROVIDER: optionalEnv(z.enum(["postgres", "rabbitmq"])),
-    RABBITMQ_URL: optionalEnv(z.url({ protocol: /^amqps?$/ })),
-    RABBITMQ_EXCHANGE: z.string().default("kanvil.events"),
+    RABBITMQ_URL: optionalEnv(brokerSettingsSchema.shape.url),
+    RABBITMQ_EXCHANGE: brokerSettingsSchema.shape.exchange,
     KANVIL_URL: z.url().default("http://localhost:5180"),
     BETTER_AUTH_SECRET: z.string().min(32),
     KANVIL_SETUP_TOKEN: optionalEnv(z.string().min(24)),
@@ -52,6 +58,22 @@ const envSchema = z
       });
     if (value.KANVIL_BROKER_PROVIDER === "rabbitmq" && !value.RABBITMQ_URL)
       ctx.addIssue({ code: "custom", message: "RABBITMQ_URL is required for RabbitMQ delivery" });
+    if (value.KANVIL_SEARCH_PROVIDER === "elasticsearch") {
+      if (value.ELASTICSEARCH_AUTH === "apiKey" && !value.ELASTICSEARCH_API_KEY)
+        ctx.addIssue({
+          code: "custom",
+          message: "ELASTICSEARCH_API_KEY is required for API-key authentication",
+        });
+      if (
+        value.ELASTICSEARCH_AUTH === "basic" &&
+        (!value.ELASTICSEARCH_USERNAME || !value.ELASTICSEARCH_PASSWORD)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "ELASTICSEARCH_USERNAME and ELASTICSEARCH_PASSWORD are required for basic authentication",
+        });
+    }
     const supplied = [
       value.OIDC_DISCOVERY_URL,
       value.OIDC_CLIENT_ID,

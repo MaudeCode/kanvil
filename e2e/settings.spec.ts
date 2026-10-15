@@ -105,6 +105,11 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("tab", { name: "Search", exact: true }).click();
   await choose(page, "Search provider", "Elasticsearch-compatible search");
   await expect(page.getByLabel("Search endpoint", { exact: true })).toBeVisible();
+  await choose(page, "Search authentication", "API key");
+  await expect(page.getByLabel("Search API key", { exact: true })).toBeVisible();
+  await choose(page, "Search authentication", "Username and password");
+  await expect(page.getByLabel("Search password", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Search API key", { exact: true })).toHaveCount(0);
   await page.reload();
   await page.getByRole("tab", { name: "General", exact: true }).click();
   await page.getByLabel("Instance name", { exact: true }).fill("Kanvil");

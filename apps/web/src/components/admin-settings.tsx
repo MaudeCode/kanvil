@@ -12,6 +12,7 @@ import {
 import {
   adminInstanceSchema,
   instanceUpdateSchema,
+  searchAuthenticationSchema,
   type AdminInstance,
 } from "@kanvil/contracts/instance";
 import { okSchema } from "@kanvil/contracts";
@@ -89,6 +90,7 @@ function initial(data: AdminInstance) {
       index: `kanvil-${data.id}`,
       username: "",
       ...data.search.settings,
+      auth: data.search.settings?.auth ?? "none",
       apiKey: "",
       password: "",
     },
@@ -379,31 +381,48 @@ function InstanceSettings({
                       value={draft.elastic.index}
                       onChange={(event) => setElastic({ index: event.target.value })}
                     />
-                    <Input
-                      label="Search API key"
-                      type="password"
-                      autoComplete="new-password"
-                      placeholder={
-                        data.search.secretConfigured ? "Saved. Leave empty to keep it." : "Optional"
+                    <Select
+                      label="Search authentication"
+                      value={draft.elastic.auth}
+                      onValueChange={(value) =>
+                        setElastic({ auth: searchAuthenticationSchema.parse(value) })
                       }
-                      value={draft.elastic.apiKey}
-                      onChange={(event) => setElastic({ apiKey: event.target.value })}
-                    />
-                    <div className="form-grid">
+                    >
+                      <SelectItem value="none">No authentication</SelectItem>
+                      <SelectItem value="apiKey">API key</SelectItem>
+                      <SelectItem value="basic">Username and password</SelectItem>
+                    </Select>
+                    {draft.elastic.auth === "apiKey" && (
                       <Input
-                        label="Search username"
-                        autoComplete="off"
-                        value={draft.elastic.username}
-                        onChange={(event) => setElastic({ username: event.target.value })}
-                      />
-                      <Input
-                        label="Search password"
+                        label="Search API key"
                         type="password"
                         autoComplete="new-password"
-                        value={draft.elastic.password}
-                        onChange={(event) => setElastic({ password: event.target.value })}
+                        placeholder={
+                          data.search.secretConfigured
+                            ? "Saved. Leave empty to keep it."
+                            : "Optional"
+                        }
+                        value={draft.elastic.apiKey}
+                        onChange={(event) => setElastic({ apiKey: event.target.value })}
                       />
-                    </div>
+                    )}
+                    {draft.elastic.auth === "basic" && (
+                      <div className="form-grid">
+                        <Input
+                          label="Search username"
+                          autoComplete="off"
+                          value={draft.elastic.username}
+                          onChange={(event) => setElastic({ username: event.target.value })}
+                        />
+                        <Input
+                          label="Search password"
+                          type="password"
+                          autoComplete="new-password"
+                          value={draft.elastic.password}
+                          onChange={(event) => setElastic({ password: event.target.value })}
+                        />
+                      </div>
+                    )}
                   </FieldSet>
                   <div className="actions">
                     <Button

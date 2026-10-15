@@ -21,9 +21,11 @@ export const s3SettingsSchema = z
     secretAccessKey: z.string().max(2000).optional(),
   })
   .strict();
+export const searchAuthenticationSchema = z.enum(["none", "apiKey", "basic"]);
 export const searchSettingsSchema = z
   .object({
     url: endpoint,
+    auth: searchAuthenticationSchema.optional(),
     index: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,100}$/),
     apiKey: z.string().max(4000).optional(),
     username: z.string().max(500).default(""),
@@ -127,3 +129,10 @@ export type SearchSettings = z.infer<typeof searchSettingsSchema>;
 export type AdminInstance = z.infer<typeof adminInstanceSchema>;
 
 export type BrokerSettings = z.infer<typeof brokerSettingsSchema>;
+
+export function searchAuthentication(settings: SearchSettings) {
+  return (
+    settings.auth ??
+    (settings.apiKey ? "apiKey" : settings.username && settings.password ? "basic" : "none")
+  );
+}

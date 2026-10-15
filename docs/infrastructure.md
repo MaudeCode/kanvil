@@ -41,15 +41,17 @@ Back up the database, `BETTER_AUTH_SECRET`, and every referenced S3 bucket. A da
 
 PostgreSQL searches ticket keys, titles, descriptions, acceptance criteria, labels, and scopes. It remains the default and the fallback when an optional search service is behind or unavailable.
 
-Choose **Search → Elasticsearch-compatible search** and a dedicated, unused index name. Kanvil records its instance identity in the index mapping and refuses to reset an index owned by another application or instance. The connection test verifies index creation, object write/read/delete, and ownership. Configure an API key or basic authentication when required.
+Choose **Search → Elasticsearch-compatible search** and a dedicated, unused index name. Kanvil records its instance identity in the index mapping and refuses to reset an index owned by another application or instance. The connection test verifies index creation, object write/read/delete, and ownership. Select no authentication, an API key, or username/password authentication. Switching methods clears credentials from the previous method.
 
 ```dotenv
 KANVIL_SEARCH_PROVIDER=elasticsearch
 ELASTICSEARCH_URL=https://elasticsearch.example.com
 # Omit the index variable to derive a unique name from the instance identity.
 ELASTICSEARCH_INDEX=kanvil-instance
+ELASTICSEARCH_AUTH=apiKey
 ELASTICSEARCH_API_KEY=your-api-key
-# Or ELASTICSEARCH_USERNAME and ELASTICSEARCH_PASSWORD
+# For basic authentication, use ELASTICSEARCH_AUTH=basic and set
+# ELASTICSEARCH_USERNAME and ELASTICSEARCH_PASSWORD instead.
 ```
 
 The implementation uses basic index, mapping, bulk, search, scroll, and delete-by-query APIs, without paid search features. Integration tests run against Elasticsearch 9.5.5. Other compatible distributions need the same APIs and should be validated against their version before deployment.

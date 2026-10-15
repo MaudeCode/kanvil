@@ -6,6 +6,7 @@ import {
   type BrokerSettings,
   s3SettingsSchema,
   searchSettingsSchema,
+  searchAuthentication,
   type S3Settings,
   type SearchSettings,
 } from "@kanvil/contracts/instance";
@@ -92,15 +93,33 @@ export function createInstance(database: Database, config: Config) {
     const row = await read(db),
       old = row.searchConfig ? searchSettingsSchema.parse(unseal(row.searchConfig)) : null,
       same = old?.url === settings.url && old.index === settings.index;
-    const { apiKey: suppliedKey, password: suppliedPassword, ...publicSettings } = settings,
+    const {
+        apiKey: suppliedKey,
+        password: suppliedPassword,
+        auth: requestedAuth,
+        ...publicSettings
+      } = settings,
+      auth =
+        requestedAuth ??
+        (suppliedKey
+          ? "apiKey"
+          : suppliedPassword && settings.username
+            ? "basic"
+            : same && old
+              ? searchAuthentication(old)
+              : searchAuthentication(settings)),
       apiKey = suppliedKey || (same ? old?.apiKey : undefined),
       password =
         suppliedPassword ||
         (same && old?.username === settings.username ? old?.password : undefined);
+    if (auth === "apiKey" && !apiKey) fail(400, "missing_secret", "Provide the search API key");
+    if (auth === "basic" && (!settings.username || !password))
+      fail(400, "missing_secret", "Provide the search username and password");
     return {
       ...publicSettings,
-      ...(apiKey ? { apiKey } : {}),
-      ...(password ? { password } : {}),
+      auth,
+      ...(auth === "apiKey" && apiKey ? { apiKey } : {}),
+      ...(auth === "basic" && password ? { password } : {}),
     };
   }
   async function saveBackend(settings: S3Settings, db: Connection | Transaction = database.db) {
@@ -136,15 +155,19 @@ export function createInstance(database: Database, config: Config) {
   async function search() {
     const row = await read();
     if (config.KANVIL_SEARCH_PROVIDER === "postgres") return null;
-    if (config.KANVIL_SEARCH_PROVIDER === "elasticsearch")
-      return searchSettingsSchema.parse({
+    if (config.KANVIL_SEARCH_PROVIDER === "elasticsearch") {
+      const settings = searchSettingsSchema.parse({
         url: config.ELASTICSEARCH_URL,
         index: config.ELASTICSEARCH_INDEX ?? `kanvil-${row.identity}`,
+        auth: config.ELASTICSEARCH_AUTH,
         apiKey: config.ELASTICSEARCH_API_KEY,
         username: config.ELASTICSEARCH_USERNAME,
         password: config.ELASTICSEARCH_PASSWORD,
       });
-    return row.searchConfig ? searchSettingsSchema.parse(unseal(row.searchConfig)) : null;
+      return { ...settings, auth: searchAuthentication(settings) };
+    }
+    const settings = row.searchConfig ? searchSettingsSchema.parse(unseal(row.searchConfig)) : null;
+    return settings ? { ...settings, auth: searchAuthentication(settings) } : null;
   }
   async function broker() {
     if (config.KANVIL_BROKER_PROVIDER === "postgres") return null;

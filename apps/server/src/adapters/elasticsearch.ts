@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { searchSettingsSchema, type SearchSettings } from "@kanvil/contracts/instance";
+import {
+  searchSettingsSchema,
+  searchAuthentication,
+  type SearchSettings,
+} from "@kanvil/contracts/instance";
 import type { TicketIndex, TicketIndexDocument } from "./ports.ts";
 function fail(_status: number, _code: string, message: string): never {
   throw new Error(message);
@@ -7,9 +11,9 @@ function fail(_status: number, _code: string, message: string): never {
 function headers(settings: SearchSettings) {
   return {
     "Content-Type": "application/json",
-    ...(settings.apiKey
+    ...(searchAuthentication(settings) === "apiKey" && settings.apiKey
       ? { Authorization: `ApiKey ${settings.apiKey}` }
-      : settings.username && settings.password
+      : searchAuthentication(settings) === "basic" && settings.username && settings.password
         ? {
             Authorization: `Basic ${Buffer.from(`${settings.username}:${settings.password}`).toString("base64")}`,
           }
