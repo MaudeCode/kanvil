@@ -55,6 +55,22 @@ describe("agent write contracts", () => {
       }).success,
     ).toBe(false);
   });
+  it("keeps titles on one logical line across create and update operations", () => {
+    const title = "  Keep\ncomplete\r\nrequirements\treadable\u2028across\u2029clients  ";
+    const normalized = "Keep complete requirements readable across clients";
+    expect(operations.create_ticket.input.parse({ projectId: "p", title }).title).toBe(normalized);
+    expect(
+      operations.update_ticket.input.parse({
+        projectId: "p",
+        ticketId: "t",
+        expectedVersion: 1,
+        changes: { title },
+      }).changes.title,
+    ).toBe(normalized);
+    expect(
+      operations.create_ticket.input.safeParse({ projectId: "p", title: " \n\r\n " }).success,
+    ).toBe(false);
+  });
   it("rejects duplicate tickets in an atomic bulk edit and unbounded searches", () => {
     expect(
       operations.bulk_update_tickets.input.safeParse({

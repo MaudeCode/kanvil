@@ -63,7 +63,7 @@ export const ticketFilter = z
   .strict();
 export const ticketFields = z
   .object({
-    title: text.max(500),
+    title: text.max(500).overwrite((value) => value.replace(/\s+/gu, " ")),
     description: z.string().max(100_000),
     acceptanceCriteria: z.string().max(50_000),
     status: z.enum(states),

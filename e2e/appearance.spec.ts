@@ -18,7 +18,7 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
   for (const [index, title] of titles.entries()) {
     const response = await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
       data: {
-        title,
+        title: index === 0 ? title.replace("complete ticket", "complete\nticket") : title,
         status: ["todo", "in_progress", "in_review", "backlog"][index],
         difficulty: "med",
         description: "## Context\nKeep the complete requirements readable.",
@@ -27,6 +27,13 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
     });
     expect(response.ok()).toBe(true);
   }
+  const search = await (
+    await page.request.get(`/api/v1/projects/${project.id}/tickets`, {
+      params: { q: "complete ticket titles" },
+    })
+  ).json();
+  expect(search.items).toHaveLength(1);
+  expect(search.items[0].title).toBe(titles[0]);
   await page.goto(`/projects/${project.id}`);
   for (const mode of ["light", "dark"] as const) {
     await page.getByLabel("Theme", { exact: true }).selectOption(mode);
