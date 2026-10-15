@@ -421,7 +421,7 @@ tr[data-selected="true"] {
 .backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--foreground) 35%, transparent);
+  background: var(--backdrop);
   z-index: 40;
 }
 .dialog {

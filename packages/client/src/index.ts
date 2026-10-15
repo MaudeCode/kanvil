@@ -4,6 +4,8 @@ import {
   errorSchema,
   eventSchema,
   streamErrorSchema,
+  checkpointSchema,
+  snapshotSchema,
   type ChangeEvent,
   operations,
   parseOutput,
@@ -36,6 +38,7 @@ export function createClient(options: {
     | Promise<ConstructorParameters<typeof Headers>[0]>;
   fetch?: typeof fetch;
   requestId?: () => string;
+  credentials?: RequestInit["credentials"];
 }) {
   const request = options.fetch ?? fetch;
   const endpoint = (path: string) => {
@@ -63,7 +66,13 @@ export function createClient(options: {
       const headers = new Headers(await options.headers?.());
       new Headers(init.headers).forEach((value, key) => headers.set(key, value));
       return schema.parse(
-        await decode(await request(endpoint(path), { ...init, headers, credentials: "include" })),
+        await decode(
+          await request(endpoint(path), {
+            ...init,
+            headers,
+            credentials: options.credentials ?? "include",
+          }),
+        ),
       );
     },
     async call<K extends Operation>(name: K, input: Input<K>): Promise<Output<K>> {
@@ -78,7 +87,11 @@ export function createClient(options: {
       });
       const url = new URL(`${options.baseUrl.replace(/\/$/, "")}/api/v1${path}`);
       const headers = new Headers(await options.headers?.());
-      const init: RequestInit = { method: spec.method, credentials: "include", headers };
+      const init: RequestInit = {
+        method: spec.method,
+        credentials: options.credentials ?? "include",
+        headers,
+      };
       if (spec.method === "GET")
         for (const [key, value] of Object.entries(values)) {
           if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
@@ -117,7 +130,7 @@ export function createClient(options: {
           try {
             const response = await request(url, {
               headers: new Headers(await options.headers?.()),
-              credentials: "include",
+              credentials: options.credentials ?? "include",
               signal: subscription.signal,
             });
             if (response.status === 410 && subscription.onReset) {
@@ -190,6 +203,35 @@ export function createClient(options: {
   };
   return {
     ...api,
+    watch(
+      observer: Pick<Parameters<typeof api.subscribe>[0], "projectId" | "signal" | "onState"> & {
+        invalidate: () => void | Promise<void>;
+      },
+    ) {
+      let initial = true;
+      return api.subscribe({
+        ...(observer.projectId ? { projectId: observer.projectId } : {}),
+        signal: observer.signal,
+        ...(observer.onState ? { onState: observer.onState } : {}),
+        onEvent: observer.invalidate,
+        onCursor: async () => {
+          if (initial) {
+            initial = false;
+            await observer.invalidate();
+          }
+        },
+        onReset: async () => {
+          const snapshot = observer.projectId
+            ? await api.request(
+                `/api/v1/snapshot?projectId=${encodeURIComponent(observer.projectId)}`,
+                snapshotSchema,
+              )
+            : await api.request("/api/v1/checkpoint", checkpointSchema);
+          await observer.invalidate();
+          return snapshot.cursor;
+        },
+      });
+    },
     query<K extends Operation>(name: K, input: Input<K>) {
       return {
         queryKey: ["kanvil", options.baseUrl, name, input] as const,

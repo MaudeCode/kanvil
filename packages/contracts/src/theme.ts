@@ -1,6 +1,7 @@
 export const palettes = {
   light: {
     background: "#f7f8fa",
+    backdrop: "rgba(23,33,43,0.35)",
     surface: "#ffffff",
     foreground: "#17212b",
     muted: "#697783",
@@ -13,6 +14,7 @@ export const palettes = {
   },
   dark: {
     background: "#11171c",
+    backdrop: "rgba(0,0,0,0.6)",
     surface: "#182128",
     foreground: "#e8eef2",
     muted: "#9baab5",

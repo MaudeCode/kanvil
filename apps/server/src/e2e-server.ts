@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const fixture = await createFixture();
 const port = Number(process.env.KANVIL_TEST_PORT ?? 5190);
-const pocketUrl = "http://localhost:51411";
+const pocketUrl = `${process.env.KANVIL_TEST_POCKET_TLS === "1" ? "https" : "http"}://localhost:51411`;
 const pocketHeaders = {
   "X-API-Key": "kanvil-isolated-test-admin-api-key",
   "Content-Type": "application/json",

@@ -1,3 +1,4 @@
+import type { palettes } from "./theme.ts";
 import { z } from "zod";
 
 export const states = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
@@ -22,7 +23,7 @@ export const priorityLabels: Record<(typeof priorities)[number], string> = {
   low: "Low",
   none: "No priority",
 };
-export const stateTones: Record<(typeof states)[number], string> = {
+export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
   backlog: "muted",
   todo: "foreground",
   in_progress: "warning",
@@ -634,6 +635,13 @@ export function parseOutput<K extends Operation>(name: K, value: unknown): Outpu
 }
 
 export function errorMessage(error: unknown): string {
+  if (
+    error instanceof Error &&
+    /fetch failed|failed to fetch|network request failed|could not connect to the server/i.test(
+      error.message,
+    )
+  )
+    return "Could not reach Kanvil. Check your connection and retry.";
   if (error instanceof z.ZodError)
     return error.issues
       .slice(0, 3)
@@ -654,4 +662,8 @@ export function errorMessage(error: unknown): string {
     : typeof error === "string"
       ? error
       : "The request could not be completed";
+}
+
+export function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

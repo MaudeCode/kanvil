@@ -49,6 +49,24 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page.getByLabel("Comment (Markdown)").fill("Verified through the browser.");
   await page.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(page.getByText("Verified through the browser.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Edit comment", { exact: true }).fill("My unsaved comment draft");
+  const comments = await (
+    await page.request.get(`/api/v1/projects/${projectId}/tickets/${ticketId}/comments`)
+  ).json();
+  const comment = comments.items[0];
+  const remoteComment = await page.request.patch(
+    `/api/v1/projects/${projectId}/comments/${comment.id}`,
+    { data: { expectedVersion: comment.version, body: "Changed in another session" } },
+  );
+  expect(remoteComment.status()).toBe(200);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("comment changed");
+  await expect(page.getByLabel("Edit comment", { exact: true })).toHaveValue(
+    "My unsaved comment draft",
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByText("Changed in another session", { exact: true })).toBeVisible();
   await page.getByLabel("File (up to 10 MB)").setInputFiles({
     name: "proof.txt",
     mimeType: "text/plain",

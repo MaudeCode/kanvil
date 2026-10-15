@@ -19,12 +19,16 @@
     "dev": "pnpm --parallel --filter @kanvil/server --filter @kanvil/web dev",
     "build": "pnpm --filter @kanvil/web build",
     "test:e2e": "pnpm build && playwright test",
-    "test:oidc": "node scripts/test-oidc.ts"
+    "test:oidc": "node scripts/test-oidc.ts",
+    "assets:generate": "node scripts/generate-assets.ts",
+    "mobile:export": "pnpm --filter @kanvil/mobile export",
+    "native:auth-fixture": "node scripts/native-auth-fixture.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
     "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
+    "sharp": "0.35.5",
     "typescript": "7.0.2",
     "vite-plus": "1.2.0",
     "zod": "4.6.7"

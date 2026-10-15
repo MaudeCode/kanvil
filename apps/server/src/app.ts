@@ -472,12 +472,18 @@ export async function createApplication(database: Database, config: Config) {
     servers: [{ url: config.KANVIL_URL }],
   });
   const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
-  app.get(
-    "/assets/*",
+  app.on(
+    "GET",
+    ["/assets/*", "/icon.svg"],
     serveStatic({
       root: webRoot,
       onFound: (_path, c) => {
-        c.header("Cache-Control", "public, max-age=31536000, immutable");
+        c.header(
+          "Cache-Control",
+          c.req.path.startsWith("/assets/")
+            ? "public, max-age=31536000, immutable"
+            : "public, max-age=3600",
+        );
       },
     }),
   );
