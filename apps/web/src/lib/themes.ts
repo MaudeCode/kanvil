@@ -13,75 +13,166 @@ export const themeSchema = z
   .strict();
 export type ThemeDefinition = z.infer<typeof themeSchema>;
 export type ThemePalette = z.infer<typeof paletteSchema>;
-const colors = (
+function readable(color: string, background: string | string[], target: string) {
+  const backgrounds = Array.isArray(background) ? background : [background];
+  for (let step = 0; step <= 100; step++) {
+    const candidate = blend(color, target, step / 100);
+    if (backgrounds.every((surface) => contrast(candidate, surface) >= 4.5)) return candidate;
+  }
+  return target;
+}
+function colors(
   background: string,
   foreground: string,
   sidebar: string,
   primary: string,
   primaryForeground: string,
-): ThemePalette => ({ background, foreground, sidebar, primary, primaryForeground });
+): ThemePalette {
+  foreground = readable(
+    foreground,
+    [background, sidebar],
+    luminance(background) > 0.5 ? "#000000" : "#ffffff",
+  );
+  const accent = readable(primary, background, foreground);
+  return {
+    background,
+    foreground,
+    sidebar,
+    primary: accent,
+    primaryForeground:
+      contrast(accent, primaryForeground) >= 4.5
+        ? primaryForeground
+        : contrast(accent, background) >= contrast(accent, foreground)
+          ? background
+          : foreground,
+  };
+}
+const latte = colors("#eff1f5", "#4c4f69", "#e6e9ef", "#8839ef", "#ffffff");
+const roseDawn = colors("#faf4ed", "#575279", "#f2e9e1", "#907aa9", "#ffffff");
 export const builtInThemes: [ThemeDefinition, ...ThemeDefinition[]] = [
   {
-    id: "kanvil",
-    name: "Kanvil",
-    light: colors("#ffffff", "#252933", "#f3f4f7", "#3458c5", "#ffffff"),
-    dark: colors("#16181d", "#e5e7eb", "#101216", "#93b0ff", "#101c35"),
+    id: "linear",
+    name: "Linear",
+    light: colors("#ffffff", "#202020", "#f7f7f7", "#5e6ad2", "#ffffff"),
+    dark: colors("#171717", "#eeeeee", "#111111", "#8a8ff5", "#181822"),
   },
   {
-    id: "graphite",
-    name: "Graphite",
-    light: colors("#ffffff", "#262626", "#f4f4f4", "#303030", "#ffffff"),
-    dark: colors("#171717", "#ededed", "#101010", "#e3e3e3", "#171717"),
+    id: "catppuccin-mocha",
+    name: "Catppuccin Mocha",
+    light: latte,
+    dark: colors("#1e1e2e", "#cdd6f4", "#181825", "#cba6f7", "#1e1e2e"),
   },
   {
-    id: "forest",
-    name: "Forest",
-    light: colors("#f9fcf9", "#233a2b", "#edf3ed", "#24724b", "#ffffff"),
-    dark: colors("#17231d", "#e2ede5", "#111b16", "#87d2a2", "#13291c"),
+    id: "catppuccin-macchiato",
+    name: "Catppuccin Macchiato",
+    light: latte,
+    dark: colors("#24273a", "#cad3f5", "#1e2030", "#c6a0f6", "#24273a"),
   },
   {
-    id: "ember",
-    name: "Ember",
-    light: colors("#fffaf5", "#423126", "#f8efe5", "#a34824", "#ffffff"),
-    dark: colors("#271d17", "#f2e6dc", "#1d1511", "#efaf79", "#352016"),
+    id: "catppuccin-frappe",
+    name: "Catppuccin Frappé",
+    light: latte,
+    dark: colors("#303446", "#c6d0f5", "#292c3c", "#ca9ee6", "#303446"),
   },
   {
-    id: "ocean",
-    name: "Ocean",
-    light: colors("#f7fbff", "#16324f", "#edf3f9", "#176b9b", "#ffffff"),
-    dark: colors("#0e1a27", "#dbeaf5", "#0a1420", "#7ac5f1", "#102536"),
+    id: "solarized",
+    name: "Solarized",
+    light: colors("#fdf6e3", "#586e75", "#eee8d5", "#268bd2", "#ffffff"),
+    dark: colors("#002b36", "#93a1a1", "#073642", "#268bd2", "#002b36"),
   },
   {
-    id: "iris",
-    name: "Iris",
-    light: colors("#fcfaff", "#302740", "#f0ecf8", "#7352ac", "#ffffff"),
-    dark: colors("#211c2e", "#e9e3f5", "#181421", "#c1a4ed", "#2a1d3f"),
+    id: "github",
+    name: "GitHub",
+    light: colors("#ffffff", "#1f2328", "#f6f8fa", "#0969da", "#ffffff"),
+    dark: colors("#0d1117", "#e6edf3", "#010409", "#58a6ff", "#0d1117"),
   },
   {
-    id: "rose",
-    name: "Rose",
-    light: colors("#fff9fa", "#462832", "#f7eaee", "#a53e63", "#ffffff"),
-    dark: colors("#2b1b23", "#f5e3eb", "#21141a", "#efa3c1", "#3b1928"),
+    id: "dracula",
+    name: "Dracula",
+    light: colors("#fffbeb", "#1f1f1f", "#efebdb", "#644ac9", "#ffffff"),
+    dark: colors("#282a36", "#f8f8f2", "#21222c", "#bd93f9", "#282a36"),
+  },
+  {
+    id: "one-dark",
+    name: "One Dark",
+    light: colors("#fafafa", "#383a42", "#f0f0f0", "#4078f2", "#ffffff"),
+    dark: colors("#282c34", "#abb2bf", "#21252b", "#61afef", "#21252b"),
   },
   {
     id: "nord",
     name: "Nord",
-    light: colors("#eceff4", "#2e3440", "#e5e9f0", "#4c647a", "#ffffff"),
-    dark: colors("#2e3440", "#eceff4", "#242933", "#88c0d0", "#172b32"),
+    light: colors("#eceff4", "#2e3440", "#e5e9f0", "#5e81ac", "#ffffff"),
+    dark: colors("#2e3440", "#eceff4", "#272c36", "#88c0d0", "#2e3440"),
   },
   {
-    id: "sand",
-    name: "Sand",
-    light: colors("#faf7f0", "#433c2c", "#eee8dc", "#8a6225", "#ffffff"),
-    dark: colors("#29251d", "#eee8d8", "#201c16", "#d8b980", "#332712"),
+    id: "tokyo-night",
+    name: "Tokyo Night",
+    light: colors("#e1e2e7", "#343b58", "#d5d6db", "#2e7de9", "#ffffff"),
+    dark: colors("#1a1b26", "#c0caf5", "#16161e", "#7aa2f7", "#1a1b26"),
   },
   {
-    id: "slate",
-    name: "Slate",
-    light: colors("#f8fafc", "#1e293b", "#eef2f6", "#475569", "#ffffff"),
-    dark: colors("#18202d", "#e2e8f0", "#111824", "#a7b8d0", "#162336"),
+    id: "tokyo-night-storm",
+    name: "Tokyo Night Storm",
+    light: colors("#e1e2e7", "#343b58", "#d5d6db", "#9854f1", "#ffffff"),
+    dark: colors("#24283b", "#c0caf5", "#1f2335", "#bb9af7", "#24283b"),
+  },
+  {
+    id: "gruvbox",
+    name: "Gruvbox",
+    light: colors("#fbf1c7", "#3c3836", "#f2e5bc", "#af3a03", "#fbf1c7"),
+    dark: colors("#282828", "#ebdbb2", "#1d2021", "#fabd2f", "#282828"),
+  },
+  {
+    id: "rose-pine",
+    name: "Rosé Pine",
+    light: roseDawn,
+    dark: colors("#191724", "#e0def4", "#1f1d2e", "#c4a7e7", "#191724"),
+  },
+  {
+    id: "rose-pine-moon",
+    name: "Rosé Pine Moon",
+    light: roseDawn,
+    dark: colors("#232136", "#e0def4", "#2a273f", "#ea9a97", "#232136"),
+  },
+  {
+    id: "everforest",
+    name: "Everforest",
+    light: colors("#fdf6e3", "#5c6a72", "#efebd4", "#8da101", "#ffffff"),
+    dark: colors("#2d353b", "#d3c6aa", "#272e33", "#a7c080", "#2d353b"),
+  },
+  {
+    id: "monokai",
+    name: "Monokai",
+    light: colors("#fafaf8", "#272822", "#f0f0e9", "#a31b61", "#ffffff"),
+    dark: colors("#272822", "#f8f8f2", "#1e1f1c", "#a6e22e", "#272822"),
+  },
+  {
+    id: "night-owl",
+    name: "Night Owl",
+    light: colors("#fbfbfb", "#403f53", "#f0f0f0", "#4876d6", "#ffffff"),
+    dark: colors("#011627", "#d6deeb", "#01111d", "#c792ea", "#011627"),
+  },
+  {
+    id: "ayu",
+    name: "Ayu",
+    light: colors("#fafafa", "#5c6166", "#f3f4f5", "#ff9940", "#14191f"),
+    dark: colors("#0b0e14", "#bfbdb6", "#06080f", "#e6b450", "#0b0e14"),
   },
 ];
+const legacyThemes: Record<string, string> = {
+  kanvil: "linear",
+  graphite: "github",
+  forest: "everforest",
+  ember: "gruvbox",
+  ocean: "tokyo-night",
+  iris: "dracula",
+  rose: "rose-pine",
+  sand: "solarized",
+  slate: "github",
+};
+export function resolveThemeId(id: string | null) {
+  return id ? (legacyThemes[id] ?? id) : builtInThemes[0].id;
+}
 function colorChannels(color: string) {
   return [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16));
 }
@@ -124,32 +215,39 @@ export function validateTheme(value: unknown) {
 }
 export function themeVariables(p: ThemePalette): Record<string, string> {
   const mix = (percentage: number) => blend(p.background, p.foreground, percentage / 100),
-    muted = blend(p.foreground, p.background, 0.23);
+    muted = readable(
+      blend(p.foreground, p.background, 0.4),
+      [p.background, p.sidebar, mix(7)],
+      p.foreground,
+    );
   return {
     background: p.background,
     foreground: p.foreground,
     sidebar: p.sidebar,
-    "sidebar-foreground": p.foreground,
+    "sidebar-foreground": readable(blend(p.sidebar, p.foreground, 0.72), p.sidebar, p.foreground),
     primary: p.primary,
     "primary-foreground": p.primaryForeground,
     card: p.background,
     "card-foreground": p.foreground,
     popover: mix(2),
     "popover-foreground": p.foreground,
-    secondary: mix(6),
+    secondary: mix(5),
     "secondary-foreground": p.foreground,
-    muted: mix(5),
-    "muted-foreground": contrast(p.background, muted) >= 4.5 ? muted : p.foreground,
-    accent: mix(9),
+    muted: mix(4),
+    "muted-foreground": muted,
+    accent: mix(7),
     "accent-foreground": p.foreground,
-    border: mix(14),
-    input: mix(22),
+    border: mix(10),
+    input: mix(18),
     ring: p.primary,
+    success: readable("#4aab7e", [p.background, mix(7)], p.foreground),
+    warning: readable("#c99b45", [p.background, mix(7)], p.foreground),
+    destructive: readable("#d95f76", [p.background, mix(7)], p.foreground),
     "sidebar-primary": p.primary,
     "sidebar-primary-foreground": p.primaryForeground,
     "sidebar-accent": blend(p.sidebar, p.foreground, 0.1),
     "sidebar-accent-foreground": p.foreground,
-    "sidebar-border": mix(14),
+    "sidebar-border": blend(p.sidebar, p.foreground, 0.1),
     "sidebar-ring": p.primary,
   };
 }

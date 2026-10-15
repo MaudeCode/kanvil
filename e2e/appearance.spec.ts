@@ -160,12 +160,17 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await page.getByRole("button", { name: "Add member", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Account", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  for (const theme of ["Graphite", "Forest", "Ember", "Kanvil"]) {
+  for (const [theme, id] of [
+    ["GitHub", "github"],
+    ["Catppuccin Mocha", "catppuccin-mocha"],
+    ["Dracula", "dracula"],
+    ["Linear", "linear"],
+  ] as const) {
     await appearance(page, theme);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", theme.toLowerCase());
+    await expect(page.locator("html")).toHaveAttribute("data-theme", id);
   }
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "kanvil");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "linear");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Sidebar", exact: true });

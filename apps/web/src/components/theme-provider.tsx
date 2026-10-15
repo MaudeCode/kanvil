@@ -1,9 +1,17 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import type { ThemeMode } from "@kanvil/contracts/theme";
 import {
   builtInThemes,
   themeVariables,
   validateTheme,
+  resolveThemeId,
   type ThemeDefinition,
 } from "../lib/themes.ts";
 export const modeNames: Record<ThemeMode, string> = {
@@ -44,10 +52,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return saved === "light" || saved === "dark" ? saved : "system";
   });
   const [customThemes, setCustomThemes] = useState(savedThemes),
-    [color, setColor] = useState(() => localStorage.getItem("kanvil:color-theme") ?? "kanvil");
+    [color, setColor] = useState(() => resolveThemeId(localStorage.getItem("kanvil:color-theme")));
   const themes = [...builtInThemes, ...customThemes],
     selected = themes.find((theme) => theme.id === color) ?? builtInThemes[0];
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
       const resolved = mode === "system" ? (media.matches ? "dark" : "light") : mode;
@@ -55,6 +63,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.classList.toggle("dark", resolved === "dark");
       root.style.colorScheme = resolved;
       root.dataset.theme = selected.id;
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute("content", selected[resolved].background);
       for (const [name, value] of Object.entries(themeVariables(selected[resolved])))
         root.style.setProperty(`--${name}`, value);
     };
@@ -92,7 +103,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setColor(theme.id);
         },
         remove: (id) => {
-          if (selected.id === id) setColor("kanvil");
+          if (selected.id === id) setColor(builtInThemes[0].id);
           setCustomThemes((current) => current.filter((theme) => theme.id !== id));
         },
         importThemes,

@@ -15,39 +15,41 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
     })
   ).json();
   await page.goto("/settings?section=appearance");
-  await expect(page.getByRole("radio", { name: "Ocean", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Tokyo Night", exact: true })).toBeVisible();
   await expect(
     page.getByRole("radiogroup", { name: "Color theme", exact: true }).getByRole("radio"),
-  ).toHaveCount(10);
+  ).toHaveCount(builtInThemes.length);
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
-  await page.getByRole("radio", { name: "Ocean", exact: true }).check();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "ocean");
+  await page.getByRole("radio", { name: "Tokyo Night", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "tokyo-night");
   await page.getByRole("button", { name: "New theme", exact: true }).click();
-  await page.getByLabel("Theme name", { exact: true }).fill("My ocean");
+  await page.getByLabel("Theme name", { exact: true }).fill("My Tokyo Night");
   await page.getByRole("button", { name: "Save theme", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("radio", { name: "My ocean", exact: true })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "My Tokyo Night", exact: true })).toBeChecked();
   await page.reload();
-  await expect(page.getByRole("radio", { name: "My ocean", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Edit My ocean", exact: true }).click();
-  await page.getByLabel("Dark text", { exact: true }).fill("#0e1a27");
+  await expect(page.getByRole("radio", { name: "My Tokyo Night", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Edit My Tokyo Night", exact: true }).click();
+  await page.getByLabel("Dark text", { exact: true }).fill("#1a1b26");
   await page.getByRole("button", { name: "Save theme", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("contrast");
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByLabel("Import theme file", { exact: true }).setInputFiles({
-    name: "forest.json",
+    name: "everforest.json",
     mimeType: "application/json",
     buffer: Buffer.from(
-      encodeThemeFile([builtInThemes.find((theme) => theme.id === "forest") ?? builtInThemes[0]]),
+      encodeThemeFile([
+        builtInThemes.find((theme) => theme.id === "everforest") ?? builtInThemes[0],
+      ]),
     ),
   });
   await expect(
     page.getByRole("radiogroup", { name: "Color theme", exact: true }).getByRole("radio"),
-  ).toHaveCount(12);
-  await page.getByRole("radio", { name: "Forest", exact: true }).last().check();
+  ).toHaveCount(builtInThemes.length + 2);
+  await page.getByRole("radio", { name: "Everforest", exact: true }).last().check();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export", exact: true }).click();
-  expect((await download).suggestedFilename()).toContain("custom-forest");
+  expect((await download).suggestedFilename()).toContain("custom-everforest");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "test-results/settings-themes-dark.png", fullPage: true });

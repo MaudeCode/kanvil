@@ -10,6 +10,7 @@ import {
   Sun,
   Trash2,
   Upload,
+  Search,
 } from "lucide-react";
 import { z } from "zod";
 import { useTheme, modeNames } from "./theme-provider.tsx";
@@ -24,6 +25,7 @@ import {
 } from "../lib/themes.ts";
 import { Button, Confirm, ErrorNotice, Input, Modal } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -110,12 +112,21 @@ function ThemeChoice({ theme, active }: { theme: ThemeDefinition; active: boolea
     </div>
   );
 }
+const normalizeThemeSearch = (text: string) =>
+  text
+    .toLocaleLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 export function AppearanceSettings() {
   const theme = useTheme(),
     file = useRef<HTMLInputElement>(null),
     [editor, setEditor] = useState<ThemeDefinition | null>(null),
+    [query, setQuery] = useState(""),
     [error, setError] = useState<unknown>();
   const custom = theme.selected.id.startsWith("custom-");
+  const matches = theme.themes.filter((item) =>
+    normalizeThemeSearch(item.name).includes(normalizeThemeSearch(query)),
+  );
   return (
     <section className="space-y-8">
       <div>
@@ -189,16 +200,33 @@ export function AppearanceSettings() {
           }}
         />
         <ErrorNotice error={error} />
+        <InputGroup className="mb-4 max-w-sm">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search themes"
+            type="search"
+            placeholder="Search themes…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </InputGroup>
         <RadioGroup
           aria-label="Color theme"
           value={theme.color}
           onValueChange={(value) => theme.setColor(String(value))}
           className="grid grid-cols-2 gap-3 xl:grid-cols-3"
         >
-          {theme.themes.map((item) => (
+          {matches.map((item) => (
             <ThemeChoice key={item.id} theme={item} active={item.id === theme.color} />
           ))}
         </RadioGroup>
+        {matches.length === 0 && (
+          <p role="status" className="mt-4">
+            No matching themes
+          </p>
+        )}
       </div>
       {custom && (
         <div className="actions">
@@ -227,6 +255,7 @@ export function AppearanceSettings() {
             initial={editor}
             onSaved={(value) => {
               theme.save(value);
+              setQuery("");
               setEditor(null);
             }}
           />
