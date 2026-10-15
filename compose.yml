@@ -1,0 +1,47 @@
+name: kanvil
+services:
+  app:
+    build: .
+    image: kanvil:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "5180"
+      DATABASE_URL: postgres://kanvil:${POSTGRES_PASSWORD:?Generate an instance configuration}@db:5432/${KANVIL_DATABASE:-kanvil}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Generate an instance configuration}
+      KANVIL_SETUP_TOKEN: ${KANVIL_SETUP_TOKEN:-}
+      KANVIL_URL: ${KANVIL_URL:?Set your public HTTPS URL}
+      KANVIL_TRUSTED_ORIGINS: ${KANVIL_TRUSTED_ORIGINS:-}
+      OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-PocketID}
+    ports:
+      - "127.0.0.1:${KANVIL_PORT:-5180}:5180"
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanvil
+      POSTGRES_DB: ${KANVIL_DATABASE:-kanvil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate an instance configuration}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data:
