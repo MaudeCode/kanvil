@@ -18,6 +18,7 @@ import {
   events,
   members,
   notifications,
+  notificationPreferences,
   projects,
   receipts,
   subscriptions,
@@ -140,6 +141,14 @@ export async function publish(
   ticketId: string | null,
   data: Record<string, unknown>,
 ) {
+  const ticket = ticketId
+    ? (
+        await ctx.db
+          .select({ key: tickets.key, title: tickets.title })
+          .from(tickets)
+          .where(eq(tickets.id, ticketId))
+      )[0]
+    : undefined;
   const clock = requireRow(
     (
       await ctx.db
@@ -159,7 +168,11 @@ export async function publish(
           ticketId,
           actorId: ctx.actor.id,
           type,
-          data,
+          data: {
+            ...data,
+            ...ticket,
+            source: { kind: ctx.actor.machine ? "credential" : "session", id: ctx.actor.ownerId },
+          },
         })
         .returning()
     )[0],
@@ -175,7 +188,14 @@ export async function publish(
           eq(members.userId, subscriptions.userId),
         ),
       )
-      .where(and(eq(subscriptions.ticketId, ticketId), ne(subscriptions.userId, ctx.actor.id)));
+      .leftJoin(notificationPreferences, eq(notificationPreferences.userId, subscriptions.userId))
+      .where(
+        and(
+          eq(subscriptions.ticketId, ticketId),
+          ctx.actor.machine ? undefined : ne(subscriptions.userId, ctx.actor.id),
+          sql`coalesce(${notificationPreferences.inApp}, true)`,
+        ),
+      );
     if (followers.length)
       await ctx.db.insert(notifications).values(
         followers.map((row) => ({

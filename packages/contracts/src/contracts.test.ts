@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
-import { operations } from "./index.ts";
+import { formatEvent, operations } from "./index.ts";
 
 describe("agent write contracts", () => {
+  it("formats historical and current event context consistently", () => {
+    const event = {
+      id: "1",
+      projectId: "10000000-0000-4000-8000-000000000001",
+      ticketId: "10000000-0000-4000-8000-000000000002",
+      actorId: "a",
+      type: "ticket.updated",
+      createdAt: new Date().toISOString(),
+      data: {},
+    };
+    expect(formatEvent(event)).toBe("ticket · updated");
+    expect(formatEvent(event, true)).toBe(`ticket · updated · ${event.ticketId}`);
+    expect(formatEvent({ ...event, data: { key: "KAN-1", title: "A complete title" } }, true)).toBe(
+      "ticket · updated · KAN-1 · A complete title",
+    );
+  });
   it("preserves a full descriptive title and deduplicates labels", () => {
     const title =
       "Preserve reconnect checkpoints when independent agents change a ticket's blockers";

@@ -13,7 +13,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { Bell, FolderOpen, Settings, Plus, LogOut } from "lucide-react";
-import { notificationsSchema, okSchema } from "@kanvil/contracts";
+import { formatEvent, notificationsSchema, okSchema } from "@kanvil/contracts";
 import { searchSchema } from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
@@ -290,10 +290,10 @@ function Inbox() {
                 to="/projects/$projectId/tickets/$ticketId"
                 params={{ projectId: item.event.projectId, ticketId: item.event.ticketId }}
               >
-                {item.event.type.replaceAll("_", " ")} · {item.event.ticketId}
+                {formatEvent(item.event, true)}
               </Link>
             ) : (
-              <span>{item.event.type}</span>
+              <span>{formatEvent(item.event)}</span>
             )}
             <small className="muted">{date(item.event.createdAt)}</small>
           </li>

@@ -176,17 +176,20 @@ export function Check({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   const color = usePalette();
   return (
     <Pressable
       accessibilityRole="checkbox"
       accessibilityLabel={label}
-      accessibilityState={{ checked }}
+      accessibilityState={{ checked, disabled }}
+      disabled={disabled}
       onPress={() => onChange(!checked)}
       style={styles.check}
     >

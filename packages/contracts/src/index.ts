@@ -192,6 +192,9 @@ export const notificationsSchema = z.array(
     event: eventSchema,
   }),
 );
+export const notificationPreferencesSchema = z
+  .object({ inApp: z.boolean().default(true) })
+  .strict();
 export const credentialsSchema = z.array(
   z.object({
     id: z.string(),
@@ -212,6 +215,12 @@ export const createdCredentialSchema = z.object({
 });
 export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
+export function formatEvent(event: ChangeEvent, includeTicket = false): string {
+  const label = event.type.replaceAll(".", " · ").replaceAll("_", " ");
+  if (!includeTicket || !event.ticketId) return label;
+  const key = typeof event.data.key === "string" ? event.data.key : event.ticketId;
+  return `${label} · ${key}${typeof event.data.title === "string" ? ` · ${event.data.title}` : ""}`;
+}
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
 const ok = z.object({ ok: z.literal(true) });

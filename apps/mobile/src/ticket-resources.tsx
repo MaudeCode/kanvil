@@ -1,4 +1,4 @@
-import { formatTimestamp } from "@kanvil/contracts";
+import { formatEvent, formatTimestamp } from "@kanvil/contracts";
 import { useState } from "react";
 import { Alert, Linking, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
@@ -230,7 +230,7 @@ export function Activity({ ticket }: { ticket: Ticket }) {
       <ErrorNotice error={events.error} />
       {events.data?.items.map((event) => (
         <View key={event.id}>
-          <Body>{event.type.replaceAll(".", " · ").replaceAll("_", " ")}</Body>
+          <Body>{formatEvent(event)}</Body>
           <Body muted>{formatTimestamp(event.createdAt)}</Body>
         </View>
       ))}

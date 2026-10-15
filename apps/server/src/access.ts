@@ -6,6 +6,10 @@ import type { Config } from "./config.ts";
 
 const credentialPermissions = z.object({ kanvil: z.array(z.enum(scopes)) });
 const credentialMetadata = z.object({ projectIds: z.array(z.uuid()).max(1000) });
+export function requireSession(actor: Actor) {
+  if (actor.machine) fail(403, "session_required", "Use a signed-in account for this action");
+  return actor;
+}
 export function createAccess(auth: Auth, domain: Domain, config: Config) {
   async function authenticate(request: Request): Promise<Actor> {
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");

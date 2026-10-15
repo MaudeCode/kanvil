@@ -30,6 +30,12 @@ Events are permission-filtered and contain ticket IDs, versions, and change meta
 
 The portable `@kanvil/client` package supplies validated calls, one safe network retry for registered operations using the original request ID, and a parsed SSE consumer. Its `subscribe` method accepts an abort signal, processing/checkpoint callbacks, connection-state updates, and an optional fresh-snapshot callback for expired cursors. Its `watch` helper coordinates initial query refresh and expired-cursor recovery for query caches. Its query/action options work with TanStack Query without importing React into the SDK. Native clients can set `credentials: "omit"` and supply their securely stored session cookie through the headers callback. Custom `request` calls do not retry automatically, because arbitrary endpoints may lack idempotency. Actions execute immediately and are not queued for offline submission.
 
+## Notifications
+
+Subscribe to a ticket with `set_subscription`. Inbox entries are created atomically with subscribed ticket events and filtered by current project access when read. Human edits do not notify their author; agent credentials do notify their subscribing owner. Event data includes the ticket key/title and server-recorded `source.kind` and `source.id` for the session account or credential.
+
+Signed-in accounts can read and update `/api/v1/notifications/preferences` with `{ "inApp": true }` using GET/PUT. Disabling Inbox notifications affects future entries; existing history is retained. Read the latest 100 entries at `/api/v1/notifications` and mark selected UUIDs read at POST `/api/v1/notifications/read` with `{ "ids": [...] }`. Credentials cannot change personal preferences or mark Inbox entries read.
+
 ## MCP
 
 The authenticated Streamable HTTP endpoint is `/mcp`. Tool inputs use the shared HTTP contracts, including expected versions, request IDs, and claim IDs. Successful structured results have a `result` property. Business failures return an error result with a stable code.

@@ -8,14 +8,28 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { APIError as AuthAPIError } from "better-auth/api";
-import { ApiError, errorSchema, operations, isOperation, scopes } from "@kanvil/contracts";
+import {
+  ApiError,
+  errorSchema,
+  operations,
+  isOperation,
+  scopes,
+  notificationPreferencesSchema,
+} from "@kanvil/contracts";
 import { createAuth } from "./auth.ts";
-import { createAccess } from "./access.ts";
+import { createAccess, requireSession } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
 import { createRealtime } from "./realtime.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
-import { attachmentContent, attachments, eventClock, events, notifications } from "./schema.ts";
+import {
+  attachmentContent,
+  attachments,
+  eventClock,
+  events,
+  notifications,
+  notificationPreferences,
+} from "./schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
 
@@ -280,6 +294,24 @@ export async function createApplication(database: Database, config: Config) {
       },
     });
   });
+  app.get("/api/v1/notifications/preferences", async (c) => {
+    const row = (
+      await database.db
+        .select()
+        .from(notificationPreferences)
+        .where(eq(notificationPreferences.userId, c.get("actor").id))
+    )[0];
+    return Response.json(notificationPreferencesSchema.parse(row ? { inApp: row.inApp } : {}));
+  });
+  app.put("/api/v1/notifications/preferences", async (c) => {
+    const identity = requireSession(c.get("actor"));
+    const input = notificationPreferencesSchema.parse(await c.req.json());
+    await database.db
+      .insert(notificationPreferences)
+      .values({ userId: identity.id, ...input })
+      .onConflictDoUpdate({ target: notificationPreferences.userId, set: input });
+    return Response.json(input);
+  });
   app.get("/api/v1/notifications", async (c) => {
     const identity = c.get("actor"),
       allowed = await domain.accessibleProjects(identity);
@@ -305,6 +337,7 @@ export async function createApplication(database: Database, config: Config) {
     );
   });
   app.post("/api/v1/notifications/read", async (c) => {
+    requireSession(c.get("actor"));
     const input = z.object({ ids: z.array(z.uuid()).min(1).max(100) }).parse(await c.req.json());
     await database.db
       .update(notifications)

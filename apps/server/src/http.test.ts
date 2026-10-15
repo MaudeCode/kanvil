@@ -365,4 +365,76 @@ describe("HTTP, realtime, and MCP", () => {
     }
     expect(cursors.length).toBeGreaterThan(0);
   });
+  it("notifies credential owners, records provenance, and respects account preferences", async () => {
+    const project = await newProject(),
+      human = client();
+    const ticket = await human.call("create_ticket", {
+      projectId: project.id,
+      title: "Agent inbox context",
+    });
+    await human.call("set_subscription", {
+      projectId: project.id,
+      ticketId: ticket.id,
+      enabled: true,
+    });
+    const before = await request("/api/v1/notifications", { headers: sessionHeaders() });
+    const ids = z
+      .array(z.object({ id: z.string() }))
+      .parse(await before.json())
+      .map((row) => row.id);
+    await human.call("add_comment", {
+      projectId: project.id,
+      ticketId: ticket.id,
+      body: "My own browser edit",
+    });
+    const issued = await credential(project.id);
+    const machine = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: () => ({ Authorization: `Bearer ${issued.key}` }),
+      fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+    });
+    await machine.call("add_comment", {
+      projectId: project.id,
+      ticketId: ticket.id,
+      body: "Agent progress",
+    });
+    const inbox = await request("/api/v1/notifications", { headers: sessionHeaders() });
+    const added = z
+      .array(
+        z.object({ id: z.string(), event: z.object({ data: z.record(z.string(), z.unknown()) }) }),
+      )
+      .parse(await inbox.json())
+      .filter((row) => !ids.includes(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]?.event.data).toMatchObject({
+      key: ticket.key,
+      title: ticket.title,
+      source: { kind: "credential", id: issued.id },
+    });
+    expect(await human.notificationPreferences().queryFn()).toEqual({ inApp: true });
+    await expect(machine.setNotificationPreferences({ inApp: false })).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(
+      (
+        await request("/api/v1/notifications/read", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${issued.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: added.map((row) => row.id) }),
+        })
+      ).status,
+    ).toBe(403);
+    try {
+      expect(await human.setNotificationPreferences({ inApp: false })).toEqual({ inApp: false });
+      await machine.call("add_comment", {
+        projectId: project.id,
+        ticketId: ticket.id,
+        body: "Muted progress",
+      });
+      const muted = await request("/api/v1/notifications", { headers: sessionHeaders() });
+      expect(z.array(z.unknown()).parse(await muted.json())).toHaveLength(ids.length + 1);
+    } finally {
+      await human.setNotificationPreferences({ inApp: true });
+    }
+  });
 });
