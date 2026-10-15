@@ -1,4 +1,4 @@
-import { formatTimestamp } from "@kanvil/contracts";
+import { formatTimestamp, priorityLabels } from "@kanvil/contracts";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useLayoutEffect, useState } from "react";
 import { Alert, Share, Text, View } from "react-native";
@@ -56,20 +56,38 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
     <Screen>
       <View style={styles.actions}>
         <Status value={ticket.status} />
-        <Body muted>
-          {ticket.priority} · {ticket.kind} · {ticket.difficulty ?? "Unspecified difficulty"} · v
-          {ticket.version}
+        <Body muted small>
+          {priorityLabels[ticket.priority]} priority
+        </Body>
+        <Body muted small>
+          {ticket.kind}
+        </Body>
+        <Body muted small>
+          {ticket.difficulty ?? "Unspecified difficulty"}
+        </Body>
+        <Body muted small>
+          v{ticket.version}
         </Body>
       </View>
       <Text
         accessibilityRole="header"
         selectable
-        style={{ color: color.foreground, fontSize: 26, fontWeight: "700", lineHeight: 35 }}
+        style={{
+          color: color.foreground,
+          fontSize: 29,
+          fontWeight: "600",
+          lineHeight: 37,
+          letterSpacing: -0.6,
+        }}
       >
         {ticket.title}
       </Text>
       {ticket.archived && <Body muted>Archived</Body>}
-      <Body muted>{ticket.labels.map((label) => `#${label}`).join(" ")}</Body>
+      {ticket.labels.length > 0 && (
+        <Body muted small>
+          {ticket.labels.map((label) => `#${label}`).join(" ")}
+        </Body>
+      )}
       <View style={styles.actions}>
         <Button
           title={subscribed ? "Unsubscribe" : "Subscribe"}

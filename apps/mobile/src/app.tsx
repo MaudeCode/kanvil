@@ -32,7 +32,17 @@ import {
   useConnection,
   useLive,
 } from "./data.tsx";
-import { Body, Button, ErrorNotice, Field, Heading, Loading, Screen, usePalette } from "./ui.tsx";
+import {
+  Body,
+  Brand,
+  Button,
+  ErrorNotice,
+  Field,
+  Heading,
+  Loading,
+  Screen,
+  usePalette,
+} from "./ui.tsx";
 import { Projects, Tickets } from "./lists.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
@@ -116,7 +126,7 @@ function ServerSetup({
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
-        <Heading>Kanvil</Heading>
+        <Brand />
         <Field
           label="Server URL"
           value={url}
@@ -201,6 +211,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
+        <Brand />
         <Heading>{info.data?.setupRequired ? "Create your owner account" : "Sign in"}</Heading>
         <Body muted>{baseUrl}</Body>
         <ErrorNotice error={error ?? info.error} />
@@ -343,7 +354,13 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
       }}
     >
       <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: color.surface }}>
-        <Stack.Navigator screenOptions={{ headerShadowVisible: false }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShadowVisible: false,
+            headerTitleStyle: { fontSize: 17, fontWeight: "600" },
+            headerBackButtonDisplayMode: "minimal",
+          }}
+        >
           <Stack.Screen name="Home" options={{ headerShown: false, title: "Projects" }}>
             {() => <Home onDisconnect={onDisconnect} />}
           </Stack.Screen>
@@ -362,9 +379,15 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
         <View
           pointerEvents="none"
           accessibilityLiveRegion="polite"
-          style={{ paddingHorizontal: 16, paddingVertical: 3, backgroundColor: color.surface }}
+          style={{
+            paddingHorizontal: 22,
+            paddingVertical: 5,
+            borderTopWidth: 0.5,
+            borderTopColor: color.line,
+            backgroundColor: color.surface,
+          }}
         >
-          <Body muted>
+          <Body muted small>
             {connection === "connected"
               ? "● Live"
               : connection === "offline"
@@ -392,6 +415,10 @@ function tabIcon({ route }: { route: { name: string } }) {
       />
     ),
     headerShadowVisible: false,
+    headerTitleAlign: "left" as const,
+    headerTitleStyle: { fontSize: 28, fontWeight: "700" as const, letterSpacing: -0.8 },
+    headerStyle: { height: 112 },
+    tabBarLabelStyle: { fontSize: 11, fontWeight: "500" as const },
   };
 }
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
