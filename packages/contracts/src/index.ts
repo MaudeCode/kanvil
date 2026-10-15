@@ -82,7 +82,28 @@ export const ticketFields = z
 export const ticketChanges = ticketFields
   .partial()
   .refine((value) => Object.keys(value).length > 0, "Provide at least one change");
+export const workspaceSchema = z.object({
+  id: z.uuid(),
+  slug: text.max(80),
+  name: text.max(120),
+  description: z.string(),
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  role: z.enum(roles).nullable(),
+});
+export type Workspace = z.output<typeof workspaceSchema>;
+export const memberSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.enum(roles),
+  image: z.string().nullable().optional(),
+  source: z.enum(["project", "workspace"]).optional(),
+});
 export const projectSchema = z.object({
+  workspaceId: z.uuid(),
+  visibility: z.enum(["workspace", "private"]),
   id: z.uuid(),
   key: z.string(),
   name: z.string(),
@@ -284,8 +305,73 @@ const op = <I extends z.ZodObject, O extends z.ZodType>(
 ) => ({ input, output, method, path, scope, description });
 
 export const operations = {
-  list_projects: op(
+  list_workspaces: op(
     z.object({}),
+    z.array(workspaceSchema),
+    "GET",
+    "/workspaces",
+    "read",
+    "List accessible workspaces and the current membership role.",
+  ),
+  create_workspace: op(
+    z
+      .object({
+        ...mutation,
+        name: text.max(120),
+        slug: z
+          .string()
+          .trim()
+          .regex(/^[a-z0-9][a-z0-9-]{1,79}$/),
+        description: z.string().max(5000).default(""),
+      })
+      .strict(),
+    workspaceSchema,
+    "POST",
+    "/workspaces",
+    "write",
+    "Create a workspace and become its administrator.",
+  ),
+  update_workspace: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(120),
+        description: z.string().max(5000),
+      })
+      .strict(),
+    workspaceSchema,
+    "PATCH",
+    "/workspaces/{workspaceId}",
+    "admin",
+    "Update workspace details with version checks.",
+  ),
+  list_workspace_members: op(
+    z.object({ workspaceId: z.uuid() }),
+    z.array(memberSchema),
+    "GET",
+    "/workspaces/{workspaceId}/members",
+    "read",
+    "List members of a workspace you belong to.",
+  ),
+  set_workspace_member: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        email: z.email(),
+        role: z.enum(roles).nullable(),
+      })
+      .strict(),
+    ok,
+    "POST",
+    "/workspaces/{workspaceId}/members",
+    "admin",
+    "Manage workspace access; removal also revokes direct project access in this workspace.",
+  ),
+  list_projects: op(
+    z.object({ workspaceId: z.uuid().optional() }),
     z.array(projectSchema),
     "GET",
     "/projects",
@@ -296,6 +382,8 @@ export const operations = {
     z
       .object({
         ...mutation,
+        workspaceId: z.uuid().optional(),
+        visibility: z.enum(["workspace", "private"]).default("private"),
         key: z
           .string()
           .trim()
@@ -315,6 +403,7 @@ export const operations = {
       .extend({
         ...mutation,
         expectedVersion: version,
+        visibility: z.enum(["workspace", "private"]).optional(),
         name: text.max(120),
         description: z.string().max(5000),
       })
@@ -327,15 +416,7 @@ export const operations = {
   ),
   list_members: op(
     projectInput,
-    z.array(
-      z.object({
-        userId: z.string(),
-        name: z.string(),
-        email: z.string(),
-        role: z.enum(roles),
-        image: z.string().nullable().optional(),
-      }),
-    ),
+    z.array(memberSchema),
     "GET",
     "/projects/{projectId}/members",
     "read",

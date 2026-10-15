@@ -249,6 +249,17 @@ describe("HTTP, realtime, and MCP", () => {
       await sdk.connect(transport);
       const tools = await sdk.listTools();
       expect(tools.tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
+      const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
+      const discovered = z
+        .object({ result: z.array(z.object({ id: z.string(), role: z.null() })) })
+        .parse(spaces.structuredContent);
+      expect(discovered.result.map((workspace) => workspace.id)).toEqual([project.workspaceId]);
+      const forbidden = await sdk.callTool({
+        name: "list_workspace_members",
+        arguments: { workspaceId: project.workspaceId },
+      });
+      expect(forbidden.isError).toBe(true);
+
       const response = await sdk.callTool({
         name: "create_ticket",
         arguments: { projectId: project.id, title: "Created through MCP" },

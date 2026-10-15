@@ -20,7 +20,36 @@ const actor = () =>
   text("actor_id")
     .notNull()
     .references(() => user.id);
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  version: integer("version").notNull().default(1),
+  createdAt: time("created_at"),
+  updatedAt: time("updated_at"),
+});
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.userId] }),
+    index("workspace_member_user").on(table.userId),
+  ],
+);
 export const projects = pgTable("projects", {
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
+  visibility: text("visibility").notNull().default("private"),
   id: uuid("id").primaryKey().defaultRandom(),
   key: text("key").notNull().unique(),
   name: text("name").notNull(),

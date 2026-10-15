@@ -29,6 +29,8 @@ import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
 import {
+  workspaces,
+  workspaceMembers,
   attachmentContent,
   attachments,
   eventClock,
@@ -201,9 +203,15 @@ export async function createApplication(
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
       if (!(await setupRequired()))
         fail(409, "setup_complete", "Initial setup is already complete");
-      await auth.api.createUser({
+      const created = await auth.api.createUser({
         body: { email: input.email, name: input.name, password: input.password, role: "admin" },
       });
+      const workspace = requireRow(
+        (await tx.select().from(workspaces).where(eq(workspaces.slug, "kanvil")))[0],
+      );
+      await tx
+        .insert(workspaceMembers)
+        .values({ workspaceId: workspace.id, userId: created.user.id, role: "admin" });
     });
     return Response.json({ ok: true }, { status: 201 });
   });

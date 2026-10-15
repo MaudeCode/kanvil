@@ -1,0 +1,46 @@
+import { and, eq, inArray, isNotNull, sql, type SQLWrapper } from "drizzle-orm";
+import { z } from "zod";
+import { roles } from "@kanvil/contracts";
+import { projects } from "./schema.ts";
+import type { Actor, Context } from "./domain.ts";
+// One effective-role rule serves requests, discovery, notifications, and delivery revalidation.
+export function projectRoleSQL(userId: string | SQLWrapper, projectId: string | SQLWrapper) {
+  return sql<string | null>`(SELECT CASE WHEN wm.role = 'admin' THEN 'admin'
+    WHEN pm.role IS NOT NULL THEN pm.role
+    WHEN p.visibility = 'workspace' THEN wm.role ELSE NULL END
+    FROM projects p
+    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ${userId}
+    LEFT JOIN workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
+    WHERE p.id = ${projectId})`;
+}
+export async function projectRole(
+  db: Context["db"],
+  actor: Actor,
+  row: typeof projects.$inferSelect,
+) {
+  if (actor.admin) return "admin" as const;
+  const result = (
+    await db
+      .select({ role: projectRoleSQL(actor.id, row.id) })
+      .from(projects)
+      .where(eq(projects.id, row.id))
+  )[0];
+  return z.enum(roles).safeParse(result?.role).data;
+}
+export async function accessibleProjectRows(db: Context["db"], actor: Actor, workspaceId?: string) {
+  return db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        workspaceId ? eq(projects.workspaceId, workspaceId) : undefined,
+        actor.admin ? undefined : isNotNull(projectRoleSQL(actor.id, projects.id)),
+        actor.projectIds
+          ? actor.projectIds.length
+            ? inArray(projects.id, [...actor.projectIds])
+            : sql`false`
+          : undefined,
+      ),
+    )
+    .orderBy(projects.name);
+}

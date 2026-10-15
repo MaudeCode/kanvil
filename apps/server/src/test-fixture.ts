@@ -1,10 +1,12 @@
 import pg from "pg";
-import { createDatabase } from "./database.ts";
+import { createDatabase, type Database } from "./database.ts";
 import { migrateDatabase } from "./migrate.ts";
 import { readConfig } from "./config.ts";
 import { createAuth } from "./auth.ts";
 
-export async function createFixture() {
+export async function createFixture({
+  beforeMigrate,
+}: { beforeMigrate?: (database: Database) => Promise<void> } = {}) {
   const url = new URL(
     process.env.TEST_DATABASE_URL ?? "postgres://kanvil:kanvil@127.0.0.1:55462/kanvil",
   );
@@ -20,7 +22,15 @@ export async function createFixture() {
     BETTER_AUTH_SECRET: crypto.randomUUID(),
     KANVIL_SETUP_TOKEN: crypto.randomUUID(),
   });
-  await migrateDatabase(database);
+  try {
+    await beforeMigrate?.(database);
+    await migrateDatabase(database);
+  } catch (error) {
+    await database.pool.end();
+    await admin.query(`DROP DATABASE "${name}"`);
+    await admin.end();
+    throw error;
+  }
   const auth = createAuth(database, config);
   return {
     database,

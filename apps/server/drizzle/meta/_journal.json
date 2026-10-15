@@ -57,6 +57,13 @@
       "when": 1792082671926,
       "tag": "0007_optional_broker",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792092747787,
+      "tag": "0008_workspaces",
+      "breakpoints": true
     }
   ]
 }

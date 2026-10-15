@@ -1,6 +1,9 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { members, projects, views } from "./schema.ts";
+import { projectSchema } from "@kanvil/contracts";
+import { accessibleProjectRows } from "./project-access.ts";
+import { requireWorkspace } from "./workspace-operations.ts";
+import { members, projects, views, workspaces, workspaceMembers } from "./schema.ts";
 import { fail, project, publish, requireRow, type Handlers } from "./domain.ts";
 
 export const projectHandlers: Pick<
@@ -14,31 +17,51 @@ export const projectHandlers: Pick<
   | "save_view"
   | "delete_view"
 > = {
-  async list_projects(ctx) {
-    const memberships = await ctx.db
-      .select({ projectId: members.projectId })
-      .from(members)
-      .where(eq(members.userId, ctx.actor.id));
-    const ids = ctx.actor.admin ? undefined : memberships.map((row) => row.projectId);
-    if (ids && !ids.length) return [];
-    return ctx.db
-      .select()
-      .from(projects)
-      .where(
-        and(
-          ids ? inArray(projects.id, ids) : undefined,
-          ctx.actor.projectIds
-            ? ctx.actor.projectIds.length
-              ? inArray(projects.id, [...ctx.actor.projectIds])
-              : sql`false`
-            : undefined,
-        ),
-      )
-      .orderBy(projects.name);
+  async list_projects(ctx, input) {
+    return accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
   },
   async create_project(ctx, input) {
     if (ctx.actor.projectIds)
       fail(403, "insufficient_scope", "Project-bound credentials cannot create projects");
+    let workspaceId = input.workspaceId;
+    if (workspaceId) {
+      const workspace = await requireWorkspace(ctx, workspaceId);
+      if (workspace.role === "reader")
+        fail(403, "forbidden", "Project creation requires workspace write access");
+    } else {
+      const available = ctx.actor.admin
+        ? await ctx.db
+            .select({ workspaceId: workspaces.id })
+            .from(workspaces)
+            .orderBy(workspaces.createdAt)
+            .limit(1)
+        : await ctx.db
+            .select({ workspaceId: workspaceMembers.workspaceId })
+            .from(workspaceMembers)
+            .where(
+              and(
+                eq(workspaceMembers.userId, ctx.actor.id),
+                inArray(workspaceMembers.role, ["writer", "admin"]),
+              ),
+            )
+            .orderBy(workspaceMembers.workspaceId)
+            .limit(1);
+      workspaceId = available[0]?.workspaceId;
+      if (!workspaceId) {
+        const personal = requireRow(
+          (
+            await ctx.db
+              .insert(workspaces)
+              .values({ name: "Personal workspace", slug: `personal-${crypto.randomUUID()}` })
+              .returning()
+          )[0],
+        );
+        workspaceId = personal.id;
+        await ctx.db
+          .insert(workspaceMembers)
+          .values({ workspaceId, userId: ctx.actor.id, role: "admin" });
+      }
+    }
     if (
       (await ctx.db.select({ id: projects.id }).from(projects).where(eq(projects.key, input.key)))
         .length
@@ -48,7 +71,13 @@ export const projectHandlers: Pick<
       (
         await ctx.db
           .insert(projects)
-          .values({ key: input.key, name: input.name, description: input.description })
+          .values({
+            workspaceId,
+            visibility: input.visibility,
+            key: input.key,
+            name: input.name,
+            description: input.description,
+          })
           .returning()
       )[0],
     );
@@ -56,11 +85,11 @@ export const projectHandlers: Pick<
     await publish(
       {
         ...ctx,
-        project: {
+        project: projectSchema.parse({
           ...row,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
-        },
+        }),
       },
       "project.created",
       null,
@@ -80,6 +109,7 @@ export const projectHandlers: Pick<
           .update(projects)
           .set({
             name: input.name,
+            ...(input.visibility ? { visibility: input.visibility } : {}),
             description: input.description,
             version: current.version + 1,
             updatedAt: new Date(),
@@ -92,9 +122,26 @@ export const projectHandlers: Pick<
     return row;
   },
   async list_members(ctx) {
-    return ctx.db
+    const current = project(ctx);
+    const inherited = await ctx.db
       .select({
-        userId: members.userId,
+        userId: user.id,
+        role: workspaceMembers.role,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+      })
+      .from(workspaceMembers)
+      .innerJoin(user, eq(user.id, workspaceMembers.userId))
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, current.workspaceId),
+          current.visibility === "workspace" ? undefined : eq(workspaceMembers.role, "admin"),
+        ),
+      );
+    const direct = await ctx.db
+      .select({
+        userId: user.id,
         role: members.role,
         name: user.name,
         email: user.email,
@@ -102,7 +149,14 @@ export const projectHandlers: Pick<
       })
       .from(members)
       .innerJoin(user, eq(user.id, members.userId))
-      .where(eq(members.projectId, project(ctx).id));
+      .where(eq(members.projectId, current.id));
+    const people = new Map(
+      inherited.map((person) => [person.userId, { ...person, source: "workspace" }]),
+    );
+    for (const person of direct)
+      if (people.get(person.userId)?.role !== "admin")
+        people.set(person.userId, { ...person, source: "project" });
+    return [...people.values()].toSorted((a, b) => a.name.localeCompare(b.name));
   },
   async set_member(ctx, input) {
     const member = requireRow(

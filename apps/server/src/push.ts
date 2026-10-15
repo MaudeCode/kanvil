@@ -1,9 +1,9 @@
+import { projectRoleSQL } from "./project-access.ts";
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { Expo, type ExpoPushTicket, type ExpoPushReceipt } from "expo-server-sdk";
 import { session, user } from "./auth-schema.ts";
 import {
   events,
-  members,
   notificationPreferences,
   notifications,
   pushDeliveries,
@@ -44,7 +44,7 @@ export async function deliverPushBatch(database: Database, config: Config, trans
             preference: notificationPreferences,
             account: user,
             session: session,
-            member: members,
+            projectRole: projectRoleSQL(user.id, notifications.projectId),
             subscription: subscriptions,
             ticketId: tickets.id,
           })
@@ -56,10 +56,6 @@ export async function deliverPushBatch(database: Database, config: Config, trans
           .innerJoin(user, eq(user.id, pushDevices.userId))
           .innerJoin(session, eq(session.id, pushDevices.sessionId))
           .leftJoin(notificationPreferences, eq(notificationPreferences.userId, user.id))
-          .leftJoin(
-            members,
-            and(eq(members.projectId, notifications.projectId), eq(members.userId, user.id)),
-          )
           .leftJoin(
             subscriptions,
             and(eq(subscriptions.ticketId, events.ticketId), eq(subscriptions.userId, user.id)),
@@ -79,7 +75,7 @@ export async function deliverPushBatch(database: Database, config: Config, trans
         row.session.expiresAt <= new Date() ||
         !row.preference?.push ||
         (!row.subscription && row.ticketId !== null) ||
-        (!row.member && !row.account.role?.split(",").includes("admin"))
+        (!row.projectRole && !row.account.role?.split(",").includes("admin"))
       ) {
         await finish("access_revoked");
         continue;

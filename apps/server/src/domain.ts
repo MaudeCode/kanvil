@@ -11,6 +11,7 @@ import {
   type Project,
   scopes,
   snapshotSchema,
+  projectSchema,
 } from "@kanvil/contracts";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
@@ -18,7 +19,6 @@ import {
   claims,
   eventClock,
   events,
-  members,
   notifications,
   notificationPreferences,
   pushDevices,
@@ -29,6 +29,8 @@ import {
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
+import { projectRole, projectRoleSQL } from "./project-access.ts";
+import { workspaceHandlers } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
@@ -107,15 +109,8 @@ async function context(
   );
   if (actor.projectIds && !actor.projectIds.includes(row.id))
     fail(404, "not_found", "Project was not found");
-  const membership = (
-    await db
-      .select()
-      .from(members)
-      .where(and(eq(members.projectId, row.id), eq(members.userId, actor.id)))
-      .limit(1)
-  )[0];
-  if (!membership && !actor.admin) fail(404, "not_found", "Project was not found");
-  const role = actor.admin ? "admin" : membership?.role;
+  const role = await projectRole(db, actor, row);
+  if (!role) fail(404, "not_found", "Project was not found");
   if (role !== "reader" && role !== "writer" && role !== "admin")
     fail(403, "forbidden", "Project access is unavailable");
   if (scope === "admin" && role !== "admin")
@@ -124,11 +119,11 @@ async function context(
     fail(403, "forbidden", "Project write permission is required");
   return {
     ...ctx,
-    project: {
+    project: projectSchema.parse({
       ...row,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
-    },
+    }),
     role,
   };
 }
@@ -199,18 +194,14 @@ export async function publish(
       })
       .from(subscriptions)
       .innerJoin(user, eq(user.id, subscriptions.userId))
-      .leftJoin(
-        members,
-        and(
-          eq(members.projectId, subscriptions.projectId),
-          eq(members.userId, subscriptions.userId),
-        ),
-      )
       .leftJoin(notificationPreferences, eq(notificationPreferences.userId, subscriptions.userId))
       .where(
         and(
           eq(subscriptions.ticketId, ticketId),
-          or(isNotNull(members.userId), sql`'admin' = any(string_to_array(${user.role}, ','))`),
+          or(
+            isNotNull(projectRoleSQL(user.id, subscriptions.projectId)),
+            sql`'admin' = any(string_to_array(${user.role}, ','))`,
+          ),
           sql`not coalesce(${user.banned}, false)`,
           ctx.actor.machine ? undefined : ne(subscriptions.userId, ctx.actor.id),
           or(
@@ -277,7 +268,12 @@ export function createDomain(
   database: Database,
   services: { blobs?: BlobWriter; search?: TicketSearchProvider } = {},
 ) {
-  const handlers: Handlers = { ...projectHandlers, ...ticketHandlers, ...collaborationHandlers };
+  const handlers: Handlers = {
+    ...workspaceHandlers,
+    ...projectHandlers,
+    ...ticketHandlers,
+    ...collaborationHandlers,
+  };
   async function execute<K extends Operation>(
     name: K,
     value: unknown,

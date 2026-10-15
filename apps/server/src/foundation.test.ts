@@ -13,11 +13,11 @@ describe("self-hosted foundation", () => {
   });
   it("applies the real PostgreSQL schema and prevents duplicate ticket prefixes", async () => {
     await fixture.database.pool.query(
-      "INSERT INTO projects (key, name) VALUES ('TEST', 'Test project')",
+      "INSERT INTO projects (workspace_id, key, name) SELECT id, 'TEST', 'Test project' FROM workspaces WHERE slug = 'kanvil'",
     );
     await expect(
       fixture.database.pool.query(
-        "INSERT INTO projects (key, name) VALUES ('TEST', 'Another project')",
+        "INSERT INTO projects (workspace_id, key, name) SELECT id, 'TEST', 'Another project' FROM workspaces WHERE slug = 'kanvil'",
       ),
     ).rejects.toMatchObject({ code: "23505" });
     const clock = await fixture.database.pool.query("SELECT value FROM event_clock WHERE id = 1");

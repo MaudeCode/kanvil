@@ -72,6 +72,26 @@ describe("durable optional native push", () => {
       },
     });
     owner = await app.domain.actor(created.user.id);
+    const administrator = await fixture.auth.api.createUser({
+      body: {
+        name: "Workspace administrator",
+        email: "workspace-admin@example.test",
+        password: "Isolated push password 42!",
+        role: "user",
+      },
+    });
+    const workspaceAdmin = await app.domain.actor(administrator.user.id);
+    const workspace = await app.domain.execute(
+      "create_workspace",
+      { name: "Push workspace", slug: "push-workspace" },
+      workspaceAdmin,
+    );
+    await app.domain.execute(
+      "set_workspace_member",
+      { workspaceId: workspace.id, email: created.user.email, role: "writer" },
+      workspaceAdmin,
+    );
+
     machine = await app.domain.actor(created.user.id, {
       ownerId: "test-worker",
       scopes: ["read", "write", "admin"],
