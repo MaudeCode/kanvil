@@ -656,3 +656,7 @@ export function errorMessage(error: unknown): string {
       ? error
       : "The request could not be completed";
 }
+
+export function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}

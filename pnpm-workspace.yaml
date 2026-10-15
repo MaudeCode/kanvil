@@ -45,4 +45,13 @@ minimumReleaseAgeExclude:
   - "@playwright/test@1.64.1"
   - playwright-core@1.64.1
   - playwright@1.64.1
+  - "@expo/cli@57.0.30"
+  - "@expo/prebuild-config@57.0.19"
+  - expo-asset@57.0.20
+  - expo-constants@57.0.22
+  - expo-modules-autolinking@57.0.16
+  - expo-modules-core@57.0.23
+  - expo@57.0.29
+  - expo-linking@57.0.13
+  - expo-notifications@57.0.23
 saveExact: true

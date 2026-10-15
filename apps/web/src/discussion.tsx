@@ -62,7 +62,8 @@ function Comment({
     update = useOperation("update_comment"),
     remove = useOperation("delete_comment");
   const [editing, setEditing] = useState(false),
-    [body, setBody] = useState(comment.body);
+    [body, setBody] = useState(comment.body),
+    [editingVersion, setEditingVersion] = useState(comment.version);
   return (
     <article className="comment">
       <div className="metadata">
@@ -80,7 +81,7 @@ function Comment({
               .mutateAsync({
                 projectId: comment.projectId,
                 commentId: comment.id,
-                expectedVersion: comment.version,
+                expectedVersion: editingVersion,
                 body,
               })
               .then(() => setEditing(false))
@@ -106,7 +107,17 @@ function Comment({
       )}
       {(comment.actorId === identity.id || identity.admin) && (
         <div className="actions">
-          <Button onClick={() => setEditing(!editing)}>Edit</Button>
+          <Button
+            onClick={() => {
+              if (!editing) {
+                setBody(comment.body);
+                setEditingVersion(comment.version);
+              }
+              setEditing(!editing);
+            }}
+          >
+            Edit
+          </Button>
           <Confirm
             label="Delete comment"
             danger

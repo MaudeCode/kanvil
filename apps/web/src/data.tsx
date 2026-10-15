@@ -64,8 +64,7 @@ export function clearPrivateStorage(userId: string) {
   for (const key of Object.keys(localStorage))
     if (key.startsWith(`kanvil:${userId}:`)) localStorage.removeItem(key);
 }
-export const date = (value: string) =>
-  new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+export { formatTimestamp as date } from "@kanvil/contracts";
 
 export function useProjectAccess(projectId: string) {
   const identity = useIdentity(),

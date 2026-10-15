@@ -18,3 +18,8 @@ coverage/
 .DS_Store
 playwright-report/
 test-results/
+# Expo generates native projects from app.config.ts and its plugins.
+/apps/mobile/ios/
+/apps/mobile/android/
+
+/snapshot-fallback.png

@@ -33,3 +33,5 @@ Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm te
 The single CI job runs on pull requests and pushes to `main`. Dependency updates arrive as grouped Dependabot pull requests for review.
 
 `pnpm test:oidc` also starts a disposable PocketID instance on loopback port 51411, runs the browser suite with a virtual passkey, and removes the fixture container afterward. PocketID data lives on tmpfs. The test uses only its fixed isolated API key; it never accepts a real provider URL or credentials. CI runs this provider flow alongside the MCP OAuth consent/PKCE exchange.
+
+Native setup, session storage, deep links, and validation commands are in [docs/mobile.md](docs/mobile.md). `pnpm mobile:export` checks both native JavaScript bundles. Regenerate the shared app mark and native icon with `pnpm assets:generate`.

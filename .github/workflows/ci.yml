@@ -79,3 +79,8 @@ jobs:
 
       - name: Browser workflows
         run: pnpm exec playwright test
+
+      - name: Export native applications
+        env:
+          EXPO_NO_TELEMETRY: "1"
+        run: pnpm mobile:export
