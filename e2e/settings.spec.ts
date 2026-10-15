@@ -58,12 +58,20 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.screenshot({ path: "test-results/settings-themes-mobile.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole("tab", { name: "Profile & security", exact: true }).click();
+  await page.goto(`/projects/${project.id}/settings`);
+  await page.getByRole("tab", { name: "Members", exact: true }).click();
+  await expect(page.locator(".member-row").filter({ hasText: "owner@example.test" })).toBeVisible();
+  await page.goto("/settings?section=account");
   await page
     .getByLabel("Profile photo file", { exact: true })
     .setInputFiles("apps/web/public/brand/icon-192.png");
   await expect(page.getByText("Photo updated", { exact: true })).toBeVisible();
   await expect(page.locator('img[src^="/api/v1/users/"]')).toHaveCount(2);
+  await page.goto(`/projects/${project.id}/settings`);
+  await page.getByRole("tab", { name: "Members", exact: true }).click();
+  const owner = page.locator(".member-row").filter({ hasText: "owner@example.test" });
+  await expect(owner.locator('img[src^="/api/v1/users/"]')).toBeVisible();
+  await page.goto("/settings?section=account");
   await page.reload();
   await expect(page.getByRole("button", { name: "Remove photo", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Remove photo", exact: true }).click();

@@ -106,7 +106,7 @@ export function ProjectSettings({ project }: { project: Project }) {
               members.data?.map((person) => (
                 <div className="member-row" key={person.userId}>
                   <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <UserAvatar name={person.name} />
+                    <UserAvatar name={person.name} image={person.image} />
                     <div className="min-w-0">
                       <strong className="block font-medium">{person.name}</strong>
                       <span className="break-all text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Camera, Trash2, Pencil } from "lucide-react";
 import { photoResultSchema } from "@kanvil/contracts/instance";
 import { api, auth, useIdentity } from "../data.tsx";
@@ -40,6 +41,7 @@ async function normalizePhoto(file: File) {
   }
 }
 export function ProfileSettings() {
+  const cache = useQueryClient();
   const identity = useIdentity(),
     session = auth.useSession(),
     file = useRef<HTMLInputElement>(null),
@@ -48,6 +50,9 @@ export function ProfileSettings() {
     [name, setName] = useState(identity.name),
     [error, setError] = useState<unknown>(),
     [message, setMessage] = useState("");
+  async function refreshProfile() {
+    await Promise.all([session.refetch(), cache.invalidateQueries({ queryKey: ["kanvil"] })]);
+  }
   async function photo(value?: File) {
     setPending(true);
     setError(undefined);
@@ -64,7 +69,7 @@ export function ProfileSettings() {
             }
           : { method: "DELETE" },
       );
-      await session.refetch();
+      await refreshProfile();
       setMessage(value ? "Photo updated" : "Photo removed");
     } catch (cause) {
       setError(cause);
@@ -144,7 +149,7 @@ export function ProfileSettings() {
               .updateUser({ name })
               .then(async (result) => {
                 if (result.error) throw new Error(result.error.message);
-                await session.refetch();
+                await refreshProfile();
                 setEditing(false);
                 setMessage("Profile saved");
               })

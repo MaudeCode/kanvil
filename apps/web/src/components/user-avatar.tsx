@@ -10,9 +10,9 @@ export function UserAvatar({
   className?: string;
 }) {
   return (
-    <Avatar className={cn("size-8 rounded-lg", className)}>
+    <Avatar className={cn("size-8 overflow-hidden rounded-full text-xs", className)}>
       {image && <AvatarImage src={image} alt="" />}
-      <AvatarFallback className="rounded-lg bg-primary/10 font-medium text-primary">
+      <AvatarFallback className="rounded-full bg-primary/10 font-medium text-primary text-[length:inherit]">
         {name
           .split(/\s+/)
           .slice(0, 2)
