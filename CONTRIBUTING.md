@@ -30,6 +30,8 @@ Keep each pull request focused on one coherent change. Describe the resulting be
 
 Dependencies are pinned to exact versions and resolved in `pnpm-lock.yaml`. Use current stable compatible releases when adding or updating dependencies; verify compatibility rather than forcing upgrades with overrides. Update the Node pin together with its supported engine range and matching Node type definitions when needed.
 
+Use the pinned pnpm version. Its lockfile intentionally contains an environment document for the package-manager pin before the application dependency document; see the [pnpm lockfile format](https://github.com/pnpm/pnpm/blob/main/pnpm/docs/lockfile.md). Do not remove either document to satisfy a single-document YAML parser.
+
 Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server.
 
 The single CI job runs on pull requests and pushes to `main`. Dependency updates arrive as grouped Dependabot pull requests for review.
