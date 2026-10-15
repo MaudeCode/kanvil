@@ -18,6 +18,39 @@ jobs:
     name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      pocket-id:
+        image: ghcr.io/pocket-id/pocket-id:v2.18.0@sha256:323e7ef5bfacf7cf32f22f3d10ccdf48e0c97c94d67e7e40b0b996830deb5165
+        env:
+          APP_URL: http://localhost:51411
+          ENCRYPTION_KEY: kanvil-isolated-test-encryption-key
+          STATIC_API_KEY: kanvil-isolated-test-admin-api-key
+          ANALYTICS_DISABLED: "true"
+          VERSION_CHECK_DISABLED: "true"
+          ICON_LIBRARY_URL: disabled
+        ports:
+          - 51411:1411
+        options: >-
+          --health-cmd "/app/pocket-id healthcheck"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kanvil
+          POSTGRES_PASSWORD: kanvil
+          POSTGRES_DB: kanvil
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kanvil -d kanvil"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      KANVIL_TEST_POCKET_ID: "1"
+      TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,3 +70,12 @@ jobs:
 
       - name: Check
         run: pnpm check
+
+      - name: Build web application
+        run: pnpm build
+
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser workflows
+        run: pnpm exec playwright test

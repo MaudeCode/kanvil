@@ -1,0 +1,496 @@
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { HTTPException } from "hono/http-exception";
+import { bodyLimit } from "hono/body-limit";
+import { secureHeaders } from "hono/secure-headers";
+import { streamSSE } from "hono/streaming";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { APIError as AuthAPIError } from "better-auth/api";
+import { ApiError, errorSchema, operations, isOperation, scopes } from "@kanvil/contracts";
+import { createAuth } from "./auth.ts";
+import { createAccess } from "./access.ts";
+import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
+import { createRealtime } from "./realtime.ts";
+import { createMcp } from "./mcp.ts";
+import { apikey } from "./auth-schema.ts";
+import { attachmentContent, attachments, eventClock, events, notifications } from "./schema.ts";
+import type { Database } from "./database.ts";
+import type { Config } from "./config.ts";
+
+type Variables = { actor: Actor };
+const setupInput = z
+  .object({
+    token: z.string().max(200),
+    email: z.email(),
+    name: z.string().trim().min(1).max(120),
+    password: z.string().min(12).max(128),
+  })
+  .strict();
+const keyInput = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    projectIds: z.array(z.uuid()).min(1).max(1000),
+    scopes: z.array(z.enum(scopes)).min(1),
+    expiresIn: z.number().int().min(3600).max(31_536_000).default(7_776_000),
+  })
+  .strict();
+const digest = (value: string) => createHash("sha256").update(value).digest();
+
+export async function createApplication(database: Database, config: Config) {
+  const auth = createAuth(database, config),
+    domain = createDomain(database),
+    access = createAccess(auth, domain, config),
+    realtime = await createRealtime(config);
+  const app = new OpenAPIHono<{ Variables: Variables }>({
+    defaultHook: (result) => {
+      if (!result.success)
+        return Response.json(
+          {
+            error: {
+              code: "validation_error",
+              message: "Invalid request",
+              details: result.error.issues.map((issue) => ({
+                path: issue.path.join("."),
+                message: issue.message,
+              })),
+            },
+          },
+          { status: 400 },
+        );
+      return undefined;
+    },
+  });
+  app.use("*", secureHeaders());
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: 15_000_000,
+      onError: () =>
+        Response.json(
+          { error: { code: "payload_too_large", message: "The request exceeds the upload limit" } },
+          { status: 413 },
+        ),
+    }),
+  );
+  app.onError((error) => {
+    if (error instanceof AuthAPIError && error.statusCode >= 400 && error.statusCode < 500)
+      return Response.json(
+        {
+          error: {
+            code: typeof error.body?.code === "string" ? error.body.code : "authentication_error",
+            message:
+              typeof error.body?.message === "string"
+                ? error.body.message
+                : "Authentication request failed",
+          },
+        },
+        { status: error.statusCode },
+      );
+    if (error instanceof ApiError)
+      return Response.json(
+        {
+          error: {
+            status: error.status,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        },
+        { status: error.status },
+      );
+    if (error instanceof z.ZodError)
+      return Response.json(
+        {
+          error: {
+            code: "validation_error",
+            message: "Invalid request",
+            details: error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+          },
+        },
+        { status: 400 },
+      );
+    if (error instanceof SyntaxError || error instanceof HTTPException)
+      return Response.json(
+        { error: { code: "invalid_request", message: "The request could not be parsed" } },
+        { status: error instanceof HTTPException ? error.status : 400 },
+      );
+    console.error("Kanvil request failed", { name: error.name });
+    return Response.json(
+      { error: { code: "internal_error", message: "The request could not be completed" } },
+      { status: 500 },
+    );
+  });
+  app.notFound(() =>
+    Response.json(
+      { error: { code: "not_found", message: "The requested endpoint was not found" } },
+      { status: 404 },
+    ),
+  );
+  app.get("/healthz", async () => {
+    await database.pool.query("SELECT 1");
+    return Response.json({ status: "ok" });
+  });
+  const setupRequired = async () =>
+    (await database.pool.query('SELECT count(*)::int AS count FROM "user"')).rows[0]?.count === 0;
+  app.get("/api/v1/info", async () =>
+    Response.json({
+      name: "Kanvil",
+      version: "0.1.0",
+      setupRequired: await setupRequired(),
+      oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,
+    }),
+  );
+  app.post("/api/v1/setup", async (c) => {
+    access.checkOrigin(c.req.raw);
+    const input = setupInput.parse(await c.req.json());
+    if (
+      !config.KANVIL_SETUP_TOKEN ||
+      !timingSafeEqual(digest(input.token), digest(config.KANVIL_SETUP_TOKEN))
+    )
+      fail(403, "invalid_setup_token", "The setup token is invalid");
+    await database.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+      if (!(await setupRequired()))
+        fail(409, "setup_complete", "Initial setup is already complete");
+      await auth.api.createUser({
+        body: { email: input.email, name: input.name, password: input.password, role: "admin" },
+      });
+    });
+    return Response.json({ ok: true }, { status: 201 });
+  });
+  // Credential creation is scoped through Kanvil instead of accepting arbitrary plugin metadata.
+  app.all("/api/auth/api-key/*", () =>
+    Response.json(
+      { error: { code: "not_found", message: "Use the Kanvil credentials API" } },
+      { status: 404 },
+    ),
+  );
+  app.on(["GET", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => auth.handler(c.req.raw));
+  const mcpHandler = createMcp(auth, domain, access, config);
+  app.all("/mcp", (c) => mcpHandler(c.req.raw));
+  app.use("/api/v1/*", async (c, next) => {
+    access.checkOrigin(c.req.raw);
+    c.set("actor", await access.authenticate(c.req.raw));
+    await next();
+  });
+
+  app.get("/api/v1/credentials", async (c) => {
+    const identity = c.get("actor");
+    if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
+    const rows = await database.db
+      .select({
+        id: apikey.id,
+        name: apikey.name,
+        start: apikey.start,
+        enabled: apikey.enabled,
+        expiresAt: apikey.expiresAt,
+        createdAt: apikey.createdAt,
+        permissions: apikey.permissions,
+        metadata: apikey.metadata,
+      })
+      .from(apikey)
+      .where(eq(apikey.referenceId, identity.id))
+      .orderBy(desc(apikey.createdAt));
+    return Response.json(json(rows));
+  });
+  app.post("/api/v1/credentials", async (c) => {
+    const identity = c.get("actor");
+    if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
+    const input = keyInput.parse(await c.req.json()),
+      allowed = await domain.accessibleProjects(identity);
+    if (input.projectIds.some((id) => !allowed.some((row) => row.id === id)))
+      fail(403, "forbidden", "Choose projects you can access");
+    const key = await auth.api.createApiKey({
+      body: {
+        userId: identity.id,
+        name: input.name,
+        prefix: "kv_",
+        metadata: { projectIds: input.projectIds },
+        permissions: { kanvil: input.scopes },
+        expiresIn: input.expiresIn,
+        rateLimitEnabled: true,
+        rateLimitMax: 600,
+        rateLimitTimeWindow: 60_000,
+      },
+    });
+    return Response.json(
+      { id: key.id, key: key.key, name: key.name, expiresAt: key.expiresAt },
+      { status: 201 },
+    );
+  });
+  app.delete("/api/v1/credentials/:id", async (c) => {
+    const identity = c.get("actor");
+    if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
+    const id = c.req.param("id");
+    requireRow(
+      (
+        await database.db
+          .select({ id: apikey.id })
+          .from(apikey)
+          .where(and(eq(apikey.id, id), eq(apikey.referenceId, identity.id)))
+      )[0],
+    );
+    await auth.api.deleteApiKey({ body: { keyId: id }, headers: c.req.raw.headers });
+    return Response.json({ ok: true });
+  });
+  app.get("/api/v1/snapshot", async (c) =>
+    Response.json(
+      await domain.snapshot(c.get("actor"), z.string().min(1).parse(c.req.query("projectId"))),
+    ),
+  );
+  app.get("/api/v1/checkpoint", async () => {
+    const row = requireRow(
+      (await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
+    );
+    return Response.json({ cursor: row.value.toString() });
+  });
+  app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
+    const id = z.uuid().parse(c.req.param("id"));
+    const row = requireRow(
+      (await database.db.select().from(attachments).where(eq(attachments.id, id)))[0],
+    );
+    const authorized = await domain.execute(
+      "list_attachments",
+      { projectId: c.req.param("projectId"), ticketId: row.ticketId },
+      c.get("actor"),
+    );
+    requireRow(authorized.find((item) => item.id === id));
+    const bytes = requireRow(
+      (
+        await database.db
+          .select({ data: attachmentContent.data })
+          .from(attachmentContent)
+          .where(eq(attachmentContent.id, id))
+      )[0],
+    ).data;
+    if (bytes.length !== row.size)
+      fail(500, "attachment_corrupt", "Attachment integrity check failed");
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": row.contentType,
+        "Content-Length": String(row.size),
+        "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "sandbox",
+      },
+    });
+  });
+  app.get("/api/v1/notifications", async (c) => {
+    const identity = c.get("actor"),
+      allowed = await domain.accessibleProjects(identity);
+    if (!allowed.length) return Response.json([]);
+    return Response.json(
+      json(
+        await database.db
+          .select({ id: notifications.id, readAt: notifications.readAt, event: events })
+          .from(notifications)
+          .innerJoin(events, eq(events.id, notifications.eventId))
+          .where(
+            and(
+              eq(notifications.userId, identity.id),
+              inArray(
+                notifications.projectId,
+                allowed.map((row) => row.id),
+              ),
+            ),
+          )
+          .orderBy(desc(notifications.createdAt))
+          .limit(100),
+      ),
+    );
+  });
+  app.post("/api/v1/notifications/read", async (c) => {
+    const input = z.object({ ids: z.array(z.uuid()).min(1).max(100) }).parse(await c.req.json());
+    await database.db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(eq(notifications.userId, c.get("actor").id), inArray(notifications.id, input.ids)),
+      );
+    return Response.json({ ok: true });
+  });
+  app.get("/api/v1/events", async (c) => {
+    const projectId = c.req.query("projectId");
+    const raw = c.req.query("cursor") ?? c.req.header("last-event-id");
+    let cursor =
+      raw === undefined
+        ? requireRow((await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0])
+            .value
+        : BigInt(
+            z
+              .string()
+              .regex(/^\d{1,19}$/)
+              .parse(raw),
+          );
+    await domain.readEvents(c.get("actor"), cursor, projectId);
+    c.header("X-Accel-Buffering", "no");
+    c.header("Cache-Control", "no-cache, no-transform");
+    return streamSSE(c, async (stream) => {
+      let active = true,
+        busy = false,
+        again = false;
+      let finish: () => void;
+      const done = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const stop = () => {
+        if (!active) return;
+        active = false;
+        clearInterval(heartbeat);
+        unsubscribe();
+        unsubscribeClose();
+        finish();
+      };
+      const pump = async () => {
+        if (!active) return;
+        if (busy) {
+          again = true;
+          return;
+        }
+        busy = true;
+        try {
+          do {
+            if (!active) break;
+            again = false;
+            const identity = await access.authenticate(c.req.raw);
+            const batch = await domain.readEvents(identity, cursor, projectId);
+            for (const event of batch.items) {
+              if (!active) break;
+              await stream.writeSSE({
+                event: "change",
+                id: event.id.toString(),
+                data: JSON.stringify(json(event)),
+              });
+            }
+            cursor = batch.cursor;
+            if (active)
+              await stream.writeSSE({
+                event: "checkpoint",
+                id: cursor.toString(),
+                data: JSON.stringify({ cursor: cursor.toString() }),
+              });
+            if (batch.items.length === 200) again = true;
+          } while (again);
+        } catch (error) {
+          if (active && error instanceof ApiError)
+            await stream
+              .writeSSE({
+                event: "error",
+                data: JSON.stringify({
+                  status: error.status,
+                  code: error.code,
+                  message: error.message,
+                }),
+              })
+              .catch(() => {});
+          stop();
+        } finally {
+          busy = false;
+        }
+      };
+      const schedule = () => {
+        void pump();
+      };
+      const unsubscribe = realtime.subscribe(schedule),
+        unsubscribeClose = realtime.onClose(stop);
+      const heartbeat = setInterval(schedule, 15_000);
+      stream.onAbort(stop);
+      await pump();
+      await done;
+    });
+  });
+
+  for (const name of Object.keys(operations).filter(isOperation)) {
+    const spec = operations[name],
+      params: Record<string, z.ZodType> = {},
+      rest: Record<string, z.ZodType> = {};
+    const keys = [...spec.path.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
+    for (const [key, value] of Object.entries(spec.input.shape)) {
+      if (keys.includes(key)) params[key] = value;
+      else rest[key] = value;
+    }
+    const method =
+      spec.method === "GET"
+        ? "get"
+        : spec.method === "POST"
+          ? "post"
+          : spec.method === "PATCH"
+            ? "patch"
+            : "delete";
+    const route = createRoute({
+      method,
+      path: `/api/v1${spec.path}`,
+      operationId: name,
+      description: spec.description,
+      security: [{ bearerAuth: [] }],
+      request: {
+        params: z.object(params),
+        ...(method === "get"
+          ? { query: z.object(rest).strict() }
+          : {
+              body: {
+                content: { "application/json": { schema: z.object(rest).strict() } },
+                required: true,
+              },
+            }),
+      },
+      responses: {
+        200: { description: "Success", content: { "application/json": { schema: spec.output } } },
+        400: {
+          description: "Invalid input",
+          content: { "application/json": { schema: errorSchema } },
+        },
+        401: { description: "Authentication required" },
+        403: { description: "Insufficient permissions" },
+        404: { description: "Not found" },
+        409: { description: "Version, ownership, or dependency conflict" },
+      },
+    });
+    app.openapi(route, async (c) => {
+      const values =
+        spec.method === "GET"
+          ? c.req.query()
+          : z.record(z.string(), z.unknown()).parse(await c.req.json());
+      return Response.json(
+        await domain.execute(name, { ...values, ...c.req.param() }, c.get("actor")),
+      );
+    });
+  }
+  app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+    type: "http",
+    scheme: "bearer",
+    description: "Kanvil API credential. Signed-in browser/mobile sessions are also accepted.",
+  });
+  app.doc31("/api/openapi.json", {
+    openapi: "3.1.0",
+    info: { title: "Kanvil API", version: "0.1.0" },
+    servers: [{ url: config.KANVIL_URL }],
+  });
+  const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
+  app.get(
+    "/assets/*",
+    serveStatic({
+      root: webRoot,
+      onFound: (_path, c) => {
+        c.header("Cache-Control", "public, max-age=31536000, immutable");
+      },
+    }),
+  );
+  app.get("*", async (c, next) => {
+    if (
+      c.req.path.startsWith("/api/") ||
+      c.req.path.startsWith("/.well-known/") ||
+      c.req.path === "/mcp" ||
+      c.req.path.includes(".")
+    )
+      return next();
+    c.header("Cache-Control", "no-store");
+    return serveStatic({ root: webRoot, path: "index.html" })(c, next);
+  });
+  return { app, auth, domain, close: () => realtime.close() };
+}
