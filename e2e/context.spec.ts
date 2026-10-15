@@ -6,6 +6,31 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await signIn(page);
+  await expect(page.locator('.workspace-header > [data-slot="separator"]')).toHaveCount(0);
+  for (const collapsed of [false, true]) {
+    if (collapsed) await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
+    await expect(page.locator('[data-slot="sidebar-container"]')).toHaveCSS(
+      "width",
+      collapsed ? "66px" : "256px",
+    );
+    const resizeRail = page.locator('[data-slot="sidebar-rail"]');
+    await expect
+      .poll(() =>
+        resizeRail.evaluate((rail) => {
+          const bounds = rail.getBoundingClientRect(),
+            header = document.querySelector(".workspace-header");
+          if (!header) return false;
+          return (
+            document.elementFromPoint(
+              bounds.x + bounds.width / 2,
+              header.getBoundingClientRect().y + 24,
+            ) === rail
+          );
+        }),
+      )
+      .toBe(true);
+  }
+  await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
   const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
   const project = await (
     await page.request.post("/api/v1/projects", {

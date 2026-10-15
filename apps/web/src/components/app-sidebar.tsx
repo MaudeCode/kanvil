@@ -41,7 +41,6 @@ import {
   DropdownMenuGroup,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -316,7 +315,6 @@ export function WorkspaceHeader() {
   return (
     <header className="workspace-header flex h-14 shrink-0 items-center gap-3 border-b px-4 md:px-6">
       <SidebarTrigger />
-      <Separator orientation="vertical" className="h-4!" />
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
