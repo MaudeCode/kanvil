@@ -3,6 +3,8 @@ packages:
   - packages/*
 
 engineStrict: true
+allowBuilds:
+  esbuild: true
 peerDependencyRules:
   allowedVersions:
     # Vite+ bundles a Vite-compatible fork with its own version number.
@@ -19,4 +21,18 @@ minimumReleaseAgeExclude:
   - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.2.0"
   - "@voidzero-dev/vite-plus-win32-x64-msvc@1.2.0"
   - vite-plus@1.2.0
+  - "@better-auth/api-key@1.7.8"
+  - "@better-auth/cimd@1.7.8"
+  - "@better-auth/core@1.7.8"
+  - "@better-auth/drizzle-adapter@1.7.8"
+  - "@better-auth/expo@1.7.8"
+  - "@better-auth/kysely-adapter@1.7.8"
+  - "@better-auth/mcp@1.7.8"
+  - "@better-auth/memory-adapter@1.7.8"
+  - "@better-auth/mongo-adapter@1.7.8"
+  - "@better-auth/oauth-provider@1.7.8"
+  - "@better-auth/prisma-adapter@1.7.8"
+  - "@better-auth/telemetry@1.7.8"
+  - auth@1.7.8
+  - better-auth@1.7.8
 saveExact: true

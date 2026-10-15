@@ -6,10 +6,11 @@ Install the Node version from `.node-version` and the pnpm version from the `pac
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm db:up
 pnpm check
 ```
 
-The workspace includes `apps/*` and `packages/*` as packages are introduced. Application scaffolding and runtime dependencies are not installed yet.
+The workspace includes `apps/*` and `packages/*`. `compose.dev.yml` runs an isolated development PostgreSQL instance on loopback port 55462. Tests create and remove their own databases; set `TEST_DATABASE_URL` to use another dedicated test PostgreSQL server. Stop the development service with `pnpm db:down`.
 
 ## Checks
 
@@ -17,7 +18,7 @@ The workspace includes `apps/*` and `packages/*` as packages are introduced. App
 
 Use `pnpm fmt` to format files, `pnpm lint` for linting, `pnpm typecheck` for type checks, and `pnpm test` for a test run. Target an individual suite with `pnpm exec vp test run path/to/file.test.ts`.
 
-There is no application test suite yet. The test command explicitly permits an empty suite during repository setup; remove `--passWithNoTests` when adding the first application tests. Add runtime-specific TypeScript configs, tests, and build checks when their application packages are introduced.
+Tests cover the shared contracts and the PostgreSQL/authentication foundation. An empty suite fails. Each workspace package has a TypeScript config extending the shared base.
 
 ## Changes
 

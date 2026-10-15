@@ -1,0 +1,19 @@
+name: kanvil-development
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: kanvil
+      POSTGRES_PASSWORD: kanvil
+      POSTGRES_DB: kanvil
+    ports:
+      - "127.0.0.1:55462:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanvil -d kanvil"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data:

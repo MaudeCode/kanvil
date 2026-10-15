@@ -18,6 +18,22 @@ jobs:
     name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kanvil
+          POSTGRES_PASSWORD: kanvil
+          POSTGRES_DB: kanvil
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kanvil -d kanvil"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
