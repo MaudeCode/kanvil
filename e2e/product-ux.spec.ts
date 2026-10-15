@@ -283,16 +283,17 @@ test("phone settings keep navigation, key actions, and user administration in vi
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Initial password", { exact: true }).fill("Phone review password 234!");
   await page.getByRole("button", { name: "Create account", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const accountPanel = page.getByRole("dialog", { name: "Phone review user", exact: true });
+  await expect(accountPanel).toBeVisible();
+  await accountPanel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(accountPanel).toHaveCount(0);
   const userRow = page.getByRole("row", { name: new RegExp(email) });
   await expect(userRow).toBeVisible();
   const disable = await userRow
-    .getByRole("button", { name: "Disable account", exact: true })
+    .getByRole("button", { name: "Manage Phone review user", exact: true })
     .boundingBox();
   expect(disable && disable.x >= 0 && disable.x + disable.width <= 320).toBeTruthy();
-  await page
-    .getByLabel("Search users by email", { exact: true })
-    .fill("no-such-user@example.invalid");
+  await page.getByLabel("Search users", { exact: true }).fill("no-such-user@example.invalid");
   await expect(page.getByText("No matching users", { exact: true })).toBeVisible();
   await page.request.delete(`/api/v1/credentials/${credential.id}`);
 });

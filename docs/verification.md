@@ -52,3 +52,17 @@ The existing 44 tests and browser workspace/OAuth workflows pass. CI additionall
 The approved anvil is applied to web/native brand components, application and launch-screen assets, favicons, touch/install icons, share metadata, and the README. Branding browser coverage checks the actual self-hosted asset URLs, loaded font, manifest icons, and absolute share-image URLs on root and nested pages. The iOS Release build with build number 2 was installed and its home-screen icon and native branding inspected in both themes; launch-screen resources were generated, compiled, and observed during a recorded cold launch of that binary. See [branding](branding.md) for the source and regeneration command.
 
 Use [CONTRIBUTING.md](../CONTRIBUTING.md) for checks and disposable fixtures, [self-hosting](self-hosting.md) for Compose/backup/recovery, [native builds](mobile.md) for simulator/preview/signing setup, and [examples](../examples/README.md) for external consumer integration.
+
+## Workspaces, identity, icons, and account administration
+
+The workspace/account update was verified locally without publishing a branch or deployment:
+
+- `pnpm check`: formatting, linting, workspace TypeScript checks, and 76 passing tests. The two optional live-service tests remain conditional on their isolated infrastructure fixtures.
+- `pnpm test:oidc`: 20 browser workflows passed, including disposable PocketID linking/login, interactive MCP consent/PKCE, workspace switching and deep links, inherited/private access, project icon selection/upload/reset, user administration, and role-dependent cache cleanup.
+- `pnpm test:docker`: packaged browser/API/MCP checks and database backup/restore passed, including workspace association, attachment bytes, and uploaded project icon bytes.
+- PostgreSQL tests upgrade populated pre-workspace data without widening private access; cover inherited/explicit roles, guest and scoped-key isolation, revoked membership, retry receipts, concurrent administrator changes, and library/image validation and cleanup protection.
+- Account tests exercise name/email search, filters, safe response fields, last-administrator protection through role/update/ban/delete paths and normalized URLs, password/session changes, public-profile role restrictions, and concurrent role edits.
+- Rendered project/workspace settings, member directories, user lists/detail sheets, icon selection, and API-key project choices were reviewed in light/dark at 1440, 390, and 320 pixels. Fixes included circular clipping, cached profile photos, sidebar label/prefix overlap, long identity wrapping, and narrow-container settings layouts.
+- Native account role parsing and persisted-cache versions share the same administrator-role rule. This update does not claim a new physical-device installation or validation.
+
+All integration fixtures use disposable test-owned databases/accounts. Existing project identifiers and ticket prefixes are retained. Local review remains separate from publication approval.

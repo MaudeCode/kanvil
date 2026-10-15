@@ -14,7 +14,7 @@ docker compose up -d --build --wait
 
 Configuration creates a mode-600 `.env` with independent random database, authentication, and initial setup secrets. It refuses to overwrite an existing file. Use an HTTPS origin without a path. Set up your HTTPS reverse proxy before opening that address. The application binds to loopback port 5180; change the host port with `KANVIL_PORT`.
 
-Open the site, enter `KANVIL_SETUP_TOKEN` from your private configuration, and create the owner account. Setup closes after the first account exists. Create additional accounts in Administration → Users, then grant access through project settings. Remove the setup token from configuration after onboarding if desired.
+Open the site, enter `KANVIL_SETUP_TOKEN` from your private configuration, and create the owner account. Setup closes after the first account exists. Create additional accounts in Administration → Users, then grant workspace access from the account detail sheet or workspace settings. Projects can inherit workspace roles or keep explicit private membership. Existing projects stay private when upgrading; see [workspaces](workspaces.md). Remove the setup token from configuration after onboarding if desired.
 
 Retain `.env` securely. `BETTER_AUTH_SECRET` is required to read encrypted authentication state after restoration. It also encrypts saved integration credentials. Changing it is a deliberate credential rotation, not a routine upgrade.
 
@@ -127,3 +127,5 @@ Back up first, review changes, then rebuild and recreate the app with `docker co
 `pnpm test:docker` builds the image and starts an isolated Compose instance with generated test secrets. A real browser creates an owner, project, and ticket; the official MCP client connects; then the test recovers the account, backs up and restores into a new database, and verifies sessions, scoped credentials, tickets, and original attachment bytes. It also checks that existing backup files and databases are refused. Its containers and test volumes are removed afterward.
 
 For standalone Node hosting, run `pnpm build`, provide the same configuration through the environment, and run `NODE_ENV=production pnpm --filter @kanvil/server start`. Use a PostgreSQL 18 service you operate and include its database in your backup process. The Docker backup/restore commands target the Compose database service.
+
+Project icon rendering uses a bundled offline Lucide collection through Iconify. It does not require an external icon API. Icon license notices are served at `/third-party-icons.txt`; Kanvil remains MIT licensed.

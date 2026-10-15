@@ -1,3 +1,4 @@
+import { createAccountAdministration } from "./account-administration.ts";
 import { createDatabase } from "./database.ts";
 import { createInstance } from "./instance.ts";
 import { createBlobStorage, imageResponse } from "./blob-storage.ts";
@@ -89,6 +90,7 @@ export async function createApplication(
     void search.sync().catch(() => {});
   });
   const push = adapters.push(database, config);
+  const accounts = createAccountAdministration(integrationDatabase, auth);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
       if (!result.success)
@@ -223,7 +225,7 @@ export async function createApplication(
       { status: 404 },
     ),
   );
-  app.on(["GET", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => auth.handler(c.req.raw));
+  app.on(["GET", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => accounts.handleAuth(c.req.raw));
   const mcpHandler = createMcp(auth, domain, access, config);
   app.all("/mcp", (c) => mcpHandler(c.req.raw));
   app.use("/api/v1/*", async (c, next) => {
@@ -237,6 +239,7 @@ export async function createApplication(
     await next();
   });
   registerInstanceRoutes(app, database, instance, blobs, search, realtime);
+  accounts.register(app);
   app.openAPIRegistry.registerPath({
     method: "get",
     path: "/api/v1/projects/{projectId}/icon",
