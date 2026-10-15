@@ -36,6 +36,17 @@ Real APNs/FCM delivery and notification-tap routing remain unvalidated. They req
 
 The reference mirror refreshes a full project snapshot when changes arrive. It is an example of consistent recovery, not an execution scheduler. Apps retain explicit local drafts; offline edits are not automatically submitted. Rich-text editing, custom workflow designers, and separate search/message-broker services remain outside the agreed initial scope.
 
+## Interface redesign
+
+The web and iPhone interfaces share the palette and brand geometry described in [the design direction](design.md). Web fonts are bundled locally with their OFL license. Existing controls and renderers were extended; ticket mutations and authentication contracts retain their shared implementations.
+
+- Chromium regression coverage checks light/dark appearance at 1440, 1024, 650, 390, and 320 pixels, including complete long/unbroken titles, viewport and table overflow, selection, expandable filters, persisted/system theme changes, reduced motion, and keyboard navigation into the main content.
+- An independent WebKit run checked local sign-in, both themes at the same five widths, accessible table rows, complete title bounds, and selection.
+- Projects, account settings, project settings, and Inbox were inspected at desktop and phone widths. Both themes, ticket details, wrapping title editors, and empty states were captured. These checks found no browser exceptions or page-level horizontal overflow. Shared text colors meet a 4.5:1 contrast ratio against both canvas and surface colors in each theme.
+- The redesigned standalone iOS Release app was built, signed, and run with an isolated HTTPS backend. Local sign-in, project and ticket navigation, the header project sheet, status picker, Markdown preview, and native edit/save were exercised. A separate HTTP client confirmed the edited title and incremented version. Session restoration after reinstall/relaunch, dark appearance, and large Dynamic Type ticket reading after relaunch were inspected.
+
+The existing 43 tests and browser workspace/OAuth workflows pass. CI additionally exercises the disposable PocketID workflow and self-hosting smoke test. Android runtime is outside this redesign; physical-device, push-delivery, and production boundaries above still apply.
+
 ## Reproduce
 
 Use [CONTRIBUTING.md](../CONTRIBUTING.md) for checks and disposable fixtures, [self-hosting](self-hosting.md) for Compose/backup/recovery, [native builds](mobile.md) for simulator/preview/signing setup, and [examples](../examples/README.md) for external consumer integration.
