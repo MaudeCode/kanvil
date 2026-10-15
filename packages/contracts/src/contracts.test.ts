@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatEvent, operations } from "./index.ts";
+import { formatEvent, operations, parseRelationChoice, relationChoices } from "./index.ts";
 
 describe("agent write contracts", () => {
+  it("shares relationship choices without changing legacy mutation receipt payloads", () => {
+    const legacy = {
+      projectId: "p",
+      ticketId: "t",
+      targetId: "10000000-0000-4000-8000-000000000001",
+      type: "blocks",
+    };
+    expect(operations.add_relation.input.parse(legacy)).toEqual(legacy);
+    for (const choice of relationChoices)
+      expect(parseRelationChoice(choice.value)).toEqual({
+        type: choice.type,
+        direction: choice.direction,
+      });
+    expect(() => parseRelationChoice("unknown:incoming")).toThrow();
+    expect(() => parseRelationChoice("blocks:wrong")).toThrow();
+  });
   it("formats historical and current event context consistently", () => {
     const event = {
       id: "1",

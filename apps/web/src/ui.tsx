@@ -355,6 +355,7 @@ export function Confirm({
   onConfirm,
   danger = false,
   icon,
+  disabled = false,
   open: controlledOpen,
   onOpenChange,
   trigger = true,
@@ -367,6 +368,7 @@ export function Confirm({
   onConfirm: () => Promise<unknown>;
   danger?: boolean;
   icon?: ReactNode;
+  disabled?: boolean;
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen,
@@ -379,9 +381,9 @@ export function Confirm({
         <AlertDialogTrigger
           render={
             icon ? (
-              <IconButton label={label} />
+              <IconButton label={label} disabled={disabled} />
             ) : (
-              <Button variant={danger ? "destructive" : "outline"} />
+              <Button variant={danger ? "destructive" : "outline"} disabled={disabled} />
             )
           }
         >

@@ -207,11 +207,26 @@
   .view {
     @apply inline-flex items-center;
   }
-  .bulk {
-    @apply my-4 flex flex-wrap items-center gap-3 rounded-lg bg-primary/5 px-4 py-3 ring-1 ring-primary/15;
+  .ticket-list-controls {
+    @apply flex-wrap;
   }
-  .bulk .field {
-    @apply mb-0 w-40;
+  .selection-dock {
+    @apply pointer-events-none fixed bottom-4 right-5 z-40 w-[100cqw] max-w-none md:right-10;
+  }
+  .selection-toolbar {
+    @apply pointer-events-auto mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg;
+  }
+  .selection-toolbar .field {
+    @apply mb-0;
+  }
+  .selection-toolbar [data-slot="field-label"] {
+    @apply sr-only;
+  }
+  .selection-toolbar [role="alert"] {
+    @apply basis-full;
+  }
+  .ticket-pagination {
+    @apply pb-24;
   }
   .table-scroll {
     @apply min-w-0;
@@ -754,18 +769,32 @@
     grid-column: 2 / -1;
     padding: 0.25rem 0 0.75rem;
   }
-  .ticket-table td[data-column="status"] {
-    grid-column: 2;
+  .ticket-table td[data-column="labels"],
+  .ticket-table td[data-column="scopes"],
+  .ticket-table td[data-column="kind"],
+  .ticket-table td[data-column="assigneeId"],
+  .ticket-table td[data-column="createdAt"],
+  .ticket-table td[data-column="updatedAt"] {
+    grid-column: 2 / -1;
+    margin-bottom: 0.5rem;
   }
-  .ticket-table td[data-column="priority"] {
-    grid-column: 3;
-  }
+  .ticket-table td[data-column="status"],
+  .ticket-table td[data-column="priority"],
   .ticket-table td[data-column="difficulty"] {
-    grid-column: 4;
+    grid-column: span 1;
+    margin-bottom: 0.5rem;
   }
-  .ticket-table td[data-column="status"]::before,
-  .ticket-table td[data-column="priority"]::before,
-  .ticket-table td[data-column="difficulty"]::before {
+  .ticket-table td[data-column="status"] {
+    grid-column-start: 2;
+  }
+  .ticket-table tr:not(:has(td[data-column="status"])) td[data-column="priority"],
+  .ticket-table
+    tr:not(:has(td[data-column="status"])):not(:has(td[data-column="priority"]))
+    td[data-column="difficulty"] {
+    grid-column-start: 2;
+  }
+  .ticket-table
+    td:not([data-column="select"]):not([data-column="key"]):not([data-column="title"])::before {
     content: attr(data-label);
     display: block;
     color: var(--muted-foreground);
@@ -777,6 +806,9 @@
   }
 }
 @media (max-width: 650px) {
+  .selection-dock {
+    right: 1rem;
+  }
   .content {
     padding: 1.5rem 1rem 2.5rem;
   }

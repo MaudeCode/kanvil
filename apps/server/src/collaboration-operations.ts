@@ -42,6 +42,14 @@ async function editableComment(ctx: Context, commentId: string, expectedVersion:
     fail(409, "version_conflict", "The comment changed; reload before editing");
   return row;
 }
+async function publishRelation(
+  ctx: Context,
+  type: "relation.added" | "relation.removed",
+  relation: typeof relations.$inferSelect,
+) {
+  for (const ticketId of [relation.sourceId, relation.targetId])
+    await publish(ctx, type, ticketId, { relation });
+}
 export const collaborationHandlers: Pick<
   Handlers,
   | "list_relations"
@@ -80,8 +88,9 @@ export const collaborationHandlers: Pick<
       );
   },
   async add_relation(ctx, input) {
-    const source = await getTicket(ctx, input.ticketId),
-      target = await getTicket(ctx, input.targetId);
+    const current = await getTicket(ctx, input.ticketId),
+      other = await getTicket(ctx, input.targetId);
+    const [source, target] = input.direction === "incoming" ? [other, current] : [current, other];
     if (source.id === target.id) fail(409, "invalid_relation", "Choose a different ticket");
     if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
     const [sourceId, targetId] =
@@ -103,7 +112,7 @@ export const collaborationHandlers: Pick<
           .returning()
       )[0],
     );
-    await publish(ctx, "relation.added", source.id, { relation: row });
+    await publishRelation(ctx, "relation.added", row);
     return row;
   },
   async remove_relation(ctx, input) {
@@ -115,7 +124,7 @@ export const collaborationHandlers: Pick<
           .returning()
       )[0],
     );
-    await publish(ctx, "relation.removed", row.sourceId, { relation: row });
+    await publishRelation(ctx, "relation.removed", row);
     return { ok: true };
   },
   async list_comments(ctx, input) {

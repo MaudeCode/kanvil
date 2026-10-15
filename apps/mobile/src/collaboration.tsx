@@ -1,9 +1,13 @@
-import { formatTimestamp, relationReference } from "@kanvil/contracts";
+import {
+  formatTimestamp,
+  relationReference,
+  relationChoices,
+  parseRelationChoice,
+} from "@kanvil/contracts";
 import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
 import type { Ticket, Output } from "@kanvil/contracts";
 import { useConnection, useIdentity, useOperation } from "./data.tsx";
 import {
@@ -32,7 +36,7 @@ export function Relations({
     [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
     [target, setTarget] = useState(""),
-    [type, setType] = useState("blocks");
+    [type, setType] = useState("blocks:outgoing");
   const [offset, setOffset] = useState(0);
   const parent = useQuery({
     ...api.query("get_ticket", {
@@ -132,16 +136,7 @@ export function Relations({
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
       <Sheet title="Add relationship" open={open} onClose={() => setOpen(false)}>
         <Field label="Find ticket" value={query} onChangeText={setQuery} />
-        <Choice
-          label="Relationship"
-          value={type}
-          onChange={setType}
-          options={[
-            { value: "blocks", label: "This ticket blocks" },
-            { value: "related", label: "Related to" },
-            { value: "duplicate", label: "Duplicate of" },
-          ]}
-        />
+        <Choice label="Relationship" value={type} onChange={setType} options={relationChoices} />
         <Choice
           label="Ticket"
           value={target}
@@ -164,7 +159,7 @@ export function Relations({
                 projectId: ticket.projectId,
                 ticketId: ticket.id,
                 targetId: target,
-                type: z.enum(["blocks", "related", "duplicate"]).parse(type),
+                ...parseRelationChoice(type),
               })
               .then(() => setOpen(false))
               .catch(() => {});

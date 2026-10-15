@@ -3,8 +3,12 @@ import { Unlink, Plus } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { z } from "zod";
-import { relationReference, type Ticket } from "@kanvil/contracts";
+import {
+  relationReference,
+  relationChoices,
+  parseRelationChoice,
+  type Ticket,
+} from "@kanvil/contracts";
 import { api, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
@@ -142,16 +146,18 @@ export function Relations({ ticket }: { ticket: Ticket }) {
                 projectId: ticket.projectId,
                 ticketId: ticket.id,
                 targetId: target,
-                type: z.enum(["blocks", "related", "duplicate"]).parse(form.get("type")),
+                ...parseRelationChoice(form.get("type")),
               })
               .then(() => setOpen(false))
               .catch(setValidationError);
           }}
         >
           <Select label="Relationship" name="type">
-            <SelectItem value="blocks">This ticket blocks</SelectItem>
-            <SelectItem value="related">Related to</SelectItem>
-            <SelectItem value="duplicate">Duplicate of</SelectItem>
+            {relationChoices.map((choice) => (
+              <SelectItem key={choice.value} value={choice.value}>
+                {choice.label}
+              </SelectItem>
+            ))}
           </Select>
           <TicketPicker
             projectId={ticket.projectId}

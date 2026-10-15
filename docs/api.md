@@ -24,6 +24,10 @@ Attachments use `upload_attachment` or the corresponding HTTP POST with `name`, 
 
 Use `list_tickets` with `parentId` set to a parent UUID or ticket key to page through child tickets. Set `archived: "include"` to include archived children. `list_relations` also returns the current source/target keys and full titles, so consumers can show readable dependency context without separate lookups.
 
+`list_ticket_labels` (`GET /api/v1/projects/{projectId}/labels`) returns distinct label names and ticket counts for the whole authorized project. Its `archived` option matches ticket listing. The `label` ticket filter matches an exact label; combine it with other filters or saved views. `sort: "labels"` orders by the first label alphabetically, ignoring case and label-array order, followed by ticket number. Tickets without labels come last.
+
+`add_relation` accepts `blocks`, `related`, `duplicate`, `causes`, `clones`, `implements`, or `reviews`. `direction` defaults to `outgoing` for existing clients. Use `incoming` to express the inverse from the current ticket: for example, `{ticketId: "<current>", targetId: "<blocker>", type: "blocks", direction: "incoming"}` means the current ticket is blocked by the selected ticket. The server stores a single canonical edge, checks project access on both tickets, and rejects dependency cycles in either direction. Related links are symmetric. Only blocking dependencies add readiness blockers; duplicate sources remain ineligible for agent work. Other link types are informational. Parent/child hierarchy continues to use `parentId` rather than a second relationship edge.
+
 ## Realtime
 
 `GET /api/v1/snapshot?projectId=<id>` returns a consistent project snapshot and event cursor. Connect to `/api/v1/events?projectId=<id>&cursor=<cursor>` to replay committed changes and continue receiving new ones.

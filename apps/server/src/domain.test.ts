@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createFixture } from "./test-fixture.ts";
 import { createDomain, type Actor, type Domain } from "./domain.ts";
-import { relationReference, type Project } from "@kanvil/contracts";
+import { relationReference, relationChoices, type Project } from "@kanvil/contracts";
 
 describe("ticket operations on PostgreSQL", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -52,6 +52,169 @@ describe("ticket operations on PostgreSQL", () => {
       },
       owner,
     );
+  it("lists all project labels with archive-aware counts and sorts labels before pagination", async () => {
+    const rows = [];
+    for (const [title, labels] of [
+      ["Zebra", ["zeta"]],
+      ["Two labels", ["beta", "alpha"]],
+      ["Capital", ["ALPHA"]],
+      ["Unlabelled", []],
+      ["Literal punctuation", ["red,blue", "O'Reilly"]],
+    ] as const)
+      rows.push(
+        await domain.execute("create_ticket", { projectId: project.id, title, labels }, owner),
+      );
+    const labels = await domain.execute("list_ticket_labels", { projectId: project.id }, owner);
+    expect(labels).toEqual([
+      { name: "ALPHA", count: 1 },
+      { name: "alpha", count: 1 },
+      { name: "beta", count: 1 },
+      { name: "O'Reilly", count: 1 },
+      { name: "red,blue", count: 1 },
+      { name: "zeta", count: 1 },
+    ]);
+    expect(
+      (
+        await domain.execute(
+          "list_tickets",
+          { projectId: project.id, sort: "labels", limit: 2, offset: 1 },
+          owner,
+        )
+      ).items.map((t) => t.id),
+    ).toEqual([rows[2]!.id, rows[4]!.id]);
+    const all = await domain.execute(
+      "list_tickets",
+      { projectId: project.id, sort: "labels" },
+      owner,
+    );
+    expect(all.items.at(-1)?.id).toBe(rows[3]!.id);
+    expect(
+      (
+        await domain.execute("list_tickets", { projectId: project.id, label: "O'Reilly" }, owner)
+      ).items.map((t) => t.id),
+    ).toEqual([rows[4]!.id]);
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: rows[0]!.id,
+        expectedVersion: 1,
+        changes: { archived: true },
+      },
+      owner,
+    );
+    expect(
+      (await domain.execute("list_ticket_labels", { projectId: project.id }, owner)).some(
+        (l) => l.name === "zeta",
+      ),
+    ).toBe(false);
+    expect(
+      await domain.execute(
+        "list_ticket_labels",
+        { projectId: project.id, archived: "only" },
+        owner,
+      ),
+    ).toEqual([{ name: "zeta", count: 1 }]);
+    expect(
+      (
+        await domain.execute(
+          "list_ticket_labels",
+          { projectId: project.id, archived: "include" },
+          owner,
+        )
+      ).find((l) => l.name === "zeta")?.count,
+    ).toBe(1);
+    await expect(
+      domain.execute("list_ticket_labels", { projectId: project.id }, outsider),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  it("normalizes incoming relationships, preserves inverse wording, and enforces blockers", async () => {
+    const current = await ticket("Current work"),
+      other = await ticket("Selected work");
+    for (const choice of relationChoices) {
+      const relation = await domain.execute(
+        "add_relation",
+        {
+          projectId: project.id,
+          ticketId: current.id,
+          targetId: other.id,
+          type: choice.type,
+          direction: choice.direction,
+        },
+        owner,
+      );
+      expect(relationReference(relation, current.id).label).toBe(choice.label);
+      if (choice.type !== "related")
+        expect(relation.sourceId).toBe(choice.direction === "incoming" ? other.id : current.id);
+      await domain.execute(
+        "remove_relation",
+        { projectId: project.id, relationId: relation.id },
+        owner,
+      );
+    }
+    const incoming = await domain.execute(
+      "add_relation",
+      {
+        projectId: project.id,
+        ticketId: current.id,
+        targetId: other.id,
+        type: "blocks",
+        direction: "incoming",
+      },
+      owner,
+    );
+    const outgoing = await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: other.id, targetId: current.id, type: "blocks" },
+      owner,
+    );
+    expect(outgoing.id).toBe(incoming.id);
+    for (const ticketId of [current.id, other.id]) {
+      const activity = await domain.execute(
+        "list_activity",
+        { projectId: project.id, ticketId },
+        owner,
+      );
+      expect(activity.items).toContainEqual(expect.objectContaining({ type: "relation.added" }));
+    }
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: current.id }, owner))
+        .readiness.reasons,
+    ).toContainEqual(expect.objectContaining({ code: "dependency", ticketId: other.id }));
+    await expect(
+      domain.execute(
+        "add_relation",
+        {
+          projectId: project.id,
+          ticketId: other.id,
+          targetId: current.id,
+          type: "blocks",
+          direction: "incoming",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "dependency_cycle" });
+    await domain.execute(
+      "remove_relation",
+      { projectId: project.id, relationId: incoming.id },
+      owner,
+    );
+    await domain.execute(
+      "add_relation",
+      {
+        projectId: project.id,
+        ticketId: current.id,
+        targetId: other.id,
+        type: "causes",
+        direction: "incoming",
+      },
+      owner,
+    );
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: current.id }, owner))
+        .readiness.ready,
+    ).toBe(true);
+  });
   it("deduplicates retried writes and rejects reuse for different work", async () => {
     const requestId = crypto.randomUUID(),
       input = { projectId: project.id, title: "Retry me", requestId };
@@ -144,7 +307,7 @@ describe("ticket operations on PostgreSQL", () => {
     expect(related).toHaveLength(1);
     expect(relationReference(related[0]!, parent.id)).toEqual({
       id: peer.id,
-      label: "Related",
+      label: "Related to",
       title: `${peer.key} · ${peer.title}`,
     });
     await domain.execute(
@@ -157,7 +320,7 @@ describe("ticket operations on PostgreSQL", () => {
     ).find((row) => row.type === "blocks");
     expect(relationReference(incoming!, peer.id)).toEqual({
       id: parent.id,
-      label: "Blocked by",
+      label: "Is blocked by",
       title: `${parent.key} · ${parent.title}`,
     });
     const other = await domain.execute(

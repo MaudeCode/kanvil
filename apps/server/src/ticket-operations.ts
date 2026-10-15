@@ -152,6 +152,7 @@ async function update(ctx: Context, input: ParsedInput<"update_ticket">) {
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
+  | "list_ticket_labels"
   | "get_ticket"
   | "create_ticket"
   | "update_ticket"
@@ -163,6 +164,22 @@ export const ticketHandlers: Pick<
   | "release_claim"
   | "recover_claim"
 > = {
+  async list_ticket_labels(ctx, input) {
+    const where = and(
+      eq(tickets.projectId, project(ctx).id),
+      input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
+    );
+    const labels = ctx.db
+      .select({ name: sql<string>`unnest(${tickets.labels})`.as("name") })
+      .from(tickets)
+      .where(where)
+      .as("ticket_labels");
+    return ctx.db
+      .select({ name: labels.name, count: count() })
+      .from(labels)
+      .groupBy(labels.name)
+      .orderBy(asc(sql`lower(${labels.name}) COLLATE "C"`), asc(sql`${labels.name} COLLATE "C"`));
+  },
   async list_tickets(ctx, input) {
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
     const search = input.q ? await ctx.search.where(ctx.db, project(ctx).id, input.q) : undefined;
@@ -184,12 +201,17 @@ export const ticketHandlers: Pick<
             sql`CASE ${tickets.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
             asc(tickets.number),
           ]
-        : input.sort === "title"
-          ? [asc(tickets.title), asc(tickets.id)]
-          : [
-              desc(input.sort === "created" ? tickets.createdAt : tickets.updatedAt),
-              asc(tickets.id),
-            ];
+        : input.sort === "labels"
+          ? [
+              sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label) ASC NULLS LAST`,
+              asc(tickets.number),
+            ]
+          : input.sort === "title"
+            ? [asc(tickets.title), asc(tickets.id)]
+            : [
+                desc(input.sort === "created" ? tickets.createdAt : tickets.updatedAt),
+                asc(tickets.id),
+              ];
     return {
       items: await ctx.db
         .select()

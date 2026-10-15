@@ -72,7 +72,7 @@ export const ticketFilter = z
     assigneeId: id.optional(),
     parentId: id.optional(),
     archived: z.enum(["include", "only", "exclude"]).default("exclude"),
-    sort: z.enum(["priority", "updated", "created", "title"]).default("priority"),
+    sort: z.enum(["priority", "updated", "created", "title", "labels"]).default("priority"),
   })
   .strict();
 export const ticketFields = z
@@ -169,27 +169,42 @@ export const relationSchema = z.object({
   projectId: z.uuid(),
   sourceId: z.uuid(),
   targetId: z.uuid(),
-  type: z.enum(["blocks", "related", "duplicate"]),
+  type: z.enum(["blocks", "related", "duplicate", "causes", "clones", "implements", "reviews"]),
   sourceKey: z.string().optional(),
   sourceTitle: z.string().optional(),
   targetKey: z.string().optional(),
   targetTitle: z.string().optional(),
 });
+export const relationDirections = z.enum(["outgoing", "incoming"]);
+const relationLabels: Record<z.output<typeof relationSchema>["type"], [string, string]> = {
+  blocks: ["Blocks", "Is blocked by"],
+  related: ["Related to", "Related to"],
+  duplicate: ["Duplicates", "Is duplicated by"],
+  causes: ["Causes", "Is caused by"],
+  clones: ["Clones", "Is cloned by"],
+  implements: ["Implements", "Is implemented by"],
+  reviews: ["Reviews", "Is reviewed by"],
+};
+export const relationChoices = relationSchema.shape.type.options.flatMap((type) =>
+  (type === "related" ? ["outgoing" as const] : relationDirections.options).map((direction) => ({
+    value: `${type}:${direction}`,
+    label: relationLabels[type][direction === "outgoing" ? 0 : 1],
+    type,
+    direction,
+  })),
+);
+export function parseRelationChoice(value: unknown) {
+  const [type, direction] = z
+    .tuple([relationSchema.shape.type, relationDirections])
+    .parse(z.string().parse(value).split(":"));
+  return { type, direction };
+}
 export function relationReference(relation: z.output<typeof relationSchema>, ticketId: string) {
   const outgoing = relation.sourceId === ticketId;
   const referenceId = outgoing ? relation.targetId : relation.sourceId;
   const key = (outgoing ? relation.targetKey : relation.sourceKey) ?? referenceId;
   const title = outgoing ? relation.targetTitle : relation.sourceTitle;
-  const label =
-    relation.type === "blocks"
-      ? outgoing
-        ? "Blocks"
-        : "Blocked by"
-      : relation.type === "duplicate"
-        ? outgoing
-          ? "Duplicate of"
-          : "Duplicated by"
-        : "Related";
+  const label = relationLabels[relation.type][outgoing ? 0 : 1];
   return { id: referenceId, label, title: `${key}${title ? ` · ${title}` : ""}` };
 }
 export const commentSchema = z.object({
@@ -494,6 +509,14 @@ export const operations = {
     "read",
     "Search tickets with server-side filters, stable ordering, and pagination.",
   ),
+  list_ticket_labels: op(
+    projectInput.extend({ archived: ticketFilter.shape.archived }),
+    z.array(z.object({ name: z.string(), count: z.number().int().nonnegative() })),
+    "GET",
+    "/projects/{projectId}/labels",
+    "read",
+    "List distinct ticket labels and usage counts across the authorized project, independent of ticket pagination.",
+  ),
   get_ticket: op(
     ticketInput,
     z.object({
@@ -596,7 +619,12 @@ export const operations = {
   ),
   add_relation: op(
     ticketInput
-      .extend({ ...mutation, targetId: z.uuid(), type: relationSchema.shape.type })
+      .extend({
+        ...mutation,
+        targetId: z.uuid(),
+        type: relationSchema.shape.type,
+        direction: relationDirections.optional(),
+      })
       .strict(),
     relationSchema,
     "POST",

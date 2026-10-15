@@ -1,37 +1,22 @@
 import { ProjectIcon } from "./components/project-icon.tsx";
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  Plus,
-  SlidersHorizontal,
-  Settings,
-  X,
-  BookmarkPlus,
-  ArrowLeft,
-  ArrowRight,
-} from "lucide-react";
+import { Plus, Settings, X, BookmarkPlus, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   useTable,
   tableFeatures,
   columnSizingFeature,
   columnResizingFeature,
   rowSelectionFeature,
+  columnVisibilityFeature,
   type ColumnDef,
 } from "@tanstack/react-table";
 import { z } from "zod";
-import {
-  ticketFilter,
-  states,
-  priorities,
-  stateLabels,
-  priorityLabels,
-  type Ticket,
-  type Project,
-} from "@kanvil/contracts";
-import { api, useProjectAccess, useOperation } from "./data.tsx";
+import { ticketFilter, priorityLabels, type Ticket, type Project } from "@kanvil/contracts";
+import { api, date, ActorName, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
   IconButton,
@@ -42,8 +27,6 @@ import {
   Input,
   Loading,
   Modal,
-  Select,
-  SelectItem,
   Status,
 } from "./ui.tsx";
 import {
@@ -54,22 +37,38 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { TicketListControls } from "./components/ticket-list-controls.tsx";
+import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TicketEditor } from "./ticket-editor.tsx";
 
 import { searchSchema, type TicketSearch } from "./search.ts";
-const features = tableFeatures({ columnSizingFeature, columnResizingFeature, rowSelectionFeature });
+const features = tableFeatures({
+  columnSizingFeature,
+  columnResizingFeature,
+  rowSelectionFeature,
+  columnVisibilityFeature,
+});
+const defaultVisibility = {
+  kind: false,
+  scopes: false,
+  assigneeId: false,
+  createdAt: false,
+  updatedAt: false,
+};
 const columns: ColumnDef<typeof features, Ticket>[] = [
   {
     id: "select",
     size: 44,
     enableResizing: false,
+    enableHiding: false,
     header: ({ table }) => (
       <Check
         label="Select all displayed tickets"
         className="sr-checkbox"
         checked={table.getIsAllRowsSelected()}
+        indeterminate={table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected()}
         onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
       />
     ),
@@ -82,11 +81,12 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       />
     ),
   },
-  { accessorKey: "key", header: "Ticket", size: 112, minSize: 90 },
+  { accessorKey: "key", header: "Ticket", size: 100, minSize: 90 },
   {
     accessorKey: "title",
     header: "Title",
-    size: 500,
+    size: 400,
+    enableHiding: false,
     minSize: 200,
     cell: ({ row }) => (
       <Link
@@ -98,27 +98,70 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       </Link>
     ),
   },
+  ...(["labels", "scopes"] as const).map(
+    (key) =>
+      ({
+        accessorKey: key,
+        header: key === "labels" ? "Labels" : "Scopes",
+        size: 190,
+        minSize: 120,
+        cell: ({ row }) => (
+          <div className="flex flex-wrap gap-1">
+            {row.original[key].map((tag) => (
+              <Badge
+                variant={key === "labels" ? "secondary" : "outline"}
+                className="h-auto max-w-full whitespace-normal break-words"
+                key={tag}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        ),
+      }) satisfies ColumnDef<typeof features, Ticket>,
+  ),
   {
     accessorKey: "status",
     header: "Status",
-    size: 150,
-    minSize: 120,
+    size: 125,
+    minSize: 110,
     cell: ({ row }) => <Status value={row.original.status} />,
   },
   {
     accessorKey: "priority",
     header: "Priority",
-    size: 105,
+    size: 95,
     minSize: 90,
     cell: ({ row }) => priorityLabels[row.original.priority],
   },
   {
     accessorKey: "difficulty",
     header: "Difficulty",
-    size: 100,
-    minSize: 90,
+    size: 95,
+    minSize: 85,
     cell: ({ row }) => row.original.difficulty ?? "—",
   },
+  { accessorKey: "kind", header: "Kind", size: 110 },
+  {
+    accessorKey: "assigneeId",
+    header: "Assignee",
+    size: 160,
+    cell: ({ row }) =>
+      row.original.assigneeId ? (
+        <ActorName projectId={row.original.projectId} actorId={row.original.assigneeId} />
+      ) : (
+        "Unassigned"
+      ),
+  },
+  ...(["createdAt", "updatedAt"] as const).map(
+    (key) =>
+      ({
+        accessorKey: key,
+        header: key === "createdAt" ? "Created" : "Updated",
+        size: 170,
+        cell: ({ row }) => date(row.original[key]),
+      }) satisfies ColumnDef<typeof features, Ticket>,
+  ),
 ];
 export function TicketList({
   project,
@@ -130,19 +173,34 @@ export function TicketList({
   onSearch: (next: TicketSearch) => void;
 }) {
   const access = useProjectAccess(project.id);
+  const identity = useIdentity();
+  const storageKey = `kanvil:${identity.id}:ticket-columns`;
+  const [visibility, setVisibility] = useState<Record<string, boolean>>(() => {
+    try {
+      return {
+        ...defaultVisibility,
+        ...z
+          .record(z.string(), z.boolean())
+          .parse(JSON.parse(localStorage.getItem(storageKey) ?? "{}")),
+      };
+    } catch {
+      return defaultVisibility;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(visibility));
+    } catch {
+      /* Display controls work without storage. */
+    }
+  }, [storageKey, visibility]);
   const tickets = useQuery(
     api.query("list_tickets", { projectId: project.id, ...search, limit: 50 }),
   );
   const views = useQuery(api.query("list_views", { projectId: project.id }));
-  const bulk = useOperation("bulk_update_tickets"),
-    saveView = useOperation("save_view"),
+  const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const activeFilters = [search.status, search.priority, search.archived !== "exclude"].filter(
-    Boolean,
-  ).length;
-  const [createOpen, setCreateOpen] = useState(false),
-    [bulkStatus, setBulkStatus] = useState<Ticket["status"]>("todo");
+  const [createOpen, setCreateOpen] = useState(false);
   const [viewName, setViewName] = useState(""),
     [savingView, setSavingView] = useState(false);
   const currentFilters = ticketFilter.parse(
@@ -156,9 +214,14 @@ export function TicketList({
     getRowId: (row) => row.id,
     columnResizeMode: "onChange",
     enableRowSelection: access.canWrite,
+    state: { columnVisibility: { ...visibility, title: true, select: access.canWrite } },
+    onColumnVisibilityChange: setVisibility,
   });
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
-  const filter = (patch: Partial<TicketSearch>) => onSearch({ ...search, ...patch, offset: 0 });
+  const changeSearch = (next: TicketSearch) => {
+    table.resetRowSelection();
+    onSearch(next);
+  };
   return (
     <>
       <header className="page-header">
@@ -182,125 +245,28 @@ export function TicketList({
           </Button>
         </div>
       </header>
-      <div className="toolbar">
-        <Input
-          label="Search tickets"
-          type="search"
-          placeholder="Search tickets…"
-          value={search.q ?? ""}
-          onChange={(event) => filter({ q: event.target.value })}
-        />
-        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <PopoverTrigger render={<Button variant="outline" />}>
-            <SlidersHorizontal />
-            Filters{activeFilters ? ` (${activeFilters})` : ""}
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-80">
-            <h3>Filters</h3>
-            <div className="filter-fields">
-              <Select
-                label="Status"
-                value={search.status ?? ""}
-                onValueChange={(value) =>
-                  filter({
-                    status: (value ?? "") ? z.enum(states).parse(value ?? "") : undefined,
-                  })
-                }
-              >
-                <SelectItem value="">All statuses</SelectItem>
-                {states.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {stateLabels[status]}
-                  </SelectItem>
-                ))}
-              </Select>
-              <Select
-                label="Priority"
-                value={search.priority ?? ""}
-                onValueChange={(value) =>
-                  filter({
-                    priority: (value ?? "") ? z.enum(priorities).parse(value ?? "") : undefined,
-                  })
-                }
-              >
-                <SelectItem value="">All priorities</SelectItem>
-                {priorities.map((priority) => (
-                  <SelectItem key={priority} value={priority}>
-                    {priorityLabels[priority]}
-                  </SelectItem>
-                ))}
-              </Select>
-              <Select
-                label="Sort"
-                value={search.sort}
-                onValueChange={(value) =>
-                  filter({ sort: ticketFilter.shape.sort.parse(value ?? "") })
-                }
-              >
-                <SelectItem value="priority">Priority</SelectItem>
-                <SelectItem value="updated">Updated</SelectItem>
-                <SelectItem value="created">Created</SelectItem>
-                <SelectItem value="title">Title</SelectItem>
-              </Select>
-              <Select
-                label="Archived"
-                value={search.archived}
-                onValueChange={(value) =>
-                  filter({ archived: ticketFilter.shape.archived.parse(value ?? "") })
-                }
-              >
-                <SelectItem value="exclude">Hide archived</SelectItem>
-                <SelectItem value="include">Include archived</SelectItem>
-                <SelectItem value="only">Archived only</SelectItem>
-              </Select>
-            </div>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                onSearch(searchSchema.parse({}));
-                setFiltersOpen(false);
-              }}
-            >
-              Reset filters
-            </Button>
-          </PopoverContent>
-        </Popover>
-      </div>
-      {(search.q || activeFilters > 0) && (
-        <div className="active-filters" aria-label="Active ticket filters">
-          {search.q && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ q: undefined })}>
-              Search: {search.q}
-              <X className="size-3" />
-            </Button>
-          )}
-          {search.status && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ status: undefined })}>
-              {stateLabels[search.status]}
-              <X className="size-3" />
-            </Button>
-          )}
-          {search.priority && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ priority: undefined })}>
-              {priorityLabels[search.priority]} priority
-              <X className="size-3" />
-            </Button>
-          )}
-          {search.archived !== "exclude" && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ archived: "exclude" })}>
-              {search.archived === "only" ? "Archived only" : "Including archived"}
-              <X className="size-3" />
-            </Button>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => onSearch(searchSchema.parse({}))}>
-            Clear filters
-          </Button>
-        </div>
-      )}
+      <TicketListControls
+        projectId={project.id}
+        search={search}
+        onSearch={changeSearch}
+        columns={table
+          .getAllLeafColumns()
+          .filter((column) => column.getCanHide())
+          .map((column) => ({
+            id: column.id,
+            label: String(column.columnDef.header),
+            visible: column.getIsVisible(),
+          }))}
+        onColumnChange={(id, visible) => table.getColumn(id)?.toggleVisibility(visible)}
+        onReset={() => {
+          setVisibility(defaultVisibility);
+          changeSearch({ ...search, sort: "priority", offset: 0 });
+        }}
+      />
       <div className="views">
         <Tabs value={isDefault ? "tickets" : "custom"}>
           <TabsList variant="line">
-            <TabsTrigger value="tickets" onClick={() => onSearch(searchSchema.parse({}))}>
+            <TabsTrigger value="tickets" onClick={() => changeSearch(searchSchema.parse({}))}>
               All tickets
             </TabsTrigger>
           </TabsList>
@@ -316,7 +282,7 @@ export function TicketList({
               aria-pressed={
                 JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters))
               }
-              onClick={() => onSearch({ ...view.filters, offset: 0 })}
+              onClick={() => changeSearch({ ...view.filters, offset: 0 })}
             >
               {view.name}
             </Button>
@@ -373,57 +339,9 @@ export function TicketList({
           </form>
         </Modal>
       </div>
-      <ErrorNotice error={tickets.error ?? bulk.error ?? deleteView.error} />
+      <ErrorNotice error={tickets.error ?? deleteView.error} />
       {selected.length > 0 && (
-        <div className="bulk">
-          <strong>{selected.length} selected</strong>
-          <Select
-            label="New status"
-            value={bulkStatus}
-            onValueChange={(value) => setBulkStatus(z.enum(states).parse(value ?? ""))}
-          >
-            {states.map((status) => (
-              <SelectItem key={status} value={status}>
-                {stateLabels[status]}
-              </SelectItem>
-            ))}
-          </Select>
-          <Button
-            disabled={bulk.isPending}
-            onClick={() => {
-              void bulk
-                .mutateAsync({
-                  projectId: project.id,
-                  tickets: selected.map((ticket) => ({
-                    ticketId: ticket.id,
-                    expectedVersion: ticket.version,
-                  })),
-                  changes: { status: bulkStatus },
-                })
-                .then(() => table.resetRowSelection())
-                .catch(() => {});
-            }}
-          >
-            Apply status
-          </Button>
-          <Confirm
-            label="Archive selected"
-            description={`Archive ${selected.length} selected tickets?`}
-            onConfirm={() =>
-              bulk
-                .mutateAsync({
-                  projectId: project.id,
-                  tickets: selected.map((ticket) => ({
-                    ticketId: ticket.id,
-                    expectedVersion: ticket.version,
-                  })),
-                  changes: { archived: true },
-                })
-                .then(() => table.resetRowSelection())
-            }
-          />
-          <Button onClick={() => table.resetRowSelection()}>Clear selection</Button>
-        </div>
+        <TicketSelectionToolbar selected={selected} onClear={() => table.resetRowSelection()} />
       )}
       {tickets.isPending ? (
         <Loading />
@@ -477,7 +395,7 @@ export function TicketList({
               {table.getRowModel().rows.map((row) => (
                 <TicketContextMenu key={row.id} ticket={row.original}>
                   <TableRow role="row" data-selected={row.getIsSelected()}>
-                    {row.getAllCells().map((cell) => (
+                    {row.getVisibleCells().map((cell) => (
                       <TableCell
                         key={cell.id}
                         role="cell"
@@ -499,27 +417,27 @@ export function TicketList({
           {tickets.data?.total === 0 && (
             <EmptyState title={isDefault && !search.q ? "No tickets yet" : "No matching tickets"}>
               {!isDefault && (
-                <Button onClick={() => onSearch(searchSchema.parse({}))}>Clear filters</Button>
+                <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
               )}
             </EmptyState>
           )}
         </div>
       )}
-      <footer className="pagination">
+      <footer className="pagination ticket-pagination">
         <span>
           {tickets.data?.total ?? 0} tickets · {tickets.data?.total ? search.offset + 1 : 0}–
           {search.offset + (tickets.data?.items.length ?? 0)}
         </span>
         <Button
           disabled={search.offset === 0}
-          onClick={() => onSearch({ ...search, offset: Math.max(0, search.offset - 50) })}
+          onClick={() => changeSearch({ ...search, offset: Math.max(0, search.offset - 50) })}
         >
           <ArrowLeft />
           Previous
         </Button>
         <Button
           disabled={search.offset + 50 >= (tickets.data?.total ?? 0)}
-          onClick={() => onSearch({ ...search, offset: search.offset + 50 })}
+          onClick={() => changeSearch({ ...search, offset: search.offset + 50 })}
         >
           Next
           <ArrowRight />

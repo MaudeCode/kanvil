@@ -115,6 +115,24 @@ describe("HTTP, realtime, and MCP", () => {
     });
     const listed = await api.call("list_tickets", { projectId: project.id, q: "readable" });
     expect(listed.items[0]?.id).toBe(created.id);
+    expect(await api.call("list_ticket_labels", { projectId: project.id })).toEqual([]);
+    const dependency = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Prerequisite",
+      labels: ["backend"],
+    });
+    expect(await api.call("list_ticket_labels", { projectId: project.id })).toEqual([
+      { name: "backend", count: 1 },
+    ]);
+    const relation = await api.call("add_relation", {
+      projectId: project.id,
+      ticketId: created.id,
+      targetId: dependency.id,
+      type: "blocks",
+      direction: "incoming",
+    });
+    expect(relation.sourceId).toBe(dependency.id);
+    expect(relation.targetId).toBe(created.id);
     expect(
       (
         await request(`/api/v1/projects/${project.id}/tickets`, {
