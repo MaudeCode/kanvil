@@ -264,29 +264,39 @@ export function Confirm({
   onConfirm,
   danger = false,
   icon,
+  open: controlledOpen,
+  onOpenChange,
+  trigger = true,
 }: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: boolean;
   label: string;
   description: string;
   onConfirm: () => Promise<unknown>;
   danger?: boolean;
   icon?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false),
-    [pending, setPending] = useState(false),
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen,
+    setOpen = onOpenChange ?? setInternalOpen;
+  const [pending, setPending] = useState(false),
     [error, setError] = useState<unknown>();
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger
-        render={
-          icon ? (
-            <IconButton label={label} />
-          ) : (
-            <Button variant={danger ? "destructive" : "outline"} />
-          )
-        }
-      >
-        {icon ?? label}
-      </AlertDialogTrigger>
+      {trigger && (
+        <AlertDialogTrigger
+          render={
+            icon ? (
+              <IconButton label={label} />
+            ) : (
+              <Button variant={danger ? "destructive" : "outline"} />
+            )
+          }
+        >
+          {icon ?? label}
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{label}</AlertDialogTitle>

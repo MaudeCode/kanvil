@@ -4,3 +4,19 @@ export const searchSchema = ticketFilter.extend({
   offset: z.coerce.number().int().min(0).catch(0).default(0),
 });
 export type TicketSearch = z.output<typeof searchSchema>;
+
+export const accountSections = ["account", "appearance", "credentials", "notifications"] as const;
+export const adminSections = [
+  "general",
+  "storage",
+  "search",
+  "events",
+  "users",
+  "authentication",
+] as const;
+export const settingsSearchSchema = z.object({
+  section: z.enum(accountSections).catch("account").default("account"),
+});
+export const adminSearchSchema = z.object({
+  section: z.enum(adminSections).catch("general").default("general"),
+});

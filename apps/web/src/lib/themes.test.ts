@@ -5,6 +5,7 @@ import {
   encodeThemeFile,
   decodeThemeFile,
   themeVariables,
+  contrast,
 } from "./themes.ts";
 it("keeps all bundled theme pairs readable and exports portable custom themes", () => {
   for (const theme of builtInThemes) {
@@ -13,6 +14,9 @@ it("keeps all bundled theme pairs readable and exports portable custom themes", 
       const variables = themeVariables(theme[mode]);
       expect(variables.background).toBe(theme[mode].background);
       expect(variables["sidebar-foreground"]).toBe(theme[mode].foreground);
+      expect(
+        contrast(theme[mode].background, variables["muted-foreground"] ?? theme[mode].foreground),
+      ).toBeGreaterThanOrEqual(4.5);
     }
     const custom = decodeThemeFile(encodeThemeFile([theme]));
     expect(custom).toEqual([{ ...theme, id: `custom-${theme.id}` }]);

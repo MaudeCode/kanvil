@@ -23,12 +23,16 @@ import { PanelLeftIcon } from "lucide-react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+const SIDEBAR_WIDTH = 256;
+const SIDEBAR_MIN_WIDTH = 208;
+const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContextProps = {
+  width: number;
+  setWidth: (width: number) => void;
   state: "expanded" | "collapsed";
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -64,6 +68,18 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
+  const [width, updateWidth] = React.useState(() => {
+    const saved = Number(localStorage.getItem("kanvil:sidebar-width"));
+    return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH
+      ? saved
+      : SIDEBAR_WIDTH;
+  });
+  const setWidth = React.useCallback((value: number) => {
+    updateWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value)));
+  }, []);
+  React.useEffect(() => {
+    localStorage.setItem("kanvil:sidebar-width", String(width));
+  }, [width]);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -108,6 +124,8 @@ function SidebarProvider({
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
+      width,
+      setWidth,
       state,
       open,
       setOpen,
@@ -116,7 +134,7 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
+    [width, setWidth, state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
   );
 
   return (
@@ -124,7 +142,7 @@ function SidebarProvider({
       <div
         data-slot="sidebar-wrapper"
         style={{
-          "--sidebar-width": SIDEBAR_WIDTH,
+          "--sidebar-width": `${width}px`,
           "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
           ...style,
         }}
@@ -263,23 +281,69 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar();
-
+  const { width, setWidth, open, setOpen } = useSidebar();
+  const drag = React.useRef<{ x: number; width: number; right: boolean } | null>(null);
+  const [resizing, setResizing] = React.useState(false);
+  function finish() {
+    drag.current = null;
+    setResizing(false);
+  }
   return (
     <button
+      type="button"
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
-      tabIndex={-1}
-      onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      data-resizing={resizing || undefined}
+      role={open ? "separator" : "button"}
+      aria-label={open ? "Resize sidebar" : "Expand sidebar"}
+      aria-orientation={open ? "vertical" : undefined}
+      aria-valuemin={open ? SIDEBAR_MIN_WIDTH : undefined}
+      aria-valuemax={open ? SIDEBAR_MAX_WIDTH : undefined}
+      aria-valuenow={open ? width : undefined}
+      tabIndex={0}
+      onClick={() => {
+        if (!open) setOpen(true);
+      }}
+      onDoubleClick={() => setWidth(SIDEBAR_WIDTH)}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        event.preventDefault();
+        drag.current = {
+          x: event.clientX,
+          width,
+          right: event.currentTarget.closest("[data-side]")?.getAttribute("data-side") === "right",
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setResizing(true);
+      }}
+      onPointerMove={(event) => {
+        if (drag.current)
+          setWidth(
+            drag.current.width + (event.clientX - drag.current.x) * (drag.current.right ? -1 : 1),
+          );
+      }}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+      onLostPointerCapture={finish}
+      onKeyDown={(event) => {
+        if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          setOpen(true);
+          setWidth(
+            event.key === "Home"
+              ? SIDEBAR_MIN_WIDTH
+              : event.key === "End"
+                ? SIDEBAR_MAX_WIDTH
+                : width + (event.key === "ArrowRight" ? 16 : -16),
+          );
+        }
+      }}
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
-        "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
-        "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
-        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
-        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        "absolute inset-y-0 -right-2 z-20 hidden w-3 touch-none cursor-col-resize items-center justify-center bg-transparent p-0 outline-none after:h-full after:w-0.5 after:bg-transparent hover:after:bg-primary/40 focus-visible:after:bg-primary md:flex",
         className,
       )}
       {...props}

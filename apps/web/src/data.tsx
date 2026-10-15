@@ -8,7 +8,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const auth = createAuthClient({ plugins: [adminClient(), oauthProviderClient()] });
 export const api = createClient({ baseUrl: window.location.origin });
-export const Identity = createContext({ id: "", name: "", email: "", admin: false });
+export const Identity = createContext<{
+  id: string;
+  name: string;
+  email: string;
+  admin: boolean;
+  image: string | null;
+}>({ id: "", name: "", email: "", admin: false, image: null });
 export const useIdentity = () => useContext(Identity);
 export function useOperation<K extends Operation>(name: K) {
   const cache = useQueryClient();
@@ -41,9 +47,12 @@ export function clearPrivateStorage(userId: string) {
 }
 export { formatTimestamp as date } from "@kanvil/contracts";
 
-export function useProjectAccess(projectId: string) {
+export function useProjectAccess(projectId: string, enabled = true) {
   const identity = useIdentity(),
-    members = useQuery(api.query("list_members", { projectId }));
+    members = useQuery({
+      ...api.query("list_members", { projectId }),
+      enabled: enabled && !identity.admin,
+    });
   const role = identity.admin
     ? "admin"
     : members.data?.find((member) => member.userId === identity.id)?.role;

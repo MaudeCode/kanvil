@@ -1,7 +1,17 @@
+import { ProjectContextMenu } from "./object-context-menu.tsx";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, ChevronsUpDown, FolderOpen, Layers, LogOut, Search, Settings } from "lucide-react";
+import {
+  Bell,
+  ChevronsUpDown,
+  FolderOpen,
+  Layers,
+  LogOut,
+  Search,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import { auth, clearPrivateStorage, useIdentity, useProjects } from "../data.tsx";
 import { Brand, ErrorNotice } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
@@ -22,7 +32,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "./user-avatar.tsx";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -53,6 +63,7 @@ import {
 } from "@/components/ui/command";
 
 export function AppSidebar() {
+  const identity = useIdentity();
   const projects = useProjects(),
     pathname = useRouterState({ select: (state) => state.location.pathname }),
     { setOpenMobile } = useSidebar();
@@ -109,14 +120,18 @@ export function AppSidebar() {
               <SidebarMenu>
                 {projects.data?.map((project) => (
                   <SidebarMenuItem key={project.id}>
-                    <SidebarMenuButton
-                      isActive={pathname.startsWith(`/projects/${project.id}`)}
-                      tooltip={project.name}
-                      render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
-                    >
-                      <FolderOpen />
-                      <span>{project.name}</span>
-                    </SidebarMenuButton>
+                    <ProjectContextMenu project={project}>
+                      <SidebarMenuButton
+                        isActive={pathname.startsWith(`/projects/${project.id}`)}
+                        tooltip={project.name}
+                        render={
+                          <Link to="/projects/$projectId" params={{ projectId: project.id }} />
+                        }
+                      >
+                        <FolderOpen />
+                        <span>{project.name}</span>
+                      </SidebarMenuButton>
+                    </ProjectContextMenu>
                     <SidebarMenuBadge className="font-mono text-[10px] text-muted-foreground">
                       {project.key}
                     </SidebarMenuBadge>
@@ -130,6 +145,18 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
+          {identity.admin && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={pathname === "/admin"}
+                tooltip="Administration"
+                render={<Link to="/admin" />}
+              >
+                <ShieldCheck />
+                <span>Administration</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={pathname === "/settings"}
@@ -167,11 +194,7 @@ function AccountMenu() {
         <DropdownMenuTrigger
           render={<SidebarMenuButton size="lg" className="mt-2" tooltip={identity.name} />}
         >
-          <Avatar className="size-8 rounded-lg">
-            <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-medium text-primary">
-              {identity.name.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <UserAvatar name={identity.name} image={identity.image} />
           <span className="grid flex-1 text-left text-xs leading-tight">
             <span className="truncate font-medium">{identity.name}</span>
             <span className="truncate text-muted-foreground">{identity.email}</span>
@@ -282,15 +305,17 @@ export function WorkspaceHeader() {
     projects = useProjects();
   const project = projects.data?.find((item) => pathname.startsWith(`/projects/${item.id}`));
   const page =
-    pathname === "/inbox"
-      ? "Inbox"
-      : pathname === "/settings"
-        ? "Settings"
-        : pathname.endsWith("/settings")
-          ? "Project settings"
-          : pathname.includes("/tickets/")
-            ? "Ticket"
-            : "Tickets";
+    pathname === "/admin"
+      ? "Administration"
+      : pathname === "/inbox"
+        ? "Inbox"
+        : pathname === "/settings"
+          ? "Settings"
+          : pathname.endsWith("/settings")
+            ? "Project settings"
+            : pathname.includes("/tickets/")
+              ? "Ticket"
+              : "Tickets";
   return (
     <header className="workspace-header flex h-14 shrink-0 items-center gap-3 border-b px-4 md:px-6">
       <SidebarTrigger />

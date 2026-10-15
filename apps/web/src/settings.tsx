@@ -1,20 +1,16 @@
+import { UserRound, Palette, KeyRound, Bell } from "lucide-react";
+import { SettingsLayout } from "./components/settings-layout.tsx";
+import { Credentials } from "./components/credentials-settings.tsx";
+import { accountSections } from "./search.ts";
+import { ProfileSettings } from "./components/profile-settings.tsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FieldSet, FieldLegend } from "@/components/ui/field";
 import { AppearanceSettings } from "./components/appearance.tsx";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import {
-  credentialsSchema,
-  createdCredentialSchema,
-  infoSchema,
-  okSchema,
-  roles,
-  scopes,
-  type Project,
-} from "@kanvil/contracts";
-import { api, auth, date, useIdentity, useOperation, useProjects } from "./data.tsx";
+import { infoSchema, roles, type Project } from "@kanvil/contracts";
+import { api, auth, useOperation } from "./data.tsx";
 import { Button, Check, Confirm, ErrorNotice, Input, Select, SelectItem, Textarea } from "./ui.tsx";
 
 export function ProjectSettings({ project }: { project: Project }) {
@@ -135,8 +131,19 @@ export function ProjectSettings({ project }: { project: Project }) {
     </>
   );
 }
-export function AccountSettings() {
-  const identity = useIdentity();
+const personalSections = [
+  { id: "account", label: "Profile & security", icon: UserRound },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "credentials", label: "Agent credentials", icon: KeyRound },
+  { id: "notifications", label: "Notifications", icon: Bell },
+];
+export function AccountSettings({
+  section,
+  onSectionChange,
+}: {
+  section: (typeof accountSections)[number];
+  onSectionChange: (value: string) => void;
+}) {
   const info = useQuery({
     queryKey: ["info"],
     queryFn: () => api.request("/api/v1/info", infoSchema),
@@ -175,23 +182,17 @@ export function AccountSettings() {
   }
   return (
     <>
-      <header className="page-header">
-        <h1>Settings</h1>
-      </header>
-      <Tabs defaultValue="account" className="settings">
-        <TabsList variant="line" className="settings-tabs mb-6">
-          <TabsTrigger value="account">Account</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="credentials">Credentials</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          {identity.admin && <TabsTrigger value="administration">Administration</TabsTrigger>}
-        </TabsList>
+      <SettingsLayout
+        title="Settings"
+        value={section}
+        onChange={onSectionChange}
+        sections={personalSections}
+      >
         <TabsContent value="account">
           <section>
             <h2>Account</h2>
-            <p>
-              {identity.name} · {identity.email}
-            </p>
+            <ProfileSettings />
+            <h3>Password</h3>
             <form
               onSubmit={(event) => {
                 void changePassword(event);
@@ -254,12 +255,7 @@ export function AccountSettings() {
         <TabsContent value="notifications">
           <NotificationPreferences pushAvailable={info.data?.push ?? false} />
         </TabsContent>
-        {identity.admin && (
-          <TabsContent value="administration">
-            <AccountAdministration />
-          </TabsContent>
-        )}
-      </Tabs>
+      </SettingsLayout>
     </>
   );
 }
@@ -295,187 +291,6 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
           }
         />
       )}
-    </section>
-  );
-}
-function Credentials() {
-  const cache = useQueryClient(),
-    projects = useProjects();
-  const credentials = useQuery({
-    queryKey: ["kanvil", "credentials"],
-    queryFn: () => api.request("/api/v1/credentials", credentialsSchema),
-  });
-  const [error, setError] = useState<unknown>(),
-    [key, setKey] = useState(""),
-    [pending, setPending] = useState(false);
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    setError(undefined);
-    setPending(true);
-    setKey("");
-    try {
-      const result = await api.request("/api/v1/credentials", createdCredentialSchema, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: values.get("name"),
-          projectIds: values.getAll("projects"),
-          scopes: values.getAll("scopes"),
-          expiresIn: Number(values.get("days")) * 86400,
-        }),
-      });
-      setKey(result.key);
-      await cache.invalidateQueries({ queryKey: ["kanvil", "credentials"] });
-    } catch (cause) {
-      setError(cause);
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <section>
-      <h2>Agent credentials</h2>
-      <p className="muted">Credentials inherit your project role and the selected restrictions.</p>
-      <ErrorNotice error={credentials.error ?? error} />
-      {credentials.data?.map((credential) => (
-        <div className="resource-row" key={credential.id}>
-          <span>
-            {credential.name}
-            <small className="muted">
-              {" "}
-              {credential.start}… ·{" "}
-              {credential.expiresAt ? `Expires ${date(credential.expiresAt)}` : "No expiry"}
-            </small>
-          </span>
-          <Confirm
-            label="Revoke"
-            description={`Revoke ${credential.name ?? "this credential"} immediately?`}
-            onConfirm={async () => {
-              await api.request(
-                `/api/v1/credentials/${encodeURIComponent(credential.id)}`,
-                okSchema,
-                { method: "DELETE" },
-              );
-              await cache.invalidateQueries({ queryKey: ["kanvil", "credentials"] });
-            }}
-          />
-        </div>
-      ))}
-      <form
-        onSubmit={(event) => {
-          void create(event);
-        }}
-      >
-        <Input label="Credential name" name="name" required maxLength={100} />
-        <FieldSet className="mb-5">
-          <FieldLegend variant="label">Projects</FieldLegend>
-          {projects.data?.map((project) => (
-            <Check key={project.id} label={project.name} name="projects" value={project.id} />
-          ))}
-        </FieldSet>
-        <FieldSet className="mb-5">
-          <FieldLegend variant="label">Permissions</FieldLegend>
-          {scopes.map((scope) => (
-            <Check
-              key={scope}
-              label={scope}
-              name="scopes"
-              value={scope}
-              defaultChecked={scope === "read"}
-            />
-          ))}
-        </FieldSet>
-        <Input
-          label="Expires after (days)"
-          name="days"
-          type="number"
-          min={1}
-          max={365}
-          defaultValue={90}
-          required
-        />
-        <Button type="submit" disabled={pending}>
-          Create credential
-        </Button>
-      </form>
-      {key && (
-        <div className="secret" role="status">
-          <p>Copy this credential now. It will not be shown again.</p>
-          <Input
-            label="New credential"
-            value={key}
-            readOnly
-            onFocus={(event) => event.target.select()}
-          />
-          <Button
-            onClick={() => {
-              void navigator.clipboard.writeText(key).catch(setError);
-            }}
-          >
-            Copy
-          </Button>
-          <Button onClick={() => setKey("")}>Dismiss</Button>
-        </div>
-      )}
-    </section>
-  );
-}
-function AccountAdministration() {
-  const [error, setError] = useState<unknown>(),
-    [pending, setPending] = useState(false),
-    [created, setCreated] = useState("");
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget,
-      values = new FormData(form);
-    setPending(true);
-    setError(undefined);
-    try {
-      const result = await auth.admin.createUser({
-        name: formText(values, "name"),
-        email: formText(values, "email"),
-        password: formText(values, "password"),
-        role: values.get("role") === "admin" ? "admin" : "user",
-      });
-      if (result.error) throw new Error(result.error.message);
-      setCreated(`Created ${result.data.user.email}`);
-      form.reset();
-    } catch (cause) {
-      setError(cause);
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <section>
-      <h2>Create account</h2>
-      <form
-        onSubmit={(event) => {
-          void create(event);
-        }}
-      >
-        <Input label="Name" name="name" required maxLength={120} />
-        <Input label="Email" name="email" type="email" required autoComplete="off" />
-        <Input
-          label="Initial password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          minLength={12}
-          maxLength={128}
-          required
-        />
-        <Select label="Instance role" name="role">
-          <SelectItem value="user">User</SelectItem>
-          <SelectItem value="admin">Administrator</SelectItem>
-        </Select>
-        <ErrorNotice error={error} />
-        <Button type="submit" disabled={pending}>
-          Create account
-        </Button>
-        {created && <p role="status">{created}</p>}
-      </form>
     </section>
   );
 }

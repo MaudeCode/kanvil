@@ -82,9 +82,25 @@ export const builtInThemes: [ThemeDefinition, ...ThemeDefinition[]] = [
     dark: colors("#18202d", "#e2e8f0", "#111824", "#a7b8d0", "#162336"),
   },
 ];
+function colorChannels(color: string) {
+  return [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16));
+}
+function blend(background: string, foreground: string, ratio: number) {
+  const front = colorChannels(foreground);
+  return (
+    "#" +
+    colorChannels(background)
+      .map((channel, index) =>
+        Math.round(channel * (1 - ratio) + (front[index] ?? channel) * ratio)
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")
+  );
+}
 function luminance(color: string) {
-  const channels = [1, 3, 5]
-    .map((index) => Number.parseInt(color.slice(index, index + 2), 16) / 255)
+  const channels = colorChannels(color)
+    .map((channel) => channel / 255)
     .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
   return (channels[0] ?? 0) * 0.2126 + (channels[1] ?? 0) * 0.7152 + (channels[2] ?? 0) * 0.0722;
 }
@@ -107,8 +123,8 @@ export function validateTheme(value: unknown) {
   return theme;
 }
 export function themeVariables(p: ThemePalette): Record<string, string> {
-  const mix = (percentage: number) =>
-    `color-mix(in oklch, ${p.background}, ${p.foreground} ${percentage}%)`;
+  const mix = (percentage: number) => blend(p.background, p.foreground, percentage / 100),
+    muted = blend(p.foreground, p.background, 0.23);
   return {
     background: p.background,
     foreground: p.foreground,
@@ -123,7 +139,7 @@ export function themeVariables(p: ThemePalette): Record<string, string> {
     secondary: mix(6),
     "secondary-foreground": p.foreground,
     muted: mix(5),
-    "muted-foreground": `color-mix(in oklch, ${p.foreground}, ${p.background} 32%)`,
+    "muted-foreground": contrast(p.background, muted) >= 4.5 ? muted : p.foreground,
     accent: mix(9),
     "accent-foreground": p.foreground,
     border: mix(14),
@@ -131,7 +147,7 @@ export function themeVariables(p: ThemePalette): Record<string, string> {
     ring: p.primary,
     "sidebar-primary": p.primary,
     "sidebar-primary-foreground": p.primaryForeground,
-    "sidebar-accent": `color-mix(in oklch, ${p.sidebar}, ${p.foreground} 10%)`,
+    "sidebar-accent": blend(p.sidebar, p.foreground, 0.1),
     "sidebar-accent-foreground": p.foreground,
     "sidebar-border": mix(14),
     "sidebar-ring": p.primary,

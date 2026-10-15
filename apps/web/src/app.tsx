@@ -1,3 +1,5 @@
+import { Toaster } from "@/components/ui/sonner";
+import { ProjectContextMenu } from "./components/object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -13,11 +15,11 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { ChevronRight, WifiOff, FolderOpen } from "lucide-react";
-import { formatEvent, notificationsSchema, okSchema } from "@kanvil/contracts";
-import { searchSchema } from "./search.ts";
+import { formatEvent, notificationsSchema, okSchema, infoSchema } from "@kanvil/contracts";
+import { settingsSearchSchema, adminSearchSchema, searchSchema } from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
-import { api, auth, date, Identity, useLive, useProjects } from "./data.tsx";
+import { api, auth, date, Identity, useLive, useProjects, useIdentity } from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading } from "./ui.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateProject } from "./components/create-project.tsx";
@@ -45,6 +47,9 @@ const TicketDetail = lazy(() =>
 const AccountSettings = lazy(() =>
   import("./settings.tsx").then((module) => ({ default: module.AccountSettings })),
 );
+const AdminSettings = lazy(() =>
+  import("./components/admin-settings.tsx").then((module) => ({ default: module.AdminSettings })),
+);
 const ProjectSettings = lazy(() =>
   import("./settings.tsx").then((module) => ({ default: module.ProjectSettings })),
 );
@@ -57,7 +62,13 @@ function Root() {
 function Workspace({
   user,
 }: {
-  user: { id: string; name: string; email: string; role?: string | null | undefined };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    image?: string | null | undefined;
+    role?: string | null | undefined;
+  };
 }) {
   const [cache] = useState(
     () =>
@@ -73,7 +84,7 @@ function Workspace({
   );
   useEffect(() => () => cache.clear(), [cache]);
   return (
-    <Identity value={{ ...user, admin: user.role === "admin" }}>
+    <Identity value={{ ...user, image: user.image ?? null, admin: user.role === "admin" }}>
       <PersistQueryClientProvider
         client={cache}
         persistOptions={{
@@ -94,6 +105,15 @@ function Workspace({
 }
 function Shell() {
   const connection = useLive();
+  const info = useQuery({
+    queryKey: ["info"],
+    queryFn: () => api.request("/api/v1/info", infoSchema),
+  });
+  useEffect(() => {
+    document.title =
+      info.data?.name && info.data.name !== "Kanvil" ? `${info.data.name} · Kanvil` : "Kanvil";
+  }, [info.data?.name]);
+
   return (
     <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
       <a className="skip-link" href="#main">
@@ -110,7 +130,7 @@ function Shell() {
             </AlertDescription>
           </Alert>
         )}
-        <div id="main" className="content" tabIndex={-1}>
+        <div id="main" className="content @container" tabIndex={-1}>
           <Outlet />
         </div>
       </SidebarInset>
@@ -131,28 +151,29 @@ function Home() {
       ) : (
         <ItemGroup className="project-list gap-0">
           {projects.data?.map((project) => (
-            <Item
-              key={project.id}
-              className="rounded-none border-x-0 border-t-0 border-b-border py-5"
-              render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
-            >
-              <ItemMedia>
-                <Badge variant="secondary" className="project-key">
-                  {project.key}
-                </Badge>
-              </ItemMedia>
-              <ItemContent className="min-w-0">
-                <ItemTitle className="line-clamp-none wrap-anywhere">{project.name}</ItemTitle>
-                {project.description && (
-                  <ItemDescription className="line-clamp-none">
-                    {project.description}
-                  </ItemDescription>
-                )}
-              </ItemContent>
-              <ItemActions>
-                <ChevronRight size={16} aria-hidden="true" className="text-muted-foreground" />
-              </ItemActions>
-            </Item>
+            <ProjectContextMenu key={project.id} project={project}>
+              <Item
+                className="rounded-none border-x-0 border-t-0 border-b-border py-5"
+                render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
+              >
+                <ItemMedia>
+                  <Badge variant="secondary" className="project-key">
+                    {project.key}
+                  </Badge>
+                </ItemMedia>
+                <ItemContent className="min-w-0">
+                  <ItemTitle className="line-clamp-none wrap-anywhere">{project.name}</ItemTitle>
+                  {project.description && (
+                    <ItemDescription className="line-clamp-none">
+                      {project.description}
+                    </ItemDescription>
+                  )}
+                </ItemContent>
+                <ItemActions>
+                  <ChevronRight size={16} aria-hidden="true" className="text-muted-foreground" />
+                </ItemActions>
+              </Item>
+            </ProjectContextMenu>
           ))}
           {projects.data?.length === 0 && (
             <EmptyState title="No projects yet" icon={FolderOpen}>
@@ -253,8 +274,43 @@ const inbox = createRoute({ getParentRoute: () => shell, path: "/inbox", compone
 const settings = createRoute({
   getParentRoute: () => shell,
   path: "/settings",
-  component: AccountSettings,
+  validateSearch: settingsSearchSchema,
+  component: SettingsPage,
 });
+function SettingsPage() {
+  const search = settings.useSearch(),
+    navigate = settings.useNavigate();
+  return (
+    <AccountSettings
+      section={search.section}
+      onSectionChange={(section) => {
+        void navigate({ search: settingsSearchSchema.parse({ section }), replace: true });
+      }}
+    />
+  );
+}
+const admin = createRoute({
+  getParentRoute: () => shell,
+  path: "/admin",
+  validateSearch: adminSearchSchema,
+  component: AdminSettingsPage,
+});
+function AdminSettingsPage() {
+  const identity = useIdentity(),
+    search = admin.useSearch(),
+    navigate = admin.useNavigate();
+  return identity.admin ? (
+    <AdminSettings
+      section={search.section}
+      onSectionChange={(section) => {
+        void navigate({ search: adminSearchSchema.parse({ section }), replace: true });
+      }}
+    />
+  ) : (
+    <ErrorNotice error={new Error("Instance administrator access is required")} />
+  );
+}
+
 const projectRoute = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId",
@@ -310,7 +366,7 @@ function ProjectSettingsPage() {
 }
 const router = createRouter({
   routeTree: root.addChildren([
-    shell.addChildren([home, projectRoute, ticket, projectSettings, inbox, settings]),
+    shell.addChildren([home, projectRoute, ticket, projectSettings, inbox, settings, admin]),
     login,
     consent,
   ]),
@@ -331,6 +387,7 @@ export function App() {
             <RouterProvider router={router} />
           </Suspense>
         </QueryClientProvider>
+        <Toaster />
       </TooltipProvider>
     </ThemeProvider>
   );

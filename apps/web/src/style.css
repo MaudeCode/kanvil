@@ -5,6 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  scroll-padding-top: 4.5rem;
   --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.23 0.008 260);
@@ -55,28 +56,6 @@
   --success: oklch(0.75 0.12 160);
   --warning: oklch(0.78 0.12 75);
 }
-:root[data-theme="graphite"] {
-  --primary: oklch(0.3 0.006 260);
-}
-:root.dark[data-theme="graphite"] {
-  --primary: oklch(0.88 0.006 260);
-  --primary-foreground: oklch(0.18 0.005 260);
-}
-:root[data-theme="forest"] {
-  --primary: oklch(0.47 0.115 163);
-}
-:root.dark[data-theme="forest"] {
-  --primary: oklch(0.75 0.13 163);
-  --primary-foreground: oklch(0.19 0.03 163);
-}
-:root[data-theme="ember"] {
-  --primary: oklch(0.55 0.16 42);
-}
-:root.dark[data-theme="ember"] {
-  --primary: oklch(0.76 0.14 55);
-  --primary-foreground: oklch(0.19 0.03 42);
-}
-
 @theme inline {
   --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-heading: var(--font-sans);
@@ -282,7 +261,7 @@
   .ticket-detail {
     @apply max-w-6xl;
   }
-  .ticket-detail > h1 {
+  .ticket-heading > h1 {
     @apply my-5 max-w-4xl text-[1.75rem] font-semibold leading-snug;
   }
   .metadata {
@@ -473,23 +452,8 @@
   .empty {
     @apply p-12 text-muted-foreground;
   }
-  .theme-swatch {
-    @apply inline-block size-3 shrink-0 rounded-full border border-foreground/10;
-  }
-  .theme-swatch-kanvil {
-    background: oklch(0.55 0.19 265);
-  }
-  .theme-swatch-graphite {
-    background: oklch(0.55 0.006 260);
-  }
-  .theme-swatch-forest {
-    background: oklch(0.55 0.115 163);
-  }
-  .theme-swatch-ember {
-    background: oklch(0.63 0.16 42);
-  }
 }
-@media (max-width: 1150px) {
+@container (max-width: 1050px) {
   .ticket-body {
     display: flex;
     flex-direction: column;
@@ -619,5 +583,38 @@
   [data-slot="dropdown-menu-radio-item"],
   [data-slot="select-item"] {
     min-height: 2.75rem;
+  }
+}
+
+[data-slot="sidebar-wrapper"]:has([data-resizing="true"]) {
+  cursor: col-resize;
+  user-select: none;
+}
+[data-slot="sidebar-wrapper"]:has([data-resizing="true"]) [data-slot="sidebar-gap"],
+[data-slot="sidebar-wrapper"]:has([data-resizing="true"]) [data-slot="sidebar-container"] {
+  transition: none;
+}
+
+@layer components {
+  .theme-choice {
+    @apply flex w-full cursor-pointer flex-col gap-3 rounded-xl border border-border bg-background p-2 text-sm font-medium transition-colors hover:bg-muted/50;
+  }
+  .theme-choice[data-selected="true"] {
+    @apply border-primary ring-1 ring-primary;
+  }
+  .peer:focus-visible + .theme-choice {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  .theme-choice svg {
+    @apply overflow-hidden border border-foreground/10;
+  }
+  .settings-facts {
+    @apply mb-6 divide-y border-y;
+  }
+  .settings-facts > div {
+    @apply flex flex-wrap items-center justify-between gap-4 py-4 text-sm;
+  }
+  .settings-facts dt {
+    @apply text-muted-foreground;
   }
 }

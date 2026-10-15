@@ -1,3 +1,4 @@
+import { blobToBase64 } from "./lib/browser.ts";
 import { Trash2, Upload } from "lucide-react";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent } from "react";
@@ -29,21 +30,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       file = new FormData(form).get("file");
     if (!(file instanceof File) || !file.size) return;
     if (file.size > attachmentLimit) throw new Error("Choose a file no larger than 10 MB.");
-    const encoded = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.addEventListener("error", () => reject(new Error("The file could not be read")), {
-        once: true,
-      });
-      reader.addEventListener(
-        "load",
-        () =>
-          typeof reader.result === "string"
-            ? resolve(reader.result.slice(reader.result.indexOf(",") + 1))
-            : reject(new Error("The file could not be encoded")),
-        { once: true },
-      );
-      reader.readAsDataURL(file);
-    });
+    const encoded = await blobToBase64(file);
     await upload.mutateAsync({
       projectId: ticket.projectId,
       ticketId: ticket.id,

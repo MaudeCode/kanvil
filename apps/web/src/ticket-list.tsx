@@ -1,3 +1,4 @@
+import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -369,7 +370,7 @@ export function TicketList({
       ) : (
         <div className="table-scroll">
           <Table
-            className="ticket-table min-[1151px]:w-(--table-width)"
+            className="ticket-table @min-[1051px]:w-(--table-width)"
             role="table"
             aria-label="Tickets"
             style={{ "--table-width": `${table.getTotalSize()}px` }}
@@ -414,22 +415,24 @@ export function TicketList({
             </TableHeader>
             <TableBody role="rowgroup">
               {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} role="row" data-selected={row.getIsSelected()}>
-                  {row.getAllCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      role="cell"
-                      data-column={cell.column.id}
-                      data-label={
-                        typeof cell.column.columnDef.header === "string"
-                          ? cell.column.columnDef.header
-                          : undefined
-                      }
-                    >
-                      <table.FlexRender cell={cell} />
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <TicketContextMenu key={row.id} ticket={row.original}>
+                  <TableRow role="row" data-selected={row.getIsSelected()}>
+                    {row.getAllCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        role="cell"
+                        data-column={cell.column.id}
+                        data-label={
+                          typeof cell.column.columnDef.header === "string"
+                            ? cell.column.columnDef.header
+                            : undefined
+                        }
+                      >
+                        <table.FlexRender cell={cell} />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TicketContextMenu>
               ))}
             </TableBody>
           </Table>

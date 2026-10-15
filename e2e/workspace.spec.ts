@@ -185,7 +185,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await expect(inboxPreference).not.toBeChecked();
   await inboxPreference.click();
   await expect(inboxPreference).toBeChecked();
-  await page.getByRole("tab", { name: "Credentials", exact: true }).click();
+  await page.getByRole("tab", { name: "Agent credentials", exact: true }).click();
   await page.getByLabel("Credential name").fill("Read-only agent");
   await page.getByRole("checkbox", { name: "Kanvil development", exact: true }).check();
   await page.getByRole("button", { name: "Create credential", exact: true }).click();

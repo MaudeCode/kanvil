@@ -1,3 +1,4 @@
+import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { Bell, BellOff, Pencil, ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -59,28 +60,32 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
         </div>
       </header>
       <article className="ticket-detail">
-        <div className="metadata">
-          <span className="key">{ticket.key}</span>
-          <Status value={ticket.status} />
-          <span>{ticket.priority} priority</span>
-          <span>{ticket.kind}</span>
-          <span>difficulty: {ticket.difficulty ?? "unspecified"}</span>
-          <span>v{ticket.version}</span>
-          {ticket.archived && <strong>Archived</strong>}
-        </div>
-        <h1>{ticket.title}</h1>
-        <div className="tags">
-          {ticket.labels.map((label) => (
-            <Badge variant="secondary" key={label}>
-              {label}
-            </Badge>
-          ))}
-          {ticket.scopes.map((scope) => (
-            <Badge variant="outline" key={scope}>
-              {scope}
-            </Badge>
-          ))}
-        </div>
+        <TicketContextMenu ticket={ticket} onEdit={() => setEditing(true)}>
+          <header className="ticket-heading">
+            <div className="metadata">
+              <span className="key">{ticket.key}</span>
+              <Status value={ticket.status} />
+              <span>{ticket.priority} priority</span>
+              <span>{ticket.kind}</span>
+              <span>difficulty: {ticket.difficulty ?? "unspecified"}</span>
+              <span>v{ticket.version}</span>
+              {ticket.archived && <strong>Archived</strong>}
+            </div>
+            <h1>{ticket.title}</h1>
+            <div className="tags">
+              {ticket.labels.map((label) => (
+                <Badge variant="secondary" key={label}>
+                  {label}
+                </Badge>
+              ))}
+              {ticket.scopes.map((scope) => (
+                <Badge variant="outline" key={scope}>
+                  {scope}
+                </Badge>
+              ))}
+            </div>
+          </header>
+        </TicketContextMenu>
         <div className="ticket-body">
           <div className="ticket-requirements">
             <section>
