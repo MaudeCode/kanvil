@@ -63,7 +63,7 @@ try {
   page.on("pageerror", (error) => failures.push(error.message));
   await page.goto(base);
   await page.getByLabel("Name", { exact: true }).fill("Container owner");
-  await page.getByLabel("Setup token").fill(env.KANVIL_SETUP_TOKEN);
+  await page.getByLabel("Setup token", { exact: true }).fill(env.KANVIL_SETUP_TOKEN);
   await page.getByLabel("Email", { exact: true }).fill("container@example.test");
   await page.getByLabel("Password", { exact: true }).fill("Container smoke password 42!");
   await page.getByRole("button", { name: "Create account", exact: true }).click();

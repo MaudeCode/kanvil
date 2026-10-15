@@ -15,12 +15,19 @@ export async function signIn(page: Page) {
   ).toBeVisible();
   if (info.setupRequired) {
     await page.getByLabel("Name", { exact: true }).fill("Test Owner");
-    await page.getByLabel("Setup token").fill("kanvil-browser-tests-only-setup-token");
+    await page
+      .getByLabel("Setup token", { exact: true })
+      .fill("kanvil-browser-tests-only-setup-token");
   }
+  if (!info.setupRequired) await useEmailLogin(page);
   await page.getByLabel("Email", { exact: true }).fill(ownerEmail);
   await page.getByLabel("Password", { exact: true }).fill(ownerPassword);
   await page
     .getByRole("button", { name: info.setupRequired ? "Create account" : "Sign in", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+}
+export async function useEmailLogin(page: Page) {
+  const choice = page.getByRole("button", { name: "Use email and password", exact: true });
+  if (await choice.isVisible()) await choice.click();
 }

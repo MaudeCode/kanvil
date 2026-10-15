@@ -1,5 +1,7 @@
 import {
   Children,
+  createContext,
+  useContext,
   isValidElement,
   useId,
   useState,
@@ -13,14 +15,27 @@ import {
   CircleDashed,
   CircleDot,
   Clock,
+  Copy,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  Check as CheckIcon,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
+import { copyText } from "./lib/browser.ts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { errorMessage, stateLabels, type Ticket } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Input as TextInput } from "@/components/ui/input";
 import { Textarea as TextareaInput } from "@/components/ui/textarea";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -49,6 +64,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,11 +106,29 @@ export function IconButton({
   );
 }
 export function Input({ label, ...props }: ComponentProps<typeof TextInput> & { label: string }) {
-  const id = useId();
+  const id = useId(),
+    [visible, setVisible] = useState(false);
   return (
     <Field className="field">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <TextInput {...props} id={id} />
+      {props.type === "password" ? (
+        <InputGroup>
+          <InputGroupInput {...props} id={id} type={visible ? "text" : "password"} />
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              size="icon-sm"
+              aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+              title={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+              disabled={props.disabled}
+              onClick={() => setVisible((current) => !current)}
+            >
+              {visible ? <EyeOff /> : <Eye />}
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
+      ) : (
+        <TextInput {...props} id={id} />
+      )}
     </Field>
   );
 }
@@ -114,11 +148,13 @@ export function Select({
   label,
   children,
   className,
+  layout = "field",
   ...props
 }: Omit<ComponentProps<typeof SelectRoot<string>>, "children" | "items"> & {
   label: string;
   children: ReactNode;
   className?: string;
+  layout?: "field" | "property";
 }) {
   const id = useId();
   const items = Children.toArray(children).flatMap((child) =>
@@ -127,10 +163,28 @@ export function Select({
       : [],
   );
   return (
-    <Field className={cn("field", className)}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    <Field
+      className={cn(
+        "field",
+        layout === "property" && "mb-0 grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2",
+        className,
+      )}
+    >
+      <FieldLabel
+        htmlFor={id}
+        className={layout === "property" ? "text-xs font-normal text-muted-foreground" : undefined}
+      >
+        {label}
+      </FieldLabel>
       <SelectRoot items={items} defaultValue={items[0]?.value ?? ""} {...props}>
-        <SelectTrigger id={id} className="w-full">
+        <SelectTrigger
+          id={id}
+          className={cn(
+            "w-full",
+            layout === "property" &&
+              "h-auto min-h-8 border-transparent bg-transparent shadow-none hover:bg-muted dark:bg-transparent",
+          )}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>{children}</SelectContent>
@@ -177,13 +231,15 @@ export function EmptyState({
   title,
   icon: Icon = CircleDashed,
   children,
+  className,
 }: {
   title: string;
   icon?: typeof CircleDashed;
   children?: ReactNode;
+  className?: string;
 }) {
   return (
-    <Empty className="py-20">
+    <Empty className={cn("py-20", className)}>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Icon />
@@ -230,32 +286,47 @@ export function Markdown({ children }: { children: string }) {
     </div>
   );
 }
+const ModalBusyContext = createContext<((busy: boolean) => void) | null>(null);
+export const useModalBusy = () => useContext(ModalBusyContext);
 export function Modal({
   title,
   trigger,
   children,
   open,
   onOpenChange,
+  busy = false,
 }: {
   title: string;
   trigger?: ReactNode;
+  busy?: boolean;
   children: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const [childBusy, setChildBusy] = useState(false),
+    isBusy = busy || childBusy;
   return (
-    <Dialog {...(open === undefined ? {} : { open })} {...(onOpenChange ? { onOpenChange } : {})}>
-      {trigger && <DialogTrigger render={<Button variant="outline" />}>{trigger}</DialogTrigger>}
-      <DialogContent
-        className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl"
-        aria-describedby={undefined}
+    <ModalBusyContext value={setChildBusy}>
+      <Dialog
+        {...(open === undefined ? {} : { open })}
+        onOpenChange={(next, details) => {
+          if (!next && isBusy) details.cancel();
+          else onOpenChange?.(next);
+        }}
       >
-        <DialogHeader className="mb-2">
-          <DialogTitle className="text-lg">{title}</DialogTitle>
-        </DialogHeader>
-        {children}
-      </DialogContent>
-    </Dialog>
+        {trigger && <DialogTrigger render={<Button variant="outline" />}>{trigger}</DialogTrigger>}
+        <DialogContent
+          showCloseButton={!isBusy}
+          className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl has-[.ticket-composer]:p-0 has-[.ticket-composer]:gap-0 has-[.ticket-composer]:sm:max-w-5xl"
+          aria-describedby={undefined}
+        >
+          <DialogHeader className="mb-2">
+            <DialogTitle className="text-lg">{title}</DialogTitle>
+          </DialogHeader>
+          {children}
+        </DialogContent>
+      </Dialog>
+    </ModalBusyContext>
   );
 }
 export function Confirm({
@@ -322,5 +393,77 @@ export function Confirm({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+export function SectionHeading({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <header className="section-heading">
+      <div>
+        <h2>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
+      {action}
+    </header>
+  );
+}
+export function CopyValue({ label, value }: { label: string; value: string }) {
+  const id = useId(),
+    [copied, setCopied] = useState(false);
+  return (
+    <div className="copy-value">
+      <span id={id}>{label}</span>
+      <div role="group" aria-labelledby={id}>
+        <code>{value}</code>
+        <IconButton
+          label={`Copy ${label.toLowerCase()}`}
+          onClick={() => {
+            void copyText(value)
+              .then(() => {
+                setCopied(true);
+                toast.success(`${label} copied`);
+              })
+              .catch((error) => toast.error(errorMessage(error)));
+          }}
+        >
+          {copied ? <CheckIcon /> : <Copy />}
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+export function Disclosure({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen} className="disclosure">
+      <CollapsibleTrigger
+        render={
+          <Button
+            variant="ghost"
+            className="group w-full justify-between px-0 text-sm font-medium hover:bg-transparent"
+          />
+        }
+      >
+        {title}
+        <ChevronDown className="size-4 text-muted-foreground transition-transform group-aria-expanded:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="disclosure-body">{children}</CollapsibleContent>
+    </Collapsible>
   );
 }
