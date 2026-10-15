@@ -14,7 +14,7 @@ Start with a fresh workspace and native ticket storage. Kaneo compatibility, dat
 
 Use established libraries and the smallest implementation that meets the acceptance criteria. Each ticket operation, permission check, validation rule, and event write has one shared implementation across HTTP and MCP. Web and mobile share contracts and client logic while using platform-appropriate rendering and navigation.
 
-## Proposed stack
+## Stack
 
 - Workspace monorepo using TypeScript and pnpm.
 - Web: React, Vite, TanStack Router, Query and Table, Base UI, and Tailwind.

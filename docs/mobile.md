@@ -43,7 +43,11 @@ pnpm --filter @kanvil/mobile export
 
 Export checks both iOS and Android JavaScript bundles. It does not replace native compilation or device validation. Build and simulator results are recorded separately from physical-device and store-release validation. Signing and App Store publication are separate release actions.
 
-Current local validation includes an iOS 27 simulator build, native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Android JavaScript exports pass; an Android SDK is not installed on the development host, so Android device execution has not been performed. Native PocketID linking and OIDC sign-in were also validated through the iOS system browser against an isolated HTTPS provider, using its login-code flow. Local password login still reaches the same account. Cold app startup with the backend stopped also retained cached projects and showed an offline state. Switching between cached ticket deep links kept each comment draft with its original ticket. Physical-device passkey behavior and release signing remain separate validation.
+Initial simulator validation includes native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Switching between cached ticket deep links kept each comment draft with its original ticket.
+
+An ad-hoc-signed iOS Release app was also compiled with Xcode 27.1 and run on iOS 27 with Metro stopped. It rejected HTTP, signed in through a verified HTTPS fixture, showed complete parent/child/relationship titles, explicitly linked PocketID, and signed out/in through the system browser to the same workspace. The provider used its login-code flow after a virtual passkey enrollment. Local password login remained available. Cached reading and cold startup after the backend stopped were checked separately.
+
+The Android arm64 Release APK compiled in GitHub Actions and passed signature and embedded-JavaScript verification. Android JavaScript exports also pass. The development host has no Android SDK, and Android device execution has not been performed. Physical-device passkeys, distribution signing, and store publication remain separate validation. See the [verification record](verification.md).
 
 ## Release builds and signing
 
