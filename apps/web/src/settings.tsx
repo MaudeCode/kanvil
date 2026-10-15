@@ -216,13 +216,13 @@ export function AccountSettings() {
           <ErrorNotice error={accounts.error} />
         </section>
         <Credentials />
-        <NotificationPreferences />
+        <NotificationPreferences pushAvailable={info.data?.push ?? false} />
         {identity.admin && <AccountAdministration />}
       </div>
     </>
   );
 }
-function NotificationPreferences() {
+function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) {
   const cache = useQueryClient(),
     options = api.notificationPreferences();
   const preferences = useQuery(options);
@@ -241,7 +241,17 @@ function NotificationPreferences() {
           label="Subscribed ticket updates in Inbox"
           checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
           disabled={update.isPending}
-          onChange={(event) => update.mutate({ inApp: event.target.checked })}
+          onChange={(event) => update.mutate({ ...preferences.data, inApp: event.target.checked })}
+        />
+      )}
+      {pushAvailable && preferences.data && (
+        <Check
+          label="Push notifications on registered devices"
+          checked={update.isPending ? (update.variables.push ?? false) : preferences.data.push}
+          disabled={update.isPending}
+          onChange={(event) =>
+            update.mutate({ inApp: preferences.data?.inApp ?? true, push: event.target.checked })
+          }
         />
       )}
     </section>

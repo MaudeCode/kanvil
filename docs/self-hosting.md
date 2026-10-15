@@ -74,6 +74,12 @@ services:
 
 Native devices must also trust that authority. Never mount the authority's private key.
 
+## Optional mobile push
+
+Set `KANVIL_PUSH_ENABLED=true` to enable the Expo push transport. If the Expo project has push access-token security enabled, also set its server-held `EXPO_ACCESS_TOKEN`. Recreate the app after changing configuration. A signed mobile build must contain the public Expo project ID and have APNs/FCM credentials configured; see [mobile setup](mobile.md). Accounts opt in through Settings and register each device separately.
+
+Push is disabled by default. Ticket storage, login, Inbox, realtime, and MCP work without Expo services. Push messages use a generic update notice and ticket identifiers, without ticket titles, descriptions, comments, or evidence. The database outbox commits with each subscribed event, checks current account/project/session/subscription access before every send, retries failures, and checks Expo receipts. Expired login sessions and explicit session revocation remove their device registrations. A failed or interrupted transport may deliver duplicates; queued notices expire after one day. Delivery status is available in the `push_deliveries` table. Backups contain device tokens, so protect them alongside authentication state.
+
 ## Backup
 
 Run from the configured checkout:

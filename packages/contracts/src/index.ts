@@ -184,6 +184,7 @@ export const infoSchema = z.object({
   version: z.string(),
   setupRequired: z.boolean(),
   oidc: z.object({ id: z.string(), name: z.string() }).nullable(),
+  push: z.boolean().default(false),
 });
 export const notificationsSchema = z.array(
   z.object({
@@ -193,8 +194,9 @@ export const notificationsSchema = z.array(
   }),
 );
 export const notificationPreferencesSchema = z
-  .object({ inApp: z.boolean().default(true) })
+  .object({ inApp: z.boolean().default(true), push: z.boolean().default(false) })
   .strict();
+export const pushDeviceInput = z.object({ token: z.string().min(1).max(250) }).strict();
 export const credentialsSchema = z.array(
   z.object({
     id: z.string(),

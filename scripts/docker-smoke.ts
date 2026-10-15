@@ -23,6 +23,8 @@ const env = {
   OIDC_DISCOVERY_URL: "",
   OIDC_CLIENT_ID: "",
   OIDC_CLIENT_SECRET: "",
+  KANVIL_PUSH_ENABLED: "false",
+  EXPO_ACCESS_TOKEN: "",
 };
 async function run(
   command: string,

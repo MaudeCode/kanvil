@@ -15,6 +15,11 @@ const envSchema = z
     OIDC_CLIENT_ID: optionalEnv(z.string().min(1)),
     OIDC_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     OIDC_NAME: z.string().default("PocketID"),
+    KANVIL_PUSH_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    EXPO_ACCESS_TOKEN: optionalEnv(z.string().min(1)),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {

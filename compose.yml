@@ -17,6 +17,8 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       OIDC_NAME: ${OIDC_NAME:-PocketID}
+      KANVIL_PUSH_ENABLED: ${KANVIL_PUSH_ENABLED:-false}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
     ports:
       - "127.0.0.1:${KANVIL_PORT:-5180}:5180"
     depends_on:

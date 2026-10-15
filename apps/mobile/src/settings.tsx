@@ -7,6 +7,13 @@ import { useNavigation } from "@react-navigation/native";
 import { infoSchema, notificationsSchema, okSchema } from "@kanvil/contracts";
 import { useConnection, useIdentity } from "./data.tsx";
 import {
+  devicePushToken,
+  disableDevicePush,
+  enableDevicePush,
+  forgetDevicePush,
+  pushProjectId,
+} from "./push.tsx";
+import {
   Body,
   List,
   Button,
@@ -83,8 +90,10 @@ export function Inbox() {
     </Screen>
   );
 }
-function NotificationPreferences() {
-  const { api } = useConnection(),
+function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) {
+  const connection = useConnection(),
+    { api } = connection,
+    identity = useIdentity(),
     cache = useQueryClient(),
     options = api.notificationPreferences();
   const preferences = useQuery(options);
@@ -94,24 +103,67 @@ function NotificationPreferences() {
     retry: false,
     onSuccess: (value) => cache.setQueryData(options.queryKey, value),
   });
+  const device = useQuery({
+    queryKey: ["device-push", identity.id],
+    queryFn: () => devicePushToken(connection, identity.id),
+  });
+  const registration = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      if (enabled) {
+        await enableDevicePush(connection, identity.id);
+        await api.setNotificationPreferences({
+          inApp: preferences.data?.inApp ?? true,
+          push: true,
+        });
+      } else await disableDevicePush(connection, identity.id);
+    },
+    onSuccess: async () => {
+      await device.refetch();
+      await preferences.refetch();
+    },
+  });
   return (
     <Section title="Notifications">
-      <ErrorNotice error={preferences.error ?? update.error} />
+      <ErrorNotice
+        error={preferences.error ?? update.error ?? registration.error ?? device.error}
+      />
       {preferences.data && (
         <Check
           label="Subscribed ticket updates in Inbox"
           checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
-          disabled={update.isPending}
+          disabled={update.isPending || registration.isPending}
           onChange={(inApp) => {
-            if (!update.isPending) update.mutate({ inApp });
+            if (!update.isPending) update.mutate({ ...preferences.data, inApp });
           }}
         />
+      )}
+      {pushAvailable && preferences.data && (
+        <>
+          <Check
+            label="Push notifications"
+            checked={update.isPending ? (update.variables.push ?? false) : preferences.data.push}
+            disabled={update.isPending || registration.isPending}
+            onChange={(push) => update.mutate({ inApp: preferences.data?.inApp ?? true, push })}
+          />
+          {typeof pushProjectId === "string" ? (
+            <Button
+              title={device.data ? "Disable push on this device" : "Enable push on this device"}
+              disabled={registration.isPending || update.isPending || device.isPending}
+              onPress={() => registration.mutate(!device.data)}
+            />
+          ) : (
+            <Body muted>
+              This build needs an Expo project ID and signing configuration for push.
+            </Body>
+          )}
+        </>
       )}
     </Section>
   );
 }
 export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
-  const { api, auth, baseUrl, prefix } = useConnection(),
+  const connection = useConnection(),
+    { api, auth, baseUrl, prefix } = connection,
     identity = useIdentity(),
     cache = useQueryClient();
   const [current, setCurrent] = useState(""),
@@ -143,6 +195,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       setError(cause);
     } finally {
       try {
+        await forgetDevicePush(connection, identity.id);
         const keys = await AsyncStorage.getAllKeys();
         await AsyncStorage.multiRemove(
           keys.filter((key) => key.startsWith(`${prefix}:${identity.id}:`)),
@@ -227,7 +280,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           <ErrorNotice error={accounts.error} />
         </Section>
       )}
-      <NotificationPreferences />
+      <NotificationPreferences pushAvailable={info.data?.push ?? false} />
       <Button
         title="Sign out"
         disabled={pending}

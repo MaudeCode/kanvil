@@ -211,7 +211,7 @@ export function createClient(options: {
           api.request("/api/v1/notifications/preferences", notificationPreferencesSchema),
       };
     },
-    setNotificationPreferences(this: void, input: { inApp: boolean }) {
+    setNotificationPreferences(this: void, input: { inApp: boolean; push?: boolean }) {
       return api.request("/api/v1/notifications/preferences", notificationPreferencesSchema, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
