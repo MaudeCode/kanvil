@@ -1,4 +1,5 @@
 import type { ExpoConfig } from "expo/config";
+import { palettes } from "../../packages/contracts/src/theme.ts";
 const config: ExpoConfig = {
   name: "Kanvil",
   slug: "kanvil",
@@ -13,15 +14,36 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "1",
+    buildNumber: "2",
     supportsTablet: true,
     infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
   },
-  android: { package: "com.maudecode.kanvil", versionCode: 1 },
+  android: {
+    package: "com.maudecode.kanvil",
+    versionCode: 2,
+    adaptiveIcon: {
+      foregroundImage: "./assets/adaptive-icon.png",
+      monochromeImage: "./assets/adaptive-icon.png",
+      backgroundColor: palettes.light.accent,
+    },
+  },
   plugins: [
     "expo-secure-store",
     "expo-document-picker",
-    "expo-notifications",
+    [
+      "expo-notifications",
+      { icon: "./assets/notification-icon.png", color: palettes.light.accent },
+    ],
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/splash-light.png",
+        backgroundColor: palettes.light.background,
+        dark: { image: "./assets/splash-dark.png", backgroundColor: palettes.dark.background },
+        imageWidth: 220,
+        resizeMode: "contain",
+      },
+    ],
     "expo-font",
     ["expo-build-properties", { ios: { enableSceneSupport: true } }],
   ],

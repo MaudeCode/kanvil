@@ -87,11 +87,9 @@ h3 {
   text-decoration: none;
 }
 .brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--surface);
+  width: 42px;
+  height: 26px;
+  color: var(--accent);
   flex-shrink: 0;
 }
 .skip-link {
@@ -1023,9 +1021,8 @@ small {
     margin-top: 7px;
   }
   .brand-mark {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 36px;
+    height: 24px;
   }
   .sidebar nav {
     grid-column: 1 / -1;
