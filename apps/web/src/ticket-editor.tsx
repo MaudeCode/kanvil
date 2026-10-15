@@ -24,6 +24,7 @@ import {
   Textarea,
   useModalBusy,
 } from "./ui.tsx";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { DialogClose } from "@/components/ui/dialog";
 import { MarkdownField } from "./components/markdown-field.tsx";
 import { TicketPicker } from "./components/ticket-picker.tsx";
@@ -52,6 +53,7 @@ export function TicketEditor({
     }
     return createTicketDraft(ticket);
   });
+  const [expanded, setExpanded] = useState(false);
   const [validationError, setValidationError] = useState<unknown>(),
     [storageError, setStorageError] = useState<unknown>(),
     [savedLocally, setSavedLocally] = useState(false);
@@ -108,7 +110,19 @@ export function TicketEditor({
       }}
       onKeyDown={submitOnModEnter}
       className="ticket-composer"
+      data-expanded={expanded}
     >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="absolute top-2 right-16 hidden sm:inline-flex"
+        aria-label={expanded ? "Restore composer size" : "Expand composer"}
+        aria-pressed={expanded}
+        disabled={pending}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {expanded ? <Minimize2 /> : <Maximize2 />}
+      </Button>
       {stale && (
         <div role="alert" className="conflict mx-6 mt-5">
           <p>
@@ -134,20 +148,22 @@ export function TicketEditor({
             maxLength={500}
             autoFocus
             placeholder="What needs to happen?"
-            className="composer-title min-h-20 resize-none border-0 bg-transparent px-0 py-1 text-xl! font-semibold leading-snug shadow-none focus-visible:ring-0 dark:bg-transparent"
+            className="composer-title min-h-14 resize-none border-0 bg-transparent px-1 py-1 text-2xl! font-semibold leading-snug shadow-none dark:bg-transparent"
           />
           <MarkdownField
             label="Description"
             value={fields.description}
             onChange={(value) => set("description", value)}
-            rows={7}
+            rows={12}
+            variant="document"
             placeholder="Add context, requirements, or a reproduction…"
           />
           <MarkdownField
             label="Acceptance criteria"
             value={fields.acceptanceCriteria}
             onChange={(value) => set("acceptanceCriteria", value)}
-            rows={4}
+            rows={8}
+            variant="document"
             maxLength={50000}
             placeholder="What will show that this is complete?"
           />

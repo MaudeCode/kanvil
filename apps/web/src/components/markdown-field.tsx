@@ -9,6 +9,7 @@ export function MarkdownField({
   onChange,
   placeholder,
   rows = 5,
+  variant = "compact",
   maxLength = 100000,
   required = false,
   footer,
@@ -18,6 +19,7 @@ export function MarkdownField({
   onChange: (value: string) => void;
   placeholder?: string;
   rows?: number;
+  variant?: "compact" | "document";
   maxLength?: number;
   required?: boolean;
   footer?: ReactNode;
@@ -25,7 +27,7 @@ export function MarkdownField({
   const id = useId(),
     [mode, setMode] = useState("write");
   return (
-    <Field className="markdown-field" aria-label={`${label} editor`}>
+    <Field className="markdown-field" data-variant={variant} aria-label={`${label} editor`}>
       <Tabs value={mode} onValueChange={(next) => setMode(String(next))}>
         <div className="flex items-center justify-between gap-3">
           <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -35,9 +37,21 @@ export function MarkdownField({
           </TabsList>
         </div>
         <TabsContent value="write">
-          <InputGroup>
+          <InputGroup
+            className={
+              variant === "document"
+                ? "rounded-none border-0 bg-transparent dark:bg-transparent"
+                : undefined
+            }
+          >
             <InputGroupTextarea
               id={id}
+              className={
+                variant === "document"
+                  ? "field-sizing-content max-h-none resize-y px-1 py-3 text-base md:text-base leading-7"
+                  : undefined
+              }
+              style={variant === "document" ? { minHeight: `${rows}lh` } : undefined}
               value={value}
               onChange={(event) => onChange(event.target.value)}
               placeholder={placeholder}

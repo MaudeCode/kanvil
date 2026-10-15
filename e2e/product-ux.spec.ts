@@ -296,3 +296,64 @@ test("phone settings keep navigation, key actions, and user administration in vi
   await expect(page.getByText("No matching users", { exact: true })).toBeVisible();
   await page.request.delete(`/api/v1/credentials/${credential.id}`);
 });
+
+test("long ticket drafts have growing document fields, an expanded view, and reachable save actions", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "WRITING", name: "Long-form ticket writing" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}`);
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  const dialog = page.getByRole("dialog"),
+    description = page.getByLabel("Description", { exact: true }),
+    criteria = page.getByLabel("Acceptance criteria", { exact: true });
+  const normal = await dialog.boundingBox();
+  expect(normal?.width).toBeGreaterThanOrEqual(1200);
+  expect((await description.boundingBox())?.height).toBeGreaterThanOrEqual(280);
+  await page
+    .getByLabel("Title", { exact: true })
+    .fill("Keep a detailed implementation brief readable while writing");
+  const paragraph =
+    "Ownership must survive reconnects without creating a second claimant. Keep the previous acceptance receipt, explain any conflicting write, and let a reviewer follow the complete handoff history before approving a retry.";
+  const body = Array.from(
+    { length: 18 },
+    (_, i) => `## Scenario ${i + 1}\n\n${paragraph} ${paragraph}`,
+  ).join("\n\n");
+  await description.fill(body);
+  const bounds = await description.boundingBox();
+  expect(bounds?.height).toBeGreaterThan(600);
+  expect(await description.evaluate((field) => field.scrollHeight <= field.clientHeight + 2)).toBe(
+    true,
+  );
+  const editor = page.getByRole("group", { name: "Description editor", exact: true });
+  await editor.getByRole("tab", { name: "Preview", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Scenario 18", exact: true })).toBeAttached();
+  await editor.getByRole("tab", { name: "Write", exact: true }).click();
+  await page.getByRole("button", { name: "Expand composer", exact: true }).click();
+  expect((await dialog.boundingBox())?.width).toBeGreaterThan(normal?.width ?? 0);
+  await expect(description).toHaveValue(body);
+  await page.getByRole("button", { name: "Restore composer size", exact: true }).click();
+  await expect(description).toHaveValue(body);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await expect(description).toHaveValue(body);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => Math.round((await dialog.boundingBox())?.width ?? 0)).toBe(390);
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await criteria.fill(
+    "- [ ] Long descriptions remain readable.\n- [ ] Drafts survive closing and reopening.",
+  );
+  const save = page.getByRole("button", { name: "Save ticket", exact: true });
+  await expect(save).toBeInViewport();
+  await criteria.press("ControlOrMeta+Enter");
+  await expect(dialog).toHaveCount(0);
+  const tickets = await (await page.request.get(`/api/v1/projects/${project.id}/tickets`)).json();
+  expect(tickets.items).toHaveLength(1);
+  expect(tickets.items[0].description).toBe(body);
+  expect(tickets.items[0].acceptanceCriteria).toContain("Drafts survive closing and reopening.");
+});

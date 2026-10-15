@@ -317,11 +317,11 @@ export function Modal({
         {trigger && <DialogTrigger render={<Button variant="outline" />}>{trigger}</DialogTrigger>}
         <DialogContent
           showCloseButton={!isBusy}
-          className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl has-[.ticket-composer]:p-0 has-[.ticket-composer]:gap-0 has-[.ticket-composer]:sm:max-w-5xl"
+          className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl has-[.ticket-composer]:flex has-[.ticket-composer]:h-[min(60rem,92dvh)] has-[.ticket-composer]:max-h-none has-[.ticket-composer]:w-full has-[.ticket-composer]:max-w-none has-[.ticket-composer]:flex-col has-[.ticket-composer]:gap-0 has-[.ticket-composer]:overflow-hidden has-[.ticket-composer]:p-0 has-[.ticket-composer]:max-sm:h-dvh has-[.ticket-composer]:max-sm:rounded-none has-[.ticket-composer]:sm:w-[min(80rem,calc(100%-3rem))] has-[.ticket-composer[data-expanded=true]]:sm:w-[calc(100%-1rem)] has-[.ticket-composer[data-expanded=true]]:sm:h-[calc(100dvh-1rem)]"
           aria-describedby={undefined}
         >
           <DialogHeader className="mb-2">
-            <DialogTitle className="text-lg">{title}</DialogTitle>
+            <DialogTitle className="mb-0 text-lg">{title}</DialogTitle>
           </DialogHeader>
           {children}
         </DialogContent>

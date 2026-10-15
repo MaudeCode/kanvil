@@ -518,6 +518,12 @@
   .markdown-field [data-slot="tabs-trigger"] {
     @apply text-xs;
   }
+  .markdown-field[data-variant="document"] {
+    @apply border-t pt-5;
+  }
+  .markdown-field[data-variant="document"] .markdown-preview {
+    @apply rounded-none border-0 bg-transparent px-1 py-3 text-base leading-7;
+  }
   .markdown-preview {
     @apply min-h-28 rounded-lg border bg-muted/20 p-4;
   }
@@ -525,19 +531,22 @@
     @apply flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50;
   }
   [data-slot="dialog-content"]:has(.ticket-composer) [data-slot="dialog-header"] {
-    @apply m-0 border-b px-6 py-4;
+    @apply m-0 shrink-0 border-b px-6 py-4 pr-28;
+  }
+  .ticket-composer {
+    @apply flex min-h-0 flex-1 flex-col;
   }
   .composer-body {
-    @apply grid min-w-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px];
+    @apply grid min-h-0 min-w-0 flex-1 grid-cols-1 items-start overflow-y-auto overscroll-contain lg:grid-cols-[minmax(0,1fr)_264px];
   }
   .composer-writing {
-    @apply min-w-0 space-y-6 p-6;
+    @apply mx-auto w-full min-w-0 max-w-5xl space-y-8 px-6 py-7 sm:px-10;
   }
   .composer-writing > .field:first-child > [data-slot="field-label"] {
     @apply sr-only;
   }
   .composer-properties {
-    @apply min-w-0 border-t bg-muted/20 p-6 md:border-l md:border-t-0;
+    @apply min-w-0 border-t bg-muted/20 p-6 lg:sticky lg:top-0 lg:min-h-full lg:border-l lg:border-t-0;
   }
   .composer-properties h3 {
     @apply mb-5 text-xs text-muted-foreground;
@@ -546,7 +555,7 @@
     @apply mb-4;
   }
   .composer-footer {
-    @apply sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-4;
+    @apply z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-4;
   }
   .profile-overview {
     @apply flex flex-wrap items-center gap-4;
