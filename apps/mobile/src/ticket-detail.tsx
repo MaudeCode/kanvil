@@ -22,7 +22,15 @@ import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
-export function TicketDetail({ route, navigation }: ScreenProps<"Ticket">) {
+export function TicketDetail(props: ScreenProps<"Ticket">) {
+  return (
+    <TicketScreen
+      key={`${props.route.params.projectId}:${props.route.params.ticketId}`}
+      {...props}
+    />
+  );
+}
+function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
   const { api, baseUrl } = useConnection(),
     { projectId, ticketId } = route.params,
     color = usePalette();

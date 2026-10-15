@@ -138,7 +138,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     let active = true;
     void AsyncStorage.getItem(key)
       .then((value) => {
-        if (active && value) setBody(value);
+        if (active) setBody(value ?? "");
       })
       .catch(setError);
     return () => {
