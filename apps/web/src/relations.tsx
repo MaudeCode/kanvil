@@ -1,3 +1,4 @@
+import { Unlink } from "lucide-react";
 import { formText } from "./forms.ts";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -5,7 +6,16 @@ import { Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { relationReference, type Ticket } from "@kanvil/contracts";
 import { api, useOperation } from "./data.tsx";
-import { Button, ErrorNotice, Input, Modal, Select, Status } from "./ui.tsx";
+import {
+  Button,
+  IconButton,
+  ErrorNotice,
+  Input,
+  Modal,
+  Select,
+  SelectItem,
+  Status,
+} from "./ui.tsx";
 
 export function Relations({ ticket }: { ticket: Ticket }) {
   const relations = useQuery(
@@ -90,14 +100,14 @@ export function Relations({ ticket }: { ticket: Ticket }) {
             >
               {reference.title}
             </Link>
-            <Button
-              aria-label={`Remove ${relation.type} relationship`}
+            <IconButton
+              label={`Remove ${relation.type} relationship`}
               onClick={() =>
                 remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
               }
             >
-              Remove
-            </Button>
+              <Unlink />
+            </IconButton>
           </div>
         );
       })}
@@ -120,18 +130,18 @@ export function Relations({ ticket }: { ticket: Ticket }) {
             onChange={(event) => setQuery(event.target.value)}
           />
           <Select label="Relationship" name="type">
-            <option value="blocks">This ticket blocks</option>
-            <option value="related">Related to</option>
-            <option value="duplicate">Duplicate of</option>
+            <SelectItem value="blocks">This ticket blocks</SelectItem>
+            <SelectItem value="related">Related to</SelectItem>
+            <SelectItem value="duplicate">Duplicate of</SelectItem>
           </Select>
           <Select label="Ticket" name="target" required>
-            <option value="">Choose a ticket</option>
+            <SelectItem value="">Choose a ticket</SelectItem>
             {matches.data?.items
               .filter((match) => match.id !== ticket.id)
               .map((match) => (
-                <option key={match.id} value={match.id}>
+                <SelectItem key={match.id} value={match.id}>
                   {match.key} · {match.title}
-                </option>
+                </SelectItem>
               ))}
           </Select>
           <ErrorNotice error={add.error ?? matches.error} />

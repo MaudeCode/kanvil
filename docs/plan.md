@@ -17,7 +17,7 @@ Use established libraries and the smallest implementation that meets the accepta
 ## Stack
 
 - Workspace monorepo using TypeScript and pnpm.
-- Web: React, Vite, TanStack Router, Query and Table, Base UI, and Tailwind.
+- Web: React, Vite, TanStack Router, Query and Table, shadcn/ui with Base UI, and Tailwind v4.
 - Mobile: Expo, React Native, React Navigation, and Legend List.
 - Backend: Node.js, Hono, Zod/OpenAPI, PostgreSQL, and Drizzle.
 - Authentication: Better Auth with local login, generic OIDC, Expo integration, and supported API-key and MCP authorization integrations.

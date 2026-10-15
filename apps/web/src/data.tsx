@@ -5,7 +5,6 @@ import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
 import { type Operation } from "@kanvil/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { palettes, type ThemeMode } from "@kanvil/contracts/theme";
 
 export const auth = createAuthClient({ plugins: [adminClient(), oauthProviderClient()] });
 export const api = createClient({ baseUrl: window.location.origin });
@@ -35,30 +34,6 @@ export function useLive(projectId?: string) {
     return () => controller.abort();
   }, [cache, projectId]);
   return state;
-}
-export const ThemeContext = createContext<{ mode: ThemeMode; setMode: (mode: ThemeMode) => void }>({
-  mode: "system",
-  setMode: () => {},
-});
-export function useTheme() {
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem("kanvil:theme");
-    return saved === "light" || saved === "dark" ? saved : "system";
-  });
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const resolved = mode === "system" ? (media.matches ? "dark" : "light") : mode;
-      for (const [name, value] of Object.entries(palettes[resolved]))
-        document.documentElement.style.setProperty(`--${name}`, value);
-      document.documentElement.style.colorScheme = resolved;
-    };
-    apply();
-    media.addEventListener("change", apply);
-    localStorage.setItem("kanvil:theme", mode);
-    return () => media.removeEventListener("change", apply);
-  }, [mode]);
-  return { mode, setMode };
 }
 export function clearPrivateStorage(userId: string) {
   for (const key of Object.keys(localStorage))

@@ -1,9 +1,20 @@
+import { Trash2, Upload } from "lucide-react";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatEvent, attachmentLimit, evidenceFields, type Ticket } from "@kanvil/contracts";
 import { api, date, ActorName, useOperation } from "./data.tsx";
-import { Button, Confirm, ErrorNotice, Input, Markdown, Modal, Select, Textarea } from "./ui.tsx";
+import {
+  Button,
+  Confirm,
+  ErrorNotice,
+  Input,
+  Markdown,
+  Modal,
+  Select,
+  SelectItem,
+  Textarea,
+} from "./ui.tsx";
 
 export function Attachments({ ticket }: { ticket: Ticket }) {
   const items = useQuery(
@@ -58,7 +69,8 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
             }).format(item.size / 1000)}
           </span>
           <Confirm
-            label="Remove"
+            label="Remove attachment"
+            icon={<Trash2 />}
             description={`Remove ${item.name}?`}
             onConfirm={() =>
               remove.mutateAsync({ projectId: ticket.projectId, attachmentId: item.id })
@@ -75,6 +87,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       >
         <Input label="File (up to 10 MB)" name="file" type="file" required />
         <Button type="submit" disabled={upload.isPending}>
+          <Upload />
           Upload
         </Button>
       </form>
@@ -130,12 +143,16 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
           <Input label="URL" name="url" type="url" required />
           <Select label="Kind" name="kind">
             {evidenceFields.shape.kind.options.map((kind) => (
-              <option key={kind}>{kind}</option>
+              <SelectItem key={kind} value={kind}>
+                {kind}
+              </SelectItem>
             ))}
           </Select>
           <Select label="Reported outcome" name="outcome">
             {["reported", "pending", "passed", "failed"].map((outcome) => (
-              <option key={outcome}>{outcome}</option>
+              <SelectItem key={outcome} value={outcome}>
+                {outcome}
+              </SelectItem>
             ))}
           </Select>
           <Input label="Commit (full hash)" name="commit" pattern="[a-fA-F0-9]{40,64}" />

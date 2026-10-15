@@ -1,8 +1,9 @@
+import { Pencil, Trash2, Send } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Ticket } from "@kanvil/contracts";
 import { api, date, ActorName, useIdentity, useOperation } from "./data.tsx";
-import { Button, Confirm, ErrorNotice, Markdown, Textarea } from "./ui.tsx";
+import { Button, IconButton, Confirm, ErrorNotice, Markdown, Textarea } from "./ui.tsx";
 
 export function Discussion({ ticket }: { ticket: Ticket }) {
   const [offset, setOffset] = useState(0),
@@ -47,6 +48,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
           onChange={(event) => setBody(event.target.value)}
         />
         <Button type="submit" disabled={add.isPending}>
+          <Send />
           Comment
         </Button>
       </form>
@@ -107,7 +109,8 @@ function Comment({
       )}
       {(comment.actorId === identity.id || identity.admin) && (
         <div className="actions">
-          <Button
+          <IconButton
+            label="Edit comment"
             onClick={() => {
               if (!editing) {
                 setBody(comment.body);
@@ -116,10 +119,11 @@ function Comment({
               setEditing(!editing);
             }}
           >
-            Edit
-          </Button>
+            <Pencil />
+          </IconButton>
           <Confirm
             label="Delete comment"
+            icon={<Trash2 />}
             danger
             description="Permanently delete this comment?"
             onConfirm={() =>

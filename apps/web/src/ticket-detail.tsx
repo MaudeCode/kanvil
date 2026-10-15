@@ -1,3 +1,5 @@
+import { Bell, BellOff, Pencil, ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -5,6 +7,7 @@ import type { Ticket } from "@kanvil/contracts";
 import { api, date, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
+  IconButton,
   Check,
   Confirm,
   ErrorNotice,
@@ -34,10 +37,11 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
     <>
       <header className="page-header">
         <Link to="/projects/$projectId" params={{ projectId }}>
-          ← Tickets
+          <ArrowLeft className="inline size-4" /> Tickets
         </Link>
         <div className="actions">
-          <Button
+          <IconButton
+            label={following ? "Unsubscribe" : "Subscribe"}
             disabled={subscribe.isPending}
             onClick={() => {
               void subscribe
@@ -46,9 +50,10 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
                 .catch(() => {});
             }}
           >
-            {following ? "Unsubscribe" : "Subscribe"}
-          </Button>
-          <Button className="primary" disabled={!access.canWrite} onClick={() => setEditing(true)}>
+            {following ? <BellOff /> : <Bell />}
+          </IconButton>
+          <Button variant="default" disabled={!access.canWrite} onClick={() => setEditing(true)}>
+            <Pencil />
             Edit ticket
           </Button>
         </div>
@@ -66,10 +71,14 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
         <h1>{ticket.title}</h1>
         <div className="tags">
           {ticket.labels.map((label) => (
-            <span key={label}>#{label}</span>
+            <Badge variant="secondary" key={label}>
+              {label}
+            </Badge>
           ))}
           {ticket.scopes.map((scope) => (
-            <span key={scope}>scope: {scope}</span>
+            <Badge variant="outline" key={scope}>
+              {scope}
+            </Badge>
           ))}
         </div>
         <div className="ticket-body">
@@ -209,7 +218,7 @@ function ClaimActions({
           <Check
             label="I have confirmed the worker has stopped"
             checked={confirmed}
-            onChange={(event) => setConfirmed(event.target.checked)}
+            onCheckedChange={(checked) => setConfirmed(checked)}
           />
           <ErrorNotice error={recover.error} />
           <Button type="submit" disabled={!confirmed || recover.isPending}>
