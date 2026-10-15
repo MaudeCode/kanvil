@@ -56,6 +56,7 @@ export const ticketFilter = z
     difficulty: z.enum(difficulties).optional(),
     label: z.string().max(40).optional(),
     assigneeId: id.optional(),
+    parentId: id.optional(),
     archived: z.enum(["include", "only", "exclude"]).default("exclude"),
     sort: z.enum(["priority", "updated", "created", "title"]).default("priority"),
   })
@@ -130,7 +131,28 @@ export const relationSchema = z.object({
   sourceId: z.uuid(),
   targetId: z.uuid(),
   type: z.enum(["blocks", "related", "duplicate"]),
+  sourceKey: z.string().optional(),
+  sourceTitle: z.string().optional(),
+  targetKey: z.string().optional(),
+  targetTitle: z.string().optional(),
 });
+export function relationReference(relation: z.output<typeof relationSchema>, ticketId: string) {
+  const outgoing = relation.sourceId === ticketId;
+  const referenceId = outgoing ? relation.targetId : relation.sourceId;
+  const key = (outgoing ? relation.targetKey : relation.sourceKey) ?? referenceId;
+  const title = outgoing ? relation.targetTitle : relation.sourceTitle;
+  const label =
+    relation.type === "blocks"
+      ? outgoing
+        ? "Blocks"
+        : "Blocked by"
+      : relation.type === "duplicate"
+        ? outgoing
+          ? "Duplicate of"
+          : "Duplicated by"
+        : "Related";
+  return { id: referenceId, label, title: `${key}${title ? ` · ${title}` : ""}` };
+}
 export const commentSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),

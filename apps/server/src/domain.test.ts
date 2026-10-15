@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createFixture } from "./test-fixture.ts";
 import { createDomain, type Actor, type Domain } from "./domain.ts";
-import type { Project } from "@kanvil/contracts";
+import { relationReference, type Project } from "@kanvil/contracts";
 
 describe("ticket operations on PostgreSQL", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -95,6 +95,79 @@ describe("ticket operations on PostgreSQL", () => {
         )
       ).items.filter((event) => event.type === "ticket.updated"),
     ).toHaveLength(1);
+  });
+  it("lists children by parent key with pagination and returns readable relationship context", async () => {
+    const parent = await ticket("Parent requirements"),
+      peer = await ticket("Linked ticket with a complete title");
+    const first = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "First child", parentId: parent.id },
+      owner,
+    );
+    const second = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Archived child", parentId: parent.id },
+      owner,
+    );
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: second.id,
+        expectedVersion: 1,
+        changes: { archived: true },
+      },
+      owner,
+    );
+    const children = await domain.execute(
+      "list_tickets",
+      { projectId: project.id, parentId: parent.key, archived: "include", limit: 1, offset: 1 },
+      owner,
+    );
+    expect(children.total).toBe(2);
+    expect(children.items.map((row) => row.id)).toEqual([second.id]);
+    expect(
+      (
+        await domain.execute("list_tickets", { projectId: project.id, parentId: parent.id }, owner)
+      ).items.map((row) => row.id),
+    ).toEqual([first.id]);
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: parent.id, targetId: peer.id, type: "related" },
+      owner,
+    );
+    const related = await domain.execute(
+      "list_relations",
+      { projectId: project.id, ticketId: parent.id },
+      owner,
+    );
+    expect(related).toHaveLength(1);
+    expect(relationReference(related[0]!, parent.id)).toEqual({
+      id: peer.id,
+      label: "Related",
+      title: `${peer.key} · ${peer.title}`,
+    });
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: parent.id, targetId: peer.id, type: "blocks" },
+      owner,
+    );
+    const incoming = (
+      await domain.execute("list_relations", { projectId: project.id, ticketId: peer.id }, owner)
+    ).find((row) => row.type === "blocks");
+    expect(relationReference(incoming!, peer.id)).toEqual({
+      id: parent.id,
+      label: "Blocked by",
+      title: `${parent.key} · ${parent.title}`,
+    });
+    const other = await domain.execute(
+      "create_project",
+      { key: `O${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Other project" },
+      owner,
+    );
+    await expect(
+      domain.execute("list_tickets", { projectId: other.id, parentId: parent.id }, owner),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
   it("rolls back an entire bulk edit when one ticket changed", async () => {
     const first = await ticket(),

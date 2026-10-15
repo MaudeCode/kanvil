@@ -1,5 +1,6 @@
 import { attachmentLimit } from "@kanvil/contracts";
-import { and, asc, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   attachmentContent,
   attachments,
@@ -10,6 +11,7 @@ import {
   subscriptions,
   notifications,
   pushDeliveries,
+  tickets,
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
 import {
@@ -22,6 +24,8 @@ import {
   type Context,
   type Handlers,
 } from "./domain.ts";
+const sourceTicket = alias(tickets, "source_ticket"),
+  targetTicket = alias(tickets, "target_ticket");
 
 async function editableComment(ctx: Context, commentId: string, expectedVersion: number) {
   const row = requireRow(
@@ -58,8 +62,16 @@ export const collaborationHandlers: Pick<
   async list_relations(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
     return ctx.db
-      .select()
+      .select({
+        ...getTableColumns(relations),
+        sourceKey: sourceTicket.key,
+        sourceTitle: sourceTicket.title,
+        targetKey: targetTicket.key,
+        targetTitle: targetTicket.title,
+      })
       .from(relations)
+      .innerJoin(sourceTicket, eq(sourceTicket.id, relations.sourceId))
+      .innerJoin(targetTicket, eq(targetTicket.id, relations.targetId))
       .where(
         and(
           eq(relations.projectId, project(ctx).id),

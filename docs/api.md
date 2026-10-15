@@ -20,6 +20,8 @@ Evidence records identify the submitting account and supplied commit. A reported
 
 Attachments use `upload_attachment` or the corresponding HTTP POST with `name`, `contentType`, and base64 `data`, up to 10 MB. Bytes and metadata commit together in PostgreSQL. Download content at `/api/v1/projects/{projectId}/attachments/{id}/content` using the same authorization. Filenames are metadata, never filesystem paths. Deleting an attachment deletes its bytes transactionally.
 
+Use `list_tickets` with `parentId` set to a parent UUID or ticket key to page through child tickets. Set `archived: "include"` to include archived children. `list_relations` also returns the current source/target keys and full titles, so consumers can show readable dependency context without separate lookups.
+
 ## Realtime
 
 `GET /api/v1/snapshot?projectId=<id>` returns a consistent project snapshot and event cursor. Connect to `/api/v1/events?projectId=<id>&cursor=<cursor>` to replay committed changes and continue receiving new ones.

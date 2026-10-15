@@ -164,11 +164,13 @@ export const ticketHandlers: Pick<
   | "recover_claim"
 > = {
   async list_tickets(ctx, input) {
+    const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
     const search = input.q
       ? `%${input.q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`
       : undefined;
     const where = and(
       eq(tickets.projectId, project(ctx).id),
+      parent ? eq(tickets.parentId, parent.id) : undefined,
       input.status ? eq(tickets.status, input.status) : undefined,
       input.priority ? eq(tickets.priority, input.priority) : undefined,
       input.kind ? eq(tickets.kind, input.kind) : undefined,

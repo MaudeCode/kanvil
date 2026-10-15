@@ -3,6 +3,40 @@ import { test, expect } from "@playwright/test";
 import { signIn } from "./auth.ts";
 const title =
   "Preserve complete ticket titles across the agent workspace, even when the title contains enough detail to wrap onto several readable lines";
+test("parent, child, and relationship links show ticket titles", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "CTX", name: "Ticket context" } })
+  ).json();
+  const create = async (ticketTitle: string, parentId?: string) =>
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: ticketTitle, ...(parentId ? { parentId } : {}) },
+      })
+    ).json();
+  const parent = await create("Parent requirements"),
+    child = await create(
+      "Child requirements remain fully readable when navigating through the entire project hierarchy",
+      parent.id,
+    ),
+    peer = await create("Related implementation with its complete title");
+  expect(
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets/${parent.id}/relations`, {
+        data: { targetId: peer.id, type: "related" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.goto(`/projects/${project.id}/tickets/${parent.id}`);
+  await expect(page.getByRole("heading", { name: "Child tickets", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: `${peer.key} · ${peer.title}`, exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: `${child.key} · ${child.title}`, exact: true }).click();
+  await expect(page.getByRole("heading", { name: child.title, exact: true })).toBeVisible();
+  await page.getByRole("link", { name: `${parent.key} · ${parent.title}`, exact: true }).click();
+  await expect(page.getByRole("heading", { name: parent.title, exact: true })).toBeVisible();
+});
 test("owner setup, tickets, discussion, attachments, credentials, and realtime conflicts", async ({
   page,
 }) => {
