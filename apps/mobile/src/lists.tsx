@@ -22,14 +22,19 @@ import {
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
+// Navigation invokes this callback directly; mount the component that owns the sheet state.
+function projectHeader() {
+  return <ProjectAction />;
+}
+
 export function Projects() {
   const navigation = useNavigation();
   const projects = useProjects();
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerRight: projectHeader });
+  }, [navigation]);
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 16 }}>
-        <NewProject />
-      </View>
       <ErrorNotice error={projects.error} />
       {projects.isPending ? (
         <Loading />
@@ -49,7 +54,8 @@ export function Projects() {
           renderItem={({ item }) => (
             <Row
               title={item.name}
-              caption={`${item.key}${item.description ? ` · ${item.description}` : ""}`}
+              overline={item.key}
+              caption={item.description}
               onPress={() =>
                 navigation.navigate("Tickets", { projectId: item.id, name: item.name })
               }
@@ -98,7 +104,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   const rows = tickets.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 16, gap: 12 }}>
+      <View style={{ padding: 20, gap: 14 }}>
         <Field
           label="Search tickets"
           value={query}
@@ -160,14 +166,24 @@ function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: () => void })
   return (
     <Row
       title={ticket.title}
-      caption={`${ticket.key} · ${priorityLabels[ticket.priority]} · ${ticket.difficulty ?? "Unspecified difficulty"}`}
-      trailing={<Status value={ticket.status} />}
+      overline={ticket.key}
+      metadata={
+        <>
+          <Status value={ticket.status} />
+          <Body muted small>
+            {priorityLabels[ticket.priority]} priority
+          </Body>
+          <Body muted small>
+            {ticket.difficulty ?? "Unspecified difficulty"}
+          </Body>
+        </>
+      }
       onPress={onPress}
     />
   );
 }
 
-function NewProject() {
+function ProjectAction() {
   const [open, setOpen] = useState(false),
     [name, setName] = useState(""),
     [key, setKey] = useState(""),
@@ -176,7 +192,7 @@ function NewProject() {
     navigation = useNavigation();
   return (
     <>
-      <Button title="New project" primary onPress={() => setOpen(true)} />
+      <Button title="New project" plain compact onPress={() => setOpen(true)} />
       <Sheet title="New project" open={open} onClose={() => setOpen(false)}>
         <Field label="Project name" value={name} onChangeText={setName} maxLength={120} />
         <Field

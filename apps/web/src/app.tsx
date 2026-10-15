@@ -12,7 +12,7 @@ import {
   RouterProvider,
   useNavigate,
 } from "@tanstack/react-router";
-import { Bell, FolderOpen, Settings, Plus, LogOut } from "lucide-react";
+import { Bell, FolderOpen, Settings, Plus, LogOut, Layers, ChevronRight } from "lucide-react";
 import { formatEvent, notificationsSchema, okSchema } from "@kanvil/contracts";
 import { searchSchema } from "./search.ts";
 
@@ -30,7 +30,7 @@ import {
   useTheme,
   ThemeContext,
 } from "./data.tsx";
-import { Button, ErrorNotice, Input, Loading, Modal, Select, Textarea } from "./ui.tsx";
+import { Brand, Button, ErrorNotice, Input, Loading, Modal, Select, Textarea } from "./ui.tsx";
 
 const TicketList = lazy(() =>
   import("./ticket-list.tsx").then((module) => ({ default: module.TicketList })),
@@ -104,11 +104,18 @@ function Shell() {
   }
   return (
     <div className="workspace">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
       <aside className="sidebar">
         <Link to="/" className="brand">
-          Kanvil<span aria-hidden="true">↗</span>
+          <Brand />
         </Link>
         <nav aria-label="Workspace">
+          <Link to="/" activeOptions={{ exact: true }}>
+            <Layers size={18} />
+            All projects
+          </Link>
           <Link to="/inbox">
             <Bell size={18} />
             Inbox
@@ -153,7 +160,12 @@ function Shell() {
             <option value="dark">Dark</option>
           </Select>
           <div className="account">
-            <span>{identity.name}</span>
+            <span className="account-person">
+              <span className="avatar" aria-hidden="true">
+                {identity.name.slice(0, 1)}
+              </span>
+              {identity.name}
+            </span>
             <Button
               className="icon"
               aria-label="Sign out"
@@ -167,7 +179,7 @@ function Shell() {
           <ErrorNotice error={error} />
         </div>
       </aside>
-      <main id="main" className="content">
+      <main id="main" className="content" tabIndex={-1}>
         <Outlet />
       </main>
     </div>
@@ -191,7 +203,7 @@ function Home() {
               <span className="key">{project.key}</span>
               <strong>{project.name}</strong>
               <span className="muted">{project.description}</span>
-              <span aria-hidden="true">→</span>
+              <ChevronRight size={18} aria-hidden="true" />
             </Link>
           ))}
           {projects.data?.length === 0 && <p className="empty">No projects yet</p>}

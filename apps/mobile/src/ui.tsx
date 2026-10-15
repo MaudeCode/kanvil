@@ -19,11 +19,34 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import Svg, { Path } from "react-native-svg";
 import { useMarkdown } from "react-native-marked";
-import { palettes } from "@kanvil/contracts/theme";
+import { brandPath, palettes } from "@kanvil/contracts/theme";
 import { errorMessage, stateLabels, stateTones, type Ticket } from "@kanvil/contracts";
 
 export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
+export function Brand() {
+  const color = usePalette();
+  return (
+    <View
+      style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 18 }}
+      accessibilityLabel="Kanvil"
+      accessible
+    >
+      <View style={{ backgroundColor: color.accent, borderRadius: 11, padding: 3 }}>
+        <Svg width={36} height={36} viewBox="0 0 32 32">
+          <Path d={brandPath} fill={color.surface} />
+        </Svg>
+      </View>
+      <Text
+        style={{ fontSize: 29, fontWeight: "700", letterSpacing: -0.7, color: color.foreground }}
+      >
+        Kanvil
+      </Text>
+    </View>
+  );
+}
 export function Button({
   title,
   onPress,
@@ -31,6 +54,9 @@ export function Button({
   primary = false,
   danger = false,
   accessibilityLabel,
+  compact = false,
+  plain = false,
+  disclosure = false,
 }: {
   title: string;
   onPress: () => void;
@@ -38,6 +64,9 @@ export function Button({
   primary?: boolean;
   danger?: boolean;
   accessibilityLabel?: string;
+  compact?: boolean;
+  plain?: boolean;
+  disclosure?: boolean;
 }) {
   const color = usePalette();
   return (
@@ -53,21 +82,31 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          borderColor: color.line,
-          backgroundColor: primary ? color.accent : color.surface,
+          borderColor: plain ? "transparent" : primary ? color.accent : color.line,
+          backgroundColor: plain ? "transparent" : primary ? color.accent : color.background,
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
+        compact && { paddingHorizontal: 10, paddingVertical: 8 },
+        disclosure && { flexDirection: "row", justifyContent: "space-between" },
       ]}
     >
       <Text
         style={{
-          color: danger ? color.danger : primary ? color.surface : color.foreground,
-          fontWeight: "600",
+          color: danger
+            ? color.danger
+            : primary
+              ? color.surface
+              : plain
+                ? color.accent
+                : color.foreground,
+          fontWeight: primary || plain ? "600" : "500",
           fontSize: 15,
+          flexShrink: 1,
         }}
       >
         {title}
       </Text>
+      {disclosure && <Ionicons name="chevron-down" size={16} color={color.muted} />}
     </Pressable>
   );
 }
@@ -85,7 +124,7 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
         keyboardAppearance={useColorScheme() === "dark" ? "dark" : "light"}
         style={[
           styles.input,
-          { color: color.foreground, borderColor: color.line, backgroundColor: color.surface },
+          { color: color.foreground, borderColor: color.line, backgroundColor: color.background },
           props.multiline && { minHeight: 110, textAlignVertical: "top" },
           props.style,
         ]}
@@ -119,16 +158,35 @@ export function Sheet({
         />
         <SafeAreaView
           edges={["bottom"]}
-          style={{ backgroundColor: color.surface, maxHeight: "88%" }}
+          style={{
+            backgroundColor: color.surface,
+            maxHeight: "88%",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+          }}
         >
+          <View
+            style={{
+              width: 36,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: color.line,
+              alignSelf: "center",
+              marginTop: 10,
+            }}
+          />
           <ScrollView
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             contentContainerStyle={{ padding: 20, gap: 16 }}
           >
-            <Heading>{title}</Heading>
+            <View style={[styles.actions, { justifyContent: "space-between" }]}>
+              <View style={{ flex: 1 }}>
+                <Heading>{title}</Heading>
+              </View>
+              <Button title="Close" plain compact onPress={onClose} />
+            </View>
             {children}
-            <Button title="Close" onPress={onClose} />
           </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -152,6 +210,7 @@ export function Choice({
     <View style={styles.field}>
       <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
       <Button
+        disclosure
         title={options.find((option) => option.value === value)?.label ?? value}
         accessibilityLabel={`${label}: ${options.find((option) => option.value === value)?.label ?? value}`}
         onPress={() => setOpen(true)}
@@ -193,10 +252,14 @@ export function Check({
       onPress={() => onChange(!checked)}
       style={styles.check}
     >
-      <Text style={{ color: checked ? color.accent : color.muted, fontSize: 22 }}>
-        {checked ? "☑" : "☐"}
+      <Ionicons
+        name={checked ? "checkbox" : "square-outline"}
+        size={24}
+        color={checked ? color.accent : color.muted}
+      />
+      <Text style={{ color: color.foreground, flex: 1, fontSize: 15, lineHeight: 22 }}>
+        {label}
       </Text>
-      <Text style={{ color: color.foreground, flex: 1 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -218,10 +281,24 @@ export function Loading() {
     <ActivityIndicator accessibilityLabel="Loading" color={color.accent} style={{ margin: 24 }} />
   );
 }
-export function Body({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+export function Body({
+  children,
+  muted = false,
+  small = false,
+}: {
+  children: ReactNode;
+  muted?: boolean;
+  small?: boolean;
+}) {
   const color = usePalette();
   return (
-    <Text style={{ color: muted ? color.muted : color.foreground, lineHeight: 23, fontSize: 15 }}>
+    <Text
+      style={{
+        color: muted ? color.muted : color.foreground,
+        lineHeight: small ? 20 : 24,
+        fontSize: small ? 13 : 16,
+      }}
+    >
       {children}
     </Text>
   );
@@ -241,8 +318,8 @@ export function Section({ title, children }: { title: string; children: ReactNod
       style={{
         borderTopWidth: StyleSheet.hairlineWidth,
         borderColor: color.line,
-        paddingVertical: 22,
-        gap: 12,
+        paddingVertical: 26,
+        gap: 14,
       }}
     >
       <Heading>{title}</Heading>
@@ -264,13 +341,13 @@ export function Screen({
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={90}
-      style={[{ flex: 1, backgroundColor: color.background }, style]}
+      style={[{ flex: 1, backgroundColor: color.surface }, style]}
     >
       {scroll ? (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          contentContainerStyle={{ padding: 20, paddingBottom: 48, gap: 14 }}
+          contentContainerStyle={{ padding: 22, paddingBottom: 48, gap: 16 }}
         >
           {children}
         </ScrollView>
@@ -288,12 +365,16 @@ export function Row({
   caption,
   leading,
   trailing,
+  overline,
+  metadata,
   onPress,
 }: {
   title: string;
   caption?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
+  overline?: string;
+  metadata?: ReactNode;
   onPress: () => void;
 }) {
   const color = usePalette();
@@ -307,31 +388,56 @@ export function Row({
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
-        paddingVertical: 18,
+        paddingVertical: 22,
         paddingHorizontal: 20,
         gap: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderColor: color.line,
-        backgroundColor: pressed ? color.accentSurface : color.background,
+        backgroundColor: pressed ? color.accentSurface : color.surface,
       })}
     >
       {leading}
-      <View style={{ flex: 1, gap: 7 }}>
-        <Text style={{ color: color.foreground, fontSize: 16, fontWeight: "600", lineHeight: 23 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+        {overline && (
+          <Text
+            style={{
+              color: color.muted,
+              fontSize: 12,
+              fontWeight: "500",
+              fontVariant: ["tabular-nums"],
+            }}
+          >
+            {overline}
+          </Text>
+        )}
+        <Text
+          style={{
+            color: color.foreground,
+            fontSize: 17,
+            fontWeight: "600",
+            lineHeight: 25,
+            letterSpacing: -0.2,
+          }}
+        >
           {title}
         </Text>
         {caption && (
           <Text style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}>{caption}</Text>
         )}
+        {metadata && <View style={[styles.actions, { marginTop: 3 }]}>{metadata}</View>}
       </View>
-      {trailing}
+      {trailing ?? <Ionicons name="chevron-forward" size={16} color={color.muted} />}
     </Pressable>
   );
 }
 export function Status({ value }: { value: Ticket["status"] }) {
   const color = usePalette();
   return (
-    <Text style={{ color: color[stateTones[value]], fontSize: 12 }}>● {stateLabels[value]}</Text>
+    <Text
+      style={{ color: color[stateTones[value]], fontSize: 13, fontWeight: "500", lineHeight: 20 }}
+    >
+      ● {stateLabels[value]}
+    </Text>
   );
 }
 export function Markdown({ children }: { children: string }) {
@@ -356,18 +462,18 @@ export function Markdown({ children }: { children: string }) {
 }
 export const styles = StyleSheet.create({
   button: {
-    minHeight: 46,
+    minHeight: 44,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 10,
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   field: { gap: 8 },
-  label: { fontSize: 12, fontWeight: "600" },
-  input: { borderWidth: 1, borderRadius: 6, padding: 12, minHeight: 46, fontSize: 16 },
-  heading: { fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
+  label: { fontSize: 13, fontWeight: "500" },
+  input: { borderWidth: 1, borderRadius: 10, padding: 14, minHeight: 48, fontSize: 16 },
+  heading: { fontSize: 21, fontWeight: "600", letterSpacing: -0.4 },
   check: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: 10 },
   modal: { flex: 1, justifyContent: "flex-end" },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
