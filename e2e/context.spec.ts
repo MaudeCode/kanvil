@@ -6,9 +6,10 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await signIn(page);
+  const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
   const project = await (
     await page.request.post("/api/v1/projects", {
-      data: { key: "MENU", name: "Context menu fixture" },
+      data: { key: `MENU${suffix}`, name: `Context menu fixture ${suffix}` },
     })
   ).json();
   const ticket = await (
@@ -17,6 +18,7 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
     })
   ).json();
   await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: project.name, exact: true })).toBeVisible();
   const rail = page.getByRole("separator", { name: "Resize sidebar", exact: true });
   await expect(rail).toBeVisible();
   const box = await rail.boundingBox();
