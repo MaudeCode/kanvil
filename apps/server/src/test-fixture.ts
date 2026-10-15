@@ -33,7 +33,7 @@ export async function createFixture() {
     auth,
     async close() {
       await database.pool.end();
-      await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
+      await admin.query(`DROP DATABASE "${name}"`);
       await admin.end();
       await rm(files, { recursive: true, force: true });
     },

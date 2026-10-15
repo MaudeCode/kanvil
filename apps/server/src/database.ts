@@ -4,6 +4,9 @@ import * as authSchema from "./auth-schema.ts";
 
 export function createDatabase(url: string) {
   const pool = new pg.Pool({ connectionString: url, max: 10, idleTimeoutMillis: 30_000 });
+  pool.on("error", () => {
+    console.error("A PostgreSQL idle connection was lost; the pool will reconnect.");
+  });
   return { pool, db: drizzle(pool, { schema: authSchema }) };
 }
 export type Database = ReturnType<typeof createDatabase>;

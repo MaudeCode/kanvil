@@ -129,6 +129,7 @@ export const claims = pgTable("claims", {
     .unique()
     .references(() => tickets.id, { onDelete: "cascade" }),
   actorId: actor(),
+  ownerId: text("owner_id").notNull(),
   workerId: text("worker_id").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: time("created_at"),

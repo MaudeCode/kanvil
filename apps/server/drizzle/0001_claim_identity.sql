@@ -1,0 +1,1 @@
+ALTER TABLE "claims" ADD COLUMN "owner_id" text NOT NULL;

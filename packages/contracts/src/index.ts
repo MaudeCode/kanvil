@@ -100,6 +100,11 @@ export const ticketSchema = ticketFields.extend({
 });
 export type Ticket = z.output<typeof ticketSchema>;
 export type Project = z.output<typeof projectSchema>;
+export const snapshotSchema = z.object({
+  project: projectSchema,
+  tickets: z.array(ticketSchema),
+  cursor: z.string().regex(/^\d+$/),
+});
 export const readinessSchema = z.object({
   ready: z.boolean(),
   reasons: z.array(
