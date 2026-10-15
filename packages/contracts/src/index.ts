@@ -635,6 +635,13 @@ export function parseOutput<K extends Operation>(name: K, value: unknown): Outpu
 }
 
 export function errorMessage(error: unknown): string {
+  if (
+    error instanceof Error &&
+    /fetch failed|failed to fetch|network request failed|could not connect to the server/i.test(
+      error.message,
+    )
+  )
+    return "Could not reach Kanvil. Check your connection and retry.";
   if (error instanceof z.ZodError)
     return error.issues
       .slice(0, 3)

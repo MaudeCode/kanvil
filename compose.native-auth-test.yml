@@ -1,0 +1,12 @@
+services:
+  pocket-id:
+    environment:
+      APP_URL: https://localhost:51411
+      TLS_CERT_FILE: /test-certs/cert.pem
+      TLS_KEY_FILE: /test-certs/key.pem
+      # This disposable fixture reads a private, read-only test certificate mount.
+      PUID: "0"
+      PGID: "0"
+    volumes:
+      - "${KANVIL_TEST_TLS_DIR:?Run pnpm native:auth-fixture}/cert.pem:/test-certs/cert.pem:ro"
+      - "${KANVIL_TEST_TLS_DIR:?Run pnpm native:auth-fixture}/key.pem:/test-certs/key.pem:ro"

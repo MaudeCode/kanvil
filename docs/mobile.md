@@ -35,4 +35,16 @@ pnpm --filter @kanvil/mobile export
 
 Export checks both iOS and Android JavaScript bundles. It does not replace native compilation or device validation. Build and simulator results are recorded separately from physical-device and store-release validation. Signing and App Store publication are separate release actions.
 
-Current local validation includes an iOS 27 simulator build, native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Android JavaScript exports pass; an Android SDK is not installed on the development host, so Android device execution has not been performed. Native OIDC and release validation are tracked separately.
+Current local validation includes an iOS 27 simulator build, native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Android JavaScript exports pass; an Android SDK is not installed on the development host, so Android device execution has not been performed. Native PocketID linking and OIDC sign-in were also validated through the iOS system browser against an isolated HTTPS provider, using its login-code flow. Local password login still reaches the same account. Cold app startup with the backend stopped also retained cached projects and showed an offline state. Switching between cached ticket deep links kept each comment draft with its original ticket. Physical-device passkey behavior and release signing remain separate validation.
+
+## Native OIDC fixture
+
+The Expo authentication proxy requires an HTTPS identity provider, including during local development. For simulator checks, start the disposable TLS provider and backend with:
+
+```sh
+pnpm native:auth-fixture --simulator <booted-simulator-udid>
+```
+
+This generates a private temporary certificate, trusts its public certificate in the selected simulator, starts PocketID at `https://localhost:51411`, and runs an isolated Kanvil backend on port 5188. The backend trusts the certificate through its own `NODE_EXTRA_CA_CERTS` setting. Certificate trust is scoped to that simulator and test process. Stop the fixture with Ctrl-C to remove its container, database, and temporary private key. The simulator's temporary trust entry expires with the test certificate.
+
+The fixture uses its own fixed test-only API key and accepts no real PocketID URL or credentials. It is exclusive with `pnpm test:oidc`, which uses the same loopback provider port. Native builds and Metro are started separately using the development commands above.

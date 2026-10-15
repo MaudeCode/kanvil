@@ -21,7 +21,8 @@
     "test:e2e": "pnpm build && playwright test",
     "test:oidc": "node scripts/test-oidc.ts",
     "assets:generate": "node scripts/generate-assets.ts",
-    "mobile:export": "pnpm --filter @kanvil/mobile export"
+    "mobile:export": "pnpm --filter @kanvil/mobile export",
+    "native:auth-fixture": "node scripts/native-auth-fixture.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
