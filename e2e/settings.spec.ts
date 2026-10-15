@@ -97,8 +97,20 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("button", { name: "Done", exact: true }).click();
   const credentials = await (await page.request.get("/api/v1/credentials")).json(),
     credential = credentials.find((value: { name: string }) => value.name === "Calendar fixture");
-  expect(new Date(credential.expiresAt).toLocaleDateString("en-US")).toBe(selected);
-  expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
+  try {
+    // Relative TTLs use whole seconds; compare the deadline rather than rounding a near-midnight response to a date.
+    const deadlineError = await page.evaluate(
+      ({ date, expiry }) => {
+        const [month, calendarDay, year] = date!.split("/").map(Number);
+        const end = new Date(year!, month! - 1, calendarDay, 23, 59, 59, 999);
+        return Math.abs(new Date(expiry).getTime() - end.getTime());
+      },
+      { date: selected, expiry: credential.expiresAt },
+    );
+    expect(deadlineError).toBeLessThan(1000);
+  } finally {
+    expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
+  }
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Administration", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit instance", exact: true }).click();
