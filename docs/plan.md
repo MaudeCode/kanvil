@@ -1,5 +1,11 @@
 # Kanvil delivery plan
 
+## Product goal
+
+Make Kanvil the best open-source agent-focused ticketing system, released under the MIT license.
+
+Judge the product by how reliably agents can discover work, obtain complete context, make authorized edits, coordinate ownership and dependencies, and recover after interruption. Keep the web and native apps clear and useful for the people working with those agents. Support external consumers through documented, standard interfaces without requiring a particular agent runner.
+
 ## Scope
 
 Build a self-hosted ticketing system with web and native mobile apps, local login, PocketID-compatible OIDC, a documented HTTP API, durable realtime events, and MCP tools.
