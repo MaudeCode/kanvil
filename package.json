@@ -1,0 +1,25 @@
+{
+  "name": "@maudecode/kanvil",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source, self-hosted ticketing for agents and people.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "vp check && pnpm test",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "lint": "vp lint --deny-warnings",
+    "test": "vp test run --passWithNoTests",
+    "typecheck": "vp check --no-fmt --no-lint"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vite-plus": "1.2.0"
+  },
+  "engines": {
+    "node": ">=24.22.0 <25"
+  },
+  "packageManager": "pnpm@12.11.2"
+}
