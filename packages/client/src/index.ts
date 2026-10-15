@@ -7,6 +7,7 @@ import {
   checkpointSchema,
   snapshotSchema,
   notificationPreferencesSchema,
+  notificationPreferencesInput,
   type ChangeEvent,
   operations,
   parseOutput,
@@ -215,7 +216,7 @@ export function createClient(options: {
       return api.request("/api/v1/notifications/preferences", notificationPreferencesSchema, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(notificationPreferencesSchema.parse(input)),
+        body: JSON.stringify(notificationPreferencesInput.parse(input)),
       });
     },
     watch(

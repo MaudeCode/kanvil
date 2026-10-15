@@ -9,6 +9,7 @@ import {
   pushDeliveries,
   pushDevices,
   subscriptions,
+  tickets,
 } from "./schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
@@ -45,11 +46,13 @@ export async function deliverPushBatch(database: Database, config: Config, trans
             session: session,
             member: members,
             subscription: subscriptions,
+            ticketId: tickets.id,
           })
           .from(pushDeliveries)
           .innerJoin(pushDevices, eq(pushDevices.id, pushDeliveries.deviceId))
           .innerJoin(notifications, eq(notifications.id, pushDeliveries.notificationId))
           .innerJoin(events, eq(events.id, notifications.eventId))
+          .leftJoin(tickets, eq(tickets.id, events.ticketId))
           .innerJoin(user, eq(user.id, pushDevices.userId))
           .innerJoin(session, eq(session.id, pushDevices.sessionId))
           .leftJoin(notificationPreferences, eq(notificationPreferences.userId, user.id))
@@ -61,7 +64,7 @@ export async function deliverPushBatch(database: Database, config: Config, trans
             subscriptions,
             and(eq(subscriptions.ticketId, events.ticketId), eq(subscriptions.userId, user.id)),
           )
-          .where(eq(pushDeliveries.id, pending.id))
+          .where(and(eq(pushDeliveries.id, pending.id), isNull(pushDeliveries.finishedAt)))
       )[0];
       if (!row) continue;
       const { job, device, event } = row;
@@ -75,7 +78,7 @@ export async function deliverPushBatch(database: Database, config: Config, trans
         row.account.banned ||
         row.session.expiresAt <= new Date() ||
         !row.preference?.push ||
-        !row.subscription ||
+        (!row.subscription && row.ticketId !== null) ||
         (!row.member && !row.account.role?.split(",").includes("admin"))
       ) {
         await finish("access_revoked");

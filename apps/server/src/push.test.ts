@@ -8,6 +8,7 @@ import { session } from "./auth-schema.ts";
 import type { Actor } from "./domain.ts";
 import type { Project, Ticket } from "@kanvil/contracts";
 import type { ExpoPushMessage, ExpoPushReceipt, ExpoPushTicket } from "expo-server-sdk";
+import { createClient } from "@kanvil/client";
 
 describe("durable optional native push", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -73,7 +74,7 @@ describe("durable optional native push", () => {
     owner = await app.domain.actor(created.user.id);
     machine = await app.domain.actor(created.user.id, {
       ownerId: "test-worker",
-      scopes: ["read", "write"],
+      scopes: ["read", "write", "admin"],
     });
   });
   afterAll(async () => {
@@ -189,5 +190,51 @@ describe("durable optional native push", () => {
     expect(await fixture.database.db.select().from(pushDeliveries)).toHaveLength(0);
     await tick();
     expect(sent).toHaveLength(0);
+  });
+  it("preserves push opt-in when an older client updates only its Inbox preference", async () => {
+    const client = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: () => ({ Cookie: cookie, Origin: fixture.config.KANVIL_URL }),
+      fetch: async (input, init) => app.app.fetch(new Request(input, init)),
+    });
+    expect(await client.setNotificationPreferences({ inApp: true })).toEqual({
+      inApp: true,
+      push: true,
+    });
+    expect(await (await request("/notifications/preferences")).json()).toEqual({
+      inApp: true,
+      push: true,
+    });
+  });
+  it("delivers queued updates and the deletion notice after subscriptions cascade away", async () => {
+    await app.domain.execute(
+      "delete_ticket",
+      { projectId: project.id, ticketId: ticket.id, expectedVersion: ticket.version },
+      machine,
+    );
+    await tick();
+    expect(sent).toHaveLength(2);
+    expect(
+      (await fixture.database.db.select().from(pushDeliveries)).some(
+        (row) => row.error === "access_revoked",
+      ),
+    ).toBe(false);
+  });
+  it("keeps queued notices cancelled after an explicit unsubscribe and later ticket deletion", async () => {
+    await app.domain.execute(
+      "set_subscription",
+      { projectId: project.id, ticketId: ticket.id, enabled: false },
+      owner,
+    );
+    await app.domain.execute(
+      "delete_ticket",
+      { projectId: project.id, ticketId: ticket.id, expectedVersion: ticket.version },
+      machine,
+    );
+    await tick();
+    expect(sent).toHaveLength(0);
+    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
+      "unsubscribed",
+    );
   });
 });

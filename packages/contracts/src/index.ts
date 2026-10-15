@@ -193,8 +193,12 @@ export const notificationsSchema = z.array(
     event: eventSchema,
   }),
 );
-export const notificationPreferencesSchema = z
-  .object({ inApp: z.boolean().default(true), push: z.boolean().default(false) })
+export const notificationPreferencesSchema = z.object({
+  inApp: z.boolean().default(true),
+  push: z.boolean().default(false),
+});
+export const notificationPreferencesInput = z
+  .object({ inApp: z.boolean(), push: z.boolean().optional() })
   .strict();
 export const pushDeviceInput = z.object({ token: z.string().min(1).max(250) }).strict();
 export const credentialsSchema = z.array(

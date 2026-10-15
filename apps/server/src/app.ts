@@ -15,6 +15,7 @@ import {
   isOperation,
   scopes,
   notificationPreferencesSchema,
+  notificationPreferencesInput,
   pushDeviceInput,
 } from "@kanvil/contracts";
 import { createAuth } from "./auth.ts";
@@ -313,12 +314,17 @@ export async function createApplication(database: Database, config: Config) {
   });
   app.put("/api/v1/notifications/preferences", async (c) => {
     const identity = requireSession(c.get("actor"));
-    const input = notificationPreferencesSchema.parse(await c.req.json());
-    await database.db
-      .insert(notificationPreferences)
-      .values({ userId: identity.id, ...input })
-      .onConflictDoUpdate({ target: notificationPreferences.userId, set: input });
-    return Response.json(input);
+    const input = notificationPreferencesInput.parse(await c.req.json());
+    const row = requireRow(
+      (
+        await database.db
+          .insert(notificationPreferences)
+          .values({ userId: identity.id, ...input })
+          .onConflictDoUpdate({ target: notificationPreferences.userId, set: input })
+          .returning({ inApp: notificationPreferences.inApp, push: notificationPreferences.push })
+      )[0],
+    );
+    return Response.json(notificationPreferencesSchema.parse(row));
   });
   app.post("/api/v1/notifications/device", async (c) => {
     const identity = requireSession(c.get("actor"));

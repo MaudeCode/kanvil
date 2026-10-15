@@ -36,6 +36,8 @@ Subscribe to a ticket with `set_subscription`. Inbox entries are created atomica
 
 Signed-in accounts can read and update `/api/v1/notifications/preferences` with `{ "inApp": true, "push": false }` using GET/PUT. Disabling Inbox notifications affects future entries; existing history is retained. Read the latest 100 entries at `/api/v1/notifications` and mark selected UUIDs read at POST `/api/v1/notifications/read` with `{ "ids": [...] }`. Credentials cannot change personal preferences or mark Inbox entries read.
 
+Omitting `push` from a preference update retains its current value. Explicitly unsubscribing cancels queued push notices for that ticket. Ticket deletion preserves already queued notices, including the deletion event, while account and project access still apply.
+
 When `/api/v1/info` reports `push: true`, account sessions can POST or DELETE `/api/v1/notifications/device` with `{ "token": "ExpoPushToken[...]" }`. Registration is tied to the current login session. Reassigning a device token to another account removes its previous account's pending deliveries. Push preferences apply to all registered devices; unregistering affects only the supplied device. Push payloads contain `server`, `projectId`, `ticketId`, and `notificationId`; native routing accepts only the currently connected server. Tokens and server-held Expo credentials are never returned by a listing endpoint.
 
 ## MCP
