@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -44,11 +48,13 @@ jobs:
         run: |
           kanvil_apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f -print -quit)"
           "$kanvil_apksigner" verify --verbose apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-          unzip -l apps/mobile/android/app/build/outputs/apk/release/app-release.apk | rg 'assets/index.android.bundle'
+          unzip -Z1 apps/mobile/android/app/build/outputs/apk/release/app-release.apk | grep -Fx 'assets/index.android.bundle'
       - name: Preserve preview APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kanvil-android-arm64-preview
-          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            LICENSE
           if-no-files-found: error
           retention-days: 14

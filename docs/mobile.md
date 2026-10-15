@@ -56,7 +56,7 @@ pnpm --filter @kanvil/mobile exec expo prebuild --platform ios
 pnpm --filter @kanvil/mobile exec expo run:ios --configuration Release
 ```
 
-A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unnecessary. For an isolated simulator backend using HTTPS, run `pnpm native:auth-fixture --https --simulator <udid>` and connect to `https://localhost:5188`. Only this test process and selected simulator trust the temporary certificate.
+A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unnecessary. Keep simulator ad-hoc signing enabled; removing signing also removes the entitlements SecureStore needs. For an isolated simulator backend using HTTPS, run `pnpm native:auth-fixture --https --simulator <udid>` and connect to `https://localhost:5188`. Only this test process and selected simulator trust the temporary certificate.
 
 The **Android preview build** GitHub workflow generates the Android project and compiles a standalone arm64 Release APK on a host with the Android SDK. It runs on demand and when that workflow itself changes, keeping native compilation outside routine PR checks. It verifies the APK signature and embedded JavaScript before retaining `kanvil-android-arm64-preview`. This verification artifact uses Expo's generated debug signing key; use your own signing credentials for distribution. See [Expo's APK guide](https://docs.expo.dev/build-reference/apk/).
 
