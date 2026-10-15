@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { choose, chooseTicketView, openSaveView } from "./controls.ts";
 
 test("list properties persist and labels filter and sort the entire project", async ({ page }) => {
   await signIn(page);
@@ -55,7 +55,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await expect(
     page.getByRole("button", { name: "Label: rare, quoted 'label'", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Save current view", exact: true }).click();
+  await openSaveView(page);
   await page.getByLabel("View name", { exact: true }).fill("Rare labels");
   await page.getByRole("button", { name: "Save view", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -63,7 +63,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await expect(table.locator("tbody tr")).toHaveCount(1);
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await expect(table.locator("tbody tr")).toHaveCount(50);
-  await page.getByRole("button", { name: "Rare labels", exact: true }).click();
+  await chooseTicketView(page, "Rare labels");
   await expect(table.locator("tbody tr")).toHaveCount(1);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
@@ -73,6 +73,15 @@ test("list properties persist and labels filter and sort the entire project", as
     );
     expect(await table.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(false);
   }
+  await page.getByRole("button", { name: "Ticket views", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete view Rare labels", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete view Rare labels", exact: true })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(await (await page.request.get(`/api/v1/projects/${project.id}/views`)).json()).toEqual([]);
+  await expect(table.locator("tbody tr")).toHaveCount(1);
 });
 
 test("selection floats without moving rows and retains selection on failed updates", async ({

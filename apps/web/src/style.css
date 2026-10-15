@@ -199,17 +199,20 @@
   .filter-fields {
     @apply grid grid-cols-1;
   }
-  .views {
-    @apply mb-0 flex flex-wrap items-center gap-2 border-b pb-2;
-  }
-  .views > [data-slot="dialog-trigger"] {
-    @apply ml-auto border-0 bg-transparent text-xs text-muted-foreground shadow-none hover:bg-muted;
-  }
-  .view {
-    @apply inline-flex items-center;
+  .content:has(> .ticket-list-controls) {
+    padding-top: 0.5rem;
   }
   .ticket-list-controls {
-    @apply flex-wrap;
+    @apply mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1;
+  }
+  .ticket-view-picker {
+    @apply mr-auto min-w-0 flex-1;
+  }
+  .ticket-tags-trigger {
+    @apply text-left;
+  }
+  .ticket-tags-count-narrow {
+    display: none;
   }
   .selection-dock {
     @apply pointer-events-none fixed bottom-4 right-5 z-40 w-[100cqw] max-w-none md:right-10;
@@ -734,18 +737,43 @@
   .ticket-table tbody {
     display: block;
   }
+  .ticket-control-label {
+    display: none;
+  }
+  .ticket-tags-trigger [data-secondary],
+  .ticket-tags-count-wide {
+    display: none;
+  }
+  .ticket-tags-count-narrow {
+    display: inline;
+  }
+  .ticket-tags-overflow[data-wide-overflow="false"] {
+    display: inline-flex;
+  }
+  .ticket-list-controls > [data-slot] {
+    padding-inline: 0.5rem;
+  }
+  .ticket-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
   .ticket-table tr {
-    display: grid;
-    grid-template-columns: 32px repeat(3, minmax(0, 1fr));
-    gap: 0 0.75rem;
-    padding: 0.75rem 0.25rem;
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.375rem;
+    padding: 0.5rem 0 0.5rem 2rem;
     border-bottom: 1px solid var(--border);
   }
-  .ticket-table thead tr {
-    padding: 0.5rem 0.25rem;
+  .ticket-table tr:not(:has(td[data-column="select"])) {
+    padding-left: 0;
   }
   .ticket-table[data-density="comfortable"] tr {
-    padding-block: 1.25rem;
+    padding-block: 1rem;
   }
   .ticket-table th,
   .ticket-table td {
@@ -753,65 +781,31 @@
     height: auto;
     padding: 0;
     border: 0;
-  }
-  .ticket-table th:not([data-column="select"]):not([data-column="title"]) {
-    position: absolute;
-    width: 1px !important;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .ticket-table th[data-column="title"] {
-    grid-column: 2 / -1;
-    display: flex;
-    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.6875rem;
+    order: 1;
   }
   .ticket-table .resizer {
     display: none;
   }
   .ticket-table td[data-column="select"] {
-    grid-column: 1;
-    grid-row: 1 / 4;
-    align-self: start;
-  }
-  .ticket-table td[data-column="key"] {
-    grid-column: 2 / -1;
+    position: absolute;
+    top: 0.625rem;
+    left: 0;
   }
   .ticket-table td[data-column="title"] {
-    grid-column: 2 / -1;
-    padding: 0.25rem 0 0.75rem;
+    flex-basis: 100%;
+    order: 0;
   }
   .ticket-table td[data-column="labels"],
-  .ticket-table td[data-column="scopes"],
-  .ticket-table td[data-column="kind"],
-  .ticket-table td[data-column="assigneeId"],
-  .ticket-table td[data-column="createdAt"],
-  .ticket-table td[data-column="updatedAt"] {
-    grid-column: 2 / -1;
-    margin-bottom: 0.5rem;
+  .ticket-table td[data-column="scopes"] {
+    order: 2;
   }
-  .ticket-table td[data-column="status"],
-  .ticket-table td[data-column="priority"],
-  .ticket-table td[data-column="difficulty"] {
-    grid-column: span 1;
-    margin-bottom: 0.5rem;
-  }
-  .ticket-table td[data-column="status"] {
-    grid-column-start: 2;
-  }
-  .ticket-table tr:not(:has(td[data-column="status"])) td[data-column="priority"],
-  .ticket-table
-    tr:not(:has(td[data-column="status"])):not(:has(td[data-column="priority"]))
-    td[data-column="difficulty"] {
-    grid-column-start: 2;
-  }
-  .ticket-table
-    td:not([data-column="select"]):not([data-column="key"]):not([data-column="title"])::before {
-    content: attr(data-label);
-    display: block;
+  .ticket-table td[data-column="createdAt"]::before,
+  .ticket-table td[data-column="updatedAt"]::before {
+    content: attr(data-label) ": ";
     color: var(--muted-foreground);
-    font-size: 0.65rem;
-    margin-bottom: 0.25rem;
   }
   .ticket-table .status {
     white-space: normal;

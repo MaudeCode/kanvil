@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { Bell, ChevronsUpDown, Layers, LogOut, Search, Settings, ShieldCheck } from "lucide-react";
 import { auth, useIdentity, useProjects } from "../data.tsx";
-import { Brand, ErrorNotice } from "../ui.tsx";
+import { Brand, ErrorNotice, IconButton } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
 import { ThemeMenu } from "./appearance.tsx";
 import {
@@ -299,6 +299,7 @@ export function WorkspaceHeader() {
   const pathname = useRouterState({ select: (state) => state.location.pathname }),
     projects = useProjects();
   const project = projects.data?.find((item) => pathname.startsWith(`/projects/${item.id}`));
+  const projectList = project && pathname === `/projects/${project.id}`;
   const page =
     pathname === "/admin"
       ? "Administration"
@@ -316,8 +317,8 @@ export function WorkspaceHeader() {
   return (
     <header className="workspace-header flex h-11 shrink-0 items-center gap-3 border-b px-4 md:px-6">
       <SidebarTrigger />
-      <Breadcrumb>
-        <BreadcrumbList>
+      <Breadcrumb className={projectList ? "min-w-0 flex-1" : undefined}>
+        <BreadcrumbList className={projectList ? "min-w-0 flex-nowrap overflow-hidden" : undefined}>
           <BreadcrumbItem>
             {pathname === "/" ? (
               <BreadcrumbPage>All projects</BreadcrumbPage>
@@ -328,16 +329,25 @@ export function WorkspaceHeader() {
           {project && (
             <>
               <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbLink
-                  render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
-                >
-                  {project.name}
-                </BreadcrumbLink>
+              <BreadcrumbItem className="min-w-0">
+                {projectList ? (
+                  <h1
+                    className="m-0 truncate text-[13px] font-medium tracking-normal"
+                    title={project.name}
+                  >
+                    <BreadcrumbPage>{project.name}</BreadcrumbPage>
+                  </h1>
+                ) : (
+                  <BreadcrumbLink
+                    render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
+                  >
+                    {project.name}
+                  </BreadcrumbLink>
+                )}
               </BreadcrumbItem>
             </>
           )}
-          {pathname !== "/" && (
+          {pathname !== "/" && !projectList && (
             <>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
@@ -347,7 +357,15 @@ export function WorkspaceHeader() {
           )}
         </BreadcrumbList>
       </Breadcrumb>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1">
+        {projectList && (
+          <IconButton
+            label="Project settings"
+            render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
+          >
+            <Settings />
+          </IconButton>
+        )}
         <ThemeMenu />
       </div>
     </header>

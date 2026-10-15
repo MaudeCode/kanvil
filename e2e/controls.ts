@@ -4,6 +4,20 @@ export async function choose(page: Page, label: string, option: string) {
   await page.getByRole("combobox", { name: label, exact: true }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
+export async function chooseTicketView(page: Page, name: string) {
+  await page.getByRole("button", { name: "Ticket views", exact: true }).click();
+  await page.getByRole("menuitemradio", { name, exact: true }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+}
+export async function openSaveView(page: Page) {
+  await page.getByRole("button", { name: "Ticket views", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save current view", exact: true }).click();
+}
+export async function searchTickets(page: Page, text: string) {
+  await page.getByRole("button", { name: "Search tickets", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Search tickets", exact: true }).fill(text);
+  await page.keyboard.press("Escape");
+}
 export async function appearance(page: Page, option: string) {
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
   await page.getByRole("menuitemradio", { name: option, exact: true }).click();

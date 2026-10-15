@@ -1,10 +1,9 @@
-import { ProjectIcon } from "./components/project-icon.tsx";
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Plus, Settings, X, BookmarkPlus, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -15,11 +14,16 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { z } from "zod";
-import { ticketFilter, priorityLabels, type Ticket, type Project } from "@kanvil/contracts";
+import {
+  ticketFilter,
+  priorityLabels,
+  type Ticket,
+  type Project,
+  type Output,
+} from "@kanvil/contracts";
 import { api, date, ActorName, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
-  IconButton,
   EmptyState,
   Check,
   Confirm,
@@ -37,10 +41,19 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { TicketTags } from "./components/ticket-tags.tsx";
 import { TicketListControls } from "./components/ticket-list-controls.tsx";
 import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.tsx";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+} from "@/components/ui/dropdown-menu";
 import { TicketEditor } from "./ticket-editor.tsx";
 
 import {
@@ -111,17 +124,11 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
         size: 190,
         minSize: 120,
         cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            {row.original[key].map((tag) => (
-              <Badge
-                variant={key === "labels" ? "secondary" : "outline"}
-                className="h-auto max-w-full whitespace-normal break-words"
-                key={tag}
-              >
-                {tag}
-              </Badge>
-            ))}
-          </div>
+          <TicketTags
+            tags={row.original[key]}
+            label={key === "labels" ? "Labels" : "Scopes"}
+            variant={key === "labels" ? "secondary" : "outline"}
+          />
         ),
       }) satisfies ColumnDef<typeof features, Ticket>,
   ),
@@ -217,10 +224,15 @@ export function TicketList({
   const [createOpen, setCreateOpen] = useState(false);
   const [viewName, setViewName] = useState(""),
     [savingView, setSavingView] = useState(false);
+  const [deletingView, setDeletingView] = useState<Output<"list_views">[number] | null>(null);
   const currentFilters = ticketFilter.parse(
       Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
     ),
     isDefault = JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse({}));
+  const activeView = views.data?.find(
+    (view) => JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters)),
+  );
+  const viewLabel = activeView?.name ?? (isDefault ? "All tickets" : "Custom view");
   const table = useTable({
     features,
     columns,
@@ -238,31 +250,79 @@ export function TicketList({
   };
   return (
     <>
-      <header className="page-header">
-        <div>
-          <div className="project-title">
-            <ProjectIcon project={project} className="size-4" />
-            <span className="project-prefix">{project.key}</span>
-            <h1>{project.name}</h1>
-          </div>
-        </div>
-        <div className="actions">
-          <IconButton
-            label="Project settings"
-            render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
-          >
-            <Settings />
-          </IconButton>
-          <Button variant="default" disabled={!access.canWrite} onClick={() => setCreateOpen(true)}>
-            <Plus size={17} aria-hidden="true" />
-            New ticket
-          </Button>
-        </div>
-      </header>
       <TicketListControls
         projectId={project.id}
         search={search}
         onSearch={changeSearch}
+        view={
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  aria-label="Ticket views"
+                  title={viewLabel}
+                  className="max-w-full min-w-0 justify-start"
+                />
+              }
+            >
+              <span className="truncate">{viewLabel}</span>
+              <ChevronDown className="size-3 shrink-0" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[70dvh] w-60 overflow-y-auto">
+              <DropdownMenuGroup>
+                <DropdownMenuRadioGroup
+                  value={activeView?.id ?? (isDefault ? "all" : "custom")}
+                  onValueChange={(id) => {
+                    const chosen = views.data?.find((view) => view.id === id);
+                    if (id === "all") changeSearch(searchSchema.parse({}));
+                    else if (chosen) changeSearch({ ...chosen.filters, offset: 0 });
+                  }}
+                >
+                  {[{ id: "all", name: "All tickets" }, ...(views.data ?? [])].map((view) => (
+                    <DropdownMenuRadioItem key={view.id} value={view.id} closeOnClick>
+                      {view.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                {access.canWrite && (
+                  <DropdownMenuItem
+                    onClick={() => table.toggleAllRowsSelected(!table.getIsAllRowsSelected())}
+                  >
+                    {table.getIsAllRowsSelected()
+                      ? "Clear selection"
+                      : "Select all displayed tickets"}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setSavingView(true)}>
+                  <BookmarkPlus />
+                  Save current view
+                </DropdownMenuItem>
+                {activeView && (
+                  <DropdownMenuItem onClick={() => setDeletingView(activeView)}>
+                    <Trash2 />
+                    Delete view {activeView.name}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+        actions={
+          <Button
+            variant="default"
+            aria-label="New ticket"
+            title="New ticket"
+            disabled={!access.canWrite}
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus size={17} aria-hidden="true" />
+            <span className="ticket-control-label">New ticket</span>
+          </Button>
+        }
         density={density}
         onDensityChange={setDensity}
         columns={table
@@ -280,82 +340,59 @@ export function TicketList({
           changeSearch({ ...search, sort: "priority", offset: 0 });
         }}
       />
-      <div className="views">
-        <Tabs value={isDefault ? "tickets" : "custom"}>
-          <TabsList variant="line">
-            <TabsTrigger value="tickets" onClick={() => changeSearch(searchSchema.parse({}))}>
-              All tickets
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        {views.data?.map((view) => (
-          <span className="view" key={view.id}>
-            <Button
-              variant={
-                JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters))
-                  ? "secondary"
-                  : "ghost"
-              }
-              aria-pressed={
-                JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters))
-              }
-              onClick={() => changeSearch({ ...view.filters, offset: 0 })}
-            >
-              {view.name}
-            </Button>
-            <Confirm
-              label={`Delete view ${view.name}`}
-              icon={<X />}
-              description={`Remove ${view.name} from saved views? Tickets stay unchanged.`}
-              onConfirm={() => deleteView.mutateAsync({ projectId: project.id, viewId: view.id })}
-            />
-          </span>
-        ))}
-        <Modal
-          title="Save view"
-          open={savingView}
-          onOpenChange={setSavingView}
-          busy={saveView.isPending}
-          trigger={
-            <>
-              <BookmarkPlus />
-              Save current view
-            </>
-          }
+      <Modal
+        title="Save view"
+        open={savingView}
+        onOpenChange={setSavingView}
+        busy={saveView.isPending}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveView
+              .mutateAsync({
+                projectId: project.id,
+                name: viewName,
+                filters: ticketFilter.parse(
+                  Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
+                ),
+              })
+              .then(() => {
+                setSavingView(false);
+                setViewName("");
+                toast.success("View saved");
+              })
+              .catch(() => {});
+          }}
         >
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveView
-                .mutateAsync({
-                  projectId: project.id,
-                  name: viewName,
-                  filters: ticketFilter.parse(
-                    Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
-                  ),
-                })
-                .then(() => {
-                  setSavingView(false);
-                  setViewName("");
-                  toast.success("View saved");
-                })
-                .catch(() => {});
-            }}
-          >
-            <Input
-              label="View name"
-              required
-              maxLength={80}
-              value={viewName}
-              onChange={(event) => setViewName(event.target.value)}
-            />
-            <ErrorNotice error={saveView.error} />
-            <Button type="submit" disabled={saveView.isPending}>
-              Save view
-            </Button>
-          </form>
-        </Modal>
-      </div>
+          <Input
+            label="View name"
+            required
+            maxLength={80}
+            value={viewName}
+            onChange={(event) => setViewName(event.target.value)}
+          />
+          <ErrorNotice error={saveView.error} />
+          <Button type="submit" disabled={saveView.isPending}>
+            Save view
+          </Button>
+        </form>
+      </Modal>
+      {deletingView && (
+        <Confirm
+          label={`Delete view ${deletingView.name}`}
+          description={`Remove ${deletingView.name} from saved views? Tickets stay unchanged.`}
+          trigger={false}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeletingView(null);
+          }}
+          onConfirm={async () => {
+            await deleteView.mutateAsync({ projectId: project.id, viewId: deletingView.id });
+            setDeletingView(null);
+          }}
+        />
+      )}
       <ErrorNotice error={tickets.error ?? deleteView.error} />
       {selected.length > 0 && (
         <TicketSelectionToolbar selected={selected} onClear={() => table.resetRowSelection()} />

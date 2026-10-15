@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check as CheckIcon, ChevronsUpDown, Columns3, SlidersHorizontal, X } from "lucide-react";
+import {
+  Check as CheckIcon,
+  ChevronsUpDown,
+  Columns3,
+  SlidersHorizontal,
+  Search,
+  X,
+} from "lucide-react";
 import { z } from "zod";
 import { ticketFilter, states, priorities, stateLabels, priorityLabels } from "@kanvil/contracts";
 import { api } from "../data.tsx";
@@ -32,6 +39,8 @@ export function TicketListControls({
   onReset,
   density,
   onDensityChange,
+  view,
+  actions,
 }: {
   projectId: string;
   search: TicketSearch;
@@ -41,6 +50,8 @@ export function TicketListControls({
   onReset: () => void;
   density: TicketDensity;
   onDensityChange: (density: TicketDensity) => void;
+  view: ReactNode;
+  actions: ReactNode;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false),
     [labelsOpen, setLabelsOpen] = useState(false);
@@ -57,18 +68,46 @@ export function TicketListControls({
   const filter = (patch: Partial<TicketSearch>) => onSearch({ ...search, ...patch, offset: 0 });
   return (
     <>
-      <div className="toolbar ticket-list-controls">
-        <Input
-          label="Search tickets"
-          type="search"
-          placeholder="Search tickets…"
-          value={search.q ?? ""}
-          onChange={(event) => filter({ q: event.target.value })}
-        />
+      <div className="ticket-list-controls">
+        <div className="ticket-view-picker">{view}</div>
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Search tickets"
+                title="Search tickets"
+              />
+            }
+          >
+            <Search />
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-3">
+            <Input
+              label="Search tickets"
+              type="search"
+              placeholder="Search tickets…"
+              value={search.q ?? ""}
+              onChange={(event) => filter({ q: event.target.value })}
+              autoFocus
+            />
+          </PopoverContent>
+        </Popover>
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <PopoverTrigger render={<Button variant="outline" />}>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="ghost"
+                aria-label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`}
+                title="Filters"
+              />
+            }
+          >
             <SlidersHorizontal />
-            Filters{activeFilters ? ` (${activeFilters})` : ""}
+            <span className="ticket-control-label">
+              Filters{activeFilters ? ` (${activeFilters})` : ""}
+            </span>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
             <PopoverTitle>Filters</PopoverTitle>
@@ -181,9 +220,9 @@ export function TicketListControls({
           </PopoverContent>
         </Popover>
         <Popover>
-          <PopoverTrigger render={<Button variant="outline" />}>
+          <PopoverTrigger render={<Button variant="ghost" aria-label="Display" title="Display" />}>
             <Columns3 />
-            Display
+            <span className="ticket-control-label">Display</span>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(19rem,calc(100vw-2rem))] gap-3 p-4">
             <PopoverTitle>Display</PopoverTitle>
@@ -226,6 +265,7 @@ export function TicketListControls({
             </Button>
           </PopoverContent>
         </Popover>
+        {actions}
       </div>
       {(search.q || activeFilters > 0) && (
         <div className="active-filters" aria-label="Active ticket filters">
