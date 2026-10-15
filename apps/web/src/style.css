@@ -575,7 +575,7 @@
   [data-slot="tooltip-trigger"],
   [data-slot="select-trigger"],
   [data-slot="input"],
-  [data-slot="sidebar-menu-button"] {
+  [data-sidebar="menu-button"] {
     min-height: 2.75rem;
     min-width: 2.75rem;
   }

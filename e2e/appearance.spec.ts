@@ -170,6 +170,10 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Sidebar", exact: true });
   await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("link", { name: "Navigation project", exact: true })).toHaveCSS(
+    "min-height",
+    "44px",
+  );
   await sheet.getByRole("link", { name: "Inbox", exact: true }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
@@ -188,6 +192,9 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(create).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Mobile project", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  await page.keyboard.press("Escape");
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await menu.press("Escape");
+  await expect(menu).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Appearance", exact: true })).toBeFocused();
 });
