@@ -1,0 +1,15 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+.expo/
+*.log
+
+# Local configuration and application data
+.env
+.env.*
+!.env.example
+!.env.*.example
+/data/
+/backups/
+.DS_Store
