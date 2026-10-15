@@ -551,17 +551,31 @@ export async function createApplication(database: Database, config: Config) {
     servers: [{ url: config.KANVIL_URL }],
   });
   const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
+  app.use("*", async (c, next) => {
+    await next();
+    if (!c.res.headers.get("Content-Type")?.startsWith("text/html")) return;
+    // Hono retains previous headers when replacing a response, so discard the old body length first.
+    c.header("Content-Length", undefined);
+    const imageUrl = new URL("/brand/social.png", config.KANVIL_URL).href;
+    const html = (await c.res.text()).replaceAll(
+      'content="/brand/social.png"',
+      `content="${imageUrl}"`,
+    );
+    c.res = new Response(html, { status: c.res.status, headers: c.res.headers });
+  });
   app.on(
     "GET",
-    ["/assets/*", "/icon.svg"],
+    "*",
     serveStatic({
       root: webRoot,
-      onFound: (_path, c) => {
+      onFound: (path, c) => {
         c.header(
           "Cache-Control",
-          c.req.path.startsWith("/assets/")
-            ? "public, max-age=31536000, immutable"
-            : "public, max-age=3600",
+          path.endsWith("/index.html")
+            ? "no-store"
+            : c.req.path.startsWith("/assets/")
+              ? "public, max-age=31536000, immutable"
+              : "public, max-age=3600",
         );
       },
     }),
