@@ -6,6 +6,18 @@ import { attachmentLimit, ticketSchema, snapshotSchema, type ChangeEvent } from 
 import { createApplication } from "./app.ts";
 import { createFixture } from "./test-fixture.ts";
 
+async function readSseUntil(reader: ReadableStreamDefaultReader<Uint8Array>, value: string) {
+  let received = "";
+  const decoder = new TextDecoder();
+  while (!received.includes(value)) {
+    const part = await reader.read();
+    if (part.done) throw new Error("Stream ended before the expected event");
+    received += decoder.decode(part.value, { stream: true });
+    if (!received.includes(value) && /event:\s*error/.test(received)) throw new Error(received);
+  }
+  return received;
+}
+
 describe("HTTP, realtime, and MCP", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
     application: Awaited<ReturnType<typeof createApplication>>,
@@ -169,24 +181,14 @@ describe("HTTP, realtime, and MCP", () => {
       { headers: sessionHeaders(), signal: controller.signal },
     );
     expect(response.status).toBe(200);
-    const reader = response.body!.getReader(),
-      decoder = new TextDecoder();
-    async function until(value: string) {
-      let received = "";
-      while (!received.includes(value)) {
-        const part = await reader.read();
-        if (part.done) throw new Error("Stream ended before the expected event");
-        received += decoder.decode(part.value, { stream: true });
-      }
-      return received;
-    }
+    const reader = response.body!.getReader();
     try {
-      expect(await until("ticket.created")).toContain(previous.id);
+      expect(await readSseUntil(reader, "ticket.created")).toContain(previous.id);
       const next = await client().call("create_ticket", {
         projectId: project.id,
         title: "A new committed change",
       });
-      expect(await until(next.id)).toContain("ticket.created");
+      expect(await readSseUntil(reader, next.id)).toContain("ticket.created");
     } finally {
       controller.abort();
       await reader.cancel().catch(() => {});
@@ -195,6 +197,45 @@ describe("HTTP, realtime, and MCP", () => {
       headers: sessionHeaders(),
     });
     expect(invalid.status).toBe(410);
+  });
+  it("counts an SSE connection once while rechecking credential revocation for every batch", async () => {
+    const project = await newProject(),
+      token = await credential(project.id, ["read"]);
+    await fixture.database.pool.query(
+      "UPDATE apikey SET rate_limit_max = 1, request_count = 0 WHERE id = $1",
+      [token.id],
+    );
+    const controller = new AbortController();
+    const response = await request(`/api/v1/events?projectId=${project.id}`, {
+      headers: { Authorization: `Bearer ${token.key}` },
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    try {
+      await readSseUntil(reader, "checkpoint");
+      const ticket = await client().call("create_ticket", {
+        projectId: project.id,
+        title: "Rate-limited streaming",
+      });
+      await readSseUntil(reader, ticket.id);
+      expect(
+        (
+          await fixture.database.pool.query("SELECT request_count FROM apikey WHERE id = $1", [
+            token.id,
+          ])
+        ).rows[0]?.request_count,
+      ).toBe(1);
+      await request(`/api/v1/credentials/${token.id}`, {
+        method: "DELETE",
+        headers: sessionHeaders(),
+      });
+      await client().call("create_ticket", { projectId: project.id, title: "Wake revoked stream" });
+      expect(await readSseUntil(reader, '"status":401')).toContain("unauthorized");
+    } finally {
+      controller.abort();
+      await reader.cancel().catch(() => {});
+    }
   });
   it("supports discovery and tool calls with the official MCP client", async () => {
     const project = await newProject(),
