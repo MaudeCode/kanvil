@@ -28,7 +28,8 @@
     "account:recover": "pnpm --filter @kanvil/server recover",
     "backup": "node --env-file-if-exists=.env scripts/backup.ts",
     "restore": "node --env-file-if-exists=.env scripts/restore.ts",
-    "test:docker": "docker build -t kanvil:local . && node scripts/docker-smoke.ts"
+    "test:docker": "docker build -t kanvil:local . && node scripts/docker-smoke.ts",
+    "test:services": "node scripts/test-services.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",

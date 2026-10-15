@@ -1,3 +1,8 @@
+import { createDatabase } from "./database.ts";
+import { createInstance } from "./instance.ts";
+import { createBlobStorage } from "./blob-storage.ts";
+import { createTicketSearch } from "./search.ts";
+import { registerInstanceRoutes } from "./instance-routes.ts";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
@@ -18,10 +23,9 @@ import {
   notificationPreferencesInput,
   pushDeviceInput,
 } from "@kanvil/contracts";
-import { createAuth } from "./auth.ts";
+import { defaultAdapters, type RuntimeAdapters } from "./runtime-adapters.ts";
 import { createAccess, requireSession } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
-import { createRealtime } from "./realtime.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
 import {
@@ -36,7 +40,6 @@ import {
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
 import { Expo } from "expo-server-sdk";
-import { createPushDelivery } from "./push.ts";
 
 type Variables = { actor: Actor };
 const setupInput = z
@@ -57,12 +60,32 @@ const keyInput = z
   .strict();
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
-export async function createApplication(database: Database, config: Config) {
-  const auth = createAuth(database, config),
-    domain = createDomain(database),
+export async function createApplication(
+  database: Database,
+  config: Config,
+  overrides: Partial<RuntimeAdapters> = {},
+) {
+  const adapters = { ...defaultAdapters, ...overrides };
+  // Integration receipts must remain writable while domain transactions wait for the global write lock.
+  const integrationDatabase = createDatabase(config.DATABASE_URL);
+  const instance = createInstance(integrationDatabase, config);
+  await instance.read();
+  const blobs = createBlobStorage(
+      integrationDatabase,
+      instance,
+      adapters.objectStore,
+      adapters.jobs,
+    ),
+    search = createTicketSearch(integrationDatabase, instance, adapters.ticketIndex, adapters.jobs);
+  const auth = adapters.auth(database, config),
+    domain = createDomain(database, { blobs, search }),
     access = createAccess(auth, domain, config, database),
-    realtime = await createRealtime(config);
-  const push = createPushDelivery(database, config);
+    realtime = await adapters.realtime(config, instance, integrationDatabase);
+  const unsubscribeJobs = realtime.subscribe(() => {
+    void blobs.sync().catch(() => {});
+    void search.sync().catch(() => {});
+  });
+  const push = adapters.push(database, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
       if (!result.success)
@@ -159,7 +182,7 @@ export async function createApplication(database: Database, config: Config) {
     (await database.pool.query('SELECT count(*)::int AS count FROM "user"')).rows[0]?.count === 0;
   app.get("/api/v1/info", async () =>
     Response.json({
-      name: "Kanvil",
+      ...(await instance.read().then((row) => ({ name: row.name, description: row.description }))),
       version: "0.1.0",
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
@@ -199,6 +222,8 @@ export async function createApplication(database: Database, config: Config) {
     c.set("actor", await access.authenticate(c.req.raw));
     await next();
   });
+
+  registerInstanceRoutes(app, database, instance, blobs, search, realtime);
 
   app.get("/api/v1/credentials", async (c) => {
     const identity = c.get("actor");
@@ -281,14 +306,16 @@ export async function createApplication(database: Database, config: Config) {
       c.get("actor"),
     );
     requireRow(authorized.find((item) => item.id === id));
-    const bytes = requireRow(
-      (
-        await database.db
-          .select({ data: attachmentContent.data })
-          .from(attachmentContent)
-          .where(eq(attachmentContent.id, id))
-      )[0],
-    ).data;
+    const bytes = row.objectId
+      ? (await blobs.get(row.objectId)).data
+      : requireRow(
+          (
+            await database.db
+              .select({ data: attachmentContent.data })
+              .from(attachmentContent)
+              .where(eq(attachmentContent.id, id))
+          )[0],
+        ).data;
     if (bytes.length !== row.size)
       fail(500, "attachment_corrupt", "Attachment integrity check failed");
     return new Response(bytes, {
@@ -595,9 +622,17 @@ export async function createApplication(database: Database, config: Config) {
     app,
     auth,
     domain,
+    instance,
+    blobs,
+    search,
+    realtime,
     close: async () => {
-      await push.close();
+      unsubscribeJobs();
       await realtime.close();
+      await search.close();
+      await blobs.close();
+      await integrationDatabase.pool.end();
+      await push.close();
     },
   };
 }

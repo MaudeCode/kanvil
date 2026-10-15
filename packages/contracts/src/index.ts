@@ -203,6 +203,7 @@ export const eventSchema = z.object({
 });
 export const infoSchema = z.object({
   name: z.string(),
+  description: z.string().default(""),
   version: z.string(),
   setupRequired: z.boolean(),
   oidc: z.object({ id: z.string(), name: z.string() }).nullable(),

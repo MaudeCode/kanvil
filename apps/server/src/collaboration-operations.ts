@@ -1,8 +1,8 @@
+import { decodeBlobData } from "./blob-storage.ts";
 import { attachmentLimit } from "@kanvil/contracts";
 import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
-  attachmentContent,
   attachments,
   comments,
   events,
@@ -195,16 +195,16 @@ export const collaborationHandlers: Pick<
   },
   async upload_attachment(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const bytes = Buffer.from(input.data, "base64");
-    if (bytes.length > attachmentLimit || bytes.toString("base64") !== input.data)
-      fail(400, "invalid_attachment", "Provide valid base64 data of at most 10 MB");
+    const bytes = decodeBlobData(input.data, attachmentLimit);
     const id = crypto.randomUUID();
+    await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
     const row = requireRow(
       (
         await ctx.db
           .insert(attachments)
           .values({
             id,
+            objectId: id,
             projectId: project(ctx).id,
             ticketId: ticket.id,
             actorId: ctx.actor.id,
@@ -215,7 +215,6 @@ export const collaborationHandlers: Pick<
           .returning()
       )[0],
     );
-    await ctx.db.insert(attachmentContent).values({ id, data: bytes });
     await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
     return row;
   },

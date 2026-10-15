@@ -175,7 +175,61 @@ export const receipts = pgTable(
   },
   (table) => [primaryKey({ columns: [table.actorId, table.requestId] })],
 );
+export const storageBackends = pgTable("storage_backends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  identity: text("identity").notNull().unique(),
+  config: text("config").notNull(),
+  createdAt: time("created_at"),
+});
+const binary = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+export const blobObjects = pgTable(
+  "blob_objects",
+  {
+    id: uuid("id").primaryKey(),
+    backendId: uuid("backend_id").references(() => storageBackends.id),
+    objectKey: text("object_key"),
+    data: binary("data"),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256").notNull(),
+    createdAt: time("created_at"),
+  },
+  (table) => [index("blob_objects_created").on(table.createdAt)],
+);
+export const profilePhotos = pgTable("profile_photos", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  objectId: uuid("object_id")
+    .notNull()
+    .references(() => blobObjects.id),
+});
+export const instanceSettings = pgTable("instance_settings", {
+  id: integer("id").primaryKey().default(1),
+  identity: uuid("identity").notNull().defaultRandom(),
+  version: integer("version").notNull().default(1),
+  name: text("name").notNull().default("Kanvil"),
+  description: text("description").notNull().default("Ticketing for people and agents"),
+  storageBackendId: uuid("storage_backend_id").references(() => storageBackends.id),
+  searchConfig: text("search_config"),
+  brokerConfig: text("broker_config"),
+});
+export const deliveryCheckpoints = pgTable("delivery_checkpoints", {
+  destination: text("destination").primaryKey(),
+  cursor: bigint("cursor", { mode: "bigint" })
+    .notNull()
+    .default(sql`0`),
+});
+export const searchState = pgTable("search_state", {
+  id: integer("id").primaryKey().default(1),
+  configHash: text("config_hash").notNull().default(""),
+  cursor: bigint("cursor", { mode: "bigint" })
+    .notNull()
+    .default(sql`0`),
+  error: text("error"),
+});
 export const attachments = pgTable("attachments", {
+  objectId: uuid("object_id").references(() => blobObjects.id),
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
     .notNull()

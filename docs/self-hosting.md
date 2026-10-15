@@ -14,9 +14,9 @@ docker compose up -d --build --wait
 
 Configuration creates a mode-600 `.env` with independent random database, authentication, and initial setup secrets. It refuses to overwrite an existing file. Use an HTTPS origin without a path. Set up your HTTPS reverse proxy before opening that address. The application binds to loopback port 5180; change the host port with `KANVIL_PORT`.
 
-Open the site, enter `KANVIL_SETUP_TOKEN` from your private configuration, and create the owner account. Setup closes after the first account exists. Create additional accounts in Settings, then grant access through project settings. Remove the setup token from configuration after onboarding if desired.
+Open the site, enter `KANVIL_SETUP_TOKEN` from your private configuration, and create the owner account. Setup closes after the first account exists. Create additional accounts in Administration → Users, then grant access through project settings. Remove the setup token from configuration after onboarding if desired.
 
-Retain `.env` securely. `BETTER_AUTH_SECRET` is required to read encrypted authentication state after restoration. Changing it is a deliberate credential rotation, not a routine upgrade.
+Retain `.env` securely. `BETTER_AUTH_SECRET` is required to read encrypted authentication state after restoration. It also encrypts saved integration credentials. Changing it is a deliberate credential rotation, not a routine upgrade.
 
 The application container runs as the `node` user with a read-only root filesystem and temporary `/tmp`. Its health check verifies database connectivity. PostgreSQL storage is kept in the `postgres-data` volume. `docker compose down` retains that volume; removing volumes deletes instance data.
 
@@ -74,6 +74,10 @@ services:
 
 Native devices must also trust that authority. Never mount the authority's private key.
 
+## Instance administration
+
+Administrators can edit the instance name and description, manage accounts, and configure local/S3 file storage, PostgreSQL/Elasticsearch search, and PostgreSQL/RabbitMQ event delivery in Administration. See [optional infrastructure](infrastructure.md) for deployment variables, adapter interfaces, recovery behavior, and S3 backup requirements. OIDC, public URL, and push credentials remain deployment settings.
+
 ## Optional mobile push
 
 Set `KANVIL_PUSH_ENABLED=true` to enable the Expo push transport. If the Expo project has push access-token security enabled, also set its server-held `EXPO_ACCESS_TOKEN`. Recreate the app after changing configuration. A signed mobile build must contain the public Expo project ID and have APNs/FCM credentials configured; see [mobile setup](mobile.md). Accounts opt in through Settings and register each device separately.
@@ -88,7 +92,7 @@ Run from the configured checkout:
 pnpm backup --output /secure/location/kanvil.dump
 ```
 
-The command uses the PostgreSQL tools inside the database container to create a consistent custom-format archive. It includes attachment bytes and authentication tables. The output is private and existing files are never overwritten. Keep the original instance configuration, especially `BETTER_AUTH_SECRET`, securely with your backup. Copy backups off the application host using your normal protected backup storage.
+The command uses the PostgreSQL tools inside the database container to create a consistent custom-format archive. It includes locally stored attachment/photo bytes, pending external uploads, authentication tables, and encrypted integration settings. Completed S3 uploads need a separate backup of each referenced bucket. The output is private and existing files are never overwritten. Keep the original instance configuration, especially `BETTER_AUTH_SECRET`, securely with your backup. Copy backups off the application host using your normal protected backup storage.
 
 ## Restore without replacing the original database
 

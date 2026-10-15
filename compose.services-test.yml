@@ -1,0 +1,34 @@
+name: kanvil-services-tests
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+    ports:
+      - "127.0.0.1:57300:9200"
+    tmpfs:
+      - /usr/share/elasticsearch/data:uid=1000,gid=0
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, "curl -fs http://localhost:9200/_cluster/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  rabbitmq:
+    image: rabbitmq:4.3.6-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: kanvil-test
+      RABBITMQ_DEFAULT_PASS: isolated-test-password
+      RABBITMQ_DEFAULT_VHOST: kanvil-test
+    ports:
+      - "127.0.0.1:56672:5672"
+    tmpfs:
+      - /var/lib/rabbitmq:uid=999,gid=999
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 2s
+      timeout: 5s
+      retries: 60

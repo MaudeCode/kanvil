@@ -5,6 +5,26 @@ const optionalEnv = <T extends z.ZodType>(schema: T) =>
 const envSchema = z
   .object({
     DATABASE_URL: z.url(),
+    KANVIL_STORAGE_PROVIDER: optionalEnv(z.enum(["local", "s3"])),
+    S3_ENDPOINT: optionalEnv(z.url()),
+    S3_REGION: z.string().default("us-east-1"),
+    S3_BUCKET: optionalEnv(z.string().min(3)),
+    S3_PREFIX: z.string().default("kanvil/"),
+    S3_ACCESS_KEY_ID: optionalEnv(z.string()),
+    S3_SECRET_ACCESS_KEY: optionalEnv(z.string()),
+    S3_FORCE_PATH_STYLE: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+    KANVIL_SEARCH_PROVIDER: optionalEnv(z.enum(["postgres", "elasticsearch"])),
+    ELASTICSEARCH_URL: optionalEnv(z.url()),
+    ELASTICSEARCH_INDEX: optionalEnv(z.string()),
+    ELASTICSEARCH_API_KEY: optionalEnv(z.string()),
+    ELASTICSEARCH_USERNAME: z.string().default(""),
+    ELASTICSEARCH_PASSWORD: optionalEnv(z.string()),
+    KANVIL_BROKER_PROVIDER: optionalEnv(z.enum(["postgres", "rabbitmq"])),
+    RABBITMQ_URL: optionalEnv(z.url({ protocol: /^amqps?$/ })),
+    RABBITMQ_EXCHANGE: z.string().default("kanvil.events"),
     KANVIL_URL: z.url().default("http://localhost:5180"),
     BETTER_AUTH_SECRET: z.string().min(32),
     KANVIL_SETUP_TOKEN: optionalEnv(z.string().min(24)),
@@ -23,6 +43,15 @@ const envSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {
+    if (value.KANVIL_STORAGE_PROVIDER === "s3" && !value.S3_BUCKET)
+      ctx.addIssue({ code: "custom", message: "S3_BUCKET is required for S3 storage" });
+    if (value.KANVIL_SEARCH_PROVIDER === "elasticsearch" && !value.ELASTICSEARCH_URL)
+      ctx.addIssue({
+        code: "custom",
+        message: "ELASTICSEARCH_URL is required for external search",
+      });
+    if (value.KANVIL_BROKER_PROVIDER === "rabbitmq" && !value.RABBITMQ_URL)
+      ctx.addIssue({ code: "custom", message: "RABBITMQ_URL is required for RabbitMQ delivery" });
     const supplied = [
       value.OIDC_DISCOVERY_URL,
       value.OIDC_CLIENT_ID,

@@ -35,6 +35,33 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
+      rabbitmq:
+        image: rabbitmq:4.3.6-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: kanvil-test
+          RABBITMQ_DEFAULT_PASS: isolated-test-password
+          RABBITMQ_DEFAULT_VHOST: kanvil-test
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 60
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          xpack.ml.enabled: "false"
+          ES_JAVA_OPTS: -Xms256m -Xmx256m
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 60
       postgres:
         image: postgres:18
         env:
@@ -49,6 +76,8 @@ jobs:
           --health-timeout 3s
           --health-retries 30
     env:
+      TEST_ELASTICSEARCH_URL: http://127.0.0.1:9200
+      TEST_RABBITMQ_URL: amqp://kanvil-test:isolated-test-password@127.0.0.1:5672/kanvil-test
       KANVIL_TEST_POCKET_ID: "1"
       TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
     steps:

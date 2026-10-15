@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { claims, members, projects, relations, subscriptions, tickets } from "./schema.ts";
 import {
   assertWorkerClaim,
@@ -165,9 +165,7 @@ export const ticketHandlers: Pick<
 > = {
   async list_tickets(ctx, input) {
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
-    const search = input.q
-      ? `%${input.q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`
-      : undefined;
+    const search = input.q ? await ctx.search.where(ctx.db, project(ctx).id, input.q) : undefined;
     const where = and(
       eq(tickets.projectId, project(ctx).id),
       parent ? eq(tickets.parentId, parent.id) : undefined,
@@ -178,13 +176,7 @@ export const ticketHandlers: Pick<
       input.assigneeId ? eq(tickets.assigneeId, input.assigneeId) : undefined,
       input.label ? sql`${input.label} = ANY(${tickets.labels})` : undefined,
       input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
-      search
-        ? or(
-            ilike(tickets.title, search),
-            ilike(tickets.description, search),
-            ilike(tickets.key, search),
-          )
-        : undefined,
+      search,
     );
     const order =
       input.sort === "priority"

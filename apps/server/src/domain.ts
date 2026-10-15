@@ -1,3 +1,5 @@
+import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
+import { postgresSearch, type TicketSearchProvider } from "./search.ts";
 import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
   ApiError,
@@ -40,6 +42,8 @@ export interface Actor {
   projectIds?: readonly string[];
 }
 export interface Context {
+  blobs: BlobWriter;
+  search: TicketSearchProvider;
   db: Connection | Transaction;
   actor: Actor;
   project: Project | null;
@@ -81,7 +85,14 @@ async function context(
 ): Promise<Context> {
   if (!hasScope(actor, scope))
     fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
-  const ctx: Context = { db, actor, project: null, role: "reader" };
+  const ctx: Context = {
+    db,
+    actor,
+    project: null,
+    role: "reader",
+    blobs: { put: writeLocalBlob },
+    search: { where: async (_db, _id, query) => postgresSearch(query) },
+  };
   if (!projectId) return ctx;
   const row = requireRow(
     (
@@ -262,7 +273,10 @@ export async function assertWorkerClaim(
     fail(409, "claim_conflict", "This ticket requires current ownership for worker writes");
 }
 
-export function createDomain(database: Database) {
+export function createDomain(
+  database: Database,
+  services: { blobs?: BlobWriter; search?: TicketSearchProvider } = {},
+) {
   const handlers: Handlers = { ...projectHandlers, ...ticketHandlers, ...collaborationHandlers };
   async function execute<K extends Operation>(
     name: K,
@@ -273,6 +287,8 @@ export function createDomain(database: Database) {
     const input = spec.input.parse(value);
     const projectId = "projectId" in input ? input.projectId : undefined;
     const invoke = async (ctx: Context) => {
+      if (services.blobs) ctx.blobs = services.blobs;
+      if (services.search) ctx.search = services.search;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
