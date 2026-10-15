@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import {
+  Plus,
+  SlidersHorizontal,
+  Settings,
+  X,
+  BookmarkPlus,
+  ArrowLeft,
+  ArrowRight,
+} from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -23,6 +31,8 @@ import {
 import { api, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
+  IconButton,
+  EmptyState,
   Check,
   Confirm,
   ErrorNotice,
@@ -30,8 +40,19 @@ import {
   Loading,
   Modal,
   Select,
+  SelectItem,
   Status,
 } from "./ui.tsx";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TicketEditor } from "./ticket-editor.tsx";
 
 import { searchSchema, type TicketSearch } from "./search.ts";
@@ -46,7 +67,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
         label="Select all displayed tickets"
         className="sr-checkbox"
         checked={table.getIsAllRowsSelected()}
-        onChange={table.getToggleAllRowsSelectedHandler()}
+        onCheckedChange={(checked) => table.toggleAllRowsSelected(checked)}
       />
     ),
     cell: ({ row }) => (
@@ -54,7 +75,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
         label={`Select ${row.original.key}`}
         className="sr-checkbox"
         checked={row.getIsSelected()}
-        onChange={row.getToggleSelectedHandler()}
+        onCheckedChange={(checked) => row.toggleSelected(checked)}
       />
     ),
   },
@@ -140,20 +161,19 @@ export function TicketList({
           </div>
         </div>
         <div className="actions">
-          <Link to="/projects/$projectId/settings" params={{ projectId: project.id }}>
-            Project settings
-          </Link>
-          <Button
-            className="primary"
-            disabled={!access.canWrite}
-            onClick={() => setCreateOpen(true)}
+          <IconButton
+            label="Project settings"
+            render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
           >
+            <Settings />
+          </IconButton>
+          <Button variant="default" disabled={!access.canWrite} onClick={() => setCreateOpen(true)}>
             <Plus size={17} aria-hidden="true" />
             New ticket
           </Button>
         </div>
       </header>
-      <div className="toolbar" data-expanded={filtersOpen}>
+      <div className="toolbar">
         <Input
           label="Search tickets"
           type="search"
@@ -161,90 +181,110 @@ export function TicketList({
           value={search.q ?? ""}
           onChange={(event) => filter({ q: event.target.value })}
         />
-        <Button
-          className="filter-toggle"
-          aria-expanded={filtersOpen}
-          aria-controls={`filters-${project.id}`}
-          onClick={() => setFiltersOpen(!filtersOpen)}
-        >
-          <SlidersHorizontal size={16} aria-hidden="true" />
-          Filters{activeFilters ? ` (${activeFilters})` : ""}
-        </Button>
-        <div className="filter-fields" id={`filters-${project.id}`}>
-          <Select
-            label="Status"
-            value={search.status ?? ""}
-            onChange={(event) =>
-              filter({
-                status: event.target.value ? z.enum(states).parse(event.target.value) : undefined,
-              })
-            }
-          >
-            <option value="">All statuses</option>
-            {states.map((status) => (
-              <option key={status} value={status}>
-                {stateLabels[status]}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Priority"
-            value={search.priority ?? ""}
-            onChange={(event) =>
-              filter({
-                priority: event.target.value
-                  ? z.enum(priorities).parse(event.target.value)
-                  : undefined,
-              })
-            }
-          >
-            <option value="">All priorities</option>
-            {priorities.map((priority) => (
-              <option key={priority} value={priority}>
-                {priorityLabels[priority]}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Sort"
-            value={search.sort}
-            onChange={(event) =>
-              filter({ sort: ticketFilter.shape.sort.parse(event.target.value) })
-            }
-          >
-            <option value="priority">Priority</option>
-            <option value="updated">Updated</option>
-            <option value="created">Created</option>
-            <option value="title">Title</option>
-          </Select>
-          <Select
-            label="Archived"
-            value={search.archived}
-            onChange={(event) =>
-              filter({ archived: ticketFilter.shape.archived.parse(event.target.value) })
-            }
-          >
-            <option value="exclude">Hide archived</option>
-            <option value="include">Include archived</option>
-            <option value="only">Archived only</option>
-          </Select>
-        </div>
+        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <PopoverTrigger render={<Button variant="outline" />}>
+            <SlidersHorizontal />
+            Filters{activeFilters ? ` (${activeFilters})` : ""}
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80">
+            <h3>Filters</h3>
+            <div className="filter-fields">
+              <Select
+                label="Status"
+                value={search.status ?? ""}
+                onValueChange={(value) =>
+                  filter({
+                    status: (value ?? "") ? z.enum(states).parse(value ?? "") : undefined,
+                  })
+                }
+              >
+                <SelectItem value="">All statuses</SelectItem>
+                {states.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {stateLabels[status]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="Priority"
+                value={search.priority ?? ""}
+                onValueChange={(value) =>
+                  filter({
+                    priority: (value ?? "") ? z.enum(priorities).parse(value ?? "") : undefined,
+                  })
+                }
+              >
+                <SelectItem value="">All priorities</SelectItem>
+                {priorities.map((priority) => (
+                  <SelectItem key={priority} value={priority}>
+                    {priorityLabels[priority]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="Sort"
+                value={search.sort}
+                onValueChange={(value) =>
+                  filter({ sort: ticketFilter.shape.sort.parse(value ?? "") })
+                }
+              >
+                <SelectItem value="priority">Priority</SelectItem>
+                <SelectItem value="updated">Updated</SelectItem>
+                <SelectItem value="created">Created</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+              </Select>
+              <Select
+                label="Archived"
+                value={search.archived}
+                onValueChange={(value) =>
+                  filter({ archived: ticketFilter.shape.archived.parse(value ?? "") })
+                }
+              >
+                <SelectItem value="exclude">Hide archived</SelectItem>
+                <SelectItem value="include">Include archived</SelectItem>
+                <SelectItem value="only">Archived only</SelectItem>
+              </Select>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onSearch(searchSchema.parse({}));
+                setFiltersOpen(false);
+              }}
+            >
+              Reset filters
+            </Button>
+          </PopoverContent>
+        </Popover>
       </div>
       <div className="views">
-        <span className="muted">Views</span>
-        <Button onClick={() => onSearch(searchSchema.parse({}))}>All tickets</Button>
+        <Tabs value="tickets">
+          <TabsList variant="line">
+            <TabsTrigger value="tickets" onClick={() => onSearch(searchSchema.parse({}))}>
+              All tickets
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         {views.data?.map((view) => (
           <span className="view" key={view.id}>
             <Button onClick={() => onSearch({ ...view.filters, offset: 0 })}>{view.name}</Button>
-            <Button
-              aria-label={`Delete view ${view.name}`}
+            <IconButton
+              label={`Delete view ${view.name}`}
               onClick={() => deleteView.mutate({ projectId: project.id, viewId: view.id })}
             >
-              ×
-            </Button>
+              <X />
+            </IconButton>
           </span>
         ))}
-        <Modal title="Save view" trigger="Save current view">
+        <Modal
+          title="Save view"
+          trigger={
+            <>
+              <BookmarkPlus />
+              Save current view
+            </>
+          }
+        >
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -279,12 +319,12 @@ export function TicketList({
           <Select
             label="New status"
             value={bulkStatus}
-            onChange={(event) => setBulkStatus(z.enum(states).parse(event.target.value))}
+            onValueChange={(value) => setBulkStatus(z.enum(states).parse(value ?? ""))}
           >
             {states.map((status) => (
-              <option key={status} value={status}>
+              <SelectItem key={status} value={status}>
                 {stateLabels[status]}
-              </option>
+              </SelectItem>
             ))}
           </Select>
           <Button
@@ -328,17 +368,17 @@ export function TicketList({
         <Loading />
       ) : (
         <div className="table-scroll">
-          <table
-            className="ticket-table"
+          <Table
+            className="ticket-table min-[1151px]:w-(--table-width)"
             role="table"
             aria-label="Tickets"
-            style={{ width: table.getTotalSize() }}
+            style={{ "--table-width": `${table.getTotalSize()}px` }}
           >
-            <thead role="rowgroup">
+            <TableHeader role="rowgroup">
               {table.getHeaderGroups().map((group) => (
-                <tr key={group.id} role="row">
+                <TableRow key={group.id} role="row">
                   {group.headers.map((header) => (
-                    <th
+                    <TableHead
                       key={header.id}
                       role="columnheader"
                       scope="col"
@@ -347,7 +387,8 @@ export function TicketList({
                     >
                       <table.FlexRender header={header} />
                       {header.column.getCanResize() && (
-                        <button
+                        <Button
+                          variant="ghost"
                           className="resizer"
                           aria-label={`Resize ${header.id} column`}
                           onMouseDown={header.getResizeHandler()}
@@ -366,16 +407,16 @@ export function TicketList({
                           }}
                         />
                       )}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </thead>
-            <tbody role="rowgroup">
+            </TableHeader>
+            <TableBody role="rowgroup">
               {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} role="row" data-selected={row.getIsSelected()}>
+                <TableRow key={row.id} role="row" data-selected={row.getIsSelected()}>
                   {row.getAllCells().map((cell) => (
-                    <td
+                    <TableCell
                       key={cell.id}
                       role="cell"
                       data-column={cell.column.id}
@@ -386,24 +427,25 @@ export function TicketList({
                       }
                     >
                       <table.FlexRender cell={cell} />
-                    </td>
+                    </TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-          {tickets.data?.total === 0 && <p className="empty">No matching tickets</p>}
+            </TableBody>
+          </Table>
+          {tickets.data?.total === 0 && <EmptyState title="No matching tickets" />}
         </div>
       )}
       <footer className="pagination">
         <span>
-          {tickets.data?.total ?? 0} tickets · {search.offset + 1}–
+          {tickets.data?.total ?? 0} tickets · {tickets.data?.total ? search.offset + 1 : 0}–
           {search.offset + (tickets.data?.items.length ?? 0)}
         </span>
         <Button
           disabled={search.offset === 0}
           onClick={() => onSearch({ ...search, offset: Math.max(0, search.offset - 50) })}
         >
+          <ArrowLeft />
           Previous
         </Button>
         <Button
@@ -411,6 +453,7 @@ export function TicketList({
           onClick={() => onSearch({ ...search, offset: search.offset + 50 })}
         >
           Next
+          <ArrowRight />
         </Button>
       </footer>
       <Modal title="New ticket" open={createOpen} onOpenChange={setCreateOpen}>

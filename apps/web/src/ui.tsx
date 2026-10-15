@@ -1,87 +1,217 @@
-import { useId, useState, type ComponentProps, type ReactNode } from "react";
-import { Dialog } from "@base-ui/react/dialog";
-import { X } from "lucide-react";
+import {
+  Children,
+  isValidElement,
+  useId,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import {
+  AlertCircle,
+  Circle,
+  CircleCheck,
+  CircleDashed,
+  CircleDot,
+  Clock,
+  XCircle,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { errorMessage, stateLabels, stateTones, type Ticket } from "@kanvil/contracts";
+import { errorMessage, stateLabels, type Ticket } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input as TextInput } from "@/components/ui/input";
+import { Textarea as TextareaInput } from "@/components/ui/textarea";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select as SelectRoot,
+  SelectContent,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyHeader, EmptyTitle, EmptyMedia } from "@/components/ui/empty";
+
+export { Button } from "@/components/ui/button";
+export { SelectItem } from "@/components/ui/select";
 
 export function Brand() {
   return (
     <>
-      <svg className="brand-mark" viewBox={brandMark.viewBox} aria-hidden="true">
+      <svg
+        className="brand-mark h-6 w-9 shrink-0 text-primary"
+        viewBox={brandMark.viewBox}
+        aria-hidden="true"
+      >
         <path d={brandMark.path} fill="currentColor" />
       </svg>
-      <span>Kanvil</span>
+      <span className="brand-word text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+        Kanvil
+      </span>
     </>
   );
 }
 
-export function Button({ className = "", ...props }: ComponentProps<"button">) {
-  return <button type="button" className={`button ${className}`} {...props} />;
-}
-
-export function Input({ label, ...props }: ComponentProps<"input"> & { label: string }) {
-  const id = useId();
+export function IconButton({
+  label,
+  children,
+  ...props
+}: ComponentProps<typeof Button> & { label: string }) {
   return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <input {...props} id={id} />
-    </div>
+    <Tooltip>
+      <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={label} {...props} />}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
-export function Textarea({ label, ...props }: ComponentProps<"textarea"> & { label: string }) {
+export function Input({ label, ...props }: ComponentProps<typeof TextInput> & { label: string }) {
   const id = useId();
   return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <textarea {...props} id={id} />
-    </div>
+    <Field className="field">
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <TextInput {...props} id={id} />
+    </Field>
+  );
+}
+export function Textarea({
+  label,
+  ...props
+}: ComponentProps<typeof TextareaInput> & { label: string }) {
+  const id = useId();
+  return (
+    <Field className="field">
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <TextareaInput {...props} id={id} />
+    </Field>
   );
 }
 export function Select({
   label,
   children,
+  className,
   ...props
-}: ComponentProps<"select"> & { label: string }) {
+}: Omit<ComponentProps<typeof SelectRoot<string>>, "children" | "items"> & {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   const id = useId();
+  const items = Children.toArray(children).flatMap((child) =>
+    isValidElement<{ value: string; children: ReactNode }>(child)
+      ? [{ value: child.props.value, label: child.props.children }]
+      : [],
+  );
   return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <select {...props} id={id}>
-        {children}
-      </select>
-    </div>
+    <Field className={cn("field", className)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <SelectRoot items={items} defaultValue={items[0]?.value ?? ""} {...props}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>{children}</SelectContent>
+      </SelectRoot>
+    </Field>
   );
 }
-export function Check({ label, ...props }: ComponentProps<"input"> & { label: string }) {
+export function Check({
+  label,
+  className,
+  ...props
+}: ComponentProps<typeof Checkbox> & { label: string }) {
+  const id = useId();
+  const compact = className === "sr-checkbox";
   return (
-    <label className="check">
-      <input type="checkbox" {...props} />
-      <span>{label}</span>
-    </label>
+    <Field orientation="horizontal" className={cn("check w-auto", compact && "justify-center")}>
+      <Checkbox {...props} id={id} />
+      <FieldLabel htmlFor={id} className={cn("font-normal", compact && "sr-only")}>
+        {label}
+      </FieldLabel>
+    </Field>
   );
 }
 export function ErrorNotice({ error }: { error: unknown }) {
   return error ? (
-    <p role="alert" className="error">
-      {errorMessage(error)}
-    </p>
+    <Alert variant="destructive" className="my-3">
+      <AlertCircle />
+      <AlertDescription>{errorMessage(error)}</AlertDescription>
+    </Alert>
   ) : null;
 }
 export function Loading() {
   return (
-    <p className="muted" role="status">
-      Loading…
-    </p>
+    <div role="status" className="space-y-4 py-5">
+      <span className="sr-only">Loading…</span>
+      <Skeleton className="h-6 w-40" />
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-12 w-3/4" />
+    </div>
   );
 }
-export function Status({ value }: { value: Ticket["status"] }) {
+export function EmptyState({
+  title,
+  icon: Icon = CircleDashed,
+  children,
+}: {
+  title: string;
+  icon?: typeof CircleDashed;
+  children?: ReactNode;
+}) {
   return (
-    <span className="status" style={{ color: `var(--${stateTones[value]})` }}>
-      <span aria-hidden="true">●</span>
+    <Empty className="py-20">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icon />
+        </EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+      </EmptyHeader>
+      {children}
+    </Empty>
+  );
+}
+const statusPresentation = {
+  backlog: { icon: CircleDashed, color: "text-muted-foreground" },
+  todo: { icon: Circle, color: "text-muted-foreground" },
+  in_progress: { icon: CircleDot, color: "text-primary" },
+  in_review: { icon: Clock, color: "text-[var(--warning)]" },
+  done: { icon: CircleCheck, color: "text-[var(--success)]" },
+  cancelled: { icon: XCircle, color: "text-muted-foreground" },
+};
+export function Status({ value }: { value: Ticket["status"] }) {
+  const { icon: Icon, color } = statusPresentation[value];
+  return (
+    <Badge
+      variant="outline"
+      className={cn("status gap-1.5 border-transparent bg-transparent px-0 font-normal", color)}
+    >
+      <Icon className="size-3.5" />
       {stateLabels[value]}
-    </span>
+    </Badge>
   );
 }
 const markdownComponents = {
@@ -114,24 +244,18 @@ export function Modal({
   onOpenChange?: (open: boolean) => void;
 }) {
   return (
-    <Dialog.Root
-      {...(open === undefined ? {} : { open })}
-      {...(onOpenChange ? { onOpenChange } : {})}
-    >
-      {trigger && <Dialog.Trigger className="button">{trigger}</Dialog.Trigger>}
-      <Dialog.Portal>
-        <Dialog.Backdrop className="backdrop" />
-        <Dialog.Popup className="dialog">
-          <header>
-            <Dialog.Title>{title}</Dialog.Title>
-            <Dialog.Close className="button icon" aria-label="Close">
-              <X size={20} />
-            </Dialog.Close>
-          </header>
-          {children}
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog {...(open === undefined ? {} : { open })} {...(onOpenChange ? { onOpenChange } : {})}>
+      {trigger && <DialogTrigger render={<Button variant="outline" />}>{trigger}</DialogTrigger>}
+      <DialogContent
+        className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl"
+        aria-describedby={undefined}
+      >
+        <DialogHeader className="mb-2">
+          <DialogTitle className="text-lg">{title}</DialogTitle>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 export function Confirm({
@@ -139,27 +263,40 @@ export function Confirm({
   description,
   onConfirm,
   danger = false,
+  icon,
 }: {
   label: string;
   description: string;
   onConfirm: () => Promise<unknown>;
   danger?: boolean;
+  icon?: ReactNode;
 }) {
   const [open, setOpen] = useState(false),
     [pending, setPending] = useState(false),
     [error, setError] = useState<unknown>();
   return (
-    <>
-      <Button className={danger ? "danger" : ""} onClick={() => setOpen(true)}>
-        {label}
-      </Button>
-      <Modal title={label} open={open} onOpenChange={setOpen}>
-        <p>{description}</p>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          icon ? (
+            <IconButton label={label} />
+          ) : (
+            <Button variant={danger ? "destructive" : "outline"} />
+          )
+        }
+      >
+        {icon ?? label}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{label}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
         <ErrorNotice error={error} />
-        <div className="actions">
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button
-            className={danger ? "danger" : "primary"}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant={danger ? "destructive" : "default"}
             disabled={pending}
             onClick={() => {
               setPending(true);
@@ -171,9 +308,9 @@ export function Confirm({
             }}
           >
             {pending ? "Working…" : label}
-          </Button>
-        </div>
-      </Modal>
-    </>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

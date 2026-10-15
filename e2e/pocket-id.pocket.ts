@@ -1,3 +1,4 @@
+import { signOut } from "./controls.ts";
 import { test, expect } from "@playwright/test";
 import { z } from "zod";
 import { signIn, ownerEmail } from "./auth.ts";
@@ -58,7 +59,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     await expect(
       page.getByText("Account linked. You can sign in with PocketID.", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
     await page.context().clearCookies({ name: "access_token" });
     await page.context().clearCookies({ name: "session" });
@@ -70,7 +71,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
       await (await page.request.get("/api/auth/get-session")).json(),
     );
     expect(after.user.id).toBe(before.user.id);
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
     await signIn(page);
     const local = sessionSchema.parse(

@@ -1,3 +1,4 @@
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   createTicketDraft,
   ticketDraftSchema,
@@ -18,7 +19,16 @@ import {
   type Ticket,
 } from "@kanvil/contracts";
 import { api, useIdentity, useOperation } from "./data.tsx";
-import { Button, Check, ErrorNotice, Input, Markdown, Select, Textarea } from "./ui.tsx";
+import {
+  Button,
+  Check,
+  ErrorNotice,
+  Input,
+  Markdown,
+  Select,
+  SelectItem,
+  Textarea,
+} from "./ui.tsx";
 
 export function TicketEditor({
   projectId,
@@ -123,59 +133,60 @@ export function TicketEditor({
         <Select
           label="Status"
           value={fields.status}
-          onChange={(event) => set("status", z.enum(states).parse(event.target.value))}
+          onValueChange={(value) => set("status", z.enum(states).parse(value ?? ""))}
         >
           {states.map((state) => (
-            <option key={state} value={state}>
+            <SelectItem key={state} value={state}>
               {stateLabels[state]}
-            </option>
+            </SelectItem>
           ))}
         </Select>
         <Select
           label="Priority"
           value={fields.priority}
-          onChange={(event) => set("priority", z.enum(priorities).parse(event.target.value))}
+          onValueChange={(value) => set("priority", z.enum(priorities).parse(value ?? ""))}
         >
           {priorities.map((priority) => (
-            <option key={priority} value={priority}>
+            <SelectItem key={priority} value={priority}>
               {priorityLabels[priority]}
-            </option>
+            </SelectItem>
           ))}
         </Select>
         <Select
           label="Kind"
           value={fields.kind}
-          onChange={(event) => set("kind", z.enum(kinds).parse(event.target.value))}
+          onValueChange={(value) => set("kind", z.enum(kinds).parse(value ?? ""))}
         >
           {kinds.map((kind) => (
-            <option key={kind}>{kind}</option>
+            <SelectItem key={kind} value={kind}>
+              {kind}
+            </SelectItem>
           ))}
         </Select>
         <Select
           label="Difficulty"
           value={fields.difficulty ?? ""}
-          onChange={(event) =>
-            set(
-              "difficulty",
-              event.target.value ? z.enum(difficulties).parse(event.target.value) : null,
-            )
+          onValueChange={(value) =>
+            set("difficulty", (value ?? "") ? z.enum(difficulties).parse(value ?? "") : null)
           }
         >
-          <option value="">Unspecified</option>
+          <SelectItem value="">Unspecified</SelectItem>
           {difficulties.map((difficulty) => (
-            <option key={difficulty}>{difficulty}</option>
+            <SelectItem key={difficulty} value={difficulty}>
+              {difficulty}
+            </SelectItem>
           ))}
         </Select>
         <Select
           label="Assignee"
           value={fields.assigneeId ?? ""}
-          onChange={(event) => set("assigneeId", event.target.value || null)}
+          onValueChange={(value) => set("assigneeId", value || null)}
         >
-          <option value="">Unassigned</option>
+          <SelectItem value="">Unassigned</SelectItem>
           {members.data?.map((member) => (
-            <option key={member.userId} value={member.userId}>
+            <SelectItem key={member.userId} value={member.userId}>
               {member.name}
-            </option>
+            </SelectItem>
           ))}
         </Select>
         <Input
@@ -201,20 +212,22 @@ export function TicketEditor({
           }}
         />
       </div>
-      <div className="actions">
-        <Button aria-pressed={preview} onClick={() => setPreview(!preview)}>
-          {preview ? "Edit Markdown" : "Preview Markdown"}
-        </Button>
-      </div>
-      {preview ? (
-        <>
+      <Tabs
+        value={preview ? "preview" : "write"}
+        onValueChange={(value) => setPreview(value === "preview")}
+        className="mb-5"
+      >
+        <TabsList>
+          <TabsTrigger value="write">Write</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
+        </TabsList>
+        <TabsContent value="preview" className="py-3">
           <h3>Description</h3>
           <Markdown>{fields.description || "_No description_"}</Markdown>
           <h3>Acceptance criteria</h3>
           <Markdown>{fields.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
-        </>
-      ) : (
-        <>
+        </TabsContent>
+        <TabsContent value="write" className="pt-3">
           <Textarea
             label="Description (Markdown)"
             rows={7}
@@ -229,12 +242,12 @@ export function TicketEditor({
             value={fields.acceptanceCriteria}
             onChange={(event) => set("acceptanceCriteria", event.target.value)}
           />
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
       <Check
         label="Ready for agents when requirements and dependencies permit"
         checked={fields.automationReady}
-        onChange={(event) => set("automationReady", event.target.checked)}
+        onCheckedChange={(checked) => set("automationReady", checked)}
       />
       <Input
         label="Hold reason"
@@ -246,7 +259,7 @@ export function TicketEditor({
         <small className="muted">Draft saved on this device</small>
         <Button
           type="submit"
-          className="primary"
+          variant="default"
           disabled={create.isPending || update.isPending || !!stale}
         >
           Save ticket

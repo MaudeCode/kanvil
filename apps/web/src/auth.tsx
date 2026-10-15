@@ -74,7 +74,7 @@ export function Login() {
           autoComplete={info.data?.setupRequired ? "new-password" : "current-password"}
           required
         />
-        <Button type="submit" className="primary" disabled={pending}>
+        <Button type="submit" variant="default" disabled={pending}>
           {pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"}
         </Button>
       </form>
@@ -157,7 +157,7 @@ export function Consent() {
           Deny
         </Button>
         <Button
-          className="primary"
+          variant="default"
           disabled={pending || !client.data}
           onClick={() => {
             void consent(true);

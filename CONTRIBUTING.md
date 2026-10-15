@@ -41,3 +41,11 @@ The single CI job runs on pull requests and pushes to `main`. Dependency updates
 Native setup, session storage, deep links, and validation commands are in [docs/mobile.md](docs/mobile.md). `pnpm mobile:export` checks both native JavaScript bundles. Regenerate web and native brand assets with `pnpm assets:generate`; [branding](docs/branding.md) lists their shared source and consumers.
 
 `pnpm test:docker` builds and verifies an isolated self-hosting image, including database restoration and attachment bytes. Operator instructions are in [docs/self-hosting.md](docs/self-hosting.md).
+
+## Web UI
+
+The web app uses Tailwind v4 and the Base UI version of [shadcn/ui](https://ui.shadcn.com/docs). Its registry configuration is in `apps/web/components.json`. Add components with `pnpm --filter @kanvil/web exec shadcn add <component>`, then format and validate the generated code against this repository's TypeScript and lint rules.
+
+Reuse `apps/web/src/components/ui` for interaction primitives and `src/ui.tsx` for labeled fields, icon actions, Markdown, and confirmation flows. Keep these shared components instead of introducing page-specific button, input, menu, or dialog implementations. The workspace uses shadcn's inset Sidebar with icon collapse, its keyboard shortcut, and its mobile Sheet. Application compositions live in `src/components`.
+
+Appearance uses shadcn's semantic CSS variables in `src/style.css`. `ThemeProvider` persists the light/dark/system mode and color theme; both the header menu and Settings use that same provider. Add colors through these tokens so dialogs, menus, inputs, and navigation stay consistent. Browser tests cover theme persistence, system appearance, sidebar collapse, keyboard navigation, and the mobile sidebar.

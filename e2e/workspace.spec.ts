@@ -1,3 +1,4 @@
+import { choose, signOut } from "./controls.ts";
 import { test, expect } from "@playwright/test";
 
 import { signIn } from "./auth.ts";
@@ -60,9 +61,15 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page
     .getByLabel("Acceptance criteria (Markdown)")
     .fill("- [ ] Titles wrap\n- [ ] Changes appear live");
-  await page.getByLabel("Difficulty", { exact: true }).selectOption("med");
+  await page.getByRole("tab", { name: "Preview", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Context", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Write", exact: true }).click();
+  await expect(page.getByLabel("Description (Markdown)", { exact: true })).toHaveValue(
+    "## Context\nKeep the complete title readable.",
+  );
+  await choose(page, "Difficulty", "med");
   await page.getByLabel("Labels (comma separated)").fill("web, agents");
-  await page.getByLabel("Ready for agents").check();
+  await page.getByRole("checkbox", { name: /Ready for agents/ }).check();
   await page.getByRole("button", { name: "Save ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const link = page.getByRole("link", { name: title, exact: true });
@@ -83,8 +90,10 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page.getByLabel("Comment (Markdown)").fill("Verified through the browser.");
   await page.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(page.getByText("Verified through the browser.", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
-  await page.getByLabel("Edit comment", { exact: true }).fill("My unsaved comment draft");
+  await page.getByRole("button", { name: "Edit comment", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Edit comment", exact: true })
+    .fill("My unsaved comment draft");
   const comments = await (
     await page.request.get(`/api/v1/projects/${projectId}/tickets/${ticketId}/comments`)
   ).json();
@@ -96,7 +105,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   expect(remoteComment.status()).toBe(200);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("comment changed");
-  await expect(page.getByLabel("Edit comment", { exact: true })).toHaveValue(
+  await expect(page.getByRole("textbox", { name: "Edit comment", exact: true })).toHaveValue(
     "My unsaved comment draft",
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -107,6 +116,13 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     buffer: Buffer.from("attachment proof"),
   });
   await page.getByRole("button", { name: "Upload", exact: true }).click();
+  await expect(page.getByRole("link", { name: "proof.txt", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Remove attachment", exact: true }).click();
+  await expect(
+    page.getByRole("alertdialog", { name: "Remove attachment", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "proof.txt", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit ticket", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Local unsaved draft");
@@ -142,7 +158,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page.getByLabel("Search tickets", { exact: true }).fill("Changed by another agent");
   await expect(page.getByRole("row")).toHaveCount(2);
   await page.getByRole("checkbox", { name: "Select KAN-1", exact: true }).check();
-  await page.getByLabel("New status", { exact: true }).selectOption("in_review");
+  await choose(page, "New status", "In review");
   await page.getByRole("button", { name: "Apply status", exact: true }).click();
   await expect(page.getByRole("cell", { name: "In review", exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Save current view", exact: true }).click();
@@ -151,11 +167,12 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await expect(page.getByText("View saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("button", { name: "Agent edits", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "All tickets", exact: true }).click();
+  await page.getByRole("tab", { name: "All tickets", exact: true }).click();
   await expect(page.getByRole("row")).toHaveCount(51);
   await page.getByRole("button", { name: "Agent edits", exact: true }).click();
   await expect(page.getByRole("row")).toHaveCount(2);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   const inboxPreference = page.getByRole("checkbox", {
     name: "Subscribed ticket updates in Inbox",
     exact: true,
@@ -164,9 +181,11 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await inboxPreference.click();
   await expect(inboxPreference).not.toBeChecked();
   await page.reload();
+  await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   await expect(inboxPreference).not.toBeChecked();
   await inboxPreference.click();
   await expect(inboxPreference).toBeChecked();
+  await page.getByRole("tab", { name: "Credentials", exact: true }).click();
   await page.getByLabel("Credential name").fill("Read-only agent");
   await page.getByRole("checkbox", { name: "Kanvil development", exact: true }).check();
   await page.getByRole("button", { name: "Create credential", exact: true }).click();
@@ -178,8 +197,8 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   expect(apiRead.status()).toBe(200);
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await page.getByRole("button", { name: "Revoke", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("alertdialog").getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   const revoked = await page.request.get(`/api/v1/projects/${projectId}/tickets`, {
     headers: { Authorization: `Bearer ${key}` },
   });
@@ -190,7 +209,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     page.getByRole("heading", { name: "Changed by another agent", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: "test-results/ticket-mobile-web.png", fullPage: true });
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
   expect(
     await page.evaluate(() =>

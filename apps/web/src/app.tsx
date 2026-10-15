@@ -1,5 +1,4 @@
-import { formText } from "./forms.ts";
-import { lazy, Suspense, useContext, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
@@ -11,26 +10,31 @@ import {
   Outlet,
   RouterProvider,
   useNavigate,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { Bell, FolderOpen, Settings, Plus, LogOut, Layers, ChevronRight } from "lucide-react";
+import { ChevronRight, WifiOff, FolderOpen } from "lucide-react";
 import { formatEvent, notificationsSchema, okSchema } from "@kanvil/contracts";
 import { searchSchema } from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
+import { api, auth, date, Identity, useLive, useProjects } from "./data.tsx";
+import { Button, EmptyState, ErrorNotice, Loading } from "./ui.tsx";
+import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
+import { CreateProject } from "./components/create-project.tsx";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { ThemeProvider } from "./components/theme-provider.tsx";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  api,
-  auth,
-  clearPrivateStorage,
-  date,
-  Identity,
-  useIdentity,
-  useLive,
-  useOperation,
-  useProjects,
-  useTheme,
-  ThemeContext,
-} from "./data.tsx";
-import { Brand, Button, ErrorNotice, Input, Loading, Modal, Select, Textarea } from "./ui.tsx";
+  Item,
+  ItemGroup,
+  ItemMedia,
+  ItemContent,
+  ItemTitle,
+  ItemDescription,
+  ItemActions,
+} from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
 
 const TicketList = lazy(() =>
   import("./ticket-list.tsx").then((module) => ({ default: module.TicketList })),
@@ -89,100 +93,28 @@ function Workspace({
   );
 }
 function Shell() {
-  const projects = useProjects(),
-    identity = useIdentity(),
-    cache = useQueryClient(),
-    connection = useLive(),
-    theme = useContext(ThemeContext);
-  const [error, setError] = useState<unknown>();
-  async function logout() {
-    const result = await auth.signOut();
-    if (result.error) throw new Error(result.error.message);
-    cache.clear();
-    clearPrivateStorage(identity.id);
-    window.location.assign("/login");
-  }
+  const connection = useLive();
   return (
-    <div className="workspace">
+    <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <aside className="sidebar">
-        <Link to="/" className="brand">
-          <Brand />
-        </Link>
-        <nav aria-label="Workspace">
-          <Link to="/" activeOptions={{ exact: true }}>
-            <Layers size={18} />
-            All projects
-          </Link>
-          <Link to="/inbox">
-            <Bell size={18} />
-            Inbox
-          </Link>
-          <div className="nav-heading">
-            Projects
-            <CreateProject icon />
-          </div>
-          {projects.data?.map((project) => (
-            <Link key={project.id} to="/projects/$projectId" params={{ projectId: project.id }}>
-              <FolderOpen size={17} />
-              <span>{project.name}</span>
-              <small>{project.key}</small>
-            </Link>
-          ))}
-          <ErrorNotice error={projects.error} />
-        </nav>
-        <div className="account-nav">
-          <p className="connection" role="status">
-            <span data-connected={connection === "connected"}>●</span>{" "}
-            {connection === "connected" ? "Live" : connection}
-          </p>
-          <Link to="/settings">
-            <Settings size={18} />
-            Settings
-          </Link>
-          <Select
-            label="Theme"
-            value={theme.mode}
-            onChange={(event) =>
-              theme.setMode(
-                event.target.value === "dark"
-                  ? "dark"
-                  : event.target.value === "light"
-                    ? "light"
-                    : "system",
-              )
-            }
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </Select>
-          <div className="account">
-            <span className="account-person">
-              <span className="avatar" aria-hidden="true">
-                {identity.name.slice(0, 1)}
-              </span>
-              {identity.name}
-            </span>
-            <Button
-              className="icon"
-              aria-label="Sign out"
-              onClick={() => {
-                void logout().catch(setError);
-              }}
-            >
-              <LogOut size={18} />
-            </Button>
-          </div>
-          <ErrorNotice error={error} />
+      <AppSidebar />
+      <SidebarInset className="min-w-0">
+        <WorkspaceHeader />
+        {connection !== "connected" && connection !== "connecting" && (
+          <Alert className="mx-6 mt-4 w-auto">
+            <WifiOff />
+            <AlertDescription>
+              {connection === "offline" ? "Connection lost. Reconnecting…" : connection}
+            </AlertDescription>
+          </Alert>
+        )}
+        <div id="main" className="content" tabIndex={-1}>
+          <Outlet />
         </div>
-      </aside>
-      <main id="main" className="content" tabIndex={-1}>
-        <Outlet />
-      </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 function Home() {
@@ -197,69 +129,38 @@ function Home() {
       {projects.isPending ? (
         <Loading />
       ) : (
-        <div className="project-list">
+        <ItemGroup className="project-list gap-0">
           {projects.data?.map((project) => (
-            <Link key={project.id} to="/projects/$projectId" params={{ projectId: project.id }}>
-              <span className="key">{project.key}</span>
-              <strong>{project.name}</strong>
-              <span className="muted">{project.description}</span>
-              <ChevronRight size={18} aria-hidden="true" />
-            </Link>
+            <Item
+              key={project.id}
+              className="rounded-none border-x-0 border-t-0 border-b-border py-5"
+              render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
+            >
+              <ItemMedia>
+                <Badge variant="secondary" className="project-key">
+                  {project.key}
+                </Badge>
+              </ItemMedia>
+              <ItemContent className="min-w-0">
+                <ItemTitle className="line-clamp-none wrap-anywhere">{project.name}</ItemTitle>
+                {project.description && (
+                  <ItemDescription className="line-clamp-none">
+                    {project.description}
+                  </ItemDescription>
+                )}
+              </ItemContent>
+              <ItemActions>
+                <ChevronRight size={16} aria-hidden="true" className="text-muted-foreground" />
+              </ItemActions>
+            </Item>
           ))}
-          {projects.data?.length === 0 && <p className="empty">No projects yet</p>}
-        </div>
+          {projects.data?.length === 0 && (
+            <EmptyState title="No projects yet" icon={FolderOpen}>
+              <CreateProject />
+            </EmptyState>
+          )}
+        </ItemGroup>
       )}
-    </>
-  );
-}
-function CreateProject({ icon = false }: { icon?: boolean }) {
-  const [open, setOpen] = useState(false),
-    create = useOperation("create_project"),
-    navigate = useNavigate();
-  return (
-    <>
-      <Button
-        className={icon ? "icon" : "primary"}
-        aria-label="New project"
-        onClick={() => setOpen(true)}
-      >
-        {icon ? <Plus size={18} /> : "New project"}
-      </Button>
-      <Modal title="New project" open={open} onOpenChange={setOpen}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const values = new FormData(event.currentTarget);
-            void create
-              .mutateAsync({
-                key: formText(values, "key"),
-                name: formText(values, "name"),
-                description: formText(values, "description"),
-              })
-              .then(async (project) => {
-                setOpen(false);
-                await navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
-              })
-              .catch(() => {});
-          }}
-        >
-          <Input label="Project name" name="name" required maxLength={120} />
-          <Input
-            label="Permanent ticket prefix"
-            name="key"
-            required
-            minLength={2}
-            maxLength={10}
-            pattern="[A-Z][A-Z0-9]{1,9}"
-            placeholder="KAN"
-          />
-          <Textarea label="Description" name="description" maxLength={5000} />
-          <ErrorNotice error={create.error} />
-          <Button type="submit" className="primary" disabled={create.isPending}>
-            Create project
-          </Button>
-        </form>
-      </Modal>
     </>
   );
 }
@@ -311,24 +212,31 @@ function Inbox() {
           </li>
         ))}
       </ol>
-      {items.data?.length === 0 && <p className="empty">No notifications</p>}
+      {items.data?.length === 0 && <EmptyState title="No notifications" />}
     </>
+  );
+}
+function NotFoundPage() {
+  return (
+    <main className="mx-auto max-w-lg p-6">
+      <EmptyState title="Page not found">
+        <Button render={<Link to="/" />}>Open projects</Button>
+      </EmptyState>
+    </main>
+  );
+}
+function RouteError({ error, reset }: ErrorComponentProps) {
+  return (
+    <main className="mx-auto max-w-lg p-6">
+      <ErrorNotice error={error} />
+      <Button onClick={reset}>Try again</Button>
+    </main>
   );
 }
 const root = createRootRoute({
   component: Root,
-  notFoundComponent: () => (
-    <main className="empty">
-      <h1>Page not found</h1>
-      <Link to="/">Open projects</Link>
-    </main>
-  ),
-  errorComponent: ({ error, reset }) => (
-    <main>
-      <ErrorNotice error={error} />
-      <Button onClick={reset}>Try again</Button>
-    </main>
-  ),
+  notFoundComponent: NotFoundPage,
+  errorComponent: RouteError,
 });
 const shell = createRoute({ getParentRoute: () => root, id: "workspace", component: Shell });
 const home = createRoute({ getParentRoute: () => shell, path: "/", component: Home });
@@ -415,14 +323,15 @@ declare module "@tanstack/react-router" {
 }
 const publicCache = new QueryClient();
 export function App() {
-  const theme = useTheme();
   return (
-    <ThemeContext value={theme}>
-      <QueryClientProvider client={publicCache}>
-        <Suspense fallback={<Loading />}>
-          <RouterProvider router={router} />
-        </Suspense>
-      </QueryClientProvider>
-    </ThemeContext>
+    <ThemeProvider>
+      <TooltipProvider delay={300}>
+        <QueryClientProvider client={publicCache}>
+          <Suspense fallback={<Loading />}>
+            <RouterProvider router={router} />
+          </Suspense>
+        </QueryClientProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }
