@@ -237,7 +237,7 @@ export const collaborationHandlers: Pick<
   },
   async add_evidence(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    await assertWorkerClaim(ctx, ticket.id, input.claimId);
+    await assertWorkerClaim(ctx, ticket, input.claimId);
     const row = requireRow(
       (
         await ctx.db

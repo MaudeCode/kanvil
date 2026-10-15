@@ -188,17 +188,27 @@ export async function publish(
   await ctx.db.execute(sql`SELECT pg_notify('kanvil_events', ${event.id.toString()})`);
   return event;
 }
-export async function assertWorkerClaim(ctx: Context, ticketId: string, claimId?: string) {
+export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
+  return (
+    claim.ownerId === ctx.actor.ownerId &&
+    claim.expiresAt > new Date() &&
+    hasScope(ctx.actor, "claim") &&
+    ctx.role !== "reader"
+  );
+}
+export async function assertWorkerClaim(
+  ctx: Context,
+  ticket: typeof tickets.$inferSelect,
+  claimId?: string,
+) {
   if (!ctx.actor.machine) return;
   const claim = (
-    await ctx.db.select().from(claims).where(eq(claims.ticketId, ticketId)).limit(1)
+    await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id)).limit(1)
   )[0];
-  if (
-    claim &&
-    (claim.id !== claimId || claim.ownerId !== ctx.actor.ownerId || claim.expiresAt <= new Date())
-  )
+  if (claim && (claim.id !== claimId || !ownsLiveClaim(ctx, claim)))
     fail(409, "claim_conflict", "An active matching claim is required for this worker write");
-  if (claimId && !claim) fail(409, "claim_conflict", "This claim is no longer current");
+  if (!claim && (claimId || ticket.claimRequired))
+    fail(409, "claim_conflict", "This ticket requires current ownership for worker writes");
 }
 
 export function createDomain(database: Database) {

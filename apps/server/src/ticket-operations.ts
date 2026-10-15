@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-
 import { claims, members, projects, relations, subscriptions, tickets } from "./schema.ts";
 import {
   assertWorkerClaim,
+  ownsLiveClaim,
   complete,
   fail,
   getTicket,
@@ -126,7 +127,7 @@ async function update(ctx: Context, input: ParsedInput<"update_ticket">) {
     fail(409, "version_conflict", "The ticket changed; reload before editing", {
       currentVersion: current.version,
     });
-  await assertWorkerClaim(ctx, current.id, input.claimId);
+  await assertWorkerClaim(ctx, current, input.claimId);
   await validateReferences(ctx, current.id, input.changes);
   const row = requireRow(
     (
@@ -209,8 +210,11 @@ export const ticketHandlers: Pick<
   },
   async get_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
+    const claim =
+      (await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id)))[0] ?? null;
     return {
       ticket,
+      canReleaseClaim: claim ? ownsLiveClaim(ctx, claim) : false,
       subscribed:
         (
           await ctx.db
@@ -221,7 +225,7 @@ export const ticketHandlers: Pick<
             )
         ).length > 0,
       readiness: await readiness(ctx, ticket),
-      claim: (await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id)))[0] ?? null,
+      claim,
     };
   },
   async create_ticket(ctx, input) {
@@ -340,7 +344,12 @@ export const ticketHandlers: Pick<
       (
         await ctx.db
           .update(tickets)
-          .set({ status: "in_progress", version: ticket.version + 1, updatedAt: new Date() })
+          .set({
+            status: "in_progress",
+            claimRequired: true,
+            version: ticket.version + 1,
+            updatedAt: new Date(),
+          })
           .where(eq(tickets.id, ticket.id))
           .returning()
       )[0],
@@ -362,7 +371,7 @@ export const ticketHandlers: Pick<
           .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id)))
       )[0],
     );
-    if (current.ownerId !== ctx.actor.ownerId || current.expiresAt <= new Date())
+    if (!ownsLiveClaim(ctx, current))
       fail(409, "claim_conflict", "Only the current worker can renew an unexpired claim");
     const claim = requireRow(
       (
@@ -389,8 +398,12 @@ export const ticketHandlers: Pick<
           .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id)))
       )[0],
     );
-    if (current.ownerId !== ctx.actor.ownerId)
-      fail(403, "forbidden", "Only the owning worker can release this claim");
+    if (!ownsLiveClaim(ctx, current))
+      fail(
+        409,
+        "claim_conflict",
+        "Only the owning worker can release an unexpired claim. Expired claims require administrator recovery.",
+      );
     await ctx.db.delete(claims).where(eq(claims.id, current.id));
     await publish(ctx, "claim.released", ticket.id, { claimId: current.id });
     return { ok: true };

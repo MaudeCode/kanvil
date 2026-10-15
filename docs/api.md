@@ -14,7 +14,7 @@ Use the ticket's current `version` as `expectedVersion` for updates. A stale ver
 
 Reuse the same UUID `requestId` when retrying a write. Reusing it with a different operation or payload returns `409 idempotency_conflict`. Bulk edits either all commit or all roll back.
 
-Claims require an eligible ticket and current version. Successful claiming moves it to In progress. Renew an unexpired claim using its ID and the same credential. Worker ticket updates and evidence submissions must include the active claim ID while ownership exists. Release ownership after the worker stops or completes. An expired claim remains blocking until a project administrator confirms the old worker stopped and explicitly recovers it; recovery does not automatically reschedule work.
+Claims require an eligible ticket and current version. Successful claiming moves it to In progress. Renew an unexpired claim using its ID and the same credential. Once a ticket has been claimed, machine ticket updates and evidence submissions always require a current matching claim ID, including after release or recovery. Submit completion and evidence before releasing ownership. Human sessions can edit and reschedule work without a machine claim. Release unexpired ownership after the worker stops or completes. The ticket response exposes `canReleaseClaim` for the exact credential or client identity; sharing an account does not confer ownership. An expired claim remains blocking until a project administrator confirms the old worker stopped and explicitly recovers it; recovery does not automatically reschedule work.
 
 Evidence records identify the submitting account and supplied commit. A reported passing outcome is an assertion by that identity, not independent verification by Kanvil.
 

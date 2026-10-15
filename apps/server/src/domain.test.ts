@@ -202,6 +202,14 @@ describe("ticket operations on PostgreSQL", () => {
       "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
       [claim.id],
     );
+    const owningWorker = claim.workerId === "worker-0" ? workers[0]! : workers[1]!;
+    await expect(
+      domain.execute(
+        "release_claim",
+        { projectId: project.id, ticketId: current.id, claimId: claim.id },
+        owningWorker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
     await expect(
       domain.execute(
         "claim_ticket",
@@ -238,10 +246,78 @@ describe("ticket operations on PostgreSQL", () => {
         workers[0]!,
       ),
     ).rejects.toMatchObject({ code: "claim_conflict" });
+    await expect(
+      domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: current.id,
+          expectedVersion: 2,
+          changes: { title: "Bypass by omitting ownership token" },
+        },
+        workers[0]!,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await expect(
+      domain.execute(
+        "add_evidence",
+        {
+          projectId: project.id,
+          ticketId: current.id,
+          kind: "test",
+          title: "Stale worker evidence",
+          url: "https://example.test/proof",
+        },
+        workers[0]!,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
     expect(
       (await domain.execute("get_ticket", { projectId: project.id, ticketId: current.id }, owner))
         .ticket.status,
     ).toBe("in_progress");
+  });
+  it("reports release capability for the exact live claim identity and preserves fences after release", async () => {
+    const current = await ticket();
+    const worker = await domain.actor(owner.id, {
+      ownerId: "capability-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const readOnly = await domain.actor(owner.id, { ownerId: worker.ownerId, scopes: ["read"] });
+    const claim = await domain.execute(
+      "claim_ticket",
+      {
+        projectId: project.id,
+        ticketId: current.id,
+        expectedVersion: 1,
+        workerId: "capability-worker",
+      },
+      worker,
+    );
+    const input = { projectId: project.id, ticketId: current.id };
+    expect((await domain.execute("get_ticket", input, owner)).canReleaseClaim).toBe(false);
+    expect((await domain.execute("get_ticket", input, worker)).canReleaseClaim).toBe(true);
+    expect((await domain.execute("get_ticket", input, readOnly)).canReleaseClaim).toBe(false);
+    await domain.execute("release_claim", { ...input, claimId: claim.id }, worker);
+    expect((await domain.execute("get_ticket", input, worker)).canReleaseClaim).toBe(false);
+    await expect(
+      domain.execute(
+        "update_ticket",
+        { ...input, expectedVersion: 2, changes: { status: "done" } },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: 2, changes: { status: "todo" } },
+      owner,
+    );
+    const humanClaim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 3, workerId: "manual owner" },
+      owner,
+    );
+    expect((await domain.execute("get_ticket", input, owner)).canReleaseClaim).toBe(true);
+    await domain.execute("release_claim", { ...input, claimId: humanClaim.id }, owner);
   });
   it("enforces project membership, credential scopes, and access on idempotent replay", async () => {
     const current = await ticket();

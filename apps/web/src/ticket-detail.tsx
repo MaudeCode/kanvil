@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
-import { api, date, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
+import { api, date, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
   Check,
@@ -29,7 +29,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
   const navigate = useNavigate();
   if (result.isPending) return <Loading />;
   if (!result.data) return <ErrorNotice error={result.error} />;
-  const { ticket, readiness, claim, subscribed: following } = result.data;
+  const { ticket, readiness, claim, canReleaseClaim, subscribed: following } = result.data;
   return (
     <>
       <header className="page-header">
@@ -96,7 +96,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
               Claimed by <strong>{claim.workerId}</strong> until {date(claim.expiresAt)}.
             </p>
           )}
-          {claim && <ClaimActions ticket={ticket} claim={claim} />}
+          {claim && <ClaimActions ticket={ticket} claim={claim} canRelease={canReleaseClaim} />}
         </section>
         {ticket.parentId && (
           <p>
@@ -158,18 +158,19 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
 function ClaimActions({
   ticket,
   claim,
+  canRelease,
 }: {
   ticket: Ticket;
+  canRelease: boolean;
   claim: NonNullable<Awaited<ReturnType<typeof api.call<"get_ticket">>>["claim"]>;
 }) {
   const release = useOperation("release_claim"),
-    recover = useOperation("recover_claim"),
-    identity = useIdentity();
+    recover = useOperation("recover_claim");
   const [reason, setReason] = useState(""),
     [confirmed, setConfirmed] = useState(false);
   return (
     <div className="actions">
-      {identity.id === claim.actorId && (
+      {canRelease && (
         <Confirm
           label="Release my claim"
           description="Release ownership after your worker has stopped writing?"

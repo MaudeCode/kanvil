@@ -90,6 +90,7 @@ export const projectSchema = z.object({
   updatedAt: timestamp,
 });
 export const ticketSchema = ticketFields.extend({
+  claimRequired: z.boolean(),
   id: z.uuid(),
   projectId: z.uuid(),
   key: z.string(),
@@ -297,6 +298,7 @@ export const operations = {
       readiness: readinessSchema,
       claim: claimSchema.nullable(),
       subscribed: z.boolean(),
+      canReleaseClaim: z.boolean(),
     }),
     "GET",
     "/projects/{projectId}/tickets/{ticketId}",

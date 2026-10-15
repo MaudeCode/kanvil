@@ -67,6 +67,7 @@ export const tickets = pgTable(
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     parentId: uuid("parent_id"),
     automationReady: boolean("automation_ready").notNull().default(false),
+    claimRequired: boolean("claim_required").notNull().default(false),
     holdReason: text("hold_reason"),
     archived: boolean("archived").notNull().default(false),
     createdBy: text("created_by")
