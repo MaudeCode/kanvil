@@ -40,7 +40,7 @@ export function MarkdownField({
           <InputGroup
             className={
               variant === "document"
-                ? "rounded-none border-0 bg-transparent dark:bg-transparent"
+                ? "rounded-none border-0 bg-transparent dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0"
                 : undefined
             }
           >
@@ -48,7 +48,7 @@ export function MarkdownField({
               id={id}
               className={
                 variant === "document"
-                  ? "field-sizing-content max-h-none resize-y px-1 py-3 text-base md:text-base leading-7"
+                  ? "field-sizing-content max-h-none resize-y px-1 py-3 text-base md:text-base leading-7 caret-primary"
                   : undefined
               }
               style={variant === "document" ? { minHeight: `${rows}lh` } : undefined}

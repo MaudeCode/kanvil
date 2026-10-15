@@ -148,7 +148,7 @@ export function TicketEditor({
             maxLength={500}
             autoFocus
             placeholder="What needs to happen?"
-            className="composer-title min-h-14 resize-none border-0 bg-transparent px-1 py-1 text-2xl! font-semibold leading-snug shadow-none dark:bg-transparent"
+            className="composer-title min-h-14 resize-none border-0 bg-transparent px-1 py-1 text-2xl! font-semibold leading-snug shadow-none caret-primary focus-visible:ring-0 dark:bg-transparent"
           />
           <MarkdownField
             label="Description"

@@ -521,6 +521,12 @@
   .markdown-field[data-variant="document"] {
     @apply border-t pt-5;
   }
+  .markdown-field[data-variant="document"]:has(textarea:focus) {
+    border-top-color: var(--primary);
+  }
+  .markdown-field[data-variant="document"]:has(textarea:focus) [data-slot="field-label"] {
+    color: var(--primary);
+  }
   .markdown-field[data-variant="document"] .markdown-preview {
     @apply rounded-none border-0 bg-transparent px-1 py-3 text-base leading-7;
   }
@@ -544,6 +550,9 @@
   }
   .composer-writing > .field:first-child > [data-slot="field-label"] {
     @apply sr-only;
+  }
+  .composer-writing > .field:first-child:has(textarea:focus) {
+    box-shadow: 0 1px 0 var(--primary);
   }
   .composer-properties {
     @apply min-w-0 border-t bg-muted/20 p-6 lg:sticky lg:top-0 lg:min-h-full lg:border-l lg:border-t-0;
