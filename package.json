@@ -23,6 +23,8 @@
     "assets:generate": "node scripts/generate-assets.ts",
     "mobile:export": "pnpm --filter @kanvil/mobile export",
     "native:auth-fixture": "node scripts/native-auth-fixture.ts",
+    "example:mirror": "node --env-file-if-exists=.env examples/mirror-project.ts",
+    "example:mcp": "node --env-file-if-exists=.env examples/mcp-client.ts",
     "account:recover": "pnpm --filter @kanvil/server recover",
     "backup": "node --env-file-if-exists=.env scripts/backup.ts",
     "restore": "node --env-file-if-exists=.env scripts/restore.ts",
