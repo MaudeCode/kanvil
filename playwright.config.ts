@@ -1,6 +1,8 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
+  testMatch:
+    process.env.KANVIL_TEST_POCKET_ID === "1" ? ["**/*.spec.ts", "**/*.pocket.ts"] : "**/*.spec.ts",
   fullyParallel: false,
   workers: 1,
   use: {

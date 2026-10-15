@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const password = "test-only-owner-password-234";
+import { signIn } from "./auth.ts";
 const title =
   "Preserve complete ticket titles across the agent workspace, even when the title contains enough detail to wrap onto several readable lines";
 test("owner setup, tickets, discussion, attachments, credentials, and realtime conflicts", async ({
@@ -8,14 +8,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Create your owner account" })).toBeVisible();
-  await page.getByLabel("Name", { exact: true }).fill("Test Owner");
-  await page.getByLabel("Setup token").fill("kanvil-browser-tests-only-setup-token");
-  await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Create account", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  await signIn(page);
   await page.getByRole("button", { name: "New project", exact: true }).last().click();
   await page.getByLabel("Project name").fill("Kanvil development");
   await page.getByLabel("Permanent ticket prefix").fill("KAN");

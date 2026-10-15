@@ -19,6 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
+      pocket-id:
+        image: ghcr.io/pocket-id/pocket-id:v2.18.0@sha256:323e7ef5bfacf7cf32f22f3d10ccdf48e0c97c94d67e7e40b0b996830deb5165
+        env:
+          APP_URL: http://localhost:51411
+          ENCRYPTION_KEY: kanvil-isolated-test-encryption-key
+          STATIC_API_KEY: kanvil-isolated-test-admin-api-key
+          ANALYTICS_DISABLED: "true"
+          VERSION_CHECK_DISABLED: "true"
+          ICON_LIBRARY_URL: disabled
+        ports:
+          - 51411:1411
+        options: >-
+          --health-cmd "/app/pocket-id healthcheck"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
       postgres:
         image: postgres:18
         env:
@@ -33,6 +49,7 @@ jobs:
           --health-timeout 3s
           --health-retries 30
     env:
+      KANVIL_TEST_POCKET_ID: "1"
       TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
     steps:
       - name: Checkout

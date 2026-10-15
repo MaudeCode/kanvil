@@ -52,6 +52,7 @@ export function createAuth(database: Database, config: Config) {
                 {
                   providerId: "oidc",
                   discoveryUrl: config.OIDC_DISCOVERY_URL,
+                  requireIdTokenVerification: true,
                   clientId: config.OIDC_CLIENT_ID,
                   clientSecret: config.OIDC_CLIENT_SECRET,
                   scopes: ["openid", "profile", "email"],
