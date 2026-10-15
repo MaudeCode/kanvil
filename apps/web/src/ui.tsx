@@ -4,6 +4,18 @@ import { X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { errorMessage, stateLabels, stateTones, type Ticket } from "@kanvil/contracts";
+import { brandPath } from "@kanvil/contracts/theme";
+
+export function Brand() {
+  return (
+    <>
+      <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d={brandPath} fill="currentColor" />
+      </svg>
+      <span>Kanvil</span>
+    </>
+  );
+}
 
 export function Button({ className = "", ...props }: ComponentProps<"button">) {
   return <button type="button" className={`button ${className}`} {...props} />;

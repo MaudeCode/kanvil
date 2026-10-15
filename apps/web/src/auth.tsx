@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { infoSchema, okSchema } from "@kanvil/contracts";
 import { z } from "zod";
 import { api, auth } from "./data.tsx";
-import { Button, ErrorNotice, Input, Loading } from "./ui.tsx";
+import { Brand, Button, ErrorNotice, Input, Loading } from "./ui.tsx";
 
 export function Login() {
   const info = useQuery({
@@ -48,7 +48,7 @@ export function Login() {
   return (
     <main className="login">
       <a href="/" className="brand">
-        Kanvil<span aria-hidden="true">↗</span>
+        <Brand />
       </a>
       <h1>{info.data?.setupRequired ? "Create your owner account" : "Sign in"}</h1>
       <ErrorNotice error={info.error ?? error} />
@@ -135,7 +135,7 @@ export function Consent() {
   return (
     <main className="login">
       <a href="/" className="brand">
-        Kanvil
+        <Brand />
       </a>
       <h1>Authorize {client.data?.client_name ?? "client"}</h1>
       <ErrorNotice error={client.error ?? error} />

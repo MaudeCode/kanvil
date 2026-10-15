@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Plus, SlidersHorizontal } from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -112,6 +113,10 @@ export function TicketList({
   const bulk = useOperation("bulk_update_tickets"),
     saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = [search.status, search.priority, search.archived !== "exclude"].filter(
+    Boolean,
+  ).length;
   const [createOpen, setCreateOpen] = useState(false),
     [bulkStatus, setBulkStatus] = useState<Ticket["status"]>("todo");
   const [viewName, setViewName] = useState("");
@@ -129,8 +134,10 @@ export function TicketList({
     <>
       <header className="page-header">
         <div>
-          <span className="eyebrow">{project.key}</span>
-          <h1>{project.name}</h1>
+          <div className="project-title">
+            <span className="project-prefix">{project.key}</span>
+            <h1>{project.name}</h1>
+          </div>
         </div>
         <div className="actions">
           <Link to="/projects/$projectId/settings" params={{ projectId: project.id }}>
@@ -141,72 +148,87 @@ export function TicketList({
             disabled={!access.canWrite}
             onClick={() => setCreateOpen(true)}
           >
+            <Plus size={17} aria-hidden="true" />
             New ticket
           </Button>
         </div>
       </header>
-      <div className="toolbar">
+      <div className="toolbar" data-expanded={filtersOpen}>
         <Input
           label="Search tickets"
+          type="search"
           placeholder="Title, description, or key"
           value={search.q ?? ""}
           onChange={(event) => filter({ q: event.target.value })}
         />
-        <Select
-          label="Status"
-          value={search.status ?? ""}
-          onChange={(event) =>
-            filter({
-              status: event.target.value ? z.enum(states).parse(event.target.value) : undefined,
-            })
-          }
+        <Button
+          className="filter-toggle"
+          aria-expanded={filtersOpen}
+          aria-controls={`filters-${project.id}`}
+          onClick={() => setFiltersOpen(!filtersOpen)}
         >
-          <option value="">All statuses</option>
-          {states.map((status) => (
-            <option key={status} value={status}>
-              {stateLabels[status]}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Priority"
-          value={search.priority ?? ""}
-          onChange={(event) =>
-            filter({
-              priority: event.target.value
-                ? z.enum(priorities).parse(event.target.value)
-                : undefined,
-            })
-          }
-        >
-          <option value="">All priorities</option>
-          {priorities.map((priority) => (
-            <option key={priority} value={priority}>
-              {priorityLabels[priority]}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Sort"
-          value={search.sort}
-          onChange={(event) => filter({ sort: ticketFilter.shape.sort.parse(event.target.value) })}
-        >
-          <option value="priority">Priority</option>
-          <option value="updated">Updated</option>
-          <option value="created">Created</option>
-          <option value="title">Title</option>
-        </Select>
-        <Select
-          label="Archived"
-          value={search.archived}
-          onChange={(event) =>
-            filter({ archived: ticketFilter.shape.archived.parse(event.target.value) })
-          }
-        >
-          <option value="exclude">Hide archived</option>
-          <option value="include">Include archived</option>
-          <option value="only">Archived only</option>
-        </Select>
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          Filters{activeFilters ? ` (${activeFilters})` : ""}
+        </Button>
+        <div className="filter-fields" id={`filters-${project.id}`}>
+          <Select
+            label="Status"
+            value={search.status ?? ""}
+            onChange={(event) =>
+              filter({
+                status: event.target.value ? z.enum(states).parse(event.target.value) : undefined,
+              })
+            }
+          >
+            <option value="">All statuses</option>
+            {states.map((status) => (
+              <option key={status} value={status}>
+                {stateLabels[status]}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Priority"
+            value={search.priority ?? ""}
+            onChange={(event) =>
+              filter({
+                priority: event.target.value
+                  ? z.enum(priorities).parse(event.target.value)
+                  : undefined,
+              })
+            }
+          >
+            <option value="">All priorities</option>
+            {priorities.map((priority) => (
+              <option key={priority} value={priority}>
+                {priorityLabels[priority]}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Sort"
+            value={search.sort}
+            onChange={(event) =>
+              filter({ sort: ticketFilter.shape.sort.parse(event.target.value) })
+            }
+          >
+            <option value="priority">Priority</option>
+            <option value="updated">Updated</option>
+            <option value="created">Created</option>
+            <option value="title">Title</option>
+          </Select>
+          <Select
+            label="Archived"
+            value={search.archived}
+            onChange={(event) =>
+              filter({ archived: ticketFilter.shape.archived.parse(event.target.value) })
+            }
+          >
+            <option value="exclude">Hide archived</option>
+            <option value="include">Include archived</option>
+            <option value="only">Archived only</option>
+          </Select>
+        </div>
       </div>
       <div className="views">
         <span className="muted">Views</span>
@@ -306,12 +328,23 @@ export function TicketList({
         <Loading />
       ) : (
         <div className="table-scroll">
-          <table style={{ width: table.getTotalSize() }}>
-            <thead>
+          <table
+            className="ticket-table"
+            role="table"
+            aria-label="Tickets"
+            style={{ width: table.getTotalSize() }}
+          >
+            <thead role="rowgroup">
               {table.getHeaderGroups().map((group) => (
-                <tr key={group.id}>
+                <tr key={group.id} role="row">
                   {group.headers.map((header) => (
-                    <th key={header.id} scope="col" style={{ width: header.getSize() }}>
+                    <th
+                      key={header.id}
+                      role="columnheader"
+                      scope="col"
+                      data-column={header.column.id}
+                      style={{ width: header.getSize() }}
+                    >
                       <table.FlexRender header={header} />
                       {header.column.getCanResize() && (
                         <button
@@ -338,11 +371,20 @@ export function TicketList({
                 </tr>
               ))}
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} data-selected={row.getIsSelected()}>
+                <tr key={row.id} role="row" data-selected={row.getIsSelected()}>
                   {row.getAllCells().map((cell) => (
-                    <td key={cell.id}>
+                    <td
+                      key={cell.id}
+                      role="cell"
+                      data-column={cell.column.id}
+                      data-label={
+                        typeof cell.column.columnDef.header === "string"
+                          ? cell.column.columnDef.header
+                          : undefined
+                      }
+                    >
                       <table.FlexRender cell={cell} />
                     </td>
                   ))}

@@ -72,37 +72,45 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
             <span key={scope}>scope: {scope}</span>
           ))}
         </div>
-        <section>
-          <h2>Description</h2>
-          <Markdown>{ticket.description || "_No description_"}</Markdown>
-        </section>
-        <section>
-          <h2>Acceptance criteria</h2>
-          <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
-        </section>
-        <section>
-          <h2>Agent readiness</h2>
-          <p className={readiness.ready ? "success" : "muted"}>
-            {readiness.ready ? "Ready to claim" : "Not ready to claim"}
-          </p>
-          <ul>
-            {readiness.reasons.map((reason, index) => (
-              <li key={`${reason.code}:${index}`}>{reason.message}</li>
-            ))}
-          </ul>
-          {ticket.holdReason && <p>Hold: {ticket.holdReason}</p>}
-          {claim && (
-            <p>
-              Claimed by <strong>{claim.workerId}</strong> until {date(claim.expiresAt)}.
-            </p>
-          )}
-          {claim && <ClaimActions ticket={ticket} claim={claim} canRelease={canReleaseClaim} />}
-        </section>
-        <Relations key={ticket.id} ticket={ticket} />
-        <Discussion ticket={ticket} />
-        <Attachments ticket={ticket} />
-        <Evidence ticket={ticket} />
-        <Activity ticket={ticket} />
+        <div className="ticket-body">
+          <div className="ticket-requirements">
+            <section>
+              <h2>Description</h2>
+              <Markdown>{ticket.description || "_No description_"}</Markdown>
+            </section>
+            <section>
+              <h2>Acceptance criteria</h2>
+              <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
+            </section>
+          </div>
+          <aside className="ticket-aside" aria-label="Ticket coordination">
+            <section>
+              <h2>Agent readiness</h2>
+              <p className={readiness.ready ? "success" : "muted"}>
+                {readiness.ready ? "Ready to claim" : "Not ready to claim"}
+              </p>
+              <ul>
+                {readiness.reasons.map((reason, index) => (
+                  <li key={`${reason.code}:${index}`}>{reason.message}</li>
+                ))}
+              </ul>
+              {ticket.holdReason && <p>Hold: {ticket.holdReason}</p>}
+              {claim && (
+                <p>
+                  Claimed by <strong>{claim.workerId}</strong> until {date(claim.expiresAt)}.
+                </p>
+              )}
+              {claim && <ClaimActions ticket={ticket} claim={claim} canRelease={canReleaseClaim} />}
+            </section>
+            <Relations key={ticket.id} ticket={ticket} />
+            <Attachments ticket={ticket} />
+          </aside>
+          <div className="ticket-collaboration">
+            <Discussion ticket={ticket} />
+            <Evidence ticket={ticket} />
+            <Activity ticket={ticket} />
+          </div>
+        </div>
         <section className="actions">
           <Confirm
             label={ticket.archived ? "Unarchive ticket" : "Archive ticket"}

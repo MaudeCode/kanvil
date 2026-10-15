@@ -110,8 +110,9 @@ export function TicketEditor({
         </div>
       )}
       <ErrorNotice error={validationError ?? create.error ?? update.error ?? storageError} />
-      <Input
+      <Textarea
         label="Title"
+        rows={2}
         value={fields.title}
         onChange={(event) => set("title", event.target.value)}
         required
