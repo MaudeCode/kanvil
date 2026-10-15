@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 
 const envSchema = z
   .object({
@@ -10,7 +8,6 @@ const envSchema = z
     KANVIL_SETUP_TOKEN: z.string().min(24).optional(),
     PORT: z.coerce.number().int().min(1).max(65535).default(5180),
     HOST: z.string().default("127.0.0.1"),
-    ATTACHMENTS_DIR: z.string().default("data/attachments"),
     KANVIL_TRUSTED_ORIGINS: z.string().default(""),
     OIDC_DISCOVERY_URL: z.url().optional(),
     OIDC_CLIENT_ID: z.string().min(1).optional(),
@@ -35,10 +32,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const values = envSchema.parse(env);
   return {
     ...values,
-    ATTACHMENTS_DIR: resolve(
-      fileURLToPath(new URL("../../../", import.meta.url)),
-      values.ATTACHMENTS_DIR,
-    ),
     trustedOrigins: [
       new URL(values.KANVIL_URL).origin,
       ...values.KANVIL_TRUSTED_ORIGINS.split(",")

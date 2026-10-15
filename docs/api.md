@@ -18,6 +18,8 @@ Claims require an eligible ticket and current version. Successful claiming moves
 
 Evidence records identify the submitting account and supplied commit. A reported passing outcome is an assertion by that identity, not independent verification by Kanvil.
 
+Attachments use `upload_attachment` or the corresponding HTTP POST with `name`, `contentType`, and base64 `data`, up to 10 MB. Bytes and metadata commit together in PostgreSQL. Download content at `/api/v1/projects/{projectId}/attachments/{id}/content` using the same authorization. Filenames are metadata, never filesystem paths. Deleting an attachment deletes its bytes transactionally.
+
 ## Realtime
 
 `GET /api/v1/snapshot?projectId=<id>` returns a consistent project snapshot and event cursor. Connect to `/api/v1/events?projectId=<id>&cursor=<cursor>` to replay committed changes and continue receiving new ones.
@@ -25,6 +27,8 @@ Evidence records identify the submitting account and supplied commit. A reported
 The SSE feed sends `change` and `checkpoint` events with durable IDs. Persist checkpoints only after processing preceding changes. Delivery is at least once: handle duplicates. Reconnect with `cursor` or `Last-Event-ID`. A `410 snapshot_required` response means fetch a new snapshot. Without a cursor, the feed starts at the current position; wait for its first checkpoint before fetching initial query results.
 
 Events are permission-filtered and contain ticket IDs, versions, and change metadata. Fetch authoritative records through the API. Membership, account, and credential access are rechecked while streaming. Reverse proxies must preserve streaming and disable response buffering.
+
+The portable `@kanvil/client` package supplies validated calls, one safe network retry using the original request ID, and a parsed SSE consumer. Its `subscribe` method accepts an abort signal, processing/checkpoint callbacks, connection-state updates, and an optional fresh-snapshot callback for expired cursors. Its query/action options work with TanStack Query without importing React into the SDK. Actions execute immediately and are not queued for offline submission.
 
 ## MCP
 

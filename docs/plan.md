@@ -22,7 +22,7 @@ Use established libraries and the smallest implementation that meets the accepta
 - Backend: Node.js, Hono, Zod/OpenAPI, PostgreSQL, and Drizzle.
 - Authentication: Better Auth with local login, generic OIDC, Expo integration, and supported API-key and MCP authorization integrations.
 - MCP: the official TypeScript SDK, with its version selected alongside the authentication integration and verified against representative clients.
-- Deployment: one application service, PostgreSQL, and persistent attachment storage.
+- Deployment: one application service and PostgreSQL, including transactional attachment storage.
 
 Pin the latest stable compatible releases during implementation. Reuse existing library primitives before adding custom code; add optional dependencies only when their feature is being delivered.
 
@@ -92,8 +92,8 @@ Start with Markdown editing and an established renderer. Rich-text editing remai
 ## Self-hosting and verification
 
 - Docker Compose, configuration examples, and HTTPS/reverse-proxy instructions.
-- Persistent database and attachment storage, health checks, logs, and database schema migrations.
-- Backup and tested restoration of both database and attachments.
+- Persistent PostgreSQL storage for both tickets and attachment bytes, health checks, logs, and database schema migrations.
+- Backup and tested restoration of the database, including attachment bytes, with the instance configuration kept securely.
 - CI, native builds, signing configuration, and documented mobile delivery.
 - Local and PocketID login validated on web and native mobile.
 - Permission isolation across HTTP, MCP, events, and attachments.

@@ -6,6 +6,7 @@ export const kinds = ["feature", "bug", "chore", "research", "documentation"] as
 export const difficulties = ["low", "med", "high"] as const;
 export const roles = ["reader", "writer", "admin"] as const;
 export const scopes = ["read", "write", "claim", "admin"] as const;
+export const attachmentLimit = 10_000_000;
 export const stateLabels: Record<(typeof states)[number], string> = {
   backlog: "Backlog",
   todo: "To do",
@@ -415,6 +416,29 @@ export const operations = {
     "read",
     "Read durable ticket activity.",
   ),
+  upload_attachment: op(
+    ticketInput
+      .extend({
+        ...mutation,
+        name: text.max(255).refine((value) => {
+          for (const character of value)
+            if (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) return false;
+          return true;
+        }, "Use a filename without control characters"),
+        contentType: z
+          .string()
+          .max(120)
+          .regex(/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i)
+          .default("application/octet-stream"),
+        data: z.string().max(Math.ceil(attachmentLimit / 3) * 4),
+      })
+      .strict(),
+    attachmentSchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/attachments",
+    "write",
+    "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path.",
+  ),
   list_attachments: op(
     ticketInput,
     z.array(attachmentSchema),
@@ -544,6 +568,11 @@ export function isOperation(name: string): name is Operation {
 }
 export const errorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() }),
+});
+export const streamErrorSchema = z.object({
+  status: z.number().int().min(400).max(599),
+  code: z.string(),
+  message: z.string(),
 });
 
 export class ApiError extends Error {

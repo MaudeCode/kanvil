@@ -1,5 +1,14 @@
+import { attachmentLimit } from "@kanvil/contracts";
 import { and, asc, count, desc, eq, or } from "drizzle-orm";
-import { attachments, comments, events, evidence, relations, subscriptions } from "./schema.ts";
+import {
+  attachmentContent,
+  attachments,
+  comments,
+  events,
+  evidence,
+  relations,
+  subscriptions,
+} from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
 import {
   assertWorkerClaim,
@@ -37,6 +46,7 @@ export const collaborationHandlers: Pick<
   | "update_comment"
   | "delete_comment"
   | "list_activity"
+  | "upload_attachment"
   | "list_attachments"
   | "delete_attachment"
   | "list_evidence"
@@ -168,6 +178,32 @@ export const collaborationHandlers: Pick<
       total: requireRow((await ctx.db.select({ count: count() }).from(events).where(where))[0])
         .count,
     };
+  },
+  async upload_attachment(ctx, input) {
+    const ticket = await getTicket(ctx, input.ticketId);
+    const bytes = Buffer.from(input.data, "base64");
+    if (bytes.length > attachmentLimit || bytes.toString("base64") !== input.data)
+      fail(400, "invalid_attachment", "Provide valid base64 data of at most 10 MB");
+    const id = crypto.randomUUID();
+    const row = requireRow(
+      (
+        await ctx.db
+          .insert(attachments)
+          .values({
+            id,
+            projectId: project(ctx).id,
+            ticketId: ticket.id,
+            actorId: ctx.actor.id,
+            name: input.name,
+            contentType: input.contentType,
+            size: bytes.length,
+          })
+          .returning()
+      )[0],
+    );
+    await ctx.db.insert(attachmentContent).values({ id, data: bytes });
+    await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
+    return row;
   },
   async list_attachments(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);

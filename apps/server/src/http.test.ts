@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createClient } from "@kanvil/client";
 import { z } from "zod";
-import { ticketSchema, snapshotSchema } from "@kanvil/contracts";
+import { attachmentLimit, ticketSchema, snapshotSchema, type ChangeEvent } from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
 import { createFixture } from "./test-fixture.ts";
 
@@ -243,5 +243,101 @@ describe("HTTP, realtime, and MCP", () => {
       new Request(`${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`),
     );
     expect(discovery.status).toBe(200);
+  });
+  it("keeps binary content transactional and protects downloads and deletion", async () => {
+    const project = await newProject(),
+      api = client();
+    const ticket = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Binary evidence",
+    });
+    const bytes = Buffer.from([0, 1, 2, 13, 10, 128, 255]);
+    const input = {
+      projectId: project.id,
+      ticketId: ticket.id,
+      name: "../../résumé.bin",
+      data: bytes.toString("base64"),
+    };
+    const uploaded = await api.call("upload_attachment", input);
+    const path = `/api/v1/projects/${project.id}/attachments/${uploaded.id}/content`;
+    expect((await request(path)).status).toBe(401);
+    const content = await request(path, { headers: sessionHeaders() });
+    expect(content.status).toBe(200);
+    expect(Buffer.from(await content.arrayBuffer())).toEqual(bytes);
+    expect(content.headers.get("content-disposition")).toContain("attachment;");
+    await expect(
+      api.call("upload_attachment", { ...input, data: "not base64!" }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      api.call("upload_attachment", {
+        ...input,
+        data: Buffer.alloc(attachmentLimit + 1).toString("base64"),
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await api.call("delete_attachment", { projectId: project.id, attachmentId: uploaded.id });
+    expect((await request(path, { headers: sessionHeaders() })).status).toBe(404);
+    expect(
+      (
+        await fixture.database.pool.query("SELECT id FROM attachment_content WHERE id = $1", [
+          uploaded.id,
+        ])
+      ).rowCount,
+    ).toBe(0);
+  });
+  it("retries a lost write response without creating duplicate work", async () => {
+    const project = await newProject();
+    let loseResponse = true;
+    const api = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: sessionHeaders,
+      fetch: async (input, init) => {
+        const response = await application.app.fetch(new Request(input, init));
+        if (loseResponse) {
+          loseResponse = false;
+          throw new TypeError("Connection lost after commit");
+        }
+        return response;
+      },
+    });
+    await api.call("create_ticket", {
+      projectId: project.id,
+      title: "One ticket after a lost response",
+    });
+    expect((await client().call("list_tickets", { projectId: project.id })).total).toBe(1);
+  });
+  it("provides an abortable parsed event consumer with processed checkpoints", async () => {
+    const project = await newProject(),
+      controller = new AbortController();
+    let opened: (() => void) | undefined, receive: ((event: ChangeEvent) => void) | undefined;
+    const connected = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    const received = new Promise<ChangeEvent>((resolve) => {
+      receive = resolve;
+    });
+    const cursors: string[] = [];
+    const consumer = client().subscribe({
+      projectId: project.id,
+      signal: controller.signal,
+      onCursor: (cursor) => {
+        cursors.push(cursor);
+        opened?.();
+      },
+      onEvent: (event) => {
+        if (event.type === "ticket.created") receive?.(event);
+      },
+    });
+    try {
+      await connected;
+      const ticket = await client().call("create_ticket", {
+        projectId: project.id,
+        title: "SDK event delivery",
+      });
+      expect((await received).ticketId).toBe(ticket.id);
+    } finally {
+      controller.abort();
+      await consumer;
+    }
+    expect(cursors.length).toBeGreaterThan(0);
   });
 });

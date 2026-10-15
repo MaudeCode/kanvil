@@ -12,7 +12,7 @@ import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
 import { createRealtime } from "./realtime.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
-import { eventClock, events, notifications } from "./schema.ts";
+import { attachmentContent, attachments, eventClock, events, notifications } from "./schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
 
@@ -74,7 +74,14 @@ export async function createApplication(database: Database, config: Config) {
   app.onError((error) => {
     if (error instanceof ApiError)
       return Response.json(
-        { error: { code: error.code, message: error.message, details: error.details } },
+        {
+          error: {
+            status: error.status,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        },
         { status: error.status },
       );
     if (error instanceof z.ZodError)
@@ -220,6 +227,37 @@ export async function createApplication(database: Database, config: Config) {
       await domain.snapshot(c.get("actor"), z.string().min(1).parse(c.req.query("projectId"))),
     ),
   );
+  app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
+    const id = z.uuid().parse(c.req.param("id"));
+    const row = requireRow(
+      (await database.db.select().from(attachments).where(eq(attachments.id, id)))[0],
+    );
+    const authorized = await domain.execute(
+      "list_attachments",
+      { projectId: c.req.param("projectId"), ticketId: row.ticketId },
+      c.get("actor"),
+    );
+    requireRow(authorized.find((item) => item.id === id));
+    const bytes = requireRow(
+      (
+        await database.db
+          .select({ data: attachmentContent.data })
+          .from(attachmentContent)
+          .where(eq(attachmentContent.id, id))
+      )[0],
+    ).data;
+    if (bytes.length !== row.size)
+      fail(500, "attachment_corrupt", "Attachment integrity check failed");
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": row.contentType,
+        "Content-Length": String(row.size),
+        "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "sandbox",
+      },
+    });
+  });
   app.get("/api/v1/notifications", async (c) => {
     const identity = c.get("actor"),
       allowed = await domain.accessibleProjects(identity);
@@ -321,7 +359,11 @@ export async function createApplication(database: Database, config: Config) {
             await stream
               .writeSSE({
                 event: "error",
-                data: JSON.stringify({ code: error.code, message: error.message }),
+                data: JSON.stringify({
+                  status: error.status,
+                  code: error.code,
+                  message: error.message,
+                }),
               })
               .catch(() => {});
           stop();

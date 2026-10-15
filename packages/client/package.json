@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kanvil/contracts": "workspace:*"
+    "@kanvil/contracts": "workspace:*",
+    "eventsource-parser": "4.1.2"
   }
 }

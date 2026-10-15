@@ -292,22 +292,27 @@ export function createDomain(database: Database) {
           .orderBy(asc(events.id))
           .limit(200)
       : [];
-    return { items: rows, cursor: rows.length === 200 ? requireRow(rows.at(-1)).id : clock.value };
+    const last = rows.at(-1)?.id ?? cursor;
+    return { items: rows, cursor: rows.length === 200 || last > clock.value ? last : clock.value };
   }
   async function snapshot(identity: Actor, identifier: string) {
-    return database.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
-      const ctx = await context(tx, identity, "read", identifier);
-      const clock = requireRow((await tx.select().from(eventClock).where(eq(eventClock.id, 1)))[0]);
-      const rows = await tx
-        .select()
-        .from(tickets)
-        .where(eq(tickets.projectId, project(ctx).id))
-        .orderBy(asc(tickets.number));
-      return snapshotSchema.parse(
-        json({ project: project(ctx), tickets: rows, cursor: clock.value.toString() }),
-      );
-    });
+    return database.db.transaction(
+      async (tx) => {
+        const ctx = await context(tx, identity, "read", identifier);
+        const clock = requireRow(
+          (await tx.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
+        );
+        const rows = await tx
+          .select()
+          .from(tickets)
+          .where(eq(tickets.projectId, project(ctx).id))
+          .orderBy(asc(tickets.number));
+        return snapshotSchema.parse(
+          json({ project: project(ctx), tickets: rows, cursor: clock.value.toString() }),
+        );
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
   }
   return { execute, actor: resolveActor, accessibleProjects, readEvents, snapshot, database };
 }

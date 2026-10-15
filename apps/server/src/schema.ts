@@ -1,5 +1,6 @@
 import {
   bigint,
+  customType,
   boolean,
   index,
   integer,
@@ -186,6 +187,13 @@ export const attachments = pgTable("attachments", {
   contentType: text("content_type").notNull(),
   size: integer("size").notNull(),
   createdAt: time("created_at"),
+});
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+export const attachmentContent = pgTable("attachment_content", {
+  id: uuid("id")
+    .primaryKey()
+    .references(() => attachments.id, { onDelete: "cascade" }),
+  data: bytea("data").notNull(),
 });
 export const evidence = pgTable("evidence", {
   id: uuid("id").primaryKey().defaultRandom(),

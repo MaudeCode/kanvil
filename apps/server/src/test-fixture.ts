@@ -1,7 +1,4 @@
 import pg from "pg";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createDatabase } from "./database.ts";
 import { migrateDatabase } from "./migrate.ts";
 import { readConfig } from "./config.ts";
@@ -13,7 +10,6 @@ export async function createFixture() {
   );
   const admin = new pg.Pool({ connectionString: url.toString() });
   const name = `kanvil_test_${crypto.randomUUID().replaceAll("-", "")}`;
-  const files = await mkdtemp(join(tmpdir(), "kanvil-test-"));
   await admin.query(`CREATE DATABASE "${name}"`);
   url.pathname = `/${name}`;
   const database = createDatabase(url.toString());
@@ -23,7 +19,6 @@ export async function createFixture() {
     KANVIL_URL: "http://localhost:5180",
     BETTER_AUTH_SECRET: crypto.randomUUID(),
     KANVIL_SETUP_TOKEN: crypto.randomUUID(),
-    ATTACHMENTS_DIR: files,
   });
   await migrateDatabase(database);
   const auth = createAuth(database, config);
@@ -35,7 +30,6 @@ export async function createFixture() {
       await database.pool.end();
       await admin.query(`DROP DATABASE "${name}"`);
       await admin.end();
-      await rm(files, { recursive: true, force: true });
     },
   };
 }

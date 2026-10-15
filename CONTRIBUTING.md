@@ -12,6 +12,8 @@ pnpm check
 
 The workspace includes `apps/*` and `packages/*`. `compose.dev.yml` runs an isolated development PostgreSQL instance on loopback port 55462. Tests create and remove their own databases; set `TEST_DATABASE_URL` to use another dedicated test PostgreSQL server. Stop the development service with `pnpm db:down`.
 
+For a local backend, run `pnpm configure` once to create a private `.env` with generated secrets, then `pnpm dev`. Configuration never overwrites an existing `.env`. The server applies committed database schema migrations at startup. HTTP/MCP and realtime integration details are in [docs/api.md](docs/api.md).
+
 ## Checks
 
 `pnpm check` is the local and CI entry point for formatting, linting, TypeScript checks, and tests. Vite+ provides Oxfmt, Oxlint, and Vitest; configuration lives in `vite.config.ts` and the TypeScript configs.
