@@ -1,4 +1,4 @@
-import { formatTimestamp } from "@kanvil/contracts";
+import { formatTimestamp, relationReference } from "@kanvil/contracts";
 import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,6 +15,8 @@ import {
   Markdown,
   Section,
   Sheet,
+  Row,
+  Status,
   styles,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
@@ -31,6 +33,23 @@ export function Relations({
     [query, setQuery] = useState(""),
     [target, setTarget] = useState(""),
     [type, setType] = useState("blocks");
+  const [offset, setOffset] = useState(0);
+  const parent = useQuery({
+    ...api.query("get_ticket", {
+      projectId: ticket.projectId,
+      ticketId: ticket.parentId ?? ticket.id,
+    }),
+    enabled: !!ticket.parentId,
+  });
+  const children = useQuery(
+    api.query("list_tickets", {
+      projectId: ticket.projectId,
+      parentId: ticket.id,
+      archived: "include",
+      limit: 20,
+      offset,
+    }),
+  );
   const relations = useQuery(
       api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
     ),
@@ -43,21 +62,53 @@ export function Relations({
     <Section title="Relationships">
       {ticket.parentId && (
         <Button
-          title="Open parent ticket"
+          title={
+            parent.data
+              ? `Parent · ${parent.data.ticket.key} · ${parent.data.ticket.title}`
+              : "Open parent ticket"
+          }
           onPress={() =>
             navigation.push("Ticket", { projectId: ticket.projectId, ticketId: ticket.parentId! })
           }
         />
       )}
+      {children.data && (children.data.total > 0 || offset > 0) && (
+        <>
+          <Body>Child tickets</Body>
+          {children.data.items.map((child) => (
+            <Row
+              key={child.id}
+              title={`${child.key} · ${child.title}`}
+              trailing={<Status value={child.status} />}
+              onPress={() =>
+                navigation.push("Ticket", { projectId: ticket.projectId, ticketId: child.id })
+              }
+            />
+          ))}
+          {(children.data.total > 20 || offset > 0) && (
+            <View style={styles.actions}>
+              <Button
+                title="Previous children"
+                disabled={!offset}
+                onPress={() => setOffset(Math.max(0, offset - 20))}
+              />
+              <Button
+                title="Next children"
+                disabled={offset + 20 >= children.data.total}
+                onPress={() => setOffset(offset + 20)}
+              />
+            </View>
+          )}
+        </>
+      )}
       {relations.data?.map((relation) => {
-        const outgoing = relation.sourceId === ticket.id,
-          id = outgoing ? relation.targetId : relation.sourceId;
+        const reference = relationReference(relation, ticket.id);
         return (
           <View key={relation.id} style={{ gap: 8 }}>
             <Button
-              title={`${relation.type === "blocks" ? (outgoing ? "Blocks" : "Blocked by") : relation.type} · ${id.slice(0, 8)}`}
+              title={`${reference.label} · ${reference.title}`}
               onPress={() =>
-                navigation.push("Ticket", { projectId: ticket.projectId, ticketId: id })
+                navigation.push("Ticket", { projectId: ticket.projectId, ticketId: reference.id })
               }
             />
             <Button
@@ -78,7 +129,7 @@ export function Relations({
         );
       })}
       <Button title="Add relationship" onPress={() => setOpen(true)} />
-      <ErrorNotice error={relations.error ?? remove.error} />
+      <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
       <Sheet title="Add relationship" open={open} onClose={() => setOpen(false)}>
         <Field label="Find ticket" value={query} onChangeText={setQuery} />
         <Choice

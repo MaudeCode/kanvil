@@ -3,15 +3,32 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { z } from "zod";
-import type { Ticket } from "@kanvil/contracts";
+import { relationReference, type Ticket } from "@kanvil/contracts";
 import { api, useOperation } from "./data.tsx";
-import { Button, ErrorNotice, Input, Modal, Select } from "./ui.tsx";
+import { Button, ErrorNotice, Input, Modal, Select, Status } from "./ui.tsx";
 
 export function Relations({ ticket }: { ticket: Ticket }) {
   const relations = useQuery(
     api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
   );
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(""),
+    [offset, setOffset] = useState(0);
+  const parent = useQuery({
+    ...api.query("get_ticket", {
+      projectId: ticket.projectId,
+      ticketId: ticket.parentId ?? ticket.id,
+    }),
+    enabled: !!ticket.parentId,
+  });
+  const children = useQuery(
+    api.query("list_tickets", {
+      projectId: ticket.projectId,
+      parentId: ticket.id,
+      archived: "include",
+      limit: 20,
+      offset,
+    }),
+  );
   const matches = useQuery(
     api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
   );
@@ -20,27 +37,58 @@ export function Relations({ ticket }: { ticket: Ticket }) {
   return (
     <section>
       <h2>Relationships</h2>
+      {ticket.parentId && (
+        <p>
+          Parent:{" "}
+          <Link
+            to="/projects/$projectId/tickets/$ticketId"
+            params={{ projectId: ticket.projectId, ticketId: ticket.parentId }}
+          >
+            {parent.data
+              ? `${parent.data.ticket.key} · ${parent.data.ticket.title}`
+              : ticket.parentId}
+          </Link>
+        </p>
+      )}
+      {children.data && (children.data.total > 0 || offset > 0) && (
+        <>
+          <h3>Child tickets</h3>
+          {children.data.items.map((child) => (
+            <div className="resource-row" key={child.id}>
+              <Link
+                to="/projects/$projectId/tickets/$ticketId"
+                params={{ projectId: ticket.projectId, ticketId: child.id }}
+              >
+                {child.key} · {child.title}
+              </Link>
+              <Status value={child.status} />
+            </div>
+          ))}
+          {(children.data.total > 20 || offset > 0) && (
+            <div className="actions">
+              <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 20))}>
+                Previous children
+              </Button>
+              <Button
+                disabled={offset + 20 >= children.data.total}
+                onClick={() => setOffset(offset + 20)}
+              >
+                Next children
+              </Button>
+            </div>
+          )}
+        </>
+      )}
       {relations.data?.map((relation) => {
-        const outgoing = relation.sourceId === ticket.id,
-          other = outgoing ? relation.targetId : relation.sourceId;
+        const reference = relationReference(relation, ticket.id);
         return (
           <div className="resource-row" key={relation.id}>
-            <span>
-              {relation.type === "blocks"
-                ? outgoing
-                  ? "Blocks"
-                  : "Blocked by"
-                : relation.type === "duplicate"
-                  ? outgoing
-                    ? "Duplicate of"
-                    : "Duplicated by"
-                  : "Related"}
-            </span>
+            <span>{reference.label}</span>
             <Link
               to="/projects/$projectId/tickets/$ticketId"
-              params={{ projectId: ticket.projectId, ticketId: other }}
+              params={{ projectId: ticket.projectId, ticketId: reference.id }}
             >
-              {other}
+              {reference.title}
             </Link>
             <Button
               aria-label={`Remove ${relation.type} relationship`}
@@ -93,7 +141,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           {add.isSuccess && <p role="status">Relationship added</p>}
         </form>
       </Modal>
-      <ErrorNotice error={relations.error ?? remove.error} />
+      <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
     </section>
   );
 }

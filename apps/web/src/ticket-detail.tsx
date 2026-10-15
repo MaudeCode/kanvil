@@ -98,18 +98,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
           )}
           {claim && <ClaimActions ticket={ticket} claim={claim} canRelease={canReleaseClaim} />}
         </section>
-        {ticket.parentId && (
-          <p>
-            Parent:{" "}
-            <Link
-              to="/projects/$projectId/tickets/$ticketId"
-              params={{ projectId, ticketId: ticket.parentId }}
-            >
-              {ticket.parentId}
-            </Link>
-          </p>
-        )}
-        <Relations ticket={ticket} />
+        <Relations key={ticket.id} ticket={ticket} />
         <Discussion ticket={ticket} />
         <Attachments ticket={ticket} />
         <Evidence ticket={ticket} />
