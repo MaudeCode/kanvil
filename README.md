@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brand/mark-white.svg">
+  <img src="apps/web/public/brand/mark-blue.svg" alt="Kanvil anvil" width="144" height="72">
+</picture>
+
 # Kanvil
 
 Open-source, self-hosted ticketing built around how agents discover, claim, update, and complete work, with web and native mobile apps for people.

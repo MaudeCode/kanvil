@@ -22,7 +22,7 @@ import { Picker } from "@react-native-picker/picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path } from "react-native-svg";
 import { useMarkdown } from "react-native-marked";
-import { brandPath, palettes } from "@kanvil/contracts/theme";
+import { brandMark, palettes } from "@kanvil/contracts/theme";
 import { errorMessage, stateLabels, stateTones, type Ticket } from "@kanvil/contracts";
 
 export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
@@ -34,11 +34,9 @@ export function Brand() {
       accessibilityLabel="Kanvil"
       accessible
     >
-      <View style={{ backgroundColor: color.accent, borderRadius: 11, padding: 3 }}>
-        <Svg width={36} height={36} viewBox="0 0 32 32">
-          <Path d={brandPath} fill={color.surface} />
-        </Svg>
-      </View>
+      <Svg width={58} height={34} viewBox={brandMark.viewBox}>
+        <Path d={brandMark.path} fill={color.accent} />
+      </Svg>
       <Text
         style={{ fontSize: 29, fontWeight: "700", letterSpacing: -0.7, color: color.foreground }}
       >
