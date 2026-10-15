@@ -24,7 +24,7 @@ Use established libraries and the smallest implementation that meets the accepta
 - MCP: the official TypeScript SDK, with its version selected alongside the authentication integration and verified against representative clients.
 - Deployment: one application service, PostgreSQL, and persistent attachment storage.
 
-Pin compatible releases during implementation. Reuse existing library primitives before adding custom code; add optional dependencies only when their feature is being delivered.
+Pin the latest stable compatible releases during implementation. Reuse existing library primitives before adding custom code; add optional dependencies only when their feature is being delivered.
 
 ## Authentication and access
 

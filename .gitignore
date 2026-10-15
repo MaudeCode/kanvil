@@ -3,6 +3,9 @@ node_modules/
 dist/
 coverage/
 .expo/
+.vite-plus/
+.pnpm-store/
+*.tsbuildinfo
 *.log
 
 # Local configuration and application data

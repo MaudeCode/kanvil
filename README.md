@@ -8,6 +8,10 @@ Kanvil owns its ticket data and runs on your infrastructure. PocketID is the ini
 
 Repository setup only. The application is not implemented yet.
 
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and [AGENTS.md](AGENTS.md) for agent instructions.
+
 ## Plan
 
 See the [delivery plan](docs/plan.md) for scope, proposed libraries, build order, and acceptance criteria.
