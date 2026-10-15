@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] },
     "jsx": "react-jsx",
     "types": ["react", "react-dom", "vite-plus/client"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"]
