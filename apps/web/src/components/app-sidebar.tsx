@@ -66,6 +66,7 @@ export function AppSidebar() {
       <SidebarHeader className="pb-4 pt-3">
         <Link
           to="/"
+          aria-label="Kanvil"
           activeProps={{ className: "" }}
           className="brand flex h-9 items-center gap-2 px-1.5"
         >

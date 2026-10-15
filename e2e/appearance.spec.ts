@@ -139,6 +139,7 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(page.getByText("Live", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).last().click();
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(page.getByRole("link", { name: "Kanvil", exact: true })).toBeVisible();
   await page.reload();
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await page.keyboard.press("ControlOrMeta+b");
