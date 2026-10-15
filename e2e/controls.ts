@@ -16,3 +16,7 @@ export async function signOut(page: Page) {
   await page.getByRole("button", { name: /Test Owner/ }).click();
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
+export async function expand(page: Page, label: string) {
+  const trigger = page.getByRole("button", { name: label, exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+}

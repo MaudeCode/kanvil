@@ -1,7 +1,6 @@
 import { ProjectContextMenu } from "./object-context-menu.tsx";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
   ChevronsUpDown,
@@ -12,7 +11,7 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { auth, clearPrivateStorage, useIdentity, useProjects } from "../data.tsx";
+import { auth, useIdentity, useProjects } from "../data.tsx";
 import { Brand, ErrorNotice } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
 import { ThemeMenu } from "./appearance.tsx";
@@ -178,14 +177,12 @@ export function AppSidebar() {
 }
 function AccountMenu() {
   const identity = useIdentity(),
-    cache = useQueryClient(),
     { isMobile } = useSidebar();
   const [error, setError] = useState<unknown>();
   async function logout() {
     const result = await auth.signOut();
     if (result.error) throw new Error(result.error.message);
-    cache.clear();
-    clearPrivateStorage(identity.id);
+    identity.clearPrivateData();
     window.location.assign("/login");
   }
   return (

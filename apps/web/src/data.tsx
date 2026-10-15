@@ -1,3 +1,4 @@
+import { UserAvatar } from "./components/user-avatar.tsx";
 import { createContext, useContext, useEffect, useState } from "react";
 import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
@@ -14,7 +15,8 @@ export const Identity = createContext<{
   email: string;
   admin: boolean;
   image: string | null;
-}>({ id: "", name: "", email: "", admin: false, image: null });
+  clearPrivateData: () => void;
+}>({ id: "", name: "", email: "", admin: false, image: null, clearPrivateData: () => {} });
 export const useIdentity = () => useContext(Identity);
 export function useOperation<K extends Operation>(name: K) {
   const cache = useQueryClient();
@@ -58,14 +60,24 @@ export function useProjectAccess(projectId: string, enabled = true) {
     : members.data?.find((member) => member.userId === identity.id)?.role;
   return { role, canWrite: role === "writer" || role === "admin", canAdmin: role === "admin" };
 }
-export function ActorName({ projectId, actorId }: { projectId: string; actorId: string }) {
+export function ActorName({
+  projectId,
+  actorId,
+  avatar = false,
+}: {
+  projectId: string;
+  actorId: string;
+  avatar?: boolean;
+}) {
   const identity = useIdentity(),
-    members = useQuery(api.query("list_members", { projectId }));
+    members = useQuery(api.query("list_members", { projectId })),
+    member = members.data?.find((person) => person.userId === actorId),
+    name = actorId === identity.id ? identity.name : (member?.name ?? "Former member"),
+    image = actorId === identity.id ? identity.image : member?.image;
   return (
-    <span title={actorId}>
-      {actorId === identity.id
-        ? "You"
-        : (members.data?.find((member) => member.userId === actorId)?.name ?? "Former member")}
+    <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId}>
+      {avatar && <UserAvatar name={name} image={image} className="size-7 text-[10px]" />}
+      {actorId === identity.id ? "You" : name}
     </span>
   );
 }

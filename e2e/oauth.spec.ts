@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const origin = "http://localhost:5190";
 const redirect = "http://127.0.0.1:5190/oauth-test/callback";
-import { signIn, ownerEmail, ownerPassword } from "./auth.ts";
+import { signIn, ownerEmail, ownerPassword, useEmailLogin } from "./auth.ts";
 const clientSchema = z.object({ client_id: z.string() });
 const tokenSchema = z.object({
   access_token: z.string(),
@@ -51,6 +51,7 @@ test("interactive MCP authorization uses sign-in, explicit consent, PKCE, and sc
   }).toString();
   await page.goto(authorization.toString());
   await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+  await useEmailLogin(page);
   await page.getByLabel("Email", { exact: true }).fill(ownerEmail);
   await page.getByLabel("Password", { exact: true }).fill(ownerPassword);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

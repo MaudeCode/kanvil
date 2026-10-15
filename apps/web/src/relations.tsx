@@ -1,28 +1,31 @@
-import { Unlink } from "lucide-react";
-import { formText } from "./forms.ts";
+import { TicketPicker } from "./components/ticket-picker.tsx";
+import { Unlink, Plus } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { relationReference, type Ticket } from "@kanvil/contracts";
-import { api, useOperation } from "./data.tsx";
+import { api, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
   IconButton,
   ErrorNotice,
-  Input,
   Modal,
   Select,
   SelectItem,
   Status,
+  SectionHeading,
 } from "./ui.tsx";
 
 export function Relations({ ticket }: { ticket: Ticket }) {
+  const access = useProjectAccess(ticket.projectId);
   const relations = useQuery(
     api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
   );
-  const [query, setQuery] = useState(""),
-    [offset, setOffset] = useState(0);
+  const [open, setOpen] = useState(false),
+    [target, setTarget] = useState<string | null>(null),
+    [offset, setOffset] = useState(0),
+    [validationError, setValidationError] = useState<unknown>();
   const parent = useQuery({
     ...api.query("get_ticket", {
       projectId: ticket.projectId,
@@ -39,14 +42,28 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       offset,
     }),
   );
-  const matches = useQuery(
-    api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
-  );
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
   return (
     <section>
-      <h2>Relationships</h2>
+      <SectionHeading
+        title="Relationships"
+        action={
+          access.canWrite && (
+            <IconButton
+              label="Add relationship"
+              onClick={() => {
+                add.reset();
+                setValidationError(undefined);
+                setTarget(null);
+                setOpen(true);
+              }}
+            >
+              <Plus />
+            </IconButton>
+          )
+        }
+      />
       {ticket.parentId && (
         <p>
           Parent:{" "}
@@ -100,55 +117,55 @@ export function Relations({ ticket }: { ticket: Ticket }) {
             >
               {reference.title}
             </Link>
-            <IconButton
-              label={`Remove ${relation.type} relationship`}
-              onClick={() =>
-                remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
-              }
-            >
-              <Unlink />
-            </IconButton>
+            {access.canWrite && (
+              <IconButton
+                label={`Remove ${relation.type} relationship`}
+                onClick={() =>
+                  remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
+                }
+              >
+                <Unlink />
+              </IconButton>
+            )}
           </div>
         );
       })}
-      <Modal title="Add relationship" trigger="Add relationship">
+      <Modal title="Add relationship" open={open} onOpenChange={setOpen} busy={add.isPending}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             const form = new FormData(event.currentTarget);
-            add.mutate({
-              projectId: ticket.projectId,
-              ticketId: ticket.id,
-              targetId: formText(form, "target"),
-              type: z.enum(["blocks", "related", "duplicate"]).parse(form.get("type")),
-            });
+            if (!target) return;
+            setValidationError(undefined);
+            void add
+              .mutateAsync({
+                projectId: ticket.projectId,
+                ticketId: ticket.id,
+                targetId: target,
+                type: z.enum(["blocks", "related", "duplicate"]).parse(form.get("type")),
+              })
+              .then(() => setOpen(false))
+              .catch(setValidationError);
           }}
         >
-          <Input
-            label="Find ticket"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
           <Select label="Relationship" name="type">
             <SelectItem value="blocks">This ticket blocks</SelectItem>
             <SelectItem value="related">Related to</SelectItem>
             <SelectItem value="duplicate">Duplicate of</SelectItem>
           </Select>
-          <Select label="Ticket" name="target" required>
-            <SelectItem value="">Choose a ticket</SelectItem>
-            {matches.data?.items
-              .filter((match) => match.id !== ticket.id)
-              .map((match) => (
-                <SelectItem key={match.id} value={match.id}>
-                  {match.key} · {match.title}
-                </SelectItem>
-              ))}
-          </Select>
-          <ErrorNotice error={add.error ?? matches.error} />
-          <Button type="submit" disabled={add.isPending}>
+          <TicketPicker
+            projectId={ticket.projectId}
+            label="Ticket"
+            value={target}
+            onChange={setTarget}
+            exclude={[ticket.id]}
+            allowClear={false}
+          />
+
+          <ErrorNotice error={validationError ?? add.error} />
+          <Button type="submit" disabled={add.isPending || !target}>
             Add relationship
           </Button>
-          {add.isSuccess && <p role="status">Relationship added</p>}
         </form>
       </Modal>
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />

@@ -1,10 +1,19 @@
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { Bell, BellOff, Pencil, ArrowLeft } from "lucide-react";
+import { Bell, BellOff, Pencil, ArrowLeft, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import type { Ticket } from "@kanvil/contracts";
+import { Link } from "@tanstack/react-router";
+import { z } from "zod";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  states,
+  priorities,
+  stateLabels,
+  priorityLabels,
+  type Ticket,
+  ApiError,
+} from "@kanvil/contracts";
 import { api, date, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
@@ -13,10 +22,13 @@ import {
   Confirm,
   ErrorNotice,
   Loading,
+  EmptyState,
   Markdown,
   Modal,
   Status,
   Textarea,
+  Select,
+  SelectItem,
 } from "./ui.tsx";
 import { TicketEditor } from "./ticket-editor.tsx";
 import { Relations } from "./relations.tsx";
@@ -27,12 +39,30 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
   const access = useProjectAccess(projectId);
   const result = useQuery(api.query("get_ticket", { projectId, ticketId }));
   const update = useOperation("update_ticket"),
-    remove = useOperation("delete_ticket"),
     subscribe = useOperation("set_subscription");
   const [editing, setEditing] = useState(false);
-  const navigate = useNavigate();
+  const members = useQuery(api.query("list_members", { projectId }));
   if (result.isPending) return <Loading />;
-  if (!result.data) return <ErrorNotice error={result.error} />;
+  if (!result.data)
+    return result.error instanceof ApiError && result.error.status === 404 ? (
+      <EmptyState title="Ticket unavailable">
+        <p>This ticket was deleted or you no longer have access.</p>
+        <Button render={<Link to="/projects/$projectId" params={{ projectId }} />}>
+          Back to tickets
+        </Button>
+      </EmptyState>
+    ) : (
+      <>
+        <ErrorNotice error={result.error} />
+        <Button
+          onClick={() => {
+            void result.refetch();
+          }}
+        >
+          Retry
+        </Button>
+      </>
+    );
   const { ticket, readiness, claim, canReleaseClaim, subscribed: following } = result.data;
   return (
     <>
@@ -57,6 +87,11 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
             <Pencil />
             Edit ticket
           </Button>
+          <TicketContextMenu ticket={ticket} variant="dropdown" onEdit={() => setEditing(true)}>
+            <Button variant="ghost" size="icon" aria-label="Ticket actions">
+              <MoreHorizontal />
+            </Button>
+          </TicketContextMenu>
         </div>
       </header>
       <article className="ticket-detail">
@@ -65,10 +100,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
             <div className="metadata">
               <span className="key">{ticket.key}</span>
               <Status value={ticket.status} />
-              <span>{ticket.priority} priority</span>
-              <span>{ticket.kind}</span>
-              <span>difficulty: {ticket.difficulty ?? "unspecified"}</span>
-              <span>v{ticket.version}</span>
+              <Badge variant="outline">{ticket.kind}</Badge>
               {ticket.archived && <strong>Archived</strong>}
             </div>
             <h1>{ticket.title}</h1>
@@ -98,6 +130,70 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
             </section>
           </div>
           <aside className="ticket-aside" aria-label="Ticket coordination">
+            <section aria-label="Properties" className="ticket-properties">
+              <Select
+                label="Status"
+                layout="property"
+                disabled={!access.canWrite || update.isPending}
+                value={ticket.status}
+                onValueChange={(value) =>
+                  update.mutate({
+                    projectId,
+                    ticketId: ticket.id,
+                    expectedVersion: ticket.version,
+                    changes: { status: z.enum(states).parse(value) },
+                  })
+                }
+              >
+                {states.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {stateLabels[status]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="Priority"
+                layout="property"
+                disabled={!access.canWrite || update.isPending}
+                value={ticket.priority}
+                onValueChange={(value) =>
+                  update.mutate({
+                    projectId,
+                    ticketId: ticket.id,
+                    expectedVersion: ticket.version,
+                    changes: { priority: z.enum(priorities).parse(value) },
+                  })
+                }
+              >
+                {priorities.map((priority) => (
+                  <SelectItem key={priority} value={priority}>
+                    {priorityLabels[priority]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="Assignee"
+                layout="property"
+                disabled={!access.canWrite || update.isPending}
+                value={ticket.assigneeId ?? ""}
+                onValueChange={(value) =>
+                  update.mutate({
+                    projectId,
+                    ticketId: ticket.id,
+                    expectedVersion: ticket.version,
+                    changes: { assigneeId: value || null },
+                  })
+                }
+              >
+                <SelectItem value="">Unassigned</SelectItem>
+                {members.data?.map((member) => (
+                  <SelectItem key={member.userId} value={member.userId}>
+                    {member.name}
+                  </SelectItem>
+                ))}
+              </Select>
+              <ErrorNotice error={update.error ?? members.error} />
+            </section>
             <section>
               <h2>Agent readiness</h2>
               <p className={readiness.ready ? "success" : "muted"}>
@@ -114,48 +210,38 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
                   Claimed by <strong>{claim.workerId}</strong> until {date(claim.expiresAt)}.
                 </p>
               )}
-              {claim && <ClaimActions ticket={ticket} claim={claim} canRelease={canReleaseClaim} />}
+              {claim && (
+                <ClaimActions
+                  ticket={ticket}
+                  claim={claim}
+                  canRelease={canReleaseClaim}
+                  canRecover={
+                    access.canAdmin &&
+                    readiness.reasons.some((reason) => reason.code === "claim_recovery_required")
+                  }
+                />
+              )}
             </section>
             <Relations key={ticket.id} ticket={ticket} />
             <Attachments ticket={ticket} />
           </aside>
-          <div className="ticket-collaboration">
-            <Discussion ticket={ticket} />
-            <Evidence ticket={ticket} />
-            <Activity ticket={ticket} />
-          </div>
+          <Tabs defaultValue="discussion" className="ticket-collaboration mt-8 min-w-0">
+            <TabsList variant="line" className="mb-5">
+              <TabsTrigger value="discussion">Discussion</TabsTrigger>
+              <TabsTrigger value="evidence">Evidence</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
+            </TabsList>
+            <TabsContent value="discussion">
+              <Discussion ticket={ticket} />
+            </TabsContent>
+            <TabsContent value="evidence">
+              <Evidence ticket={ticket} />
+            </TabsContent>
+            <TabsContent value="activity">
+              <Activity ticket={ticket} />
+            </TabsContent>
+          </Tabs>
         </div>
-        <section className="actions">
-          <Confirm
-            label={ticket.archived ? "Unarchive ticket" : "Archive ticket"}
-            description={
-              ticket.archived
-                ? "Restore this ticket to active lists?"
-                : "Archive this ticket and remove it from agent eligibility?"
-            }
-            onConfirm={() =>
-              update.mutateAsync({
-                projectId,
-                ticketId: ticket.id,
-                expectedVersion: ticket.version,
-                changes: { archived: !ticket.archived },
-              })
-            }
-          />
-          <Confirm
-            label="Delete ticket"
-            danger
-            description="Permanently delete this ticket, comments, relationships, and attachments?"
-            onConfirm={async () => {
-              await remove.mutateAsync({
-                projectId,
-                ticketId: ticket.id,
-                expectedVersion: ticket.version,
-              });
-              await navigate({ to: "/projects/$projectId", params: { projectId } });
-            }}
-          />
-        </section>
         <ErrorNotice error={result.error ?? subscribe.error} />
       </article>
       <Modal title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
@@ -170,9 +256,11 @@ function ClaimActions({
   ticket,
   claim,
   canRelease,
+  canRecover,
 }: {
   ticket: Ticket;
   canRelease: boolean;
+  canRecover: boolean;
   claim: NonNullable<Awaited<ReturnType<typeof api.call<"get_ticket">>>["claim"]>;
 }) {
   const release = useOperation("release_claim"),
@@ -194,44 +282,46 @@ function ClaimActions({
           }
         />
       )}
-      <Modal title="Recover expired claim" trigger="Recover expired claim">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (confirmed)
-              recover.mutate({
-                projectId: ticket.projectId,
-                ticketId: ticket.id,
-                claimId: claim.id,
-                reason,
-                confirmedStopped: true,
-              });
-          }}
-        >
-          <p>
-            Recovery requires project administrator access and an expired claim. Stop the worker
-            first.
-          </p>
-          <Textarea
-            label="Recovery reason"
-            required
-            minLength={10}
-            maxLength={2000}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-          <Check
-            label="I have confirmed the worker has stopped"
-            checked={confirmed}
-            onCheckedChange={(checked) => setConfirmed(checked)}
-          />
-          <ErrorNotice error={recover.error} />
-          <Button type="submit" disabled={!confirmed || recover.isPending}>
-            Recover ownership
-          </Button>
-          {recover.isSuccess && <p role="status">Claim recovered</p>}
-        </form>
-      </Modal>
+      {canRecover && (
+        <Modal title="Recover expired claim" trigger="Recover expired claim">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (confirmed)
+                recover.mutate({
+                  projectId: ticket.projectId,
+                  ticketId: ticket.id,
+                  claimId: claim.id,
+                  reason,
+                  confirmedStopped: true,
+                });
+            }}
+          >
+            <p>
+              Recovery requires project administrator access and an expired claim. Stop the worker
+              first.
+            </p>
+            <Textarea
+              label="Recovery reason"
+              required
+              minLength={10}
+              maxLength={2000}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+            <Check
+              label="I have confirmed the worker has stopped"
+              checked={confirmed}
+              onCheckedChange={(checked) => setConfirmed(checked)}
+            />
+            <ErrorNotice error={recover.error} />
+            <Button type="submit" disabled={!confirmed || recover.isPending}>
+              Recover ownership
+            </Button>
+            {recover.isSuccess && <p role="status">Claim recovered</p>}
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }

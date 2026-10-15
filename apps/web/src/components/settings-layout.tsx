@@ -1,3 +1,5 @@
+import { Select, SelectItem } from "../ui.tsx";
+import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "@/components/ui/item";
 import { useIsMobile } from "../hooks/use-mobile.ts";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -27,10 +29,30 @@ export function SettingsLayout({
         onValueChange={(next) => onChange(String(next))}
         className="grid min-w-0 items-start grid-cols-1 gap-7 lg:grid-cols-[170px_minmax(0,1fr)] lg:gap-12"
       >
+        {mobile && (
+          <Select
+            label={`${title} section`}
+            className="settings-section-picker mb-0"
+            value={value}
+            onValueChange={(next) => {
+              if (next) onChange(next);
+            }}
+          >
+            {sections.map((section) => (
+              <SelectItem key={section.id} value={section.id}>
+                <section.icon className="size-4" />
+                {section.label}
+              </SelectItem>
+            ))}
+          </Select>
+        )}
         <TabsList
+          hidden={mobile}
           variant="line"
           aria-label={`${title} sections`}
-          className="h-fit! w-full self-start flex-row items-stretch justify-start overflow-x-auto p-0 lg:flex-col lg:overflow-visible"
+          className={
+            mobile ? "hidden" : "h-fit! w-full self-start flex-col items-stretch justify-start p-0"
+          }
         >
           {sections.map((section) => (
             <TabsTrigger
@@ -46,5 +68,29 @@ export function SettingsLayout({
         <div className="settings mx-0 min-w-0 max-w-5xl">{children}</div>
       </Tabs>
     </>
+  );
+}
+
+export function SettingRow({
+  title,
+  description,
+  children,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-5">
+      <ItemContent>
+        <ItemTitle>{title}</ItemTitle>
+        {description && (
+          <ItemDescription className="line-clamp-none max-w-xl whitespace-normal">
+            {description}
+          </ItemDescription>
+        )}
+      </ItemContent>
+      {children && <ItemActions>{children}</ItemActions>}
+    </Item>
   );
 }

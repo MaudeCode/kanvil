@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -141,7 +142,12 @@ export function TicketList({
   ).length;
   const [createOpen, setCreateOpen] = useState(false),
     [bulkStatus, setBulkStatus] = useState<Ticket["status"]>("todo");
-  const [viewName, setViewName] = useState("");
+  const [viewName, setViewName] = useState(""),
+    [savingView, setSavingView] = useState(false);
+  const currentFilters = ticketFilter.parse(
+      Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
+    ),
+    isDefault = JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse({}));
   const table = useTable({
     features,
     columns,
@@ -178,7 +184,7 @@ export function TicketList({
         <Input
           label="Search tickets"
           type="search"
-          placeholder="Title, description, or key"
+          placeholder="Search tickets…"
           value={search.q ?? ""}
           onChange={(event) => filter({ q: event.target.value })}
         />
@@ -258,8 +264,39 @@ export function TicketList({
           </PopoverContent>
         </Popover>
       </div>
+      {(search.q || activeFilters > 0) && (
+        <div className="active-filters" aria-label="Active ticket filters">
+          {search.q && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ q: undefined })}>
+              Search: {search.q}
+              <X className="size-3" />
+            </Button>
+          )}
+          {search.status && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ status: undefined })}>
+              {stateLabels[search.status]}
+              <X className="size-3" />
+            </Button>
+          )}
+          {search.priority && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ priority: undefined })}>
+              {priorityLabels[search.priority]} priority
+              <X className="size-3" />
+            </Button>
+          )}
+          {search.archived !== "exclude" && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ archived: "exclude" })}>
+              {search.archived === "only" ? "Archived only" : "Including archived"}
+              <X className="size-3" />
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => onSearch(searchSchema.parse({}))}>
+            Clear filters
+          </Button>
+        </div>
+      )}
       <div className="views">
-        <Tabs value="tickets">
+        <Tabs value={isDefault ? "tickets" : "custom"}>
           <TabsList variant="line">
             <TabsTrigger value="tickets" onClick={() => onSearch(searchSchema.parse({}))}>
               All tickets
@@ -268,17 +305,32 @@ export function TicketList({
         </Tabs>
         {views.data?.map((view) => (
           <span className="view" key={view.id}>
-            <Button onClick={() => onSearch({ ...view.filters, offset: 0 })}>{view.name}</Button>
-            <IconButton
-              label={`Delete view ${view.name}`}
-              onClick={() => deleteView.mutate({ projectId: project.id, viewId: view.id })}
+            <Button
+              variant={
+                JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters))
+                  ? "secondary"
+                  : "ghost"
+              }
+              aria-pressed={
+                JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters))
+              }
+              onClick={() => onSearch({ ...view.filters, offset: 0 })}
             >
-              <X />
-            </IconButton>
+              {view.name}
+            </Button>
+            <Confirm
+              label={`Delete view ${view.name}`}
+              icon={<X />}
+              description={`Remove ${view.name} from saved views? Tickets stay unchanged.`}
+              onConfirm={() => deleteView.mutateAsync({ projectId: project.id, viewId: view.id })}
+            />
           </span>
         ))}
         <Modal
           title="Save view"
+          open={savingView}
+          onOpenChange={setSavingView}
+          busy={saveView.isPending}
           trigger={
             <>
               <BookmarkPlus />
@@ -289,13 +341,20 @@ export function TicketList({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              saveView.mutate({
-                projectId: project.id,
-                name: viewName,
-                filters: ticketFilter.parse(
-                  Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
-                ),
-              });
+              void saveView
+                .mutateAsync({
+                  projectId: project.id,
+                  name: viewName,
+                  filters: ticketFilter.parse(
+                    Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
+                  ),
+                })
+                .then(() => {
+                  setSavingView(false);
+                  setViewName("");
+                  toast.success("View saved");
+                })
+                .catch(() => {});
             }}
           >
             <Input
@@ -309,7 +368,6 @@ export function TicketList({
             <Button type="submit" disabled={saveView.isPending}>
               Save view
             </Button>
-            {saveView.isSuccess && <p role="status">View saved</p>}
           </form>
         </Modal>
       </div>
@@ -436,7 +494,13 @@ export function TicketList({
               ))}
             </TableBody>
           </Table>
-          {tickets.data?.total === 0 && <EmptyState title="No matching tickets" />}
+          {tickets.data?.total === 0 && (
+            <EmptyState title={isDefault && !search.q ? "No tickets yet" : "No matching tickets"}>
+              {!isDefault && (
+                <Button onClick={() => onSearch(searchSchema.parse({}))}>Clear filters</Button>
+              )}
+            </EmptyState>
+          )}
         </div>
       )}
       <footer className="pagination">

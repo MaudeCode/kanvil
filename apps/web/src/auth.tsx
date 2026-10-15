@@ -8,15 +8,16 @@ import { Brand, Button, ErrorNotice, Input, Loading } from "./ui.tsx";
 
 export function Login() {
   const info = useQuery({
-    queryKey: ["info"],
-    queryFn: () => api.request("/api/v1/info", infoSchema),
-  });
-  const [error, setError] = useState<unknown>(),
-    [pending, setPending] = useState(false);
+      queryKey: ["info"],
+      queryFn: () => api.request("/api/v1/info", infoSchema),
+    }),
+    [error, setError] = useState<unknown>(),
+    [pending, setPending] = useState(false),
+    [emailOpen, setEmailOpen] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const email = formText(values, "email"),
+    const values = new FormData(event.currentTarget),
+      email = formText(values, "email"),
       password = formText(values, "password");
     setPending(true);
     setError(undefined);
@@ -34,7 +35,6 @@ export function Login() {
         });
       const result = await auth.signIn.email({ email, password });
       if (result.error) throw new Error(result.error.message);
-      // OAuth provider responses are validated server-side before this redirect.
       if (result.data && "url" in result.data && typeof result.data.url === "string")
         window.location.assign(result.data.url);
       else if (window.location.pathname === "/login") window.location.assign("/");
@@ -45,52 +45,87 @@ export function Login() {
     }
   }
   if (info.isPending) return <Loading />;
+  const provider = info.data?.oidc,
+    setup = info.data?.setupRequired,
+    showEmail = setup || !provider || emailOpen;
   return (
     <main className="login">
       <a href="/" className="brand">
         <Brand />
       </a>
-      <h1>{info.data?.setupRequired ? "Create your owner account" : "Sign in"}</h1>
+      <h1>{setup ? "Create your owner account" : "Sign in"}</h1>
+      {info.data?.name !== "Kanvil" && info.data?.name && (
+        <p className="mt-2 text-muted-foreground">{info.data.name}</p>
+      )}
       <ErrorNotice error={info.error ?? error} />
-      <form
-        onSubmit={(event) => {
-          void submit(event);
-        }}
-      >
-        {info.data?.setupRequired && (
-          <>
-            <Input label="Name" name="name" autoComplete="name" required maxLength={120} />
-            <Input label="Setup token" name="token" type="password" required autoComplete="off" />
-            <small>Use KANVIL_SETUP_TOKEN from your instance configuration.</small>
-          </>
-        )}
-        <Input label="Email" name="email" type="email" autoComplete="username" required />
-        <Input
-          label="Password"
-          name="password"
-          type="password"
-          minLength={12}
-          maxLength={128}
-          autoComplete={info.data?.setupRequired ? "new-password" : "current-password"}
-          required
-        />
-        <Button type="submit" variant="default" disabled={pending}>
-          {pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"}
-        </Button>
-      </form>
-      {info.data?.oidc && !info.data.setupRequired && (
-        <Button
-          disabled={pending}
-          onClick={() => {
-            void auth.signIn
-              .social({ provider: "oidc", callbackURL: window.location.href })
-              .then((result) => {
-                if (result.error) setError(new Error(result.error.message));
-              });
+      {provider && !setup && (
+        <div className="login-methods">
+          <Button
+            variant="default"
+            disabled={pending}
+            onClick={() => {
+              setPending(true);
+              setError(undefined);
+              void auth.signIn
+                .social({ provider: "oidc", callbackURL: window.location.href })
+                .then((result) => {
+                  if (result.error) throw new Error(result.error.message);
+                })
+                .catch((cause) => {
+                  setError(cause);
+                  setPending(false);
+                });
+            }}
+          >
+            Sign in with {provider.name}
+          </Button>
+          {!showEmail && (
+            <Button variant="outline" disabled={pending} onClick={() => setEmailOpen(true)}>
+              Use email and password
+            </Button>
+          )}
+        </div>
+      )}
+      {showEmail && (
+        <form
+          onSubmit={(event) => {
+            void submit(event);
           }}
+          className={provider && !setup ? "login-email" : ""}
         >
-          Sign in with {info.data.oidc.name}
-        </Button>
+          {setup && (
+            <>
+              <Input label="Name" name="name" autoComplete="name" required maxLength={120} />
+              <Input label="Setup token" name="token" type="password" required autoComplete="off" />
+              <small>Use KANVIL_SETUP_TOKEN from your instance configuration.</small>
+            </>
+          )}
+          <Input
+            label="Email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            required
+            disabled={pending}
+          />
+          <Input
+            label="Password"
+            name="password"
+            type="password"
+            minLength={12}
+            maxLength={128}
+            autoComplete={setup ? "new-password" : "current-password"}
+            required
+            disabled={pending}
+          />
+          <Button
+            type="submit"
+            variant={provider && !setup ? "outline" : "default"}
+            disabled={pending}
+          >
+            {pending ? "Signing in…" : setup ? "Create account" : "Sign in"}
+          </Button>
+        </form>
       )}
     </main>
   );

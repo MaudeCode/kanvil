@@ -1,8 +1,10 @@
 import { Pencil, Trash2, Send } from "lucide-react";
+import { MarkdownField } from "./components/markdown-field.tsx";
+import { submitOnModEnter } from "./forms.ts";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Ticket } from "@kanvil/contracts";
-import { api, date, ActorName, useIdentity, useOperation } from "./data.tsx";
+import { api, date, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import { Button, IconButton, Confirm, ErrorNotice, Markdown, Textarea } from "./ui.tsx";
 
 export function Discussion({ ticket }: { ticket: Ticket }) {
@@ -11,47 +13,56 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
   const comments = useQuery(
     api.query("list_comments", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
   );
-  const add = useOperation("add_comment");
+  const add = useOperation("add_comment"),
+    access = useProjectAccess(ticket.projectId);
   return (
     <section>
-      <h2>Discussion</h2>
       <ErrorNotice error={comments.error ?? add.error} />
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}
-      <div className="pagination">
-        <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
-          Previous comments
-        </Button>
-        <Button
-          disabled={offset + 50 >= (comments.data?.total ?? 0)}
-          onClick={() => setOffset(offset + 50)}
+      {((comments.data?.total ?? 0) > 50 || offset > 0) && (
+        <div className="pagination">
+          <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
+            Previous comments
+          </Button>
+          <Button
+            disabled={offset + 50 >= (comments.data?.total ?? 0)}
+            onClick={() => setOffset(offset + 50)}
+          >
+            Next comments
+          </Button>
+        </div>
+      )}
+      {access.canWrite && (
+        <form
+          onKeyDown={submitOnModEnter}
+          className="comment-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void add
+              .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
+              .then(() => setBody((current) => (current === body ? "" : current)))
+              .catch(() => {});
+          }}
         >
-          Next comments
-        </Button>
-      </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void add
-            .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
-            .then(() => setBody(""))
-            .catch(() => {});
-        }}
-      >
-        <Textarea
-          label="Comment (Markdown)"
-          rows={3}
-          required
-          maxLength={50000}
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-        />
-        <Button type="submit" disabled={add.isPending}>
-          <Send />
-          Comment
-        </Button>
-      </form>
+          <MarkdownField
+            label="Comment"
+            value={body}
+            onChange={setBody}
+            rows={3}
+            required
+            maxLength={50000}
+            placeholder="Write a comment…"
+            footer={
+              <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
+                <Send />
+                {add.isPending ? "Posting…" : "Comment"}
+              </Button>
+            }
+          />
+        </form>
+      )}
     </section>
   );
 }
@@ -61,16 +72,17 @@ function Comment({
   comment: Awaited<ReturnType<typeof api.call<"list_comments">>>["items"][number];
 }) {
   const identity = useIdentity(),
+    access = useProjectAccess(comment.projectId),
     update = useOperation("update_comment"),
     remove = useOperation("delete_comment");
   const [editing, setEditing] = useState(false),
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
   return (
-    <article className="comment">
+    <article className="comment relative">
       <div className="metadata">
         <strong>
-          <ActorName projectId={comment.projectId} actorId={comment.actorId} />
+          <ActorName projectId={comment.projectId} actorId={comment.actorId} avatar />
         </strong>
         <time dateTime={comment.createdAt}>{date(comment.createdAt)}</time>
         {comment.updatedAt !== comment.createdAt && <span>Edited</span>}
@@ -92,6 +104,7 @@ function Comment({
         >
           <Textarea
             label="Edit comment"
+            disabled={update.isPending}
             value={body}
             required
             maxLength={50000}
@@ -107,7 +120,7 @@ function Comment({
       ) : (
         <Markdown>{comment.body}</Markdown>
       )}
-      {(comment.actorId === identity.id || identity.admin) && (
+      {!editing && access.canWrite && (comment.actorId === identity.id || identity.admin) && (
         <div className="actions">
           <IconButton
             label="Edit comment"

@@ -31,6 +31,11 @@ import { Confirm, Modal, Status, Loading } from "../ui.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+} from "@/components/ui/dropdown-menu";
 import { copyText } from "../lib/browser.ts";
 import {
   ContextMenu,
@@ -59,10 +64,12 @@ export function TicketContextMenu({
   ticket,
   children,
   onEdit,
+  variant = "context",
 }: {
   ticket: Ticket;
   children: ReactElement;
   onEdit?: () => void;
+  variant?: "context" | "dropdown";
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState(false),
@@ -81,6 +88,9 @@ export function TicketContextMenu({
     update = useOperation("update_ticket"),
     remove = useOperation("delete_ticket"),
     subscribe = useOperation("set_subscription");
+  const Root = variant === "dropdown" ? DropdownMenu : ContextMenu,
+    Trigger = variant === "dropdown" ? DropdownMenuTrigger : ContextMenuTrigger,
+    Content = variant === "dropdown" ? DropdownMenuContent : ContextMenuContent;
   const href = `/projects/${ticket.projectId}/tickets/${ticket.id}`;
   const change = (changes: Partial<Ticket>) => {
     void update
@@ -94,9 +104,9 @@ export function TicketContextMenu({
   };
   return (
     <>
-      <ContextMenu open={open} onOpenChange={setOpen}>
-        <ContextMenuTrigger render={children} className="select-text" />
-        <ContextMenuContent className="w-56">
+      <Root open={open} onOpenChange={setOpen}>
+        <Trigger render={children} className="select-text" />
+        <Content className="w-56">
           <ContextMenuGroup>
             <ContextMenuLabel>{ticket.key}</ContextMenuLabel>
             <ContextMenuItem
@@ -224,8 +234,8 @@ export function TicketContextMenu({
             <Trash2 />
             Delete ticket
           </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+        </Content>
+      </Root>
       <Modal title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
         {editing && (
           <Suspense fallback={<Loading />}>

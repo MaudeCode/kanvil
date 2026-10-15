@@ -56,9 +56,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     await page.waitForURL(`${pocket}/interaction?**`);
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(
-      page.getByText("Account linked. You can sign in with PocketID.", { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByText("Linked", { exact: true })).toBeVisible();
     await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
     await page.context().clearCookies({ name: "access_token" });

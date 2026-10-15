@@ -69,8 +69,9 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("button", { name: "Remove photo", exact: true }).click();
   await expect(page.getByText("Photo removed", { exact: true })).toBeVisible();
   await expect(page.locator('img[src^="/api/v1/users/"]')).toHaveCount(0);
-  await page.getByRole("tab", { name: "Agent credentials", exact: true }).click();
-  await page.getByLabel("Credential name", { exact: true }).fill("Calendar fixture");
+  await page.getByRole("tab", { name: "API keys", exact: true }).click();
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  await page.getByLabel("Key name", { exact: true }).fill("Calendar fixture");
   await page.getByRole("checkbox", { name: "Preferences fixture", exact: true }).check();
   await page.getByRole("button", { name: "Expires on", exact: true }).click();
   const calendar = page.locator('[data-slot="calendar"]');
@@ -81,28 +82,35 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
     .nth(10);
   const selected = await day.getAttribute("data-day");
   await day.click();
-  await page.getByRole("button", { name: "Create credential", exact: true }).click();
-  await expect(page.getByLabel("New credential", { exact: true })).toHaveValue(/^kv_/);
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  await expect(page.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   const credentials = await (await page.request.get("/api/v1/credentials")).json(),
     credential = credentials.find((value: { name: string }) => value.name === "Calendar fixture");
   expect(new Date(credential.expiresAt).toLocaleDateString("en-US")).toBe(selected);
   expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Administration", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit instance", exact: true }).click();
   await page.getByLabel("Instance name", { exact: true }).fill("Fixture Kanvil");
   await page.getByRole("button", { name: "Save instance settings", exact: true }).click();
   await expect(page.getByText("Instance settings saved", { exact: true })).toBeVisible();
   await expect(page).toHaveTitle("Fixture Kanvil · Kanvil");
   await page.getByRole("tab", { name: "File storage", exact: true }).click();
+  await page.getByRole("button", { name: "Configure storage", exact: true }).click();
   await choose(page, "Storage provider", "S3-compatible object storage");
   await expect(page.getByLabel("Bucket", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("tab", { name: "Event delivery", exact: true }).click();
+  await page.getByRole("button", { name: "Configure event delivery", exact: true }).click();
   await choose(page, "Event delivery provider", "RabbitMQ");
   await expect(page.getByLabel("RabbitMQ connection URL", { exact: true })).toHaveAttribute(
     "type",
     "password",
   );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("tab", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Configure search", exact: true }).click();
   await choose(page, "Search provider", "Elasticsearch-compatible search");
   await expect(page.getByLabel("Search endpoint", { exact: true })).toBeVisible();
   await choose(page, "Search authentication", "API key");
@@ -112,13 +120,14 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await expect(page.getByLabel("Search API key", { exact: true })).toHaveCount(0);
   await page.reload();
   await page.getByRole("tab", { name: "General", exact: true }).click();
+  await page.getByRole("button", { name: "Edit instance", exact: true }).click();
   await page.getByLabel("Instance name", { exact: true }).fill("Kanvil");
   await page.getByRole("button", { name: "Save instance settings", exact: true }).click();
   await expect(page.getByText("Instance settings saved", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Users", exact: true }).click();
   await expect(page.getByRole("row", { name: /owner@example.test/ })).toBeVisible();
   await page.getByRole("tab", { name: "Authentication", exact: true }).click();
-  await expect(page.getByLabel("MCP endpoint", { exact: true })).toHaveValue(
+  await expect(page.getByRole("group", { name: "MCP endpoint", exact: true })).toContainText(
     "http://localhost:5190/mcp",
   );
   expect(project.id).toBeTruthy();

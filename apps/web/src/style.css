@@ -186,9 +186,6 @@
   .form-grid {
     @apply grid grid-cols-1 gap-x-5 sm:grid-cols-2;
   }
-  .editor > .actions:last-child {
-    @apply mt-6 border-t pt-5;
-  }
   .toolbar {
     @apply mb-4 flex items-end gap-3;
   }
@@ -253,8 +250,7 @@
   .pagination > span {
     @apply mr-auto;
   }
-  .conflict,
-  .secret {
+  .conflict {
     @apply mb-5 border-l-2 border-primary bg-muted/50 p-4;
     overflow-wrap: anywhere;
   }
@@ -396,11 +392,8 @@
   .settings section:first-child {
     @apply border-0 pt-0;
   }
-  .settings-tabs {
-    @apply max-w-full overflow-x-auto;
-  }
   .settings form {
-    @apply max-w-xl;
+    @apply max-w-none;
   }
   .settings p {
     @apply text-sm text-muted-foreground;
@@ -452,7 +445,230 @@
   .empty {
     @apply p-12 text-muted-foreground;
   }
+  .theme-choice {
+    @apply flex w-full cursor-pointer flex-col gap-3 rounded-xl border border-border bg-background p-2 text-sm font-medium transition-colors hover:bg-muted/50;
+  }
+  .theme-choice[data-selected="true"] {
+    @apply border-primary ring-1 ring-primary;
+  }
+  .peer:focus-visible + .theme-choice {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  .theme-choice svg {
+    @apply overflow-hidden border border-foreground/10;
+  }
+  .settings-facts {
+    @apply mb-6 divide-y border-y;
+  }
+  .settings-facts > div {
+    @apply flex flex-wrap items-center justify-between gap-4 py-4 text-sm;
+  }
+  .settings-facts dt {
+    @apply text-muted-foreground;
+  }
+  .section-heading {
+    @apply mb-6 flex flex-wrap items-start justify-between gap-4;
+  }
+  .section-heading h2 {
+    @apply mb-0 text-lg;
+  }
+  .section-heading p {
+    @apply mb-0 mt-1.5 max-w-xl text-sm text-muted-foreground;
+  }
+  .dialog-actions {
+    @apply mt-4 flex justify-end gap-2 border-t pt-4;
+  }
+  .permission-row {
+    @apply border-b py-3 last:border-0;
+  }
+  .permission-row [data-slot="field-description"] {
+    @apply m-0 text-xs;
+  }
+  .resource-icon {
+    @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground;
+  }
+  .copy-value {
+    @apply mb-4 min-w-0;
+  }
+  .copy-value > span {
+    @apply mb-1 block text-xs text-muted-foreground;
+  }
+  .copy-value > div {
+    @apply flex min-w-0 items-center justify-between gap-3;
+  }
+  .copy-value code {
+    @apply min-w-0 break-all text-xs;
+  }
+  .disclosure {
+    @apply border-t;
+  }
+  .disclosure-body {
+    @apply pb-2 pt-3;
+  }
+  .markdown-field {
+    @apply mb-6;
+  }
+  .markdown-field textarea {
+    field-sizing: fixed;
+    max-height: 28rem;
+  }
+  .markdown-field [data-slot="tabs-list"] {
+    @apply shrink-0;
+  }
+  .markdown-field [data-slot="tabs-trigger"] {
+    @apply text-xs;
+  }
+  .markdown-preview {
+    @apply min-h-28 rounded-lg border bg-muted/20 p-4;
+  }
+  .tag-input {
+    @apply flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50;
+  }
+  [data-slot="dialog-content"]:has(.ticket-composer) [data-slot="dialog-header"] {
+    @apply m-0 border-b px-6 py-4;
+  }
+  .composer-body {
+    @apply grid min-w-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_260px];
+  }
+  .composer-writing {
+    @apply min-w-0 space-y-6 p-6;
+  }
+  .composer-writing > .field:first-child > [data-slot="field-label"] {
+    @apply sr-only;
+  }
+  .composer-properties {
+    @apply min-w-0 border-t bg-muted/20 p-6 md:border-l md:border-t-0;
+  }
+  .composer-properties h3 {
+    @apply mb-5 text-xs text-muted-foreground;
+  }
+  .composer-properties .field {
+    @apply mb-4;
+  }
+  .composer-footer {
+    @apply sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-4;
+  }
+  .profile-overview {
+    @apply flex flex-wrap items-center gap-4;
+  }
+  .member-row {
+    @apply flex flex-wrap items-center gap-4 border-b py-4;
+  }
+  .member-role > [data-slot="field-label"] {
+    @apply sr-only;
+  }
+  .ticket-aside .section-heading {
+    @apply mb-3 items-center gap-2;
+  }
+  .ticket-aside .section-heading h2 {
+    @apply mb-0 text-xs font-medium text-muted-foreground;
+  }
+  .ticket-aside .section-heading [data-slot="button"] {
+    @apply h-7 text-xs;
+  }
+  .attachment-row {
+    @apply flex items-center gap-2 border-b py-3 text-xs;
+  }
+  .attachment-row [data-slot="button"] {
+    @apply size-7;
+  }
+  .comment-composer {
+    @apply mt-6;
+  }
+  .comment > .metadata {
+    @apply min-h-8 pr-20;
+  }
+  .comment > .actions {
+    @apply absolute right-0 top-3 mt-0;
+  }
+  .comment > .actions [data-slot="button"] {
+    @apply size-7;
+  }
+  .evidence-outcome[data-outcome="passed"] {
+    color: var(--success);
+  }
+  .evidence-outcome[data-outcome="failed"] {
+    @apply text-destructive;
+  }
+  .ticket-properties {
+    @apply space-y-2;
+  }
+  .instance-configuration > [data-slot="field-set"] > section:first-child {
+    @apply pt-0;
+  }
+  .instance-configuration section {
+    @apply py-0;
+  }
+  .settings > [data-slot="tabs-content"] > section {
+    @apply first:border-0 first:pt-0;
+  }
+  .project-search {
+    @apply mb-5 flex flex-wrap items-center justify-between gap-4;
+  }
+  .project-search > [data-slot="input-group"] {
+    @apply max-w-md;
+  }
+  .project-search > span {
+    @apply text-xs text-muted-foreground;
+  }
+  .inbox li {
+    @apply p-0;
+  }
+  .inbox li > a,
+  .notification-row {
+    @apply flex w-full min-w-0 flex-wrap items-center gap-4 px-4 py-5;
+  }
+  .inbox li > a {
+    @apply text-foreground hover:bg-muted/40 hover:no-underline;
+  }
+  .notification-icon {
+    @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground;
+  }
+  .notification-icon > svg {
+    @apply size-4;
+  }
+  .notification-title {
+    @apply block break-words font-medium leading-relaxed;
+  }
+  .notification-context {
+    @apply mt-1 block text-xs font-normal text-muted-foreground;
+  }
+  .inbox time {
+    @apply ml-auto text-xs text-muted-foreground;
+  }
+  .ticket-collaboration [data-slot="tabs-content"] > section {
+    @apply border-0 pt-0;
+  }
+  .comment code {
+    overflow-wrap: anywhere;
+  }
+  .activity li {
+    @apply relative border-b-0 border-l pl-5;
+  }
+  .activity li::before {
+    content: "";
+    @apply absolute -left-[3px] top-4 size-[5px] rounded-full bg-muted-foreground/50;
+  }
+  .login-methods {
+    @apply mt-7 flex flex-col gap-3;
+  }
+  .login-methods > [data-slot="button"] {
+    @apply min-h-10 w-full;
+  }
+  .login-email {
+    @apply border-t pt-6;
+  }
+  .active-filters {
+    @apply mb-4 flex flex-wrap items-center gap-2;
+  }
+  .active-filters [data-slot="button"] {
+    @apply h-7 text-xs;
+  }
+  .settings-section-picker > [data-slot="field-label"] {
+    @apply sr-only;
+  }
 }
+
 @container (max-width: 1050px) {
   .ticket-body {
     display: flex;
@@ -571,6 +787,9 @@
 
 @media (max-width: 767px) {
   [data-slot="button"],
+  [data-slot="popover-trigger"],
+  [data-slot="dropdown-menu-trigger"],
+  [data-slot="collapsible-trigger"],
   [data-slot="sidebar-trigger"],
   [data-slot="tooltip-trigger"],
   [data-slot="select-trigger"],
@@ -595,26 +814,63 @@
   transition: none;
 }
 
-@layer components {
-  .theme-choice {
-    @apply flex w-full cursor-pointer flex-col gap-3 rounded-xl border border-border bg-background p-2 text-sm font-medium transition-colors hover:bg-muted/50;
+@media (max-width: 767px) {
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="context-menu-sub-trigger"] {
+    min-height: 2.75rem;
   }
-  .theme-choice[data-selected="true"] {
-    @apply border-primary ring-1 ring-primary;
+}
+
+@media (max-width: 767px) {
+  [data-slot="switch"]::after,
+  [data-slot="checkbox"]::after {
+    inset-block: -1rem;
+    inset-inline: -1rem;
   }
-  .peer:focus-visible + .theme-choice {
-    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  .check > [data-slot="field-label"]:not(.sr-only) {
+    padding-block: 0.75rem;
   }
-  .theme-choice svg {
-    @apply overflow-hidden border border-foreground/10;
+}
+@media (max-width: 767px) {
+  [data-slot="dialog-trigger"],
+  [data-slot="alert-dialog-trigger"] {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
   }
-  .settings-facts {
-    @apply mb-6 divide-y border-y;
+  table[data-mobile-layout="rows"],
+  table[data-mobile-layout="rows"] tbody {
+    display: block;
+    width: 100%;
   }
-  .settings-facts > div {
-    @apply flex flex-wrap items-center justify-between gap-4 py-4 text-sm;
+  table[data-mobile-layout="rows"] thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
-  .settings-facts dt {
-    @apply text-muted-foreground;
+  table[data-mobile-layout="rows"] tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem 1rem;
+    padding: 1rem 0;
+  }
+  table[data-mobile-layout="rows"] td {
+    grid-column: 1;
+    padding: 0;
+    white-space: normal;
+    max-width: none;
+    min-width: 0;
+  }
+  table[data-mobile-layout="rows"] td:last-child {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    align-self: start;
+  }
+  table[data-mobile-layout="rows"] td[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
   }
 }

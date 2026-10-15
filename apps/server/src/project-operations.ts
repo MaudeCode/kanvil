@@ -93,7 +93,13 @@ export const projectHandlers: Pick<
   },
   async list_members(ctx) {
     return ctx.db
-      .select({ userId: members.userId, role: members.role, name: user.name, email: user.email })
+      .select({
+        userId: members.userId,
+        role: members.role,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+      })
       .from(members)
       .innerJoin(user, eq(user.id, members.userId))
       .where(eq(members.projectId, project(ctx).id));

@@ -244,8 +244,29 @@ export const createdCredentialSchema = z.object({
 });
 export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
+const eventLabels: Record<string, string> = {
+  "ticket.created": "Ticket created",
+  "ticket.updated": "Ticket updated",
+  "ticket.deleted": "Ticket deleted",
+  "ticket.claimed": "Work claimed",
+  "claim.renewed": "Claim renewed",
+  "claim.released": "Claim released",
+  "claim.recovered": "Claim recovered",
+  "comment.created": "Comment added",
+  "comment.updated": "Comment edited",
+  "comment.deleted": "Comment deleted",
+  "relation.added": "Relationship added",
+  "relation.removed": "Relationship removed",
+  "attachment.created": "File attached",
+  "attachment.deleted": "File removed",
+  "evidence.added": "Evidence attached",
+  "project.created": "Project created",
+  "project.updated": "Project updated",
+  "membership.updated": "Project access changed",
+};
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
-  const label = event.type.replaceAll(".", " · ").replaceAll("_", " ");
+  const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),
+    label = eventLabels[event.type] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1);
   if (!includeTicket || !event.ticketId) return label;
   const key = typeof event.data.key === "string" ? event.data.key : event.ticketId;
   return `${label} · ${key}${typeof event.data.title === "string" ? ` · ${event.data.title}` : ""}`;
@@ -307,7 +328,13 @@ export const operations = {
   list_members: op(
     projectInput,
     z.array(
-      z.object({ userId: z.string(), name: z.string(), email: z.string(), role: z.enum(roles) }),
+      z.object({
+        userId: z.string(),
+        name: z.string(),
+        email: z.string(),
+        role: z.enum(roles),
+        image: z.string().nullable().optional(),
+      }),
     ),
     "GET",
     "/projects/{projectId}/members",

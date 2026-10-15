@@ -12,10 +12,10 @@ describe("agent write contracts", () => {
       createdAt: new Date().toISOString(),
       data: {},
     };
-    expect(formatEvent(event)).toBe("ticket · updated");
-    expect(formatEvent(event, true)).toBe(`ticket · updated · ${event.ticketId}`);
+    expect(formatEvent(event)).toBe("Ticket updated");
+    expect(formatEvent(event, true)).toBe(`Ticket updated · ${event.ticketId}`);
     expect(formatEvent({ ...event, data: { key: "KAN-1", title: "A complete title" } }, true)).toBe(
-      "ticket · updated · KAN-1 · A complete title",
+      "Ticket updated · KAN-1 · A complete title",
     );
   });
   it("preserves a full descriptive title and deduplicates labels", () => {

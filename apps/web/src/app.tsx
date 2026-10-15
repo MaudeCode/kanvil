@@ -1,9 +1,11 @@
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import { createPrivatePersister } from "./lib/private-cache.ts";
 import {
   createRootRoute,
   createRoute,
@@ -14,12 +16,29 @@ import {
   useNavigate,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { ChevronRight, WifiOff, FolderOpen } from "lucide-react";
+import {
+  ChevronRight,
+  WifiOff,
+  FolderOpen,
+  Search as SearchIcon,
+  MessageSquare,
+  Bell,
+  CheckCheck,
+} from "lucide-react";
 import { formatEvent, notificationsSchema, okSchema, infoSchema } from "@kanvil/contracts";
 import { settingsSearchSchema, adminSearchSchema, searchSchema } from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
-import { api, auth, date, Identity, useLive, useProjects, useIdentity } from "./data.tsx";
+import {
+  api,
+  auth,
+  date,
+  Identity,
+  useLive,
+  useProjects,
+  useIdentity,
+  clearPrivateStorage,
+} from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading } from "./ui.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateProject } from "./components/create-project.tsx";
@@ -79,16 +98,33 @@ function Workspace({
         },
       }),
   );
-  const [persister] = useState(() =>
-    createSyncStoragePersister({ storage: localStorage, key: `kanvil:${user.id}:cache` }),
+  const [persistence] = useState(() =>
+    createPrivatePersister(localStorage, `kanvil:${user.id}:cache`),
   );
-  useEffect(() => () => cache.clear(), [cache]);
+  useEffect(() => {
+    persistence.resume();
+    return () => {
+      persistence.pause();
+      cache.clear();
+    };
+  }, [cache, persistence]);
   return (
-    <Identity value={{ ...user, image: user.image ?? null, admin: user.role === "admin" }}>
+    <Identity
+      value={{
+        ...user,
+        image: user.image ?? null,
+        admin: user.role === "admin",
+        clearPrivateData: () => {
+          persistence.pause();
+          cache.clear();
+          clearPrivateStorage(user.id);
+        },
+      }}
+    >
       <PersistQueryClientProvider
         client={cache}
         persistOptions={{
-          persister,
+          persister: persistence.persister,
           maxAge: 7 * 86400000,
           buster: "kanvil-v1",
           dehydrateOptions: {
@@ -138,19 +174,45 @@ function Shell() {
   );
 }
 function Home() {
-  const projects = useProjects();
+  const projects = useProjects(),
+    [query, setQuery] = useState("");
+  const matches =
+    projects.data?.filter((project) =>
+      `${project.name} ${project.key} ${project.description}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    ) ?? [];
   return (
     <>
       <header className="page-header">
         <h1>Projects</h1>
         <CreateProject />
       </header>
+      {!!projects.data?.length && (
+        <div className="project-search">
+          <InputGroup>
+            <InputGroupAddon>
+              <SearchIcon />
+            </InputGroupAddon>
+            <InputGroupInput
+              aria-label="Search projects"
+              placeholder="Search projects…"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </InputGroup>
+          <span>
+            {matches.length} {matches.length === 1 ? "project" : "projects"}
+          </span>
+        </div>
+      )}
       <ErrorNotice error={projects.error} />
       {projects.isPending ? (
         <Loading />
       ) : (
         <ItemGroup className="project-list gap-0">
-          {projects.data?.map((project) => (
+          {matches.map((project) => (
             <ProjectContextMenu key={project.id} project={project}>
               <Item
                 className="rounded-none border-x-0 border-t-0 border-b-border py-5"
@@ -175,6 +237,11 @@ function Home() {
               </Item>
             </ProjectContextMenu>
           ))}
+          {projects.data?.length !== 0 && matches.length === 0 && (
+            <EmptyState title="No matching projects">
+              <Button onClick={() => setQuery("")}>Clear search</Button>
+            </EmptyState>
+          )}
           {projects.data?.length === 0 && (
             <EmptyState title="No projects yet" icon={FolderOpen}>
               <CreateProject />
@@ -187,53 +254,113 @@ function Home() {
 }
 function Inbox() {
   const cache = useQueryClient(),
-    [error, setError] = useState<unknown>();
+    projects = useProjects(),
+    [error, setError] = useState<unknown>(),
+    [view, setView] = useState("unread"),
+    [pending, setPending] = useState(false);
   const items = useQuery({
     queryKey: ["kanvil", "notifications"],
     queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
   });
+  const unread = items.data?.filter((item) => !item.readAt) ?? [],
+    visible = view === "unread" ? unread : (items.data ?? []);
+  async function mark(ids: string[]) {
+    if (!ids.length) return;
+    setPending(true);
+    setError(undefined);
+    try {
+      await api.request("/api/v1/notifications/read", okSchema, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      await cache.invalidateQueries({ queryKey: ["kanvil", "notifications"] });
+    } catch (cause) {
+      setError(cause);
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <>
       <header className="page-header">
         <h1>Inbox</h1>
         <Button
-          disabled={!items.data?.some((item) => !item.readAt)}
+          disabled={pending || !unread.length}
           onClick={() => {
-            void api
-              .request("/api/v1/notifications/read", okSchema, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  ids: items.data?.filter((item) => !item.readAt).map((item) => item.id),
-                }),
-              })
-              .then(() => cache.invalidateQueries({ queryKey: ["kanvil", "notifications"] }))
-              .catch(setError);
+            void mark(unread.map((item) => item.id));
           }}
         >
+          <CheckCheck />
           Mark all read
         </Button>
       </header>
-      <ErrorNotice error={error ?? items.error} />
-      {items.isPending && <Loading />}
-      <ol className="inbox">
-        {items.data?.map((item) => (
-          <li key={item.id} data-unread={!item.readAt}>
-            {item.event.ticketId ? (
-              <Link
-                to="/projects/$projectId/tickets/$ticketId"
-                params={{ projectId: item.event.projectId, ticketId: item.event.ticketId }}
-              >
-                {formatEvent(item.event, true)}
-              </Link>
-            ) : (
-              <span>{formatEvent(item.event)}</span>
+      <Tabs value={view} onValueChange={(value) => setView(String(value))} className="mb-5">
+        <TabsList variant="line">
+          <TabsTrigger value="unread">
+            Unread
+            {unread.length > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {unread.length}
+              </Badge>
             )}
-            <small className="muted">{date(item.event.createdAt)}</small>
-          </li>
-        ))}
-      </ol>
-      {items.data?.length === 0 && <EmptyState title="No notifications" />}
+          </TabsTrigger>
+          <TabsTrigger value="all">All notifications</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <ErrorNotice error={error ?? items.error} />
+      {items.isPending ? (
+        <Loading />
+      ) : (
+        <ol className="inbox">
+          {visible.map((item) => {
+            const title =
+                typeof item.event.data.title === "string"
+                  ? item.event.data.title
+                  : formatEvent(item.event),
+              key = typeof item.event.data.key === "string" ? item.event.data.key : null,
+              project = projects.data?.find((candidate) => candidate.id === item.event.projectId),
+              content = (
+                <>
+                  <span className="notification-icon">
+                    {item.event.type.startsWith("comment.") ? <MessageSquare /> : <Bell />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="notification-title">{title}</span>
+                    <span className="notification-context">
+                      {project?.name}
+                      {key && ` · ${key}`} · {formatEvent(item.event)}
+                    </span>
+                  </span>
+                  <time dateTime={item.event.createdAt}>{date(item.event.createdAt)}</time>
+                </>
+              );
+            return (
+              <li key={item.id} data-unread={!item.readAt}>
+                {item.event.ticketId && item.event.type !== "ticket.deleted" ? (
+                  <Link
+                    to="/projects/$projectId/tickets/$ticketId"
+                    params={{ projectId: item.event.projectId, ticketId: item.event.ticketId }}
+                    onClick={() => {
+                      if (!item.readAt) void mark([item.id]);
+                    }}
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <div className="notification-row">{content}</div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {!items.isPending && !visible.length && (
+        <EmptyState
+          title={view === "unread" ? "No unread notifications" : "No notifications"}
+          icon={Bell}
+        />
+      )}
     </>
   );
 }
