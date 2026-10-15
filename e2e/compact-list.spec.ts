@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { appearance } from "./controls.ts";
+import { appearance, choose } from "./controls.ts";
 
 test("narrow ticket lists keep one toolbar, compact metadata, and accessible label previews", async ({
   page,
@@ -15,7 +15,15 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
   ).json();
   const title =
     "Preserve ticket ownership when an agent reconnects after an interrupted handoff and the previous worker is still active";
-  const labels = ["low", "agent-compat", "bug", "sf", "web", "upstream"];
+  const labels = [
+    "low",
+    "agent-compat",
+    "bug",
+    "sf",
+    "web",
+    "upstream",
+    "compatibility-with-reconnected-workers",
+  ];
   for (let i = 0; i < 3; i++)
     expect(
       (
@@ -60,6 +68,48 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
       await expect(popup).toHaveCount(0);
     }
   }
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await choose(page, "Label display", "All labels");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+  for (const mode of ["Light", "Dark"]) {
+    await appearance(page, mode);
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const inlineLabels = row.getByRole("button", {
+        name: `Labels: ${labels.join(", ")}`,
+        exact: true,
+      });
+      for (const label of labels)
+        await expect(inlineLabels.getByText(label, { exact: true })).toBeVisible();
+      await expect(inlineLabels.locator(".ticket-tags-overflow")).toBeHidden();
+      expect(
+        await inlineLabels
+          .locator(".ticket-tag")
+          .evaluateAll((tags) =>
+            tags.every(
+              (tag) => tag.scrollWidth <= tag.clientWidth && tag.scrollHeight <= tag.clientHeight,
+            ),
+          ),
+      ).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+    }
+  }
+  await page.reload();
+  await expect(table).toHaveAttribute("data-label-display", "all");
+  await expect(row.getByText(labels.at(-1)!, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Label display", exact: true })).toContainText(
+    "All labels",
+  );
+  await page.getByRole("button", { name: "Reset display", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+  await expect(table).toHaveAttribute("data-label-display", "compact");
+  await expect(row.getByText(labels.at(-1)!, { exact: true })).toBeHidden();
+  await expect(row.locator(".ticket-tags-overflow")).toBeVisible();
   await page.getByRole("button", { name: "Ticket views", exact: true }).click();
   await page.getByRole("menuitem", { name: "Select all displayed tickets", exact: true }).click();
   await expect(

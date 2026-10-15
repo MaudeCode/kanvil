@@ -24,12 +24,13 @@ export function TicketTags({
           />
         }
       >
-        {tags.slice(0, 2).map((tag, index) => (
+        {tags.map((tag, index) => (
           <Badge
             key={tag}
             variant={variant}
-            className="min-w-0 max-w-28 shrink"
+            className="ticket-tag min-w-0 max-w-28 shrink data-[preview-extra]:hidden"
             data-secondary={index === 1 || undefined}
+            data-preview-extra={index > 1 || undefined}
           >
             <span className="truncate">{tag}</span>
           </Badge>

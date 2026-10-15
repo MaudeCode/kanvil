@@ -59,8 +59,10 @@ import { TicketEditor } from "./ticket-editor.tsx";
 import {
   searchSchema,
   ticketDensitySchema,
+  ticketLabelDisplaySchema,
   type TicketSearch,
   type TicketDensity,
+  type TicketLabelDisplay,
 } from "./search.ts";
 const features = tableFeatures({
   columnSizingFeature,
@@ -75,6 +77,14 @@ const defaultVisibility = {
   createdAt: false,
   updatedAt: false,
 };
+function readDisplayPreference<T>(key: string, schema: z.ZodType<T>, fallback: T): T {
+  try {
+    const result = schema.safeParse(localStorage.getItem(key));
+    return result.success ? result.data : fallback;
+  } catch {
+    return fallback;
+  }
+}
 const columns: ColumnDef<typeof features, Ticket>[] = [
   {
     id: "select",
@@ -188,13 +198,13 @@ export function TicketList({
   const identity = useIdentity();
   const storageKey = `kanvil:${identity.id}:ticket-columns`;
   const densityKey = `kanvil:${identity.id}:ticket-density`;
-  const [density, setDensity] = useState<TicketDensity>(() => {
-    try {
-      return ticketDensitySchema.catch("compact").parse(localStorage.getItem(densityKey));
-    } catch {
-      return "compact";
-    }
-  });
+  const labelDisplayKey = `kanvil:${identity.id}:ticket-label-display`;
+  const [labelDisplay, setLabelDisplay] = useState<TicketLabelDisplay>(() =>
+    readDisplayPreference(labelDisplayKey, ticketLabelDisplaySchema, "compact"),
+  );
+  const [density, setDensity] = useState<TicketDensity>(() =>
+    readDisplayPreference(densityKey, ticketDensitySchema, "compact"),
+  );
   const [visibility, setVisibility] = useState<Record<string, boolean>>(() => {
     try {
       return {
@@ -211,10 +221,11 @@ export function TicketList({
     try {
       localStorage.setItem(storageKey, JSON.stringify(visibility));
       localStorage.setItem(densityKey, density);
+      localStorage.setItem(labelDisplayKey, labelDisplay);
     } catch {
       /* Display controls work without storage. */
     }
-  }, [storageKey, visibility, densityKey, density]);
+  }, [storageKey, visibility, densityKey, density, labelDisplayKey, labelDisplay]);
   const tickets = useQuery(
     api.query("list_tickets", { projectId: project.id, ...search, limit: 50 }),
   );
@@ -325,6 +336,8 @@ export function TicketList({
         }
         density={density}
         onDensityChange={setDensity}
+        labelDisplay={labelDisplay}
+        onLabelDisplayChange={setLabelDisplay}
         columns={table
           .getAllLeafColumns()
           .filter((column) => column.getCanHide())
@@ -337,6 +350,7 @@ export function TicketList({
         onReset={() => {
           setVisibility(defaultVisibility);
           setDensity("compact");
+          setLabelDisplay("compact");
           changeSearch({ ...search, sort: "priority", offset: 0 });
         }}
       />
@@ -406,6 +420,7 @@ export function TicketList({
             role="table"
             aria-label="Tickets"
             data-density={density}
+            data-label-display={labelDisplay}
             style={{ "--table-width": `${table.getTotalSize()}px` }}
           >
             <TableHeader role="rowgroup">

@@ -706,6 +706,25 @@
   }
 }
 
+.ticket-table[data-label-display="all"] .ticket-tags-trigger {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.ticket-table[data-label-display="all"] .ticket-tag {
+  display: inline-flex;
+  height: auto;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ticket-table[data-label-display="all"] .ticket-tag > span {
+  overflow: visible;
+  white-space: normal;
+}
+.ticket-table[data-label-display="all"] .ticket-tags-overflow {
+  display: none;
+}
+
 @container (min-width: 851px) and (max-width: 1050px) {
   .ticket-table th[data-column="title"] {
     width: auto !important;
@@ -740,14 +759,14 @@
   .ticket-control-label {
     display: none;
   }
-  .ticket-tags-trigger [data-secondary],
+  .ticket-table:not([data-label-display="all"]) .ticket-tags-trigger [data-secondary],
   .ticket-tags-count-wide {
     display: none;
   }
   .ticket-tags-count-narrow {
     display: inline;
   }
-  .ticket-tags-overflow[data-wide-overflow="false"] {
+  .ticket-table:not([data-label-display="all"]) .ticket-tags-overflow[data-wide-overflow="false"] {
     display: inline-flex;
   }
   .ticket-list-controls > [data-slot] {

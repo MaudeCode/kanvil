@@ -6,6 +6,8 @@ export const searchSchema = ticketFilter.extend({
 export type TicketSearch = z.output<typeof searchSchema>;
 export const ticketDensitySchema = z.enum(["compact", "comfortable"]);
 export type TicketDensity = z.output<typeof ticketDensitySchema>;
+export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
+export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 
 export const accountSections = ["account", "appearance", "credentials", "notifications"] as const;
 export const adminSections = [

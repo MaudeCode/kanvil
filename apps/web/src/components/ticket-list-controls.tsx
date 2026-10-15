@@ -15,8 +15,10 @@ import { Button, Check, ErrorNotice, Input, Select, SelectItem } from "../ui.tsx
 import {
   searchSchema,
   ticketDensitySchema,
+  ticketLabelDisplaySchema,
   type TicketSearch,
   type TicketDensity,
+  type TicketLabelDisplay,
 } from "../search.ts";
 import { Popover, PopoverTrigger, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import {
@@ -39,6 +41,8 @@ export function TicketListControls({
   onReset,
   density,
   onDensityChange,
+  labelDisplay,
+  onLabelDisplayChange,
   view,
   actions,
 }: {
@@ -50,6 +54,8 @@ export function TicketListControls({
   onReset: () => void;
   density: TicketDensity;
   onDensityChange: (density: TicketDensity) => void;
+  labelDisplay: TicketLabelDisplay;
+  onLabelDisplayChange: (display: TicketLabelDisplay) => void;
   view: ReactNode;
   actions: ReactNode;
 }) {
@@ -245,6 +251,14 @@ export function TicketListControls({
             >
               <SelectItem value="compact">Compact</SelectItem>
               <SelectItem value="comfortable">Comfortable</SelectItem>
+            </Select>
+            <Select
+              label="Label display"
+              value={labelDisplay}
+              onValueChange={(value) => onLabelDisplayChange(ticketLabelDisplaySchema.parse(value))}
+            >
+              <SelectItem value="compact">Compact preview</SelectItem>
+              <SelectItem value="all">All labels</SelectItem>
             </Select>
             <fieldset>
               <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>

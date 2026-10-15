@@ -29,6 +29,6 @@ Old built-in selections resolve to the corresponding named palette. The former d
 
 ## Density
 
-Ticket lists default to Compact rows. **Display → Row spacing → Comfortable** adds room without hiding titles or labels. Property visibility and density are personal browser preferences. Search, filters, and ordering remain shareable through the URL and saved views. Touch controls retain their larger targets on phones.
+Ticket lists default to Compact rows. **Display → Row spacing → Comfortable** adds room without hiding titles or labels. **Display → Label display → All labels** shows every full label and scope inline, wrapping as needed. Property visibility, row spacing, and label display are personal browser preferences. Search, filters, and ordering remain shareable through the URL and saved views. Touch controls retain their larger targets on phones.
 
 The ticket list uses one view/action toolbar under the location bar. The project name appears once in the location bar, beside its settings cog. Open the magnifying glass for search and the view dropdown for saved views, saving the current filter, deleting a selected saved view, or selecting all displayed tickets. On narrow screens, metadata shares a line instead of repeating property headings. Label/scope previews show two tags on wider layouts and one on narrow layouts; opening a preview reveals every full tag. Ticket titles remain unclipped.
