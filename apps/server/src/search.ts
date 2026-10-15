@@ -2,7 +2,7 @@ import { createPollingJob } from "./adapters/polling-jobs.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 import { createTicketIndex } from "./adapters/ticket-indexes.ts";
 import type { TicketIndexFactory } from "./adapters/ports.ts";
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { eq, inArray, sql, ilike, or, type SQL } from "drizzle-orm";
 import { searchState, tickets, events, eventClock } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
@@ -28,14 +28,17 @@ export type TicketSearchProvider = {
     query: string,
   ) => Promise<SQL | undefined>;
 };
-const fingerprint = (settings: SearchSettings) =>
-  createHash("sha256").update(JSON.stringify(settings)).digest("hex");
 export function createTicketSearch(
   database: Database,
   instance: Instance,
   factory: TicketIndexFactory = createTicketIndex,
   schedule: JobScheduler = createPollingJob,
 ) {
+  // A keyed fingerprint does not expose an offline verifier for saved integration passwords.
+  const fingerprint = (settings: SearchSettings) =>
+    createHmac("sha256", instance.config.BETTER_AUTH_SECRET)
+      .update(JSON.stringify(settings))
+      .digest("hex");
   async function work() {
     const settings = await instance.search();
     if (!settings) return;
