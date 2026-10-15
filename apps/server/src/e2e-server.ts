@@ -1,4 +1,6 @@
 import { Server } from "node:http";
+import { createServer } from "node:https";
+import { readFileSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
@@ -6,6 +8,14 @@ import { z } from "zod";
 
 const fixture = await createFixture();
 const port = Number(process.env.KANVIL_TEST_PORT ?? 5190);
+const tls =
+  process.env.KANVIL_TEST_TLS_CERT && process.env.KANVIL_TEST_TLS_KEY
+    ? {
+        cert: readFileSync(process.env.KANVIL_TEST_TLS_CERT),
+        key: readFileSync(process.env.KANVIL_TEST_TLS_KEY),
+      }
+    : undefined;
+const baseUrl = `${tls ? "https" : "http"}://localhost:${port}`;
 const pocketUrl = `${process.env.KANVIL_TEST_POCKET_TLS === "1" ? "https" : "http"}://localhost:51411`;
 const pocketHeaders = {
   "X-API-Key": "kanvil-isolated-test-admin-api-key",
@@ -18,7 +28,7 @@ if (process.env.KANVIL_TEST_POCKET_ID === "1") {
     headers: pocketHeaders,
     body: JSON.stringify({
       name: "Kanvil browser integration test",
-      callbackURLs: [`http://localhost:${port}/api/auth/callback/oidc`],
+      callbackURLs: [`${baseUrl}/api/auth/callback/oidc`],
       isPublic: false,
       pkceEnabled: true,
     }),
@@ -30,8 +40,8 @@ if (process.env.KANVIL_TEST_POCKET_ID === "1") {
 }
 const application = await createApplication(fixture.database, {
   ...fixture.config,
-  KANVIL_URL: `http://localhost:${port}`,
-  trustedOrigins: [`http://localhost:${port}`, "kanvil://"],
+  KANVIL_URL: baseUrl,
+  trustedOrigins: [baseUrl, "kanvil://"],
   KANVIL_SETUP_TOKEN: "kanvil-browser-tests-only-setup-token",
   KANVIL_PUSH_ENABLED: process.env.KANVIL_TEST_PUSH === "1",
   ...(oidc
@@ -42,16 +52,22 @@ const application = await createApplication(fixture.database, {
       }
     : {}),
 });
-const server = serve({ fetch: application.app.fetch, hostname: "127.0.0.1", port }, () =>
-  console.info(`Isolated Kanvil test server: http://localhost:${port}`),
+const server = serve(
+  {
+    fetch: application.app.fetch,
+    hostname: "127.0.0.1",
+    port,
+    ...(tls ? { createServer, serverOptions: tls } : {}),
+  },
+  () => console.info(`Isolated Kanvil test server: ${baseUrl}`),
 );
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  await application.close();
   if (server instanceof Server) server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await application.close();
   await fixture.close();
   if (oidc)
     await fetch(`${pocketUrl}/api/oidc/clients/${oidc.id}`, {

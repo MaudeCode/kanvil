@@ -1,0 +1,60 @@
+name: Android preview build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/android-build.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Vite+, Node, and pnpm
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          cache-save: false
+          run-install: false
+      - name: Set up Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Android project
+        run: pnpm --filter @kanvil/mobile exec expo prebuild --platform android --no-install
+      - name: Build standalone arm64 preview
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --max-workers=2 --no-daemon
+      - name: Verify embedded JavaScript
+        run: |
+          kanvil_apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f -print -quit)"
+          "$kanvil_apksigner" verify --verbose apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          unzip -Z1 apps/mobile/android/app/build/outputs/apk/release/app-release.apk | grep -Fx 'assets/index.android.bundle'
+      - name: Preserve preview APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kanvil-android-arm64-preview
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            LICENSE
+          if-no-files-found: error
+          retention-days: 14
