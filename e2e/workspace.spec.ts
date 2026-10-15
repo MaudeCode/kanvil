@@ -1,0 +1,147 @@
+import { test, expect } from "@playwright/test";
+
+const password = "test-only-owner-password-234";
+const title =
+  "Preserve complete ticket titles across the agent workspace, even when the title contains enough detail to wrap onto several readable lines";
+test("owner setup, tickets, discussion, attachments, credentials, and realtime conflicts", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Create your owner account" })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Test Owner");
+  await page.getByLabel("Setup token").fill("kanvil-browser-tests-only-setup-token");
+  await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New project", exact: true }).last().click();
+  await page.getByLabel("Project name").fill("Kanvil development");
+  await page.getByLabel("Permanent ticket prefix").fill("KAN");
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Kanvil development", exact: true }),
+  ).toBeVisible();
+  const projectId = new URL(page.url()).pathname.split("/")[2];
+  expect(projectId).toBeTruthy();
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill(title);
+  await page
+    .getByLabel("Description (Markdown)")
+    .fill("## Context\nKeep the complete title readable.");
+  await page
+    .getByLabel("Acceptance criteria (Markdown)")
+    .fill("- [ ] Titles wrap\n- [ ] Changes appear live");
+  await page.getByLabel("Difficulty", { exact: true }).selectOption("med");
+  await page.getByLabel("Labels (comma separated)").fill("web, agents");
+  await page.getByLabel("Ready for agents").check();
+  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const link = page.getByRole("link", { name: title, exact: true });
+  await expect(link).toBeVisible();
+  const layout = await link.evaluate((element) => ({
+    lines:
+      element.getBoundingClientRect().height /
+      Number.parseFloat(getComputedStyle(element).lineHeight),
+    overflow: getComputedStyle(element).textOverflow,
+  }));
+  expect(layout.lines).toBeGreaterThan(1);
+  expect(layout.overflow).not.toBe("ellipsis");
+  await page.screenshot({ path: "test-results/tickets-desktop.png", fullPage: true });
+  await link.click();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await expect(page.getByText("Ready to claim", { exact: true })).toBeVisible();
+  const ticketId = new URL(page.url()).pathname.split("/")[4];
+  await page.getByLabel("Comment (Markdown)").fill("Verified through the browser.");
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(page.getByText("Verified through the browser.", { exact: true })).toBeVisible();
+  await page.getByLabel("File (up to 10 MB)").setInputFiles({
+    name: "proof.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("attachment proof"),
+  });
+  await page.getByRole("button", { name: "Upload", exact: true }).click();
+  await expect(page.getByRole("link", { name: "proof.txt", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit ticket", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Local unsaved draft");
+  const read = await page.request.get(`/api/v1/projects/${projectId}/tickets/${ticketId}`);
+  const current = await read.json();
+  expect(current.ticket.title).toBe(title);
+  const update = await page.request.patch(`/api/v1/projects/${projectId}/tickets/${ticketId}`, {
+    data: {
+      expectedVersion: current.ticket.version,
+      changes: { title: "Changed by another agent" },
+    },
+  });
+  expect(update.status()).toBe(200);
+  await expect(page.getByText("This ticket changed.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Local unsaved draft");
+  await expect(page.getByRole("button", { name: "Save ticket", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Discard draft and reload", exact: true }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Changed by another agent");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  for (let index = 0; index < 54; index++) {
+    const response = await page.request.post(`/api/v1/projects/${projectId}/tickets`, {
+      data: {
+        title: `Browser ticket ${index}: verify pagination and readable multi-line ticket rows`,
+      },
+    });
+    expect(response.status()).toBe(200);
+  }
+  await page.goto(`/projects/${projectId}`);
+  await expect(page.getByRole("row")).toHaveCount(51);
+  await page.screenshot({ path: "test-results/tickets-desktop.png", fullPage: true });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("row")).toHaveCount(6);
+  await page.getByLabel("Search tickets", { exact: true }).fill("Changed by another agent");
+  await expect(page.getByRole("row")).toHaveCount(2);
+  await page.getByRole("checkbox", { name: "Select KAN-1", exact: true }).check();
+  await page.getByLabel("New status", { exact: true }).selectOption("in_review");
+  await page.getByRole("button", { name: "Apply status", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "In review", exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Save current view", exact: true }).click();
+  await page.getByLabel("View name", { exact: true }).fill("Agent edits");
+  await page.getByRole("button", { name: "Save view", exact: true }).click();
+  await expect(page.getByText("View saved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Agent edits", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "All tickets", exact: true }).click();
+  await expect(page.getByRole("row")).toHaveCount(51);
+  await page.getByRole("button", { name: "Agent edits", exact: true }).click();
+  await expect(page.getByRole("row")).toHaveCount(2);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Credential name").fill("Read-only agent");
+  await page.getByRole("checkbox", { name: "Kanvil development", exact: true }).check();
+  await page.getByRole("button", { name: "Create credential", exact: true }).click();
+  const key = await page.getByLabel("New credential", { exact: true }).inputValue();
+  expect(key).toMatch(/^kv_/);
+  const apiRead = await page.request.get(`/api/v1/projects/${projectId}/tickets`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  expect(apiRead.status()).toBe(200);
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const revoked = await page.request.get(`/api/v1/projects/${projectId}/tickets`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  expect(revoked.status()).toBe(401);
+  await page.goto(`/projects/${projectId}/tickets/${ticketId}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("heading", { name: "Changed by another agent", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/ticket-mobile-web.png", fullPage: true });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).some(
+        (storageKey) => storageKey.includes(":cache") || storageKey.includes(":draft:"),
+      ),
+    ),
+  ).toBe(false);
+  expect(errors).toEqual([]);
+});

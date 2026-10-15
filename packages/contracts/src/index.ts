@@ -24,7 +24,7 @@ export const priorityLabels: Record<(typeof priorities)[number], string> = {
 };
 export const stateTones: Record<(typeof states)[number], string> = {
   backlog: "muted",
-  todo: "neutral",
+  todo: "foreground",
   in_progress: "warning",
   in_review: "accent",
   done: "success",
@@ -106,6 +106,7 @@ export const snapshotSchema = z.object({
   tickets: z.array(ticketSchema),
   cursor: z.string().regex(/^\d+$/),
 });
+export const checkpointSchema = z.object({ cursor: z.string().regex(/^\d+$/) });
 export const readinessSchema = z.object({
   ready: z.boolean(),
   reasons: z.array(
@@ -176,6 +177,38 @@ export const eventSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   createdAt: timestamp,
 });
+export const infoSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  setupRequired: z.boolean(),
+  oidc: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export const notificationsSchema = z.array(
+  z.object({
+    id: z.uuid(),
+    readAt: timestamp.nullable(),
+    event: eventSchema,
+  }),
+);
+export const credentialsSchema = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    start: z.string().nullable(),
+    enabled: z.boolean(),
+    expiresAt: timestamp.nullable(),
+    createdAt: timestamp,
+    permissions: z.string().nullable(),
+    metadata: z.string().nullable(),
+  }),
+);
+export const createdCredentialSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  name: z.string().nullable(),
+  expiresAt: timestamp.nullable(),
+});
+export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
@@ -259,7 +292,12 @@ export const operations = {
   ),
   get_ticket: op(
     ticketInput,
-    z.object({ ticket: ticketSchema, readiness: readinessSchema, claim: claimSchema.nullable() }),
+    z.object({
+      ticket: ticketSchema,
+      readiness: readinessSchema,
+      claim: claimSchema.nullable(),
+      subscribed: z.boolean(),
+    }),
     "GET",
     "/projects/{projectId}/tickets/{ticketId}",
     "read",
@@ -591,4 +629,27 @@ export class ApiError extends Error {
 export function parseOutput<K extends Operation>(name: K, value: unknown): Output<K> {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The registry key selects and validates the generic result schema.
   return operations[name].output.parse(value) as Output<K>;
+}
+
+export function errorMessage(error: unknown): string {
+  if (error instanceof z.ZodError)
+    return error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "Input"}: ${issue.message}`)
+      .join("; ");
+  if (error instanceof ApiError && Array.isArray(error.details)) {
+    const details = z
+      .array(z.object({ path: z.string(), message: z.string() }))
+      .safeParse(error.details);
+    if (details.success)
+      return details.data
+        .slice(0, 3)
+        .map((issue) => `${issue.path || "Input"}: ${issue.message}`)
+        .join("; ");
+  }
+  return error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : "The request could not be completed";
 }

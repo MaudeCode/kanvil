@@ -22,7 +22,12 @@ export function createAuth(database: Database, config: Config) {
     telemetry: { enabled: false },
     plugins: [
       admin(),
-      apiKey({ defaultPrefix: "kv_", enableMetadata: true }),
+      apiKey({
+        defaultPrefix: "kv_",
+        enableMetadata: true,
+        maximumNameLength: 100,
+        keyExpiration: { minExpiresIn: 1 / 24, maxExpiresIn: 365 },
+      }),
       expo(),
       jwt(),
       mcp({

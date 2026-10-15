@@ -53,3 +53,12 @@ jobs:
 
       - name: Check
         run: pnpm check
+
+      - name: Build web application
+        run: pnpm build
+
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser workflows
+        run: pnpm exec playwright test

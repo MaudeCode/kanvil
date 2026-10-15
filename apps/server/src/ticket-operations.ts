@@ -211,6 +211,15 @@ export const ticketHandlers: Pick<
     const ticket = await getTicket(ctx, input.ticketId);
     return {
       ticket,
+      subscribed:
+        (
+          await ctx.db
+            .select({ id: subscriptions.ticketId })
+            .from(subscriptions)
+            .where(
+              and(eq(subscriptions.ticketId, ticket.id), eq(subscriptions.userId, ctx.actor.id)),
+            )
+        ).length > 0,
       readiness: await readiness(ctx, ticket),
       claim: (await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id)))[0] ?? null,
     };

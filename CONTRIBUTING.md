@@ -12,7 +12,7 @@ pnpm check
 
 The workspace includes `apps/*` and `packages/*`. `compose.dev.yml` runs an isolated development PostgreSQL instance on loopback port 55462. Tests create and remove their own databases; set `TEST_DATABASE_URL` to use another dedicated test PostgreSQL server. Stop the development service with `pnpm db:down`.
 
-For a local backend, run `pnpm configure` once to create a private `.env` with generated secrets, then `pnpm dev`. Configuration never overwrites an existing `.env`. The server applies committed database schema migrations at startup. HTTP/MCP and realtime integration details are in [docs/api.md](docs/api.md).
+For local web and backend development, run `pnpm configure` once to create a private `.env` with generated secrets, then `pnpm dev`. Open the web app at `http://localhost:5173`; the API listens on port 5180. Run `pnpm build` to build the web app; the backend also serves that build at its own origin, including login and MCP consent routes. Configuration never overwrites an existing `.env`. The server applies committed database schema migrations at startup. HTTP/MCP and realtime integration details are in [docs/api.md](docs/api.md).
 
 ## Checks
 
@@ -20,12 +20,14 @@ For a local backend, run `pnpm configure` once to create a private `.env` with g
 
 Use `pnpm fmt` to format files, `pnpm lint` for linting, `pnpm typecheck` for type checks, and `pnpm test` for a test run. Target an individual suite with `pnpm exec vp test run path/to/file.test.ts`.
 
-Tests cover the shared contracts and the PostgreSQL/authentication foundation. An empty suite fails. Each workspace package has a TypeScript config extending the shared base.
+Tests cover the shared contracts, PostgreSQL authentication and domain behavior, HTTP, MCP, realtime replay, and attachment bytes. An empty suite fails. Each workspace package has a TypeScript config extending the shared base.
 
 ## Changes
 
 Keep each pull request focused on one coherent change. Describe the resulting behavior and the validation performed. Add regression coverage for meaningful behavior changes and update relevant instructions when their commands change.
 
 Dependencies are pinned to exact versions and resolved in `pnpm-lock.yaml`. Use current stable compatible releases when adding or updating dependencies; verify compatibility rather than forcing upgrades with overrides. Update the Node pin together with its supported engine range and matching Node type definitions when needed.
+
+Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server.
 
 The single CI job runs on pull requests and pushes to `main`. Dependency updates arrive as grouped Dependabot pull requests for review.

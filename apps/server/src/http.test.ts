@@ -305,6 +305,31 @@ describe("HTTP, realtime, and MCP", () => {
     });
     expect((await client().call("list_tickets", { projectId: project.id })).total).toBe(1);
   });
+  it("does not retry custom credential creation after losing its committed response", async () => {
+    const project = await newProject();
+    let attempts = 0;
+    const api = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: sessionHeaders,
+      fetch: async (input, init) => {
+        attempts++;
+        await application.app.fetch(new Request(input, init));
+        throw new TypeError("Connection lost after credential creation");
+      },
+    });
+    const name = `Lost response ${crypto.randomUUID()}`;
+    await expect(
+      api.request("/api/v1/credentials", z.unknown(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, projectIds: [project.id], scopes: ["read"], expiresIn: 3600 }),
+      }),
+    ).rejects.toThrow("Connection lost");
+    expect(attempts).toBe(1);
+    expect(
+      (await fixture.database.pool.query("SELECT id FROM apikey WHERE name = $1", [name])).rowCount,
+    ).toBe(1);
+  });
   it("provides an abortable parsed event consumer with processed checkpoints", async () => {
     const project = await newProject(),
       controller = new AbortController();

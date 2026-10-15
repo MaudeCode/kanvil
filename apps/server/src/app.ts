@@ -5,6 +5,9 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { APIError as AuthAPIError } from "better-auth/api";
 import { ApiError, errorSchema, operations, isOperation, scopes } from "@kanvil/contracts";
 import { createAuth } from "./auth.ts";
 import { createAccess } from "./access.ts";
@@ -72,6 +75,19 @@ export async function createApplication(database: Database, config: Config) {
     }),
   );
   app.onError((error) => {
+    if (error instanceof AuthAPIError && error.statusCode >= 400 && error.statusCode < 500)
+      return Response.json(
+        {
+          error: {
+            code: typeof error.body?.code === "string" ? error.body.code : "authentication_error",
+            message:
+              typeof error.body?.message === "string"
+                ? error.body.message
+                : "Authentication request failed",
+          },
+        },
+        { status: error.statusCode },
+      );
     if (error instanceof ApiError)
       return Response.json(
         {
@@ -227,6 +243,12 @@ export async function createApplication(database: Database, config: Config) {
       await domain.snapshot(c.get("actor"), z.string().min(1).parse(c.req.query("projectId"))),
     ),
   );
+  app.get("/api/v1/checkpoint", async () => {
+    const row = requireRow(
+      (await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
+    );
+    return Response.json({ cursor: row.value.toString() });
+  });
   app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
     const id = z.uuid().parse(c.req.param("id"));
     const row = requireRow(
@@ -448,6 +470,27 @@ export async function createApplication(database: Database, config: Config) {
     openapi: "3.1.0",
     info: { title: "Kanvil API", version: "0.1.0" },
     servers: [{ url: config.KANVIL_URL }],
+  });
+  const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
+  app.get(
+    "/assets/*",
+    serveStatic({
+      root: webRoot,
+      onFound: (_path, c) => {
+        c.header("Cache-Control", "public, max-age=31536000, immutable");
+      },
+    }),
+  );
+  app.get("*", async (c, next) => {
+    if (
+      c.req.path.startsWith("/api/") ||
+      c.req.path.startsWith("/.well-known/") ||
+      c.req.path === "/mcp" ||
+      c.req.path.includes(".")
+    )
+      return next();
+    c.header("Cache-Control", "no-store");
+    return serveStatic({ root: webRoot, path: "index.html" })(c, next);
   });
   return { app, auth, domain, close: () => realtime.close() };
 }

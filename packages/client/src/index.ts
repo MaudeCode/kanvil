@@ -63,7 +63,7 @@ export function createClient(options: {
       const headers = new Headers(await options.headers?.());
       new Headers(init.headers).forEach((value, key) => headers.set(key, value));
       return schema.parse(
-        await decode(await send(endpoint(path), { ...init, headers, credentials: "include" })),
+        await decode(await request(endpoint(path), { ...init, headers, credentials: "include" })),
       );
     },
     async call<K extends Operation>(name: K, input: Input<K>): Promise<Output<K>> {
