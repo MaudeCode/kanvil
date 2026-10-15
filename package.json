@@ -14,7 +14,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "db:up": "docker compose -f compose.dev.yml up -d --wait",
     "db:down": "docker compose -f compose.dev.yml down",
-    "db:migrate": "pnpm --filter @kanvil/server migrate"
+    "db:migrate": "pnpm --filter @kanvil/server migrate",
+    "configure": "node scripts/configure.ts",
+    "dev": "pnpm --filter @kanvil/server dev"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

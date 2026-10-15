@@ -11,7 +11,9 @@ export { ApiError } from "@kanvil/contracts";
 
 export function createClient(options: {
   baseUrl: string;
-  headers?: () => HeadersInit | Promise<HeadersInit>;
+  headers?: () =>
+    | ConstructorParameters<typeof Headers>[0]
+    | Promise<ConstructorParameters<typeof Headers>[0]>;
   fetch?: typeof fetch;
   requestId?: () => string;
 }) {

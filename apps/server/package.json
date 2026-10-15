@@ -7,7 +7,9 @@
     "migrate": "node --env-file-if-exists=../../.env src/migrate.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "auth:generate": "auth generate --config auth.config.ts --output src/auth-schema.ts --yes"
+    "auth:generate": "auth generate --config auth.config.ts --output src/auth-schema.ts --yes",
+    "dev": "node --env-file-if-exists=../../.env --watch src/index.ts",
+    "start": "node --env-file-if-exists=../../.env src/index.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.8",
@@ -26,6 +28,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@kanvil/client": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1",
     "@types/pg": "8.23.1",
     "auth": "1.7.8",

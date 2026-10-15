@@ -37,7 +37,7 @@ const text = z.string().trim().min(1);
 const tags = z
   .array(text.max(40))
   .max(30)
-  .transform((values) => [...new Set(values)]);
+  .overwrite((values) => [...new Set(values)]);
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
