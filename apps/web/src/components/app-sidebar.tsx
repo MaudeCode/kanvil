@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronsUpDown, FolderOpen, Layers, LogOut, Search, Settings } from "lucide-react";
 import { auth, clearPrivateStorage, useIdentity, useProjects } from "../data.tsx";
@@ -56,7 +56,11 @@ export function AppSidebar() {
   const projects = useProjects(),
     pathname = useRouterState({ select: (state) => state.location.pathname }),
     { setOpenMobile } = useSidebar();
-  const closeMobile = () => setOpenMobile(false);
+  const router = useRouter();
+  useEffect(
+    () => router.subscribe("onBeforeNavigate", () => setOpenMobile(false)),
+    [router, setOpenMobile],
+  );
   return (
     <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader className="pb-4 pt-3">
@@ -64,7 +68,6 @@ export function AppSidebar() {
           to="/"
           activeProps={{ className: "" }}
           className="brand flex h-9 items-center gap-2 px-1.5"
-          onClick={closeMobile}
         >
           <Brand />
         </Link>
@@ -79,7 +82,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     isActive={pathname === "/"}
                     tooltip="All projects"
-                    render={<Link to="/" activeOptions={{ exact: true }} onClick={closeMobile} />}
+                    render={<Link to="/" activeOptions={{ exact: true }} />}
                   >
                     <Layers />
                     <span>All projects</span>
@@ -89,7 +92,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     isActive={pathname === "/inbox"}
                     tooltip="Inbox"
-                    render={<Link to="/inbox" onClick={closeMobile} />}
+                    render={<Link to="/inbox" />}
                   >
                     <Bell />
                     <span>Inbox</span>
@@ -108,13 +111,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={pathname.startsWith(`/projects/${project.id}`)}
                       tooltip={project.name}
-                      render={
-                        <Link
-                          to="/projects/$projectId"
-                          params={{ projectId: project.id }}
-                          onClick={closeMobile}
-                        />
-                      }
+                      render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
                     >
                       <FolderOpen />
                       <span>{project.name}</span>
@@ -136,7 +133,7 @@ export function AppSidebar() {
             <SidebarMenuButton
               isActive={pathname === "/settings"}
               tooltip="Settings"
-              render={<Link to="/settings" onClick={closeMobile} />}
+              render={<Link to="/settings" />}
             >
               <Settings />
               <span>Settings</span>
@@ -217,10 +214,8 @@ function ProjectSwitcher() {
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, []);
-  const { setOpenMobile } = useSidebar();
   const go = (to: string) => {
     setOpen(false);
-    setOpenMobile(false);
     void navigate({ to });
   };
   return (
