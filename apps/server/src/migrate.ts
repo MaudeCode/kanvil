@@ -1,9 +1,7 @@
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
-import { createDatabase, type Database } from "./database.ts";
-import { readConfig } from "./config.ts";
+import type { Database } from "./database.ts";
 
 export async function migrateDatabase(database: Database) {
   const client = await database.pool.connect();
@@ -18,14 +16,5 @@ export async function migrateDatabase(database: Database) {
   } finally {
     await client.query("SELECT pg_advisory_unlock(7361081)");
     client.release();
-  }
-}
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const database = createDatabase(readConfig().DATABASE_URL);
-  try {
-    await migrateDatabase(database);
-    console.info("Kanvil database is current.");
-  } finally {
-    await database.pool.end();
   }
 }

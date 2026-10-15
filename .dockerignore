@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/dist
+**/.expo
+apps/mobile/ios
+apps/mobile/android
+.env
+.env.*
+**/*.log
+coverage
+test-results
+playwright-report
+snapshot-fallback.png
+data
+backups

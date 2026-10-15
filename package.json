@@ -17,12 +17,16 @@
     "db:migrate": "pnpm --filter @kanvil/server migrate",
     "configure": "node scripts/configure.ts",
     "dev": "pnpm --parallel --filter @kanvil/server --filter @kanvil/web dev",
-    "build": "pnpm --filter @kanvil/web build",
+    "build": "pnpm --filter @kanvil/web build && pnpm --filter @kanvil/server build",
     "test:e2e": "pnpm build && playwright test",
     "test:oidc": "node scripts/test-oidc.ts",
     "assets:generate": "node scripts/generate-assets.ts",
     "mobile:export": "pnpm --filter @kanvil/mobile export",
-    "native:auth-fixture": "node scripts/native-auth-fixture.ts"
+    "native:auth-fixture": "node scripts/native-auth-fixture.ts",
+    "account:recover": "pnpm --filter @kanvil/server recover",
+    "backup": "node --env-file-if-exists=.env scripts/backup.ts",
+    "restore": "node --env-file-if-exists=.env scripts/restore.ts",
+    "test:docker": "docker build -t kanvil:local . && node scripts/docker-smoke.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",

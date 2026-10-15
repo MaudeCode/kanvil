@@ -1,17 +1,19 @@
 import { z } from "zod";
 
+const optionalEnv = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
 const envSchema = z
   .object({
     DATABASE_URL: z.url(),
     KANVIL_URL: z.url().default("http://localhost:5180"),
     BETTER_AUTH_SECRET: z.string().min(32),
-    KANVIL_SETUP_TOKEN: z.string().min(24).optional(),
+    KANVIL_SETUP_TOKEN: optionalEnv(z.string().min(24)),
     PORT: z.coerce.number().int().min(1).max(65535).default(5180),
     HOST: z.string().default("127.0.0.1"),
     KANVIL_TRUSTED_ORIGINS: z.string().default(""),
-    OIDC_DISCOVERY_URL: z.url().optional(),
-    OIDC_CLIENT_ID: z.string().min(1).optional(),
-    OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+    OIDC_DISCOVERY_URL: optionalEnv(z.url()),
+    OIDC_CLIENT_ID: optionalEnv(z.string().min(1)),
+    OIDC_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     OIDC_NAME: z.string().default("PocketID"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })

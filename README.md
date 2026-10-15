@@ -6,7 +6,9 @@ Kanvil owns its ticket data and runs on your infrastructure. PocketID is the ini
 
 ## Status
 
-Early development. The backend and agent interfaces have regression coverage; web/mobile delivery and release validation are in progress.
+The backend, web workspace, and native app have regression and integration coverage. Release validation is in progress.
+
+See [self-hosting](docs/self-hosting.md), [agent/API interfaces](docs/api.md), and [native development](docs/mobile.md).
 
 ## Development
 
