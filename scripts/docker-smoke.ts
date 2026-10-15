@@ -193,6 +193,11 @@ try {
   console.info(
     "Container verification passed: browser setup, ticket writes, MCP, authenticated sessions, scoped credentials, and restored binary content.",
   );
+} catch (error) {
+  await run("docker", ["compose", "logs", "--no-color", "--tail", "80", "app"], env).catch(
+    () => {},
+  );
+  throw error;
 } finally {
   await browser?.close();
   try {
