@@ -52,6 +52,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     );
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Link PocketID", exact: true }).click();
+    await page.waitForURL(`${pocket}/interaction?**`);
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
@@ -62,6 +63,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     await page.context().clearCookies({ name: "access_token" });
     await page.context().clearCookies({ name: "session" });
     await page.getByRole("button", { name: "Sign in with PocketID", exact: true }).click();
+    await page.waitForURL(`${pocket}/interaction?**`);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
     const after = sessionSchema.parse(
