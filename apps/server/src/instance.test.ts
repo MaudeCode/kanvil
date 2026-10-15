@@ -277,3 +277,46 @@ it("honors deployment providers and tests their effective credentials without re
     await deployed.close();
   }
 });
+it("allows general settings changes when unchanged integrations are offline", async () => {
+  const workloadStorage = {
+    endpoint: "http://127.0.0.1:1",
+    region: "us-east-1",
+    bucket: "workload-identity",
+    prefix: "",
+    forcePathStyle: true,
+    accessKeyId: "",
+  };
+  const backend = await app.instance.saveBackend(workloadStorage);
+  expect(await app.instance.resolveS3({ ...workloadStorage, secretAccessKey: "" })).toEqual(
+    (await app.instance.backend(backend.id)).settings,
+  );
+  const current = await app.instance.read(),
+    search = { provider: "elasticsearch", url: "http://127.0.0.1:1", index: "unavailable-index" };
+  await app.instance.update({
+    expectedVersion: current.version,
+    name: current.name,
+    description: current.description,
+    storage: { provider: "local" },
+    search,
+  });
+  const saved = await app.instance.read();
+  try {
+    const response = await request("/api/v1/admin/instance", "PATCH", {
+      expectedVersion: saved.version,
+      name: "Renamed while search is offline",
+      description: saved.description,
+      storage: { provider: "local" },
+      search: { ...search, username: "", apiKey: "", password: "" },
+    });
+    expect(response.status, await response.text()).toBe(200);
+  } finally {
+    const latest = await app.instance.read();
+    await app.instance.update({
+      expectedVersion: latest.version,
+      name: current.name,
+      description: current.description,
+      storage: { provider: "local" },
+      search: { provider: "postgres" },
+    });
+  }
+});

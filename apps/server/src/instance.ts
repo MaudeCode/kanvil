@@ -14,6 +14,21 @@ import type { Database, Connection, Transaction } from "./database.ts";
 import type { Config } from "./config.ts";
 import { fail, requireRow } from "./domain.ts";
 
+// Location identity excludes credentials so rotation preserves existing file references.
+function storageIdentity(settings: S3Settings) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        settings.endpoint,
+        settings.region,
+        settings.bucket,
+        settings.prefix,
+        settings.forcePathStyle,
+      ]),
+    )
+    .digest("hex");
+}
+
 export function createInstance(database: Database, config: Config) {
   const key = createHash("sha256")
     .update("kanvil:instance-config:v1:")
@@ -56,27 +71,18 @@ export function createInstance(database: Database, config: Config) {
   }
   async function resolveS3(settings: S3Settings, db: Connection | Transaction = database.db) {
     settings = s3SettingsSchema.strip().parse(settings);
-    const identity = createHash("sha256")
-      .update(
-        JSON.stringify([
-          settings.endpoint,
-          settings.region,
-          settings.bucket,
-          settings.prefix,
-          settings.forcePathStyle,
-        ]),
-      )
-      .digest("hex");
+    const identity = storageIdentity(settings);
     const previous = (
       await db.select().from(storageBackends).where(eq(storageBackends.identity, identity))
     )[0];
     const old = previous ? s3SettingsSchema.parse(unseal(previous.config)) : undefined;
-    const secret =
-      settings.secretAccessKey ||
-      (old?.accessKeyId === settings.accessKeyId ? old.secretAccessKey : undefined);
+    const { secretAccessKey: suppliedSecret, ...publicSettings } = settings,
+      secret =
+        suppliedSecret ||
+        (old?.accessKeyId === settings.accessKeyId ? old.secretAccessKey : undefined);
     if (settings.accessKeyId && !secret)
       fail(400, "missing_secret", "Provide the S3 secret access key");
-    return { ...settings, ...(secret ? { secretAccessKey: secret } : {}) };
+    return { ...publicSettings, ...(secret ? { secretAccessKey: secret } : {}) };
   }
   async function resolveSearch(
     settings: SearchSettings,
@@ -86,27 +92,20 @@ export function createInstance(database: Database, config: Config) {
     const row = await read(db),
       old = row.searchConfig ? searchSettingsSchema.parse(unseal(row.searchConfig)) : null,
       same = old?.url === settings.url && old.index === settings.index;
+    const { apiKey: suppliedKey, password: suppliedPassword, ...publicSettings } = settings,
+      apiKey = suppliedKey || (same ? old?.apiKey : undefined),
+      password =
+        suppliedPassword ||
+        (same && old?.username === settings.username ? old?.password : undefined);
     return {
-      ...settings,
-      apiKey: settings.apiKey || (same ? old?.apiKey : undefined),
-      password:
-        settings.password ||
-        (same && old?.username === settings.username ? old?.password : undefined),
+      ...publicSettings,
+      ...(apiKey ? { apiKey } : {}),
+      ...(password ? { password } : {}),
     };
   }
   async function saveBackend(settings: S3Settings, db: Connection | Transaction = database.db) {
     const complete = await resolveS3(settings, db),
-      identity = createHash("sha256")
-        .update(
-          JSON.stringify([
-            settings.endpoint,
-            settings.region,
-            settings.bucket,
-            settings.prefix,
-            settings.forcePathStyle,
-          ]),
-        )
-        .digest("hex");
+      identity = storageIdentity(settings);
     return requireRow(
       (
         await db
