@@ -60,7 +60,7 @@ const digest = (value: string) => createHash("sha256").update(value).digest();
 export async function createApplication(database: Database, config: Config) {
   const auth = createAuth(database, config),
     domain = createDomain(database),
-    access = createAccess(auth, domain, config),
+    access = createAccess(auth, domain, config, database),
     realtime = await createRealtime(config);
   const push = createPushDelivery(database, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
@@ -436,7 +436,7 @@ export async function createApplication(database: Database, config: Config) {
           do {
             if (!active) break;
             again = false;
-            const identity = await access.authenticate(c.req.raw);
+            const identity = await access.revalidate(c.req.raw, c.get("actor"));
             const batch = await domain.readEvents(identity, cursor, projectId);
             for (const event of batch.items) {
               if (!active) break;
