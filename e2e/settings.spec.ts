@@ -22,7 +22,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
   await page.getByRole("radio", { name: "Tokyo Night", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "tokyo-night");
-  await page.getByRole("button", { name: "New theme", exact: true }).click();
+  await page.getByRole("button", { name: "Create theme", exact: true }).click();
   await page.getByLabel("Theme name", { exact: true }).fill("My Tokyo Night");
   await page.getByRole("button", { name: "Save theme", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -48,7 +48,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   ).toHaveCount(builtInThemes.length + 2);
   await page.getByRole("radio", { name: "Everforest", exact: true }).last().check();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Export Everforest", exact: true }).click();
   expect((await download).suggestedFilename()).toContain("custom-everforest");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => window.scrollTo(0, 0));

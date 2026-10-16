@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
-import { Download, Pencil, Plus, Trash2, Upload, Search } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { Download, Pencil, Plus, Trash2, Search, Copy, Sun, Moon } from "lucide-react";
 import { z } from "zod";
-import { useTheme, modeNames } from "./theme-provider.tsx";
+import { useTheme, modeNames, type ThemeAppearance } from "./theme-provider.tsx";
 import { ThemePreview } from "./theme-preview.tsx";
 import {
   decodeThemeFile,
@@ -11,12 +11,13 @@ import {
   type ThemeDefinition,
   type ThemePalette,
 } from "../lib/themes.ts";
-import { Button, Confirm, ErrorNotice, Input, Modal } from "../ui.tsx";
+import { Button, Confirm, ErrorNotice, IconButton, Input, Modal } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-const modes = ["light", "dark", "system"] as const;
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+const modes = ["system", "light", "dark"] as const;
 function download(theme: ThemeDefinition) {
   const url = URL.createObjectURL(
       new Blob([encodeThemeFile([theme])], { type: "application/json" }),
@@ -27,18 +28,79 @@ function download(theme: ThemeDefinition) {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function ThemeChoice({ theme, active }: { theme: ThemeDefinition; active: boolean }) {
+function ThemeChoice({
+  theme,
+  active,
+  activeModes,
+  onPickMode,
+  actions,
+}: {
+  theme: ThemeDefinition;
+  active: boolean;
+  activeModes: ThemeAppearance[];
+  onPickMode: (mode: ThemeAppearance) => void;
+  actions: ReactNode;
+}) {
   return (
-    <div className="relative">
+    <div
+      className="theme-library-choice relative overflow-hidden rounded-xl border border-border/70 bg-background transition-colors hover:bg-accent/10"
+      data-selected={active}
+    >
       <RadioGroupItem
         value={theme.id}
         id={`theme-${theme.id}`}
-        className="peer absolute inset-0 z-10 size-full aspect-auto rounded-xl opacity-0"
+        className="peer absolute inset-0 size-full aspect-auto rounded-xl opacity-0"
       />
-      <Label htmlFor={`theme-${theme.id}`} className="theme-choice" data-selected={active}>
-        <ThemePreview theme={theme} />
-        <span className="px-1 pb-1">{theme.name}</span>
-      </Label>
+      <div className="pointer-events-none relative flex min-h-16 items-center justify-center gap-2.5 px-3 pt-3">
+        {(["light", "dark"] as const).map((mode) => {
+          const selected = activeModes.includes(mode),
+            Icon = mode === "light" ? Sun : Moon;
+          return (
+            <Tooltip key={mode}>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    aria-label={`Use ${theme.name} ${mode} mode`}
+                    aria-pressed={selected}
+                    className="pointer-events-auto relative size-[68px] shrink-0 rounded-full p-1 transition-transform hover:scale-105 hover:bg-transparent aria-pressed:hover:scale-100"
+                    onClick={() => onPickMode(mode)}
+                  />
+                }
+              >
+                <ThemePreview theme={theme} mode={mode} variant="orb" />
+                {selected && (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-inset ring-ring"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm"
+                    >
+                      <Icon className="size-3" />
+                    </span>
+                  </>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>Use for {mode} mode only</TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
+      <div className="pointer-events-none relative flex items-center gap-2 px-3 pb-3 pt-2">
+        <Label
+          htmlFor={`theme-${theme.id}`}
+          title={theme.name}
+          className="min-w-0 flex-1 truncate text-sm font-medium"
+        >
+          {theme.name}
+        </Label>
+        <div className="pointer-events-auto relative flex shrink-0 items-center gap-1">
+          {actions}
+        </div>
+      </div>
     </div>
   );
 }
@@ -53,14 +115,21 @@ export function AppearanceSettings() {
     [editor, setEditor] = useState<ThemeDefinition | null>(null),
     [query, setQuery] = useState(""),
     [error, setError] = useState<unknown>();
-  const custom = theme.selected.id.startsWith("custom-");
+  const preview = { ...theme.selected, light: theme.lightTheme.light, dark: theme.darkTheme.dark };
+  function duplicate(item: ThemeDefinition) {
+    setEditor({
+      ...item,
+      id: `custom-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`,
+      name: `${item.name} copy`,
+    });
+  }
   const matches = theme.themes.filter((item) =>
     normalizeThemeSearch(item.name).includes(normalizeThemeSearch(query)),
   );
   return (
-    <section className="space-y-8">
+    <section className="space-y-5">
       <div>
-        <h2>Appearance</h2>
+        <h2 className="mb-3 text-sm font-normal text-muted-foreground">Color scheme</h2>
         <RadioGroup
           value={theme.mode}
           onValueChange={(value) => theme.setMode(z.enum(modes).parse(value))}
@@ -79,7 +148,7 @@ export function AppearanceSettings() {
                 className="theme-choice"
                 data-selected={theme.mode === mode}
               >
-                <ThemePreview theme={theme.selected} mode={mode} />
+                <ThemePreview theme={preview} mode={mode} className="h-[8.75rem]" />
                 <span className="pb-1">{modeNames[mode]}</span>
               </Label>
             </div>
@@ -88,27 +157,15 @@ export function AppearanceSettings() {
       </div>
       <div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="mb-0">Themes</h2>
+          <h2 className="mb-0 text-sm font-normal text-muted-foreground">Themes</h2>
           <div className="actions">
-            <Button
-              onClick={() =>
-                setEditor({
-                  ...theme.selected,
-                  id: `custom-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`,
-                  name: `${theme.selected.name} custom`,
-                })
-              }
-            >
+            <Button size="sm" onClick={() => duplicate(preview)}>
+              <Pencil />
+              Create theme
+            </Button>
+            <Button size="sm" onClick={() => file.current?.click()}>
               <Plus />
-              New theme
-            </Button>
-            <Button onClick={() => file.current?.click()}>
-              <Upload />
-              Import
-            </Button>
-            <Button onClick={() => download(theme.selected)}>
-              <Download />
-              Export
+              Add theme
             </Button>
           </div>
         </div>
@@ -146,10 +203,54 @@ export function AppearanceSettings() {
           aria-label="Color theme"
           value={theme.color}
           onValueChange={(value) => theme.setColor(String(value))}
-          className="grid grid-cols-2 gap-3 xl:grid-cols-3"
+          className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-2"
         >
           {matches.map((item) => (
-            <ThemeChoice key={item.id} theme={item} active={item.id === theme.color} />
+            <ThemeChoice
+              key={item.id}
+              theme={item}
+              active={item.id === theme.color}
+              activeModes={(["light", "dark"] as const).filter(
+                (mode) => (mode === "light" ? theme.lightTheme.id : theme.darkTheme.id) === item.id,
+              )}
+              onPickMode={(mode) => theme.setColorForMode(mode, item.id)}
+              actions={
+                <>
+                  <IconButton
+                    label={`Duplicate ${item.name}`}
+                    className="size-6"
+                    onClick={() => duplicate(item)}
+                  >
+                    <Copy />
+                  </IconButton>
+                  {item.id.startsWith("custom-") && (
+                    <>
+                      <IconButton
+                        label={`Edit ${item.name}`}
+                        className="size-6"
+                        onClick={() => setEditor(item)}
+                      >
+                        <Pencil />
+                      </IconButton>
+                      <IconButton
+                        label={`Export ${item.name}`}
+                        className="size-6"
+                        onClick={() => download(item)}
+                      >
+                        <Download />
+                      </IconButton>
+                      <Confirm
+                        label={`Delete ${item.name}`}
+                        description={`Remove ${item.name} from this browser? Light or dark appearances using it will fall back to your base theme.`}
+                        danger
+                        icon={<Trash2 />}
+                        onConfirm={async () => theme.remove(item.id)}
+                      />
+                    </>
+                  )}
+                </>
+              }
+            />
           ))}
         </RadioGroup>
         {matches.length === 0 && (
@@ -158,21 +259,6 @@ export function AppearanceSettings() {
           </p>
         )}
       </div>
-      {custom && (
-        <div className="actions">
-          <Button onClick={() => setEditor(theme.selected)}>
-            <Pencil />
-            Edit {theme.selected.name}
-          </Button>
-          <Confirm
-            label="Delete custom theme"
-            description={`Remove ${theme.selected.name} from this browser?`}
-            danger
-            icon={<Trash2 />}
-            onConfirm={async () => theme.remove(theme.selected.id)}
-          />
-        </div>
-      )}
       <Modal
         title="Custom theme"
         open={!!editor}

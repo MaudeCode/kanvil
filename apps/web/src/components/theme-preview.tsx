@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ThemeDefinition, ThemePalette } from "../lib/themes.ts";
+import { cn } from "@/lib/utils";
 function Pane({ palette, clip }: { palette: ThemePalette; clip?: string }) {
   return (
     <g clipPath={clip}>
@@ -54,13 +55,51 @@ function Pane({ palette, clip }: { palette: ThemePalette; clip?: string }) {
 export function ThemePreview({
   theme,
   mode = "system",
+  variant = "wireframe",
+  className,
 }: {
   theme: ThemeDefinition;
   mode?: "light" | "dark" | "system";
+  variant?: "wireframe" | "orb";
+  className?: string;
 }) {
   const id = useId();
+  if (variant === "orb" && mode !== "system") {
+    const palette = theme[mode],
+      light = mode === "light";
+    // Adapted from T3 Code's MIT-licensed theme preview orbs; see third-party-themes.txt.
+    return (
+      <span
+        aria-hidden="true"
+        className={cn(
+          "relative block size-14 shrink-0 overflow-hidden rounded-full border-2 border-background",
+          className,
+        )}
+        style={{
+          boxShadow: light
+            ? "inset 0 0 0 1px rgb(0 0 0 / .1), 0 1px 2px rgb(0 0 0 / .08)"
+            : "inset 0 0 0 1px rgb(255 255 255 / .14), 0 1px 2px rgb(0 0 0 / .18)",
+        }}
+      >
+        <span
+          className="absolute inset-0 rounded-full"
+          style={{
+            backgroundColor: `color-mix(in oklab, ${palette.background} 80%, ${light ? "#ffffff" : "#09090b"})`,
+            backgroundImage: `radial-gradient(circle at ${light ? "72% 22%" : "28% 78%"} in oklab, ${palette.primary} 0%, color-mix(in oklab, ${palette.primary} ${light ? "72%" : "62%"}, transparent) 28%, transparent 58%), radial-gradient(circle at ${light ? "18% 82%" : "82% 18%"} in oklab, color-mix(in oklab, ${palette.primary} 45%, transparent) 0%, transparent 55%)`,
+            filter: "blur(3px)",
+            transform: "scale(1.1)",
+          }}
+        />
+      </span>
+    );
+  }
   return (
-    <svg viewBox="0 0 160 96" className="w-full rounded-md" aria-hidden="true">
+    <svg
+      viewBox="0 0 160 96"
+      preserveAspectRatio="none"
+      className={cn("w-full rounded-md", className)}
+      aria-hidden="true"
+    >
       <defs>
         <clipPath id={`${id}-light`}>
           <rect width="80" height="96" />

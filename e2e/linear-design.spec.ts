@@ -11,7 +11,10 @@ test("Aligned is the default and every named theme applies in both appearances",
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await signIn(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
-  await page.evaluate(() => localStorage.setItem("kanvil:color-theme", "linear"));
+  await page.evaluate(() => {
+    localStorage.setItem("kanvil:color-theme", "linear");
+    localStorage.setItem("kanvil:theme-halves:v1", '{"light":42}');
+  });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
   expect(await page.evaluate(() => localStorage.getItem("kanvil:color-theme"))).toBe("aligned");
@@ -57,6 +60,77 @@ test("Aligned is the default and every named theme applies in both appearances",
   await page.getByLabel("Search themes", { exact: true }).fill("unavailable palette");
   await expect(page.getByRole("status").filter({ hasText: "No matching themes" })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("paired theme orbs persist independent appearances and safely remove a mixed custom theme", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  await signIn(page);
+  await page.goto("/settings?section=appearance");
+  await page.getByRole("radio", { name: "System", exact: true }).check();
+  await page.getByRole("button", { name: "Use GitHub light mode", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Use Dracula dark mode", exact: true }).focus();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("radio", { name: "System", exact: true })).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "github");
+  for (const name of ["Use GitHub light mode", "Use Dracula dark mode"])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dracula");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dracula");
+  await page.getByRole("radio", { name: "Light", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "github");
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dracula");
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+      false,
+    );
+    await page.evaluate(() => scrollTo(0, 0));
+    await page.screenshot({
+      path: `test-results/theme-picker-paired-${width}.png`,
+      animations: "disabled",
+    });
+  }
+  const aligned = page.getByRole("radio", { name: "Aligned", exact: true });
+  await aligned.check();
+  for (const mode of ["light", "dark"])
+    await expect(
+      page.getByRole("button", { name: `Use Aligned ${mode} mode`, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+  await aligned.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Catppuccin Mocha", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Duplicate Dracula", exact: true }).click();
+  await page.getByRole("textbox", { name: "Theme name", exact: true }).fill("Mixed custom");
+  await page.getByRole("button", { name: "Save theme", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("radio", { name: "Aligned", exact: true }).check();
+  await page.getByRole("button", { name: "Use Mixed custom dark mode", exact: true }).click();
+  await page.getByRole("button", { name: "Use GitHub light mode", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", /^custom-/);
+  await page.getByRole("button", { name: "Delete Mixed custom", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete Mixed custom", exact: true })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
+  await expect(
+    page.getByRole("button", { name: "Use GitHub light mode", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("radio", { name: "System", exact: true }).check();
+  await page.reload();
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "github");
+  await expect(page.getByRole("radio", { name: "Mixed custom", exact: true })).toHaveCount(0);
 });
 
 test("compact list spacing remains readable and comfortable spacing persists", async ({ page }) => {

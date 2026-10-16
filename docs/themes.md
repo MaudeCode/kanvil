@@ -4,6 +4,8 @@ Kanvil's default **Aligned** palette uses neutral light/dark surfaces and an ind
 
 Choose Light, Dark, or System under **Settings → Appearance**. Search the theme gallery by name. Choices and custom themes persist in this browser. The default respects the system appearance; switching palettes does not change that preference.
 
+The picker follows T3 Code's System/Light/Dark preview tiles and paired color orbs. A light or dark orb assigns a theme only to that appearance; System switches between the two saved choices. Selecting a theme entry applies both appearances and clears the mix. Rings and sun/moon markers indicate the assigned appearances without checkmarks. Theme entries expose duplicate actions, plus edit, export, and delete actions for custom themes. Create theme starts from the current light/dark mix; Add theme imports the existing version-one JSON format. Removing a custom theme resets only appearances that used it. T3 Code's MIT notice for the adapted preview artwork is included in `/third-party-themes.txt`.
+
 ## Bundled palettes
 
 | Theme                               | Light / dark palette source                                                                                        |
