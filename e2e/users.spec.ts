@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { accountMenu, choose } from "./controls.ts";
 
 test("account management supports workspace access, profile edits, password reset, and suspension", async ({
   page,
@@ -135,7 +135,11 @@ test("role changes discard cached administrator-only project data", async ({ pag
     await expect(
       admin.getByRole("link", { name: "Private administrator-only project", exact: true }),
     ).toBeVisible();
-    await expect(admin.getByRole("link", { name: "Administration", exact: true })).toBeVisible();
+    await accountMenu(admin);
+    await expect(
+      admin.getByRole("menuitem", { name: "Administration", exact: true }),
+    ).toBeVisible();
+    await admin.keyboard.press("Escape");
     await expect
       .poll(() =>
         admin.evaluate(
@@ -157,7 +161,12 @@ test("role changes discard cached administrator-only project data", async ({ pag
     ).toBe(true);
     await admin.reload();
     await expect(admin.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
-    await expect(admin.getByRole("link", { name: "Administration", exact: true })).toHaveCount(0);
+    await accountMenu(admin);
+    await expect(admin.getByRole("menuitem", { name: "Administration", exact: true })).toHaveCount(
+      0,
+    );
+    await expect(admin.getByRole("menuitem", { name: "User settings", exact: true })).toBeVisible();
+    await admin.keyboard.press("Escape");
     await expect(
       admin.getByRole("link", { name: "Private administrator-only project", exact: true }),
     ).toHaveCount(0);

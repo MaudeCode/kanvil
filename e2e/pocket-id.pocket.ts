@@ -1,4 +1,4 @@
-import { signOut } from "./controls.ts";
+import { accountMenu, signOut } from "./controls.ts";
 import { test, expect } from "@playwright/test";
 import { z } from "zod";
 import { signIn, ownerEmail } from "./auth.ts";
@@ -51,7 +51,8 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     const before = sessionSchema.parse(
       await (await page.request.get("/api/auth/get-session")).json(),
     );
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await accountMenu(page);
+    await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
     await page.getByRole("button", { name: "Link PocketID", exact: true }).click();
     await page.waitForURL(`${pocket}/interaction?**`);
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();

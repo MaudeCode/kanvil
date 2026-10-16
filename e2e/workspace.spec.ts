@@ -1,4 +1,5 @@
 import {
+  accountMenu,
   choose,
   signOut,
   expand,
@@ -188,7 +189,8 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await expect(page.getByRole("row")).toHaveCount(51);
   await chooseTicketView(page, "Agent edits");
   await expect(page.getByRole("row")).toHaveCount(2);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await accountMenu(page);
+  await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
   await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   const inboxPreference = page.getByRole("switch", {
     name: "Subscribed ticket updates in Inbox",

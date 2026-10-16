@@ -24,10 +24,14 @@ export async function appearance(page: Page, option: string) {
   await page.getByRole("radio", { name: option, exact: true }).check();
   await page.goto(previousUrl);
 }
-export async function signOut(page: Page) {
-  if ((page.viewportSize()?.width ?? 1440) < 768)
+export async function accountMenu(page: Page) {
+  const trigger = page.locator("[data-account-menu]");
+  if (!(await trigger.isVisible()))
     await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
-  await page.getByRole("button", { name: /Test Owner/ }).click();
+  await trigger.click();
+}
+export async function signOut(page: Page) {
+  await accountMenu(page);
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
 export async function expand(page: Page, label: string) {

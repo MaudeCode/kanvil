@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/command";
 
 export function AppSidebar() {
-  const identity = useIdentity();
   const projects = useProjects(),
     pathname = useRouterState({ select: (state) => state.location.pathname }),
     { setOpenMobile } = useSidebar();
@@ -141,28 +140,6 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          {identity.admin && (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={pathname === "/admin"}
-                tooltip="Administration"
-                render={<Link to="/admin" />}
-              >
-                <ShieldCheck />
-                <span>Administration</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={pathname === "/settings"}
-              tooltip="Settings"
-              render={<Link to="/settings" />}
-            >
-              <Settings />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <AccountMenu />
           </SidebarMenuItem>
@@ -186,6 +163,7 @@ function AccountMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
+          data-account-menu
           render={<SidebarMenuButton size="lg" className="mt-2" tooltip={identity.name} />}
         >
           <UserAvatar name={identity.name} image={identity.image} />
@@ -200,8 +178,14 @@ function AccountMenu() {
             <DropdownMenuLabel>{identity.email}</DropdownMenuLabel>
             <DropdownMenuItem render={<Link to="/settings" />}>
               <Settings />
-              Account settings
+              User settings
             </DropdownMenuItem>
+            {identity.admin && (
+              <DropdownMenuItem render={<Link to="/admin" />}>
+                <ShieldCheck />
+                Administration
+              </DropdownMenuItem>
+            )}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem

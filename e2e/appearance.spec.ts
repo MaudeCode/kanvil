@@ -184,7 +184,7 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
   await sheet.getByRole("button", { name: /Test Owner/ }).click();
-  await page.getByRole("menuitem", { name: "Account settings", exact: true }).click();
+  await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
