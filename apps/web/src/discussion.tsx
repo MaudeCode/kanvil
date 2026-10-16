@@ -78,7 +78,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
                 {add.isPending ? "Posting…" : "Comment"}
                 <Kbd
                   aria-hidden="true"
-                  className="ml-1 hidden bg-primary-foreground/20 text-primary-foreground sm:inline-flex"
+                  className="ml-1 hidden border-transparent bg-primary-foreground/20 text-primary-foreground shadow-none sm:inline-flex"
                 >
                   ⌘↵
                 </Kbd>

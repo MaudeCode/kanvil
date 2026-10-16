@@ -291,7 +291,14 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <Empty className={cn("py-20", className)}>
+    <Empty className={cn("relative isolate overflow-hidden py-20", className)}>
+      <svg
+        aria-hidden="true"
+        viewBox={brandMark.viewBox}
+        className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-52 w-auto -translate-x-1/2 -translate-y-1/2 text-foreground/[0.07] dark:text-foreground/[0.09]"
+      >
+        <path d={brandMark.path} fill="none" stroke="currentColor" strokeWidth={5} />
+      </svg>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Icon />
@@ -337,8 +344,10 @@ export function TicketIndicator({
     <Badge
       variant="outline"
       className={cn(
-        property === "status" ? "status text-xs whitespace-nowrap" : "h-6 text-xs",
-        "gap-1.5 border-transparent bg-transparent px-0 font-normal",
+        property === "status"
+          ? "status rounded-full bg-current/8 px-2 text-xs whitespace-nowrap"
+          : "h-6 border-transparent bg-transparent px-0 text-xs",
+        "gap-1.5 border-transparent font-normal",
         color,
       )}
       data-priority={property === "priority" ? value : undefined}
@@ -601,7 +610,12 @@ export function SectionHeading({
       )}
     >
       <div>
-        <h2 className={cn("mb-0 text-sm", compact && "text-xs font-medium text-muted-foreground")}>
+        <h2
+          className={cn(
+            "mb-0 text-sm",
+            compact && "text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase",
+          )}
+        >
           {title}
         </h2>
         {description && (

@@ -816,7 +816,7 @@ export function TicketList({
                                   : undefined
                             }
                             className={cn(
-                              "relative h-8 bg-transparent px-3 text-[11px] font-normal text-muted-foreground",
+                              "relative h-8 bg-transparent px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase",
                               sort && "p-0",
                             )}
                             style={{ width: header.getSize() }}
@@ -825,7 +825,7 @@ export function TicketList({
                               <Button
                                 variant="ghost"
                                 className={cn(
-                                  "h-8 w-full justify-start gap-1 rounded-none px-3 text-[11px] font-normal text-muted-foreground hover:text-foreground",
+                                  "h-8 w-full justify-start gap-1 rounded-none px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
                                   sorted && "text-foreground",
                                 )}
                                 onClick={() =>
