@@ -38,3 +38,7 @@ export async function expand(page: Page, label: string) {
   const trigger = page.getByRole("button", { name: label, exact: true });
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
 }
+
+export function ticketRows(page: Page) {
+  return page.getByRole("table", { name: "Tickets", exact: true }).locator("tbody tr.ticket-row");
+}

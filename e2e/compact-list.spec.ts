@@ -3,7 +3,7 @@ import { signIn } from "./auth.ts";
 import { appearance, choose } from "./controls.ts";
 
 async function expectSeparateTagRows(table: Locator) {
-  const layouts = await table.locator("tbody tr").evaluateAll((rows) =>
+  const layouts = await table.locator("tbody tr.ticket-row").evaluateAll((rows) =>
     rows.map((row) => {
       const cells = [...row.querySelectorAll<HTMLTableCellElement>("td")];
       const metadata = cells.filter(
@@ -64,7 +64,7 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
     ).toBe(true);
   await page.goto(`/projects/${project.id}`);
   const table = page.getByRole("table", { name: "Tickets" }),
-    row = table.locator("tbody tr").first();
+    row = table.locator("tbody tr.ticket-row").first();
   for (const mode of ["Light", "Dark"]) {
     await appearance(page, mode);
     for (const width of [1440, 650, 390, 320]) {
@@ -72,10 +72,10 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
       await page.evaluate(() => scrollTo(0, 0));
       await expect(row).toBeVisible();
       const bounds = await row.boundingBox();
-      expect(bounds!.y).toBeLessThanOrEqual(160);
+      expect(bounds!.y).toBeLessThanOrEqual(200);
       if (width <= 650) {
         const titleBounds = await row.locator(".ticket-title").boundingBox();
-        expect(bounds!.height - titleBounds!.height).toBeLessThanOrEqual(90);
+        expect(bounds!.height - titleBounds!.height).toBeLessThanOrEqual(96);
         await expectSeparateTagRows(table);
       }
       expect(

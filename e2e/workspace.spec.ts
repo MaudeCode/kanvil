@@ -1,5 +1,6 @@
 import {
   accountMenu,
+  ticketRows,
   choose,
   signOut,
   expand,
@@ -167,12 +168,12 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     expect(response.status()).toBe(200);
   }
   await page.goto(`/projects/${projectId}`);
-  await expect(page.getByRole("row")).toHaveCount(51);
+  await expect(ticketRows(page)).toHaveCount(50);
   await page.screenshot({ path: "test-results/tickets-desktop.png", fullPage: true });
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("row")).toHaveCount(6);
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(ticketRows(page)).toHaveCount(55);
   await searchTickets(page, "Changed by another agent");
-  await expect(page.getByRole("row")).toHaveCount(2);
+  await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("checkbox", { name: "Select KAN-1", exact: true }).check();
   await choose(page, "New status", "In review");
   await page.getByRole("button", { name: "Apply status", exact: true }).click();
@@ -186,9 +187,16 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     "Agent edits",
   );
   await chooseTicketView(page, "All tickets");
-  await expect(page.getByRole("row")).toHaveCount(51);
+  await expect(ticketRows(page)).toHaveCount(51);
+  await expect(
+    page.getByRole("rowgroup", { name: "In review tickets", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Collapse To do tickets", exact: true }).click();
+  await expect(ticketRows(page)).toHaveCount(1);
+  await page.getByRole("button", { name: "Expand To do tickets", exact: true }).click();
+  await expect(ticketRows(page)).toHaveCount(51);
   await chooseTicketView(page, "Agent edits");
-  await expect(page.getByRole("row")).toHaveCount(2);
+  await expect(ticketRows(page)).toHaveCount(1);
   await accountMenu(page);
   await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
   await page.getByRole("tab", { name: "Notifications", exact: true }).click();

@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose, chooseTicketView, openSaveView } from "./controls.ts";
+import { choose, chooseTicketView, openSaveView, ticketRows } from "./controls.ts";
 import { priorities, priorityLabels } from "../packages/contracts/src/index.ts";
 
 async function expectFullWidth(table: Locator) {
@@ -126,7 +126,7 @@ test("priority icons distinguish every level and keep names in pickers", async (
     ).toBe(true);
   await page.goto(`/projects/${project.id}`);
   const table = page.getByRole("table", { name: "Tickets" });
-  await expect(table.locator("tbody tr")).toHaveCount(priorities.length);
+  await expect(ticketRows(page)).toHaveCount(priorities.length);
   const glyphs = await table
     .locator('td[data-column="priority"] svg')
     .evaluateAll((icons) => icons.map((icon) => icon.innerHTML));
@@ -154,7 +154,7 @@ test("priority icons distinguish every level and keep names in pickers", async (
   }
   await page.getByRole("option", { name: "Urgent", exact: true }).click();
   await page.keyboard.press("Escape");
-  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(ticketRows(page)).toHaveCount(1);
   await expect(table.getByRole("link", { name: "Priority urgent", exact: true })).toBeVisible();
 });
 
@@ -180,7 +180,7 @@ test("list properties persist and labels filter and sort the entire project", as
   const table = page.getByRole("table", { name: "Tickets" });
   for (const width of [1440, 1920, 2560]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(table.locator("tbody tr").first()).toBeVisible();
+    await expect(ticketRows(page).first()).toBeVisible();
     await expectFullWidth(table);
     expect((await table.locator('th[data-column="key"]').boundingBox())!.width).toBeCloseTo(100, 0);
   }
@@ -189,7 +189,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.getByRole("button", { name: "Display", exact: true }).click();
   for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty"])
     await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
-  await expect(table.locator("th")).toHaveCount(2);
+  await expect(table.locator("thead th")).toHaveCount(2);
   await expectFullWidth(table);
   await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await page.getByRole("checkbox", { name: "Priority", exact: true }).uncheck();
@@ -212,14 +212,14 @@ test("list properties persist and labels filter and sort the entire project", as
   await expect(page.getByRole("checkbox", { name: "Labels", exact: true })).toBeChecked();
   await choose(page, "Order by", "Labels A–Z");
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await expect(table.locator("tbody tr").first()).toContainText("Ticket 51");
+  await expect(ticketRows(page).first()).toContainText("Ticket 51");
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByRole("combobox", { name: "Label", exact: true }).click();
   await page.getByRole("combobox", { name: "Search labels", exact: true }).fill("rare");
   await page.getByRole("option", { name: /rare, quoted 'label'/ }).click();
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
-  await expect(table.locator("tbody tr")).toHaveCount(1);
-  await expect(table.locator("tbody tr").first()).toContainText("LABELUX-51");
+  await expect(ticketRows(page)).toHaveCount(1);
+  await expect(ticketRows(page).first()).toContainText("LABELUX-51");
   await expect(
     page.getByRole("button", { name: "Label: rare, quoted 'label'", exact: true }),
   ).toBeVisible();
@@ -228,11 +228,11 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.getByRole("button", { name: "Save view", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.reload();
-  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await expect(table.locator("tbody tr")).toHaveCount(50);
+  await expect(ticketRows(page)).toHaveCount(50);
   await chooseTicketView(page, "Rare labels");
-  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(ticketRows(page)).toHaveCount(1);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(table.getByRole("link", { name: /Ticket 51/ })).toBeVisible();
@@ -249,7 +249,7 @@ test("list properties persist and labels filter and sort the entire project", as
     .click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await (await page.request.get(`/api/v1/projects/${project.id}/views`)).json()).toEqual([]);
-  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(ticketRows(page)).toHaveCount(1);
 });
 
 test("selection floats without moving rows and retains selection on failed updates", async ({

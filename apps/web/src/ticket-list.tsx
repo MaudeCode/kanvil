@@ -1,9 +1,9 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, ChevronDown, BookmarkPlus, Trash2 } from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -14,7 +14,14 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { z } from "zod";
-import { ticketFilter, type Ticket, type Project, type Output } from "@kanvil/contracts";
+import {
+  ticketFilter,
+  states,
+  stateLabels,
+  type Ticket,
+  type Project,
+  type Output,
+} from "@kanvil/contracts";
 import { api, date, ActorName, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
@@ -64,6 +71,7 @@ const features = tableFeatures({
   rowSelectionFeature,
   columnVisibilityFeature,
 });
+const pageSize = 50;
 const defaultVisibility = {
   kind: false,
   scopes: false,
@@ -222,9 +230,54 @@ export function TicketList({
       /* Display controls work without storage. */
     }
   }, [storageKey, visibility, densityKey, density, labelDisplayKey, labelDisplay]);
-  const tickets = useQuery(
-    api.query("list_tickets", { projectId: project.id, ...search, limit: 50 }),
+  const filterKey = JSON.stringify({ ...search, offset: 0 });
+  const [paging, setPaging] = useState<{
+    filterKey: string;
+    pages: Partial<Record<Ticket["status"], number>>;
+  }>({ filterKey, pages: {} });
+  const [collapsed, setCollapsed] = useState<Set<Ticket["status"]>>(() => new Set());
+  const pages = paging.filterKey === filterKey ? paging.pages : {};
+  const visibleStates = states.filter((status) => !search.status || status === search.status);
+  const pageQueries = visibleStates.flatMap((status) =>
+    Array.from({ length: pages[status] ?? 1 }, (_, page) => ({ status, offset: page * pageSize })),
   );
+  const queries = useQueries({
+    queries: pageQueries.map(({ status, offset }) =>
+      api.query("list_tickets", {
+        projectId: project.id,
+        ...search,
+        status,
+        offset,
+        limit: pageSize,
+      }),
+    ),
+  });
+  const groups = visibleStates.map((status) => ({
+    status,
+    data: {
+      items: pageQueries.flatMap((entry, index) =>
+        entry.status === status ? (queries[index]?.data?.items ?? []) : [],
+      ),
+      total: queries[pageQueries.findIndex((entry) => entry.status === status)]?.data?.total ?? 0,
+    },
+  }));
+  const canLoadMore = (group: (typeof groups)[number]) =>
+    !collapsed.has(group.status) && (pages[group.status] ?? 1) * pageSize < group.data.total;
+  const loadingMore = queries.some((query) => query.isPending);
+  const latest = new Map<string, Ticket>();
+  for (const group of groups)
+    for (const ticket of group.data?.items ?? []) {
+      const previous = latest.get(ticket.id);
+      if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
+    }
+  const tickets = {
+    isPending: pageQueries.some((entry, index) => entry.offset === 0 && queries[index]?.isPending),
+    error: queries.find((query) => query.error)?.error,
+    data: {
+      items: [...latest.values()].filter((ticket) => !collapsed.has(ticket.status)),
+      total: groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0),
+    },
+  };
   const views = useQuery(api.query("list_views", { projectId: project.id }));
   const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
@@ -253,6 +306,7 @@ export function TicketList({
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
   const changeSearch = (next: TicketSearch) => {
     table.resetRowSelection();
+    setPaging({ filterKey: JSON.stringify({ ...next, offset: 0 }), pages: {} });
     onSearch(next);
   };
   return (
@@ -457,31 +511,79 @@ export function TicketList({
                 </TableRow>
               ))}
             </TableHeader>
-            <TableBody role="rowgroup">
-              {table.getRowModel().rows.map((row) => (
-                <TicketContextMenu key={row.id} ticket={row.original}>
-                  <TableRow role="row" data-selected={row.getIsSelected()}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell
-                        className="in-data-[density=comfortable]:py-4"
-                        key={cell.id}
-                        role="cell"
-                        data-column={cell.column.id}
-                        data-label={
-                          typeof cell.column.columnDef.header === "string"
-                            ? cell.column.columnDef.header
-                            : undefined
-                        }
+            {groups
+              .filter((group) => group.data && group.data.total > 0)
+              .map((group) => (
+                <TableBody
+                  key={group.status}
+                  role="rowgroup"
+                  aria-label={`${stateLabels[group.status]} tickets`}
+                >
+                  <TableRow className="ticket-status-heading">
+                    <TableHead
+                      scope="rowgroup"
+                      colSpan={
+                        table.getAllLeafColumns().filter((column) => column.getIsVisible()).length
+                      }
+                    >
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-2 rounded-none px-3"
+                        aria-label={`${collapsed.has(group.status) ? "Expand" : "Collapse"} ${stateLabels[group.status]} tickets`}
+                        aria-expanded={!collapsed.has(group.status)}
+                        onClick={() => {
+                          table.resetRowSelection();
+                          setCollapsed((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(group.status)) next.delete(group.status);
+                            else next.add(group.status);
+                            return next;
+                          });
+                        }}
                       >
-                        <table.FlexRender cell={cell} />
-                      </TableCell>
-                    ))}
+                        <ChevronDown
+                          className={collapsed.has(group.status) ? "size-3 -rotate-90" : "size-3"}
+                        />
+                        <TicketIndicator property="status" value={group.status} />
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {group.data?.total}
+                        </span>
+                      </Button>
+                    </TableHead>
                   </TableRow>
-                </TicketContextMenu>
+                  {!collapsed.has(group.status) &&
+                    table
+                      .getRowModel()
+                      .rows.filter((row) => row.original.status === group.status)
+                      .map((row) => (
+                        <TicketContextMenu key={row.id} ticket={row.original}>
+                          <TableRow
+                            className="ticket-row"
+                            role="row"
+                            data-selected={row.getIsSelected()}
+                          >
+                            {row.getVisibleCells().map((cell) => (
+                              <TableCell
+                                className="in-data-[density=comfortable]:py-4"
+                                key={cell.id}
+                                role="cell"
+                                data-column={cell.column.id}
+                                data-label={
+                                  typeof cell.column.columnDef.header === "string"
+                                    ? cell.column.columnDef.header
+                                    : undefined
+                                }
+                              >
+                                <table.FlexRender cell={cell} />
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TicketContextMenu>
+                      ))}
+                </TableBody>
               ))}
-            </TableBody>
           </Table>
-          {tickets.data?.total === 0 && (
+          {!tickets.error && tickets.data.total === 0 && (
             <EmptyState title={isDefault && !search.q ? "No tickets yet" : "No matching tickets"}>
               {!isDefault && (
                 <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
@@ -490,25 +592,34 @@ export function TicketList({
           )}
         </div>
       )}
-      <footer className="pagination ticket-pagination">
+      <footer className="ticket-pagination flex items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
         <span>
-          {tickets.data?.total ?? 0} tickets · {tickets.data?.total ? search.offset + 1 : 0}–
-          {search.offset + (tickets.data?.items.length ?? 0)}
+          {latest.size < tickets.data.total
+            ? `${latest.size} of ${tickets.data.total} tickets`
+            : `${tickets.data.total} tickets`}
         </span>
-        <Button
-          disabled={search.offset === 0}
-          onClick={() => changeSearch({ ...search, offset: Math.max(0, search.offset - 50) })}
-        >
-          <ArrowLeft />
-          Previous
-        </Button>
-        <Button
-          disabled={search.offset + 50 >= (tickets.data?.total ?? 0)}
-          onClick={() => changeSearch({ ...search, offset: search.offset + 50 })}
-        >
-          Next
-          <ArrowRight />
-        </Button>
+        {(groups.some(canLoadMore) || loadingMore) && (
+          <Button
+            disabled={loadingMore}
+            aria-busy={loadingMore}
+            onClick={() =>
+              setPaging({
+                filterKey,
+                pages: {
+                  ...pages,
+                  ...Object.fromEntries(
+                    groups
+                      .filter(canLoadMore)
+                      .map((group) => [group.status, (pages[group.status] ?? 1) + 1]),
+                  ),
+                },
+              })
+            }
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+            <ChevronDown />
+          </Button>
+        )}
       </footer>
       <Modal title="New ticket" open={createOpen} onOpenChange={setCreateOpen}>
         {createOpen && <TicketEditor projectId={project.id} onSaved={() => setCreateOpen(false)} />}

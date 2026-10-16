@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { choose, appearance } from "./controls.ts";
+import { choose, appearance, ticketRows } from "./controls.ts";
 import { signIn } from "./auth.ts";
 
 test("themes and responsive ticket rows preserve complete titles and actions", async ({ page }) => {
@@ -89,12 +89,12 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
   await page.getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await choose(page, "Status", "To do");
-  await expect(page.getByRole("row")).toHaveCount(2);
+  await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
   await expect(page.getByLabel("Status", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
   await choose(page, "Status", "All statuses");
-  await expect(page.getByRole("row")).toHaveCount(5);
+  await expect(ticketRows(page)).toHaveCount(4);
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await appearance(page, "System");
   for (const colorScheme of ["light", "dark"] as const) {
