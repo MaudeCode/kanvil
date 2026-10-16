@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Plus, Users, Lock } from "lucide-react";
 import { formText } from "../forms.ts";
 import { useOperation, useWorkspace } from "../data.tsx";
-import { Button, Input, Modal, Textarea, fieldClass, FormActions } from "../ui.tsx";
+import { Input, Modal, Textarea, fieldClass, FormActions, IconButton } from "../ui.tsx";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
@@ -47,16 +47,14 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
           <Plus />
         </SidebarGroupAction>
       ) : (
-        <Button
+        <IconButton
+          label="New project"
           variant="default"
-          size="default"
           disabled={!canCreate}
-          aria-label="New project"
           onClick={() => setOpen(true)}
         >
           <Plus />
-          New project
-        </Button>
+        </IconButton>
       )}
       <Modal
         title="New project"

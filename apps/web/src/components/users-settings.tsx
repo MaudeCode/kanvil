@@ -1,6 +1,5 @@
 import { UserContextMenu } from "./object-context-menu.tsx";
-import { UserPlus, MoreHorizontal, Search } from "lucide-react";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { UserPlus, MoreHorizontal } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
@@ -16,7 +15,9 @@ import {
   Select,
   SelectItem,
   RelativeTime,
+  SearchField,
   FormActions,
+  IconButton,
 } from "../ui.tsx";
 import { formText } from "../forms.ts";
 import { UserIdentity } from "./user-avatar.tsx";
@@ -128,28 +129,23 @@ export function UsersSettings() {
       <SectionHeading
         title="Users"
         action={
-          <Button variant="default" onClick={() => setCreating(true)}>
-            <UserPlus />
-            New user
-          </Button>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <SearchField
+              label="Search users"
+              placeholder="Name or email…"
+              value={query}
+              onChange={(value) => {
+                setQuery(value);
+                setOffset(0);
+              }}
+            />
+            <IconButton label="New user" variant="default" onClick={() => setCreating(true)}>
+              <UserPlus />
+            </IconButton>
+          </div>
         }
       />
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <InputGroup className="min-w-52 flex-1 sm:max-w-md">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            type="search"
-            aria-label="Search users"
-            placeholder="Search users…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setOffset(0);
-            }}
-          />
-        </InputGroup>
         <Select
           label="Instance role filter"
           labelHidden

@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Download, Pencil, Plus, Trash2, Search, Copy, Sun, Moon } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, Copy, Sun, Moon, Upload } from "lucide-react";
 import { z } from "zod";
 import { useTheme, modeNames, type ThemeAppearance } from "./theme-provider.tsx";
 import { ThemePreview } from "./theme-preview.tsx";
@@ -11,9 +11,8 @@ import {
   type ThemeDefinition,
   type ThemePalette,
 } from "../lib/themes.ts";
-import { Button, Confirm, ErrorNotice, IconButton, Input, Modal } from "../ui.tsx";
+import { Button, Confirm, ErrorNotice, IconButton, Input, Modal, SearchField } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -158,15 +157,19 @@ export function AppearanceSettings() {
       <div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="mb-0 text-sm font-normal text-muted-foreground">Themes</h2>
-          <div className="actions">
-            <Button size="sm" onClick={() => duplicate(preview)}>
-              <Pencil />
-              Create theme
-            </Button>
-            <Button size="sm" onClick={() => file.current?.click()}>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            <SearchField
+              label="Search themes"
+              placeholder="Search themes…"
+              value={query}
+              onChange={setQuery}
+            />
+            <IconButton label="Create theme" size="icon-sm" onClick={() => duplicate(preview)}>
               <Plus />
-              Add theme
-            </Button>
+            </IconButton>
+            <IconButton label="Add theme" size="icon-sm" onClick={() => file.current?.click()}>
+              <Upload />
+            </IconButton>
           </div>
         </div>
         <FileInput
@@ -187,18 +190,6 @@ export function AppearanceSettings() {
           }}
         />
         <ErrorNotice error={error} />
-        <InputGroup className="mb-4 max-w-sm">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search themes"
-            type="search"
-            placeholder="Search themes…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
         <RadioGroup
           aria-label="Color theme"
           value={theme.color}

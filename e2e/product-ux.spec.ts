@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signIn, ownerPassword, useEmailLogin } from "./auth.ts";
-import { addAcceptanceCriteria, choose } from "./controls.ts";
+import { addAcceptanceCriteria, choose, openSearch } from "./controls.ts";
 
 test("ticket writing, parent selection, inline properties, and contextual actions work without raw IDs", async ({
   page,
@@ -294,7 +294,7 @@ test("phone settings keep navigation, key actions, and user administration in vi
     .getByRole("button", { name: "Manage Phone review user", exact: true })
     .boundingBox();
   expect(disable && disable.x >= 0 && disable.x + disable.width <= 320).toBeTruthy();
-  await page.getByLabel("Search users", { exact: true }).fill("no-such-user@example.invalid");
+  await (await openSearch(page, "Search users")).fill("no-such-user@example.invalid");
   await expect(page.getByText("No matching users", { exact: true })).toBeVisible();
   await page.request.delete(`/api/v1/credentials/${credential.id}`);
 });

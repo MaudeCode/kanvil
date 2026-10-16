@@ -1,5 +1,4 @@
 import { ProjectIcon } from "./components/project-icon.tsx";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
@@ -23,7 +22,6 @@ import {
   Settings,
   WifiOff,
   FolderOpen,
-  Search as SearchIcon,
   MessageSquare,
   Bell,
   Check,
@@ -64,6 +62,7 @@ import {
   Loading,
   PageHeader,
   RelativeTime,
+  SearchField,
 } from "./ui.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
@@ -246,26 +245,17 @@ function Home() {
   return (
     <>
       <PageHeader title="Projects">
-        {workspace.active ? <CreateProject /> : <CreateWorkspace />}
-      </PageHeader>
-      {!!projects.data?.length && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-          <InputGroup className="max-w-md">
-            <InputGroupAddon>
-              <SearchIcon />
-            </InputGroupAddon>
-            <InputGroupInput
-              aria-label="Search projects"
-              placeholder="Search projects…"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </InputGroup>
-          <span>
-            {matches.length} {matches.length === 1 ? "project" : "projects"}
-          </span>
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          {!!projects.data?.length && (
+            <SearchField label="Search projects" value={query} onChange={setQuery} />
+          )}
+          {workspace.active ? <CreateProject /> : <CreateWorkspace />}
         </div>
+      </PageHeader>
+      {query && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {matches.length} {matches.length === 1 ? "project" : "projects"}
+        </p>
       )}
       <ErrorNotice error={projects.error ?? workspace.error} />
       {projects.isPending || workspace.pending ? (
@@ -381,15 +371,15 @@ function Inbox() {
   return (
     <>
       <PageHeader title="Inbox">
-        <Button
+        <IconButton
+          label="Mark all read"
           disabled={pending || !unread.length}
           onClick={() => {
             void mark(unread.map((item) => item.id));
           }}
         >
           <CheckCheck />
-          Mark all read
-        </Button>
+        </IconButton>
       </PageHeader>
       <Tabs value={view} onValueChange={(value) => setView(String(value))} className="mb-5">
         <TabsList variant="line">

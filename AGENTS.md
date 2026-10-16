@@ -46,6 +46,7 @@ Kanvil is an MIT-licensed, self-hosted ticketing system for agents and people: w
 - Use semantic tokens (`bg-background`, `text-muted-foreground`, `border-border`, `text-primary`, `var(--success)`, `var(--warning)`) so every theme and both appearances keep working. `ThemeProvider` owns mode and palette; see [docs/themes.md](docs/themes.md).
 - Rows, lists, tables, and open sections grouped by spacing. No cards, bento tiles, or boxed list items. Dialogs, popovers, and menus are interaction surfaces, not content containers.
 - Interface copy carries information or an action. No subtitles that repeat the heading, no instructions for obvious controls, no cheerful filler. Ticket titles wrap fully.
+- Page and section header actions are icon-only `IconButton`s with a tooltip (the accessible name is the old label). Local search is `SearchField`: a magnifying glass beside those actions that unfolds into an underlined input. Text buttons stay only for form submits, row actions, pagination, and empty-state calls to action.
 - Motion is short and purposeful: `animate-in fade-in-0` on page and panel entry, `transition-*` on hover and state changes, `slide-in-from-bottom` for the selection toolbar. Reduced motion is honored globally.
 
 ### Interaction

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLabel } from "@kanvil/contracts";
 import { api, useOperation } from "../data.tsx";
@@ -13,10 +13,10 @@ import {
   Input,
   Loading,
   Modal,
+  SearchField,
   SectionHeading,
   FormActions,
 } from "../ui.tsx";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { SettingRow } from "./settings-layout.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { AccentColorPicker } from "./accent-color-picker.tsx";
@@ -53,20 +53,9 @@ export function ProjectLabelSettings({
       <SectionHeading
         title="Labels"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             {!!labels.data?.length && (
-              <InputGroup className="w-56">
-                <InputGroupAddon>
-                  <Search />
-                </InputGroupAddon>
-                <InputGroupInput
-                  type="search"
-                  aria-label="Search labels"
-                  placeholder="Search labels…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </InputGroup>
+              <SearchField label="Search labels" value={query} onChange={setQuery} />
             )}
             {canAdmin && (
               <IconButton label="New label" variant="default" onClick={() => edit(null)}>

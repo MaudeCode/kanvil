@@ -18,12 +18,14 @@ import {
   EmptyState,
   ErrorNotice,
   Input,
+  SearchField,
   Loading,
   Modal,
   SectionHeading,
   Select,
   SelectItem,
   FormActions,
+  IconButton,
 } from "../ui.tsx";
 import {
   Field,
@@ -95,10 +97,14 @@ export function Credentials() {
         title="API keys"
         description="Connect scripts, integrations, and agents with access you can revoke."
         action={
-          <Button variant="default" disabled={projects.isPending} onClick={() => setOpen(true)}>
+          <IconButton
+            label="Create API key"
+            variant="default"
+            disabled={projects.isPending}
+            onClick={() => setOpen(true)}
+          >
             <Plus />
-            Create API key
-          </Button>
+          </IconButton>
         }
       />
       <ErrorNotice error={credentials.error ?? projects.error} />
@@ -370,12 +376,7 @@ function CreateKey({
         <FieldSet className="gap-2">
           <FieldLegend variant="label">Project access</FieldLegend>
           {projects.length > 6 && (
-            <Input
-              label="Find project"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <SearchField label="Find project" value={query} onChange={setQuery} className="mb-2" />
           )}
           <div className="max-h-44 overflow-y-auto rounded-md border px-3 py-1">
             {matches.map((project) => (

@@ -1,7 +1,7 @@
 import { Settings2 } from "lucide-react";
 import type { AdminInstance } from "@kanvil/contracts/instance";
 import { Badge } from "@/components/ui/badge";
-import { Button, CopyValue, ErrorNotice, SectionHeading } from "../ui.tsx";
+import { CopyValue, ErrorNotice, IconButton, SectionHeading } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
 const providerNames = {
   local: "Local PostgreSQL storage",
@@ -25,10 +25,9 @@ export function InstanceOverview({
         <SectionHeading
           title="Instance"
           action={
-            <Button onClick={onConfigure}>
+            <IconButton label="Edit instance" onClick={onConfigure}>
               <Settings2 />
-              Edit instance
-            </Button>
+            </IconButton>
           }
         />
         <SettingRow title="Name" description={data.name} />
@@ -56,12 +55,16 @@ export function InstanceOverview({
       <SectionHeading
         title={title}
         action={
-          <Button onClick={onConfigure}>
+          <IconButton
+            label={
+              configured
+                ? "View configuration"
+                : `Configure ${section === "storage" ? "storage" : section === "search" ? "search" : "event delivery"}`
+            }
+            onClick={onConfigure}
+          >
             <Settings2 />
-            {configured
-              ? "View configuration"
-              : `Configure ${section === "storage" ? "storage" : section === "search" ? "search" : "event delivery"}`}
-          </Button>
+          </IconButton>
         }
       />
       <SettingRow title="Provider" description={providerNames[info.provider]}>

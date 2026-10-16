@@ -64,7 +64,7 @@ export function ProjectSettings({
         <TabsContent value="general">
           <section>
             <div className="flex flex-wrap items-start gap-5">
-              <ProjectIconPicker project={project} disabled={!access.canAdmin} variant="icon" />
+              <ProjectIconPicker project={project} disabled={!access.canAdmin} />
               {editing ? (
                 <form
                   className="min-w-0 flex-1 basis-60 [&_[data-slot=field-label]]:sr-only"

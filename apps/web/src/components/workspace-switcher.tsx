@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "@tanstack/react-router";
 import { Building2, ChevronsUpDown, Plus, Settings } from "lucide-react";
 import { useOperation, useWorkspace } from "../data.tsx";
-import { Button, Input, Modal, FormActions } from "../ui.tsx";
+import { Input, Modal, FormActions, IconButton } from "../ui.tsx";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import {
   DropdownMenu,
@@ -83,10 +83,9 @@ export function CreateWorkspace() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="default" onClick={() => setOpen(true)}>
+      <IconButton label="New workspace" variant="default" onClick={() => setOpen(true)}>
         <Plus />
-        New workspace
-      </Button>
+      </IconButton>
       {open && <WorkspaceCreateDialog onOpenChange={setOpen} />}
     </>
   );

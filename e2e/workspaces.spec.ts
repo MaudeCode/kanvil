@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { choose, openSearch } from "./controls.ts";
 
 test("workspace switching, deep links, and offline project icons remain consistent", async ({
   page,
@@ -60,7 +60,7 @@ test("workspace switching, deep links, and offline project icons remain consiste
   await page.goto(`/projects/${projectId}/settings`);
   await expect(page.getByRole("heading", { name: "Project settings", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Change icon", exact: true }).click();
-  await page.getByLabel("Search icons", { exact: true }).fill("rocket");
+  await (await openSearch(page, "Search icons")).fill("rocket");
   await page.getByRole("button", { name: "purple icon color", exact: true }).click();
   await page.getByRole("button", { name: "Choose rocket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

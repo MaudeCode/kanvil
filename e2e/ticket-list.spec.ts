@@ -4,6 +4,7 @@ import {
   choose,
   chooseTicketView,
   openSaveView,
+  openSearch,
   setProperty,
   ticketRows,
   toggleDisplay,
@@ -65,7 +66,7 @@ test("project settings manage reusable colored labels across live ticket views",
   await expect(
     page.getByRole("button", { name: "Edit label release, ready", exact: true }),
   ).toBeVisible();
-  await page.getByRole("searchbox", { name: "Search labels", exact: true }).fill("release");
+  await (await openSearch(page, "Search labels")).fill("release");
   await expect(page.getByRole("button", { name: "Edit label Defect", exact: true })).toHaveCount(0);
   await page.goto(`/projects/${project.id}`);
   const table = page.getByRole("table", { name: "Tickets" });

@@ -56,6 +56,11 @@ export async function addAcceptanceCriteria(page: Page, text: string) {
   if (await reveal.isVisible()) await reveal.click();
   await page.getByLabel("Acceptance criteria", { exact: true }).fill(text);
 }
+// Search fields start folded as a magnifying glass; open one and return its input.
+export async function openSearch(page: Page, label: string) {
+  await page.getByRole("button", { name: label, exact: true }).click();
+  return page.getByRole("searchbox", { name: label, exact: true });
+}
 export async function toggleDisplay(page: Page, option: string) {
   await page.getByRole("button", { name: option, exact: true }).click();
 }

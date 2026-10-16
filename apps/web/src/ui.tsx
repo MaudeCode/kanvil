@@ -4,6 +4,7 @@ import {
   useContext,
   isValidElement,
   useId,
+  useRef,
   useState,
   type ComponentProps,
   type ReactNode,
@@ -27,10 +28,13 @@ import {
   ArrowUp,
   OctagonAlert,
   Minus,
+  Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict, isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
+import { useShortcut } from "./hooks/use-shortcut.ts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -606,6 +610,93 @@ export function SectionHeading({
       </div>
       {action}
     </header>
+  );
+}
+// A magnifying glass that opens into an underlined field, focused and ready to type. Leaving it
+// empty folds it back; `shortcut` opens it from the keyboard and `defaultOpen` starts it open.
+export function SearchField({
+  label,
+  value,
+  onChange,
+  placeholder = "Search…",
+  shortcut,
+  defaultOpen = false,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  shortcut?: string;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(() => defaultOpen || value.length > 0),
+    input = useRef<HTMLInputElement>(null);
+  const expanded = open || value.length > 0;
+  const close = () => {
+    onChange("");
+    setOpen(defaultOpen);
+  };
+  useShortcut(
+    shortcut ?? "",
+    () => {
+      setOpen(true);
+      input.current?.focus();
+    },
+    { enabled: !!shortcut },
+  );
+  return (
+    <div
+      role="search"
+      data-expanded={expanded}
+      className={cn("group/search flex min-w-0 items-center", expanded && "flex-1", className)}
+    >
+      <IconButton
+        label={label}
+        size="icon-sm"
+        aria-expanded={expanded}
+        title={shortcut ? `${label} (${shortcut})` : undefined}
+        className={cn("transition-colors", expanded && "text-foreground")}
+        onClick={() => {
+          setOpen(true);
+          input.current?.focus();
+        }}
+      >
+        <Search />
+      </IconButton>
+      <div
+        className={cn(
+          "flex items-center overflow-hidden transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
+          expanded ? "w-full max-w-56 opacity-100" : "w-0 opacity-0",
+        )}
+      >
+        <input
+          ref={input}
+          type="search"
+          aria-label={label}
+          placeholder={placeholder}
+          value={value}
+          tabIndex={expanded ? 0 : -1}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            if (!value) setOpen(defaultOpen);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" || event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+          className="h-8 min-w-0 flex-1 border-0 border-b border-border bg-transparent px-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-foreground [&::-webkit-search-cancel-button]:hidden"
+        />
+        {value && (
+          <IconButton label={`Clear ${label.toLowerCase()}`} size="icon-xs" onClick={close}>
+            <X />
+          </IconButton>
+        )}
+      </div>
+    </div>
   );
 }
 // The one copy-to-clipboard action: copies, toasts, and shows a check briefly.

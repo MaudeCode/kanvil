@@ -15,6 +15,7 @@ import {
   SectionHeading,
   Textarea,
   FormActions,
+  IconButton,
 } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
@@ -67,7 +68,8 @@ export function WorkspaceSettings({
               title={workspace.name}
               action={
                 canAdmin && (
-                  <Button
+                  <IconButton
+                    label="Edit workspace"
                     onClick={() => {
                       setDraft({
                         name: workspace.name,
@@ -79,8 +81,7 @@ export function WorkspaceSettings({
                     }}
                   >
                     <Pencil />
-                    Edit workspace
-                  </Button>
+                  </IconButton>
                 )
               }
             />

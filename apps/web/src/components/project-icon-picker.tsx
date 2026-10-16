@@ -5,7 +5,7 @@ import { Icon } from "@iconify/react/offline";
 import { Camera, RotateCcw } from "lucide-react";
 import { type Project } from "@kanvil/contracts";
 import { useOperation } from "../data.tsx";
-import { Button, ErrorNotice, Input, Loading, Modal, ModalActions } from "../ui.tsx";
+import { Button, ErrorNotice, Loading, Modal, ModalActions, SearchField } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { prepareSquareImage } from "../lib/browser.ts";
@@ -13,12 +13,9 @@ import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 export function ProjectIconPicker({
   project,
   disabled = false,
-  variant = "button",
 }: {
   project: Project;
   disabled?: boolean;
-  // "icon" shows the large project icon itself as the trigger, with a camera overlay on hover.
-  variant?: "button" | "icon";
 }) {
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -52,31 +49,24 @@ export function ProjectIconPicker({
   };
   return (
     <>
-      {variant === "icon" ? (
-        <button
-          type="button"
-          aria-label="Change icon"
-          title="Change icon"
-          disabled={disabled}
-          onClick={start}
-          className="group/icon relative shrink-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-        >
-          <ProjectIcon project={project} className="size-16 rounded-xl bg-muted/50 p-1.5" />
-          {!disabled && (
-            <span
-              aria-hidden="true"
-              className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/80 text-foreground opacity-0 transition-opacity group-hover/icon:opacity-100 group-focus-visible/icon:opacity-100"
-            >
-              <Camera className="size-5" />
-            </span>
-          )}
-        </button>
-      ) : (
-        <Button disabled={disabled} onClick={start}>
-          <ProjectIcon project={project} className="size-4" />
-          Change icon
-        </Button>
-      )}
+      <button
+        type="button"
+        aria-label="Change icon"
+        title="Change icon"
+        disabled={disabled}
+        onClick={start}
+        className="group/icon relative shrink-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+      >
+        <ProjectIcon project={project} className="size-16 rounded-xl bg-muted/50 p-1.5" />
+        {!disabled && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/80 text-foreground opacity-0 transition-opacity group-hover/icon:opacity-100 group-focus-visible/icon:opacity-100"
+          >
+            <Camera className="size-5" />
+          </span>
+        )}
+      </button>
       <Modal title="Project icon" open={open} onOpenChange={setOpen} busy={busy}>
         <Tabs defaultValue="library">
           <TabsList variant="line">
@@ -84,15 +74,16 @@ export function ProjectIconPicker({
             <TabsTrigger value="upload">Upload image</TabsTrigger>
           </TabsList>
           <TabsContent value="library">
-            <Input
+            <SearchField
               label="Search icons"
-              type="search"
               placeholder="Search icons…"
+              defaultOpen
               value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
+              onChange={(value) => {
+                setQuery(value);
                 setLimit(96);
               }}
+              className="my-3"
             />
             <AccentColorPicker
               label="Icon color"

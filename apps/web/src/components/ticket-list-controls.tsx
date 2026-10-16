@@ -1,13 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Check as CheckIcon,
-  ChevronsUpDown,
-  Columns3,
-  SlidersHorizontal,
-  Search,
-  X,
-} from "lucide-react";
+import { Check as CheckIcon, ChevronsUpDown, Columns3, SlidersHorizontal, X } from "lucide-react";
 import { z } from "zod";
 import {
   ticketFilter,
@@ -23,11 +16,12 @@ import {
   Button,
   Check,
   ErrorNotice,
-  Input,
   Select,
   SelectItem,
   TicketIndicator,
+  SearchField,
   fieldClass,
+  IconButton,
 } from "../ui.tsx";
 import {
   searchSchema,
@@ -49,10 +43,9 @@ import {
 } from "@/components/ui/command";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
-import { Kbd } from "@/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TicketTag } from "./ticket-tags.tsx";
-import { useShortcut } from "../hooks/use-shortcut.ts";
+import { cn } from "@/lib/utils";
 
 // Extends the list's existing filter popover with personal display preferences.
 export function TicketListControls({
@@ -87,9 +80,7 @@ export function TicketListControls({
   actions: ReactNode;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false),
-    [searchOpen, setSearchOpen] = useState(false),
     [labelsOpen, setLabelsOpen] = useState(false);
-  useShortcut("/", () => setSearchOpen(true), { enabled: !searchOpen });
   const identity = useIdentity();
   const members = useQuery(api.query("list_members", { projectId }));
   const labels = useQuery({
@@ -109,50 +100,31 @@ export function TicketListControls({
     <>
       <div className="ticket-list-controls mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1 @max-[850px]:[&>[data-slot]]:px-2">
         <div className="mr-auto min-w-0 flex-1">{view}</div>
-        <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Search tickets"
-                title="Search tickets (/)"
-                className={search.q ? "text-primary" : undefined}
-              />
-            }
-          >
-            <Search />
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-3">
-            <Input
-              label="Search tickets"
-              type="search"
-              placeholder="Search tickets…"
-              value={search.q ?? ""}
-              onChange={(event) => filter({ q: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") setSearchOpen(false);
-              }}
-              autoFocus
-            />
-          </PopoverContent>
-        </Popover>
+        <SearchField
+          label="Search tickets"
+          placeholder="Search tickets…"
+          shortcut="/"
+          value={search.q ?? ""}
+          onChange={(value) => filter({ q: value })}
+          className={cn("shrink-0", search.q && "[&_[data-slot=button]]:text-primary")}
+        />
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
           <PopoverTrigger
             render={
-              <Button
-                variant="ghost"
-                aria-label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`}
-                title="Filters"
+              <IconButton
+                label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`}
+                className={cn("relative", activeFilters > 0 && "text-primary")}
               />
             }
           >
             <SlidersHorizontal />
-            <span className="@max-[850px]:hidden">Filters</span>
             {activeFilters > 0 && (
-              <Kbd className="h-4 min-w-4 bg-primary/10 px-1 text-[10px] text-primary">
+              <span
+                aria-hidden="true"
+                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none text-primary-foreground tabular-nums"
+              >
                 {activeFilters}
-              </Kbd>
+              </span>
             )}
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
@@ -301,9 +273,8 @@ export function TicketListControls({
           </PopoverContent>
         </Popover>
         <Popover>
-          <PopoverTrigger render={<Button variant="ghost" aria-label="Display" title="Display" />}>
+          <PopoverTrigger render={<IconButton label="Display" />}>
             <Columns3 />
-            <span className="@max-[850px]:hidden">Display</span>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(19rem,calc(100vw-2rem))] gap-3 p-4">
             <PopoverTitle>Display</PopoverTitle>

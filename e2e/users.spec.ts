@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { accountMenu, choose } from "./controls.ts";
+import { accountMenu, choose, openSearch } from "./controls.ts";
 
 test("account management supports workspace access, profile edits, password reset, and suspension", async ({
   page,
@@ -83,7 +83,7 @@ test("account management supports workspace access, profile edits, password rese
     await expect(panel.getByText("Disabled", { exact: true })).toBeVisible();
     expect((await context.request.get("/api/v1/projects")).status()).toBeGreaterThanOrEqual(401);
     await panel.getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByLabel("Search users", { exact: true }).fill("morgan");
+    await (await openSearch(page, "Search users")).fill("morgan");
     await choose(page, "Account status filter", "Disabled");
     const row = page.getByRole("row", { name: new RegExp(email) });
     await expect(row).toBeVisible();

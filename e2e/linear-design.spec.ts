@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { toggleDisplay } from "./controls.ts";
+import { openSearch, toggleDisplay } from "./controls.ts";
 import { builtInThemes } from "../apps/web/src/lib/themes.ts";
 
 test("Aligned is the default and every named theme applies in both appearances", async ({
@@ -45,7 +45,7 @@ test("Aligned is the default and every named theme applies in both appearances",
   }
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", builtInThemes.at(-1)!.id);
-  await page.getByLabel("Search themes", { exact: true }).fill("catppuccin frappe");
+  await (await openSearch(page, "Search themes")).fill("catppuccin frappe");
   await expect(
     page.getByRole("radiogroup", { name: "Color theme", exact: true }).getByRole("radio"),
   ).toHaveCount(1);
@@ -57,7 +57,7 @@ test("Aligned is the default and every named theme applies in both appearances",
       false,
     );
   }
-  await page.getByLabel("Search themes", { exact: true }).fill("unavailable palette");
+  await (await openSearch(page, "Search themes")).fill("unavailable palette");
   await expect(page.getByRole("status").filter({ hasText: "No matching themes" })).toBeVisible();
   expect(errors).toEqual([]);
 });

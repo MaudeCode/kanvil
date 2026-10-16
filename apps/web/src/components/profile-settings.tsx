@@ -3,7 +3,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Camera, Trash2, Pencil } from "lucide-react";
 import { photoResultSchema } from "@kanvil/contracts/instance";
 import { api, auth, useIdentity } from "../data.tsx";
-import { Button, ErrorNotice, Input, Modal, SectionHeading, FormActions } from "../ui.tsx";
+import {
+  Button,
+  ErrorNotice,
+  Input,
+  Modal,
+  SectionHeading,
+  FormActions,
+  IconButton,
+} from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
 import { prepareSquareImage } from "../lib/browser.ts";
@@ -49,7 +57,8 @@ export function ProfileSettings() {
       <SectionHeading
         title="Profile"
         action={
-          <Button
+          <IconButton
+            label="Edit profile"
             disabled={pending}
             onClick={() => {
               setName(identity.name);
@@ -58,8 +67,7 @@ export function ProfileSettings() {
             }}
           >
             <Pencil />
-            Edit profile
-          </Button>
+          </IconButton>
         }
       />
       <div className="flex flex-wrap items-center gap-4">

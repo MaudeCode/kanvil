@@ -42,6 +42,7 @@ import {
   Textarea,
   SectionHeading,
   FormActions,
+  IconButton,
 } from "./ui.tsx";
 import { cn } from "@/lib/utils";
 
@@ -107,15 +108,14 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
         title="Attachments"
         action={
           access.canWrite && (
-            <Button
-              variant="ghost"
-              size="sm"
+            <IconButton
+              label={uploading ? "Uploading…" : "Attach file"}
+              size="icon-sm"
               disabled={uploading}
               onClick={() => file.current?.click()}
             >
               {uploading ? <Spinner /> : <Upload />}
-              {uploading ? "Uploading…" : "Attach file"}
-            </Button>
+            </IconButton>
           )
         }
       />
@@ -203,7 +203,8 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
         description="Links and outcomes reported by the people and integrations working on this ticket."
         action={
           access.canWrite && (
-            <Button
+            <IconButton
+              label="Add evidence"
               onClick={() => {
                 add.reset();
                 setValidationError(undefined);
@@ -211,8 +212,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
               }}
             >
               <Plus />
-              Add evidence
-            </Button>
+            </IconButton>
           )
         }
       />

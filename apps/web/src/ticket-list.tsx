@@ -37,6 +37,7 @@ import {
   RelativeTime,
   TicketIndicator,
   FormActions,
+  IconButton,
 } from "./ui.tsx";
 import {
   Table,
@@ -46,7 +47,6 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Kbd } from "@/components/ui/kbd";
 import { TicketTags } from "./components/ticket-tags.tsx";
 import { TicketListControls } from "./components/ticket-list-controls.tsx";
 import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.tsx";
@@ -676,22 +676,15 @@ export function TicketList({
           </DropdownMenu>
         }
         actions={
-          <Button
-            variant="default"
-            aria-label="New ticket"
+          <IconButton
+            label="New ticket"
             title="New ticket (C)"
+            variant="default"
             disabled={!access.canWrite}
             onClick={() => setCreating({})}
           >
-            <Plus size={17} aria-hidden="true" />
-            <span className="@max-[850px]:hidden">New ticket</span>
-            <Kbd
-              aria-hidden="true"
-              className="ml-1 bg-primary-foreground/20 text-primary-foreground @max-[850px]:hidden"
-            >
-              C
-            </Kbd>
-          </Button>
+            <Plus />
+          </IconButton>
         }
         density={density}
         onDensityChange={setDensity}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { z } from "zod";
-import { Plus, Search, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw } from "lucide-react";
 import { roles, memberSchema } from "@kanvil/contracts";
 import { toast } from "sonner";
 import {
@@ -9,13 +9,13 @@ import {
   ErrorNotice,
   IconButton,
   Loading,
+  SearchField,
   Modal,
   SectionHeading,
   Select,
   SelectItem,
   FormActions,
 } from "../ui.tsx";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { UserIdentity } from "./user-avatar.tsx";
@@ -61,19 +61,13 @@ export function MemberDirectory({
       <SectionHeading
         title="Members"
         action={
-          <div className="flex items-center gap-2">
-            <InputGroup className="w-56">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                type="search"
-                aria-label="Search members"
-                placeholder="Search members…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </InputGroup>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <SearchField
+              label="Search members"
+              placeholder="Name or email…"
+              value={query}
+              onChange={setQuery}
+            />
             {canAdmin && (
               <IconButton
                 label="Add member"
