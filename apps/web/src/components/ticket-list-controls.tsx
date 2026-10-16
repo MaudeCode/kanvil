@@ -9,13 +9,32 @@ import {
   X,
 } from "lucide-react";
 import { z } from "zod";
-import { ticketFilter, states, priorities, stateLabels } from "@kanvil/contracts";
-import { api } from "../data.tsx";
-import { Button, Check, ErrorNotice, Input, Select, SelectItem, TicketIndicator } from "../ui.tsx";
+import {
+  ticketFilter,
+  states,
+  priorities,
+  stateLabels,
+  dueFilterLabels,
+  sortLabels,
+  defaultOrder,
+} from "@kanvil/contracts";
+import { api, ActorName, useIdentity } from "../data.tsx";
+import {
+  Button,
+  Check,
+  ErrorNotice,
+  Input,
+  Select,
+  SelectItem,
+  TicketIndicator,
+  fieldClass,
+} from "../ui.tsx";
 import {
   searchSchema,
   ticketDensitySchema,
   ticketLabelDisplaySchema,
+  ticketGroupingSchema,
+  type TicketGrouping,
   type TicketSearch,
   type TicketDensity,
   type TicketLabelDisplay,
@@ -30,7 +49,10 @@ import {
 } from "@/components/ui/command";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { Kbd } from "@/components/ui/kbd";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TicketTag } from "./ticket-tags.tsx";
+import { useShortcut } from "../hooks/use-shortcut.ts";
 
 // Extends the list's existing filter popover with personal display preferences.
 export function TicketListControls({
@@ -44,6 +66,8 @@ export function TicketListControls({
   onDensityChange,
   labelDisplay,
   onLabelDisplayChange,
+  grouping,
+  onGroupingChange,
   view,
   actions,
 }: {
@@ -57,11 +81,17 @@ export function TicketListControls({
   onDensityChange: (density: TicketDensity) => void;
   labelDisplay: TicketLabelDisplay;
   onLabelDisplayChange: (display: TicketLabelDisplay) => void;
+  grouping: TicketGrouping;
+  onGroupingChange: (grouping: TicketGrouping) => void;
   view: ReactNode;
   actions: ReactNode;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false),
+    [searchOpen, setSearchOpen] = useState(false),
     [labelsOpen, setLabelsOpen] = useState(false);
+  useShortcut("/", () => setSearchOpen(true), { enabled: !searchOpen });
+  const identity = useIdentity();
+  const members = useQuery(api.query("list_members", { projectId }));
   const labels = useQuery({
     ...api.query("list_ticket_labels", { projectId, archived: search.archived }),
     enabled: filtersOpen,
@@ -69,22 +99,25 @@ export function TicketListControls({
   const activeFilters = [
     search.status,
     search.priority,
+    search.assigneeId,
     search.label,
+    search.due,
     search.archived !== "exclude",
   ].filter(Boolean).length;
   const filter = (patch: Partial<TicketSearch>) => onSearch({ ...search, ...patch, offset: 0 });
   return (
     <>
-      <div className="ticket-list-controls">
-        <div className="ticket-view-picker">{view}</div>
-        <Popover>
+      <div className="ticket-list-controls mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1 @max-[850px]:[&>[data-slot]]:px-2">
+        <div className="mr-auto min-w-0 flex-1">{view}</div>
+        <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger
             render={
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Search tickets"
-                title="Search tickets"
+                title="Search tickets (/)"
+                className={search.q ? "text-primary" : undefined}
               />
             }
           >
@@ -97,6 +130,9 @@ export function TicketListControls({
               placeholder="Search tickets…"
               value={search.q ?? ""}
               onChange={(event) => filter({ q: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") setSearchOpen(false);
+              }}
               autoFocus
             />
           </PopoverContent>
@@ -112,13 +148,16 @@ export function TicketListControls({
             }
           >
             <SlidersHorizontal />
-            <span className="ticket-control-label">
-              Filters{activeFilters ? ` (${activeFilters})` : ""}
-            </span>
+            <span className="@max-[850px]:hidden">Filters</span>
+            {activeFilters > 0 && (
+              <Kbd className="h-4 min-w-4 bg-primary/10 px-1 text-[10px] text-primary">
+                {activeFilters}
+              </Kbd>
+            )}
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
             <PopoverTitle>Filters</PopoverTitle>
-            <div className="filter-fields">
+            <div className="grid grid-cols-1">
               <Select
                 label="Status"
                 value={search.status ?? ""}
@@ -147,7 +186,7 @@ export function TicketListControls({
                   </SelectItem>
                 ))}
               </Select>
-              <Field className="field">
+              <Field className={fieldClass}>
                 <FieldLabel>Label</FieldLabel>
                 <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
                   <PopoverTrigger
@@ -204,6 +243,41 @@ export function TicketListControls({
                 </Popover>
               </Field>
               <Select
+                label="Due"
+                value={search.due ?? ""}
+                onValueChange={(value) =>
+                  filter({ due: value ? ticketFilter.shape.due.unwrap().parse(value) : undefined })
+                }
+              >
+                <SelectItem value="">Any due date</SelectItem>
+                {Object.entries(dueFilterLabels).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="Assignee"
+                value={search.assigneeId ?? "any"}
+                onValueChange={(value) =>
+                  filter({
+                    assigneeId:
+                      value === "any" ? undefined : ticketFilter.shape.assigneeId.parse(value),
+                  })
+                }
+              >
+                <SelectItem value="any">Anyone</SelectItem>
+                <SelectItem value={identity.id}>Me</SelectItem>
+                <SelectItem value="none">Unassigned</SelectItem>
+                {(members.data ?? [])
+                  .filter((member) => member.userId !== identity.id)
+                  .map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>
+                      {member.name}
+                    </SelectItem>
+                  ))}
+              </Select>
+              <Select
                 label="Archived"
                 value={search.archived}
                 onValueChange={(value) =>
@@ -229,38 +303,60 @@ export function TicketListControls({
         <Popover>
           <PopoverTrigger render={<Button variant="ghost" aria-label="Display" title="Display" />}>
             <Columns3 />
-            <span className="ticket-control-label">Display</span>
+            <span className="@max-[850px]:hidden">Display</span>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[min(19rem,calc(100vw-2rem))] gap-3 p-4">
             <PopoverTitle>Display</PopoverTitle>
             <Select
               label="Order by"
               value={search.sort}
-              onValueChange={(value) => filter({ sort: ticketFilter.shape.sort.parse(value) })}
+              onValueChange={(value) =>
+                filter({ sort: ticketFilter.shape.sort.parse(value), order: undefined })
+              }
             >
-              <SelectItem value="priority">Priority</SelectItem>
-              <SelectItem value="updated">Recently updated</SelectItem>
-              <SelectItem value="created">Recently created</SelectItem>
-              <SelectItem value="title">Title A–Z</SelectItem>
-              <SelectItem value="labels">Labels A–Z</SelectItem>
+              {Object.entries(sortLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </Select>
+            <DisplayToggle
+              label="Direction"
+              value={search.order ?? defaultOrder[search.sort]}
+              onChange={(value) => filter({ order: ticketFilter.shape.order.parse(value) })}
+              options={[
+                ["asc", "Ascending"],
+                ["desc", "Descending"],
+              ]}
+            />
+            <DisplayToggle
+              label="Group by"
+              value={grouping}
+              onChange={(value) => onGroupingChange(ticketGroupingSchema.parse(value))}
+              options={[
+                ["status", "Status"],
+                ["none", "None"],
+              ]}
+            />
             <Separator />
-            <Select
+            <DisplayToggle
               label="Row spacing"
               value={density}
-              onValueChange={(value) => onDensityChange(ticketDensitySchema.parse(value))}
-            >
-              <SelectItem value="compact">Compact</SelectItem>
-              <SelectItem value="comfortable">Comfortable</SelectItem>
-            </Select>
-            <Select
+              onChange={(value) => onDensityChange(ticketDensitySchema.parse(value))}
+              options={[
+                ["compact", "Compact"],
+                ["comfortable", "Comfortable"],
+              ]}
+            />
+            <DisplayToggle
               label="Label display"
               value={labelDisplay}
-              onValueChange={(value) => onLabelDisplayChange(ticketLabelDisplaySchema.parse(value))}
-            >
-              <SelectItem value="compact">Compact preview</SelectItem>
-              <SelectItem value="all">All labels</SelectItem>
-            </Select>
+              onChange={(value) => onLabelDisplayChange(ticketLabelDisplaySchema.parse(value))}
+              options={[
+                ["compact", "Compact preview"],
+                ["all", "All labels"],
+              ]}
+            />
             <fieldset>
               <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>
               <div className="grid grid-cols-2 gap-x-3">
@@ -283,7 +379,10 @@ export function TicketListControls({
         {actions}
       </div>
       {(search.q || activeFilters > 0) && (
-        <div className="active-filters" aria-label="Active ticket filters">
+        <div
+          className="active-filters mb-4 flex flex-wrap items-center gap-2 animate-in fade-in-0 slide-in-from-top-1 duration-150 [&_[data-slot=button]]:h-7 [&_[data-slot=button]]:text-xs"
+          aria-label="Active ticket filters"
+        >
           {search.q && (
             <Button variant="secondary" size="sm" onClick={() => filter({ q: undefined })}>
               Search: {search.q}
@@ -302,9 +401,29 @@ export function TicketListControls({
               <X className="size-3" />
             </Button>
           )}
+          {search.assigneeId && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ assigneeId: undefined })}>
+              {search.assigneeId === "none" ? (
+                "Unassigned"
+              ) : search.assigneeId === identity.id ? (
+                "Assigned to me"
+              ) : (
+                <>
+                  Assignee: <ActorName projectId={projectId} actorId={search.assigneeId} />
+                </>
+              )}
+              <X className="size-3" />
+            </Button>
+          )}
           {search.label && (
             <Button variant="secondary" size="sm" onClick={() => filter({ label: undefined })}>
               Label: <TicketTag tag={search.label} />
+              <X className="size-3" />
+            </Button>
+          )}
+          {search.due && (
+            <Button variant="secondary" size="sm" onClick={() => filter({ due: undefined })}>
+              {dueFilterLabels[search.due]}
               <X className="size-3" />
             </Button>
           )}
@@ -324,5 +443,41 @@ export function TicketListControls({
         </div>
       )}
     </>
+  );
+}
+
+function DisplayToggle({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <Field className={fieldClass}>
+      <FieldLabel>{label}</FieldLabel>
+      <ToggleGroup
+        aria-label={label}
+        value={[value]}
+        onValueChange={(next) => {
+          const chosen = next[0];
+          if (typeof chosen === "string") onChange(chosen);
+        }}
+        variant="outline"
+        size="sm"
+        spacing={0}
+        className="w-full *:flex-1"
+      >
+        {options.map(([option, text]) => (
+          <ToggleGroupItem key={option} value={option} aria-label={text}>
+            {text}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+    </Field>
   );
 }

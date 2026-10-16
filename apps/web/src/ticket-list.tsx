@@ -1,10 +1,9 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { Plus, ChevronDown, BookmarkPlus, Trash2 } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -17,15 +16,17 @@ import {
 import { z } from "zod";
 import {
   ticketFilter,
+  defaultOrder,
   states,
   stateLabels,
   type Ticket,
   type Project,
   type Output,
 } from "@kanvil/contracts";
-import { api, date, ActorName, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
+import { api, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
+  DueDate,
   EmptyState,
   Check,
   Confirm,
@@ -33,7 +34,9 @@ import {
   Input,
   Loading,
   Modal,
+  RelativeTime,
   TicketIndicator,
+  FormActions,
 } from "./ui.tsx";
 import {
   Table,
@@ -43,9 +46,18 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Kbd } from "@/components/ui/kbd";
 import { TicketTags } from "./components/ticket-tags.tsx";
 import { TicketListControls } from "./components/ticket-list-controls.tsx";
 import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.tsx";
+import {
+  PropertyValue,
+  TicketProperty,
+  pair,
+  useTicketChange,
+  type PropertyName,
+  type PropertyValues,
+} from "./components/ticket-property.tsx";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -57,12 +69,16 @@ import {
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { TicketEditor } from "./ticket-editor.tsx";
-import { useStickyTicketSections } from "./hooks/use-sticky-ticket-sections.ts";
+import { writeListOrder } from "./lib/list-order.ts";
+import { useShortcut } from "./hooks/use-shortcut.ts";
+import { cn } from "@/lib/utils";
 
 import {
   searchSchema,
   ticketDensitySchema,
   ticketLabelDisplaySchema,
+  ticketGroupingSchema,
+  type TicketGrouping,
   type TicketSearch,
   type TicketDensity,
   type TicketLabelDisplay,
@@ -86,24 +102,42 @@ function TicketStatusHeader({
   count,
   collapsed,
   onToggle,
+  onCreate,
 }: {
   status: Ticket["status"];
   count: number;
   collapsed: boolean;
   onToggle: () => void;
+  onCreate?: (() => void) | undefined;
 }) {
   return (
-    <Button
-      variant="ghost"
-      className="w-full justify-start gap-2 rounded-none px-3"
-      aria-label={`${collapsed ? "Expand" : "Collapse"} ${stateLabels[status]} tickets`}
-      aria-expanded={!collapsed}
-      onClick={onToggle}
-    >
-      <ChevronDown className={collapsed ? "size-3 -rotate-90" : "size-3"} />
-      <TicketIndicator property="status" value={status} />
-      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-    </Button>
+    <div className="flex items-center">
+      <Button
+        variant="ghost"
+        className="flex-1 justify-start gap-2 rounded-none px-3"
+        aria-label={`${collapsed ? "Expand" : "Collapse"} ${stateLabels[status]} tickets`}
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+      >
+        <ChevronDown
+          className={cn("size-3 transition-transform duration-200", collapsed && "-rotate-90")}
+        />
+        <TicketIndicator property="status" value={status} />
+        <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+      </Button>
+      {onCreate && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="mr-2 text-muted-foreground"
+          aria-label={`New ${stateLabels[status]} ticket`}
+          title={`New ${stateLabels[status]} ticket`}
+          onClick={onCreate}
+        >
+          <Plus />
+        </Button>
+      )}
+    </div>
   );
 }
 function readDisplayPreference<T>(key: string, schema: z.ZodType<T>, fallback: T): T {
@@ -113,6 +147,36 @@ function readDisplayPreference<T>(key: string, schema: z.ZodType<T>, fallback: T
   } catch {
     return fallback;
   }
+}
+// Inline property editing on a row; readers see the plain value.
+function PropertyCell<P extends PropertyName>({
+  ticket,
+  property,
+  value,
+  iconOnly = false,
+}: {
+  ticket: Ticket;
+  property: P;
+  value: PropertyValues[P];
+  iconOnly?: boolean;
+}) {
+  const access = useProjectAccess(ticket.projectId),
+    { change, pending } = useTicketChange(ticket);
+  if (!access.canWrite)
+    return (
+      <PropertyValue {...pair(property, value)} projectId={ticket.projectId} iconOnly={iconOnly} />
+    );
+  return (
+    <TicketProperty
+      variant="cell"
+      property={property}
+      value={value}
+      projectId={ticket.projectId}
+      iconOnly={iconOnly}
+      disabled={pending}
+      onChange={(next) => void change({ [property]: next })}
+    />
+  );
 }
 const columns: ColumnDef<typeof features, Ticket>[] = [
   {
@@ -147,7 +211,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     minSize: 200,
     cell: ({ row }) => (
       <Link
-        className="ticket-title"
+        className="ticket-title block text-[13px] leading-5 font-normal whitespace-normal wrap-anywhere text-foreground hover:text-primary"
         to="/projects/$projectId/tickets/$ticketId"
         params={{ projectId: row.original.projectId, ticketId: row.original.id }}
       >
@@ -160,7 +224,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       ({
         accessorKey: key,
         header: key === "labels" ? "Labels" : "Scopes",
-        size: 190,
+        size: 180,
         minSize: 120,
         cell: ({ row }) => (
           <TicketTags
@@ -174,9 +238,11 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   {
     accessorKey: "status",
     header: "Status",
-    size: 125,
-    minSize: 110,
-    cell: ({ row }) => <TicketIndicator property="status" value={row.original.status} />,
+    size: 115,
+    minSize: 105,
+    cell: ({ row }) => (
+      <PropertyCell ticket={row.original} property="status" value={row.original.status} />
+    ),
   },
   {
     accessorKey: "priority",
@@ -184,38 +250,90 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     size: 72,
     minSize: 64,
     cell: ({ row }) => (
-      <TicketIndicator property="priority" value={row.original.priority} iconOnly />
+      <PropertyCell
+        ticket={row.original}
+        property="priority"
+        value={row.original.priority}
+        iconOnly
+      />
     ),
   },
   {
     accessorKey: "difficulty",
     header: "Difficulty",
-    size: 95,
+    size: 90,
     minSize: 85,
-    cell: ({ row }) => row.original.difficulty ?? "—",
+    cell: ({ row }) => (
+      <PropertyCell ticket={row.original} property="difficulty" value={row.original.difficulty} />
+    ),
   },
-  { accessorKey: "kind", header: "Kind", size: 110 },
+  {
+    accessorKey: "kind",
+    header: "Kind",
+    size: 110,
+    cell: ({ row }) => (
+      <PropertyCell ticket={row.original} property="kind" value={row.original.kind} />
+    ),
+  },
   {
     accessorKey: "assigneeId",
     header: "Assignee",
     size: 160,
-    cell: ({ row }) =>
-      row.original.assigneeId ? (
-        <ActorName projectId={row.original.projectId} actorId={row.original.assigneeId} />
-      ) : (
-        "Unassigned"
-      ),
+    cell: ({ row }) => (
+      <PropertyCell ticket={row.original} property="assignee" value={row.original.assigneeId} />
+    ),
+  },
+  {
+    accessorKey: "dueAt",
+    header: "Due",
+    size: 100,
+    minSize: 90,
+    cell: ({ row }) => (
+      <DueDate
+        value={row.original.dueAt}
+        open={row.original.status !== "done" && row.original.status !== "cancelled"}
+      />
+    ),
   },
   ...(["createdAt", "updatedAt"] as const).map(
     (key) =>
       ({
         accessorKey: key,
         header: key === "createdAt" ? "Created" : "Updated",
-        size: 170,
-        cell: ({ row }) => date(row.original[key]),
+        size: 130,
+        cell: ({ row }) => (
+          <RelativeTime value={row.original[key]} className="text-muted-foreground" />
+        ),
       }) satisfies ColumnDef<typeof features, Ticket>,
   ),
 ];
+// Columns whose header sorts the list; the sort key is the server's, not the column's.
+const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
+  key: "number",
+  title: "title",
+  labels: "labels",
+  status: "status",
+  priority: "priority",
+  difficulty: "difficulty",
+  kind: "kind",
+  assigneeId: "assignee",
+  dueAt: "due",
+  createdAt: "created",
+  updatedAt: "updated",
+};
+const pageKey = (status: Ticket["status"] | undefined) => status ?? "all";
+const interactive = "a, button, input, label, [role=checkbox], [role=combobox], [role=menu]";
+const tableClass = "min-w-full table-fixed @min-[1051px]:w-(--table-width)";
+// Every section table shares the header table's column widths.
+function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }[] }) {
+  return (
+    <colgroup>
+      {leaves.map((column) => (
+        <col key={column.id} data-column={column.id} style={{ width: column.getSize() }} />
+      ))}
+    </colgroup>
+  );
+}
 export function TicketList({
   project,
   search,
@@ -227,11 +345,16 @@ export function TicketList({
 }) {
   const access = useProjectAccess(project.id);
   const identity = useIdentity();
+  const navigate = useNavigate();
   const storageKey = `kanvil:${identity.id}:ticket-columns`;
   const densityKey = `kanvil:${identity.id}:ticket-density`;
   const labelDisplayKey = `kanvil:${identity.id}:ticket-label-display`;
+  const groupingKey = `kanvil:${identity.id}:ticket-grouping`;
   const [labelDisplay, setLabelDisplay] = useState<TicketLabelDisplay>(() =>
     readDisplayPreference(labelDisplayKey, ticketLabelDisplaySchema, "compact"),
+  );
+  const [grouping, setGrouping] = useState<TicketGrouping>(() =>
+    readDisplayPreference(groupingKey, ticketGroupingSchema, "status"),
   );
   const [density, setDensity] = useState<TicketDensity>(() =>
     readDisplayPreference(densityKey, ticketDensitySchema, "compact"),
@@ -253,33 +376,50 @@ export function TicketList({
       localStorage.setItem(storageKey, JSON.stringify(visibility));
       localStorage.setItem(densityKey, density);
       localStorage.setItem(labelDisplayKey, labelDisplay);
+      localStorage.setItem(groupingKey, grouping);
     } catch {
       /* Display controls work without storage. */
     }
-  }, [storageKey, visibility, densityKey, density, labelDisplayKey, labelDisplay]);
-  const filterKey = JSON.stringify({ ...search, offset: 0 });
-  const [paging, setPaging] = useState<{
-    filterKey: string;
-    pages: Partial<Record<Ticket["status"], number>>;
-  }>({ filterKey, pages: {} });
+  }, [
+    storageKey,
+    visibility,
+    densityKey,
+    density,
+    labelDisplayKey,
+    labelDisplay,
+    groupingKey,
+    grouping,
+  ]);
+  const filterKey = JSON.stringify({ ...search, offset: 0, grouping });
+  const [paging, setPaging] = useState<{ filterKey: string; pages: Record<string, number> }>({
+    filterKey,
+    pages: {},
+  });
   const [collapsed, setCollapsed] = useState<Set<Ticket["status"]>>(() => new Set());
   const pages = paging.filterKey === filterKey ? paging.pages : {};
-  const visibleStates = states.filter((status) => !search.status || status === search.status);
-  const pageQueries = visibleStates.flatMap((status) =>
-    Array.from({ length: pages[status] ?? 1 }, (_, page) => ({ status, offset: page * pageSize })),
+  // Grouped lists fetch one series of pages per status section; a flat list fetches one series.
+  const sections: (Ticket["status"] | undefined)[] =
+    grouping === "status"
+      ? states.filter((status) => !search.status || status === search.status)
+      : [undefined];
+  const pageQueries = sections.flatMap((status) =>
+    Array.from({ length: pages[pageKey(status)] ?? 1 }, (_, page) => ({
+      status,
+      offset: page * pageSize,
+    })),
   );
   const queries = useQueries({
     queries: pageQueries.map(({ status, offset }) =>
       api.query("list_tickets", {
         projectId: project.id,
         ...search,
-        status,
+        status: status ?? search.status,
         offset,
         limit: pageSize,
       }),
     ),
   });
-  const groups = visibleStates.map((status) => ({
+  const groups = sections.map((status) => ({
     status,
     data: {
       items: pageQueries.flatMap((entry, index) =>
@@ -289,36 +429,55 @@ export function TicketList({
     },
   }));
   const requiredPages = Object.fromEntries(
-    groups.map((group) => [group.status, Math.max(1, Math.ceil(group.data.total / pageSize))]),
+    groups.map((group) => [
+      pageKey(group.status),
+      Math.max(1, Math.ceil(group.data.total / pageSize)),
+    ]),
   );
-  const missingPages = visibleStates.some(
-    (status) => (pages[status] ?? 1) < (requiredPages[status] ?? 1),
+  const missingPages = sections.some(
+    (status) => (pages[pageKey(status)] ?? 1) < (requiredPages[pageKey(status)] ?? 1),
   );
-  useEffect(() => {
-    if (missingPages) setPaging({ filterKey, pages: requiredPages });
-  }, [filterKey, missingPages, requiredPages]);
+  // Load the remaining pages of a section as soon as its total is known.
+  if (missingPages) setPaging({ filterKey, pages: requiredPages });
   const latest = new Map<string, Ticket>();
   for (const group of groups)
     for (const ticket of group.data?.items ?? []) {
       const previous = latest.get(ticket.id);
       if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
     }
+  // Rows that arrive through realtime after the first load get a short highlight.
+  const loading = missingPages || queries.some((query) => query.isPending);
+  const currentIds = [...latest.keys()].join("\n");
+  const [seen, setSeen] = useState<{ filterKey: string; ids: string | null; fresh: Set<string> }>({
+    filterKey,
+    ids: null,
+    fresh: new Set(),
+  });
+  if (seen.filterKey !== filterKey) setSeen({ filterKey, ids: null, fresh: new Set() });
+  else if (seen.ids === null) {
+    if (!loading) setSeen({ filterKey, ids: currentIds, fresh: new Set() });
+  } else if (seen.ids !== currentIds) {
+    const known = new Set(seen.ids.split("\n"));
+    setSeen({
+      filterKey,
+      ids: currentIds,
+      fresh: new Set([...latest.keys()].filter((id) => !known.has(id))),
+    });
+  }
   const tickets = {
-    isPending: missingPages || queries.some((query) => query.isPending),
+    isPending: loading,
     error: queries.find((query) => query.error)?.error,
     data: {
-      items: [...latest.values()].filter((ticket) => !collapsed.has(ticket.status)),
+      items: [...latest.values()].filter(
+        (ticket) => grouping === "none" || !collapsed.has(ticket.status),
+      ),
       total: groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0),
     },
   };
   const views = useQuery(api.query("list_views", { projectId: project.id }));
-  const { ref: tableScrollRef, pinned } = useStickyTicketSections(
-    !tickets.isPending && !tickets.error,
-  );
-  const pinnedGroup = groups.find((group) => group.status === pinned?.status);
   const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
-  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState<Partial<Pick<Ticket, "status">> | null>(null);
   const [viewName, setViewName] = useState(""),
     [savingView, setSavingView] = useState(false);
   const [deletingView, setDeletingView] = useState<Output<"list_views">[number] | null>(null);
@@ -341,6 +500,86 @@ export function TicketList({
     onColumnVisibilityChange: setVisibility,
   });
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
+  // Rows in the order they render: sections top to bottom, skipping collapsed ones.
+  const orderedIds = groups
+    .filter((group) => group.data.total > 0)
+    .flatMap(({ status }) =>
+      status && collapsed.has(status)
+        ? []
+        : table
+            .getRowModel()
+            .rows.filter((row) => !status || row.original.status === status)
+            .map((row) => row.id),
+    );
+  const orderKey = orderedIds.join("\n");
+  useEffect(() => {
+    if (!loading) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
+  }, [loading, project.id, orderKey]);
+  // Keyboard highlight: J/K or arrows move it, Enter opens, X selects, S/P/A edit a property.
+  const [active, setActive] = useState<string | null>(null);
+  useEffect(() => {
+    if (active)
+      document
+        .querySelector(`tr[data-id="${CSS.escape(active)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+  const move = (delta: number) => {
+    if (!orderedIds.length) return;
+    const index = active ? orderedIds.indexOf(active) : -1;
+    const next =
+      index < 0
+        ? delta > 0
+          ? 0
+          : orderedIds.length - 1
+        : Math.min(orderedIds.length - 1, Math.max(0, index + delta));
+    setActive(orderedIds[next] ?? null);
+  };
+  const rowKeys = { enabled: creating === null };
+  // Enter and the arrows keep their default on focused links, buttons, and pickers, except
+  // inside the highlighted row, where a closed picker still has focus after Escape.
+  const navKeys = {
+    ...rowKeys,
+    guard: (event: KeyboardEvent) =>
+      !(
+        event.target instanceof Element &&
+        event.target.closest(interactive) &&
+        !event.target.closest("tr[data-active=true]")
+      ),
+  };
+  useShortcut("j", () => move(1), rowKeys);
+  useShortcut("ArrowDown", () => move(1), navKeys);
+  useShortcut("k", () => move(-1), rowKeys);
+  useShortcut("ArrowUp", () => move(-1), navKeys);
+  useShortcut(
+    "Enter",
+    () => {
+      const ticket = active ? latest.get(active) : undefined;
+      if (ticket)
+        void navigate({
+          to: "/projects/$projectId/tickets/$ticketId",
+          params: { projectId: ticket.projectId, ticketId: ticket.id },
+        });
+    },
+    navKeys,
+  );
+  useShortcut(
+    "x",
+    () => {
+      if (active && access.canWrite) table.getRowModel().rowsById[active]?.toggleSelected();
+    },
+    rowKeys,
+  );
+  const openProperty = (column: string) => {
+    if (active)
+      document
+        .querySelector<HTMLElement>(
+          `tr[data-id="${CSS.escape(active)}"] td[data-column="${column}"] [role=combobox]`,
+        )
+        ?.click();
+  };
+  useShortcut("s", () => openProperty("status"), rowKeys);
+  useShortcut("p", () => openProperty("priority"), rowKeys);
+  useShortcut("a", () => openProperty("assigneeId"), rowKeys);
   const toggleStatus = (status: Ticket["status"]) => {
     table.resetRowSelection();
     setCollapsed((previous) => {
@@ -352,8 +591,26 @@ export function TicketList({
   };
   const changeSearch = (next: TicketSearch) => {
     table.resetRowSelection();
-    setPaging({ filterKey: JSON.stringify({ ...next, offset: 0 }), pages: {} });
+    setPaging({ filterKey: JSON.stringify({ ...next, offset: 0, grouping }), pages: {} });
     onSearch(next);
+  };
+  useShortcut(
+    "c",
+    () => {
+      if (access.canWrite) setCreating({});
+    },
+    { enabled: creating === null },
+  );
+  const openRow = (ticket: Ticket, event: MouseEvent<HTMLTableRowElement>) => {
+    if (event.defaultPrevented) return;
+    // Pickers render in a portal; their clicks bubble through React but are not in the row.
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
+    if (event.target instanceof Element && event.target.closest(interactive)) return;
+    if (window.getSelection()?.toString()) return;
+    void navigate({
+      to: "/projects/$projectId/tickets/$ticketId",
+      params: { projectId: ticket.projectId, ticketId: ticket.id },
+    });
   };
   return (
     <>
@@ -422,18 +679,26 @@ export function TicketList({
           <Button
             variant="default"
             aria-label="New ticket"
-            title="New ticket"
+            title="New ticket (C)"
             disabled={!access.canWrite}
-            onClick={() => setCreateOpen(true)}
+            onClick={() => setCreating({})}
           >
             <Plus size={17} aria-hidden="true" />
-            <span className="ticket-control-label">New ticket</span>
+            <span className="@max-[850px]:hidden">New ticket</span>
+            <Kbd
+              aria-hidden="true"
+              className="ml-1 bg-primary-foreground/20 text-primary-foreground @max-[850px]:hidden"
+            >
+              C
+            </Kbd>
           </Button>
         }
         density={density}
         onDensityChange={setDensity}
         labelDisplay={labelDisplay}
         onLabelDisplayChange={setLabelDisplay}
+        grouping={grouping}
+        onGroupingChange={setGrouping}
         columns={table
           .getAllLeafColumns()
           .filter((column) => column.getCanHide())
@@ -447,7 +712,8 @@ export function TicketList({
           setVisibility(defaultVisibility);
           setDensity("compact");
           setLabelDisplay("compact");
-          changeSearch({ ...search, sort: "priority", offset: 0 });
+          setGrouping("status");
+          changeSearch({ ...search, sort: "priority", order: undefined, offset: 0 });
         }}
       />
       <Modal
@@ -482,10 +748,12 @@ export function TicketList({
             value={viewName}
             onChange={(event) => setViewName(event.target.value)}
           />
-          <ErrorNotice error={saveView.error} />
-          <Button type="submit" disabled={saveView.isPending}>
-            Save view
-          </Button>
+          <FormActions
+            error={saveView.error}
+            pending={saveView.isPending}
+            submitLabel="Save view"
+            onCancel={() => setSavingView(false)}
+          />
         </form>
       </Modal>
       {deletingView && (
@@ -519,150 +787,213 @@ export function TicketList({
           Retry loading tickets
         </Button>
       ) : (
-        <div className="table-scroll" ref={tableScrollRef}>
-          <Table
-            className="ticket-table min-w-full @min-[1051px]:w-(--table-width)"
+        <div className="table-scroll min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [&_[data-slot=table-container]]:overflow-visible">
+          {/* One table per section lets each sticky heading be pushed away by the next one; the
+              wrapper is the single accessible table. */}
+          <div
             role="table"
             aria-label="Tickets"
+            // Comfortable spacing also scales the text, badges, and icons so rows fill the extra room.
+            className="ticket-table data-[density=comfortable]:[&_[data-priority]_svg]:size-5! data-[density=comfortable]:[&_[data-slot=badge]]:h-6 data-[density=comfortable]:[&_[data-slot=badge]]:px-2 data-[density=comfortable]:[&_[data-slot=badge]]:text-xs data-[density=comfortable]:[&_.status]:text-sm data-[density=comfortable]:[&_[data-slot=checkbox]]:size-5 data-[density=comfortable]:[&_.ticket-title]:text-[15px] data-[density=comfortable]:[&_.ticket-title]:leading-6 data-[density=comfortable]:[&_td]:text-sm data-[density=comfortable]:[&_td_svg]:size-4 data-[density=comfortable]:[&_td[data-column=key]]:text-xs"
             data-density={density}
             data-label-display={labelDisplay}
             style={{ "--table-width": `${table.getTotalSize()}px` }}
           >
-            <TableHeader role="rowgroup">
-              {table.getHeaderGroups().map((group) => (
-                <TableRow key={group.id} role="row">
-                  {group.headers.map((header) => (
-                    <TableHead
-                      key={header.id}
-                      role="columnheader"
-                      scope="col"
-                      data-column={header.column.id}
-                      style={{ width: header.getSize() }}
-                    >
-                      <table.FlexRender header={header} />
-                      {header.column.getCanResize() && (
-                        <Button
-                          variant="ghost"
-                          className="resizer"
-                          aria-label={`Resize ${header.id} column`}
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          onKeyDown={(event) => {
-                            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                              event.preventDefault();
-                              table.setColumnSizing((previous) => ({
-                                ...previous,
-                                [header.column.id]: Math.max(
-                                  header.column.columnDef.minSize ?? 60,
-                                  header.column.getSize() + (event.key === "ArrowRight" ? 20 : -20),
-                                ),
-                              }));
+            <div className="sticky top-0 z-20 bg-background">
+              <Table role="presentation" className={tableClass}>
+                <ColumnGroup leaves={table.getVisibleLeafColumns()} />
+                <TableHeader role="rowgroup">
+                  {table.getHeaderGroups().map((group) => (
+                    <TableRow key={group.id} role="row" className="hover:bg-transparent">
+                      {group.headers.map((header) => {
+                        const sort = sortBy[header.column.id],
+                          sorted = sort !== undefined && search.sort === sort,
+                          direction = sorted ? (search.order ?? defaultOrder[sort]) : undefined;
+                        return (
+                          <TableHead
+                            key={header.id}
+                            role="columnheader"
+                            scope="col"
+                            data-column={header.column.id}
+                            aria-sort={
+                              direction === "asc"
+                                ? "ascending"
+                                : direction === "desc"
+                                  ? "descending"
+                                  : undefined
                             }
-                          }}
-                        />
-                      )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            {groups
-              .filter((group) => group.data && group.data.total > 0)
-              .map((group) => (
-                <TableBody
-                  key={group.status}
-                  role="rowgroup"
-                  aria-label={`${stateLabels[group.status]} tickets`}
-                >
-                  <TableRow
-                    className="ticket-status-heading"
-                    data-status={group.status}
-                    inert={pinned?.status === group.status}
-                    aria-hidden={pinned?.status === group.status || undefined}
-                  >
-                    <TableHead
-                      scope="rowgroup"
-                      colSpan={
-                        table.getAllLeafColumns().filter((column) => column.getIsVisible()).length
-                      }
-                    >
-                      <TicketStatusHeader
-                        status={group.status}
-                        count={group.data.total}
-                        collapsed={collapsed.has(group.status)}
-                        onToggle={() => toggleStatus(group.status)}
-                      />
-                    </TableHead>
-                  </TableRow>
-                  {!collapsed.has(group.status) &&
-                    table
-                      .getRowModel()
-                      .rows.filter((row) => row.original.status === group.status)
-                      .map((row) => (
-                        <TicketContextMenu key={row.id} ticket={row.original}>
-                          <TableRow
-                            className="ticket-row"
-                            role="row"
-                            data-selected={row.getIsSelected()}
+                            className={cn(
+                              "relative h-8 bg-transparent px-3 text-[11px] font-normal text-muted-foreground",
+                              sort && "p-0",
+                            )}
+                            style={{ width: header.getSize() }}
                           >
-                            {row.getVisibleCells().map((cell) => (
-                              <TableCell
-                                className="in-data-[density=comfortable]:py-4"
-                                key={cell.id}
-                                role="cell"
-                                data-column={cell.column.id}
-                                data-label={
-                                  typeof cell.column.columnDef.header === "string"
-                                    ? cell.column.columnDef.header
-                                    : undefined
+                            {sort ? (
+                              <Button
+                                variant="ghost"
+                                className={cn(
+                                  "h-8 w-full justify-start gap-1 rounded-none px-3 text-[11px] font-normal text-muted-foreground hover:text-foreground",
+                                  sorted && "text-foreground",
+                                )}
+                                onClick={() =>
+                                  changeSearch({
+                                    ...search,
+                                    sort,
+                                    order: sorted
+                                      ? direction === "asc"
+                                        ? "desc"
+                                        : "asc"
+                                      : undefined,
+                                    offset: 0,
+                                  })
                                 }
                               >
-                                <table.FlexRender cell={cell} />
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        </TicketContextMenu>
-                      ))}
-                </TableBody>
+                                <table.FlexRender header={header} />
+                                {direction === "asc" && <ArrowUp className="size-3" />}
+                                {direction === "desc" && <ArrowDown className="size-3" />}
+                              </Button>
+                            ) : (
+                              <table.FlexRender header={header} />
+                            )}
+                            {header.column.getCanResize() && (
+                              <Button
+                                variant="ghost"
+                                className="resizer absolute top-2 right-0 bottom-2 h-auto w-2 min-w-0 cursor-col-resize touch-none rounded-none border-r bg-transparent p-0 hover:border-primary hover:bg-transparent"
+                                aria-label={`Resize ${header.id} column`}
+                                onMouseDown={header.getResizeHandler()}
+                                onTouchStart={header.getResizeHandler()}
+                                onKeyDown={(event) => {
+                                  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                                    event.preventDefault();
+                                    table.setColumnSizing((previous) => ({
+                                      ...previous,
+                                      [header.column.id]: Math.max(
+                                        header.column.columnDef.minSize ?? 60,
+                                        header.column.getSize() +
+                                          (event.key === "ArrowRight" ? 20 : -20),
+                                      ),
+                                    }));
+                                  }
+                                }}
+                              />
+                            )}
+                          </TableHead>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+              </Table>
+            </div>
+            {groups
+              .filter((group) => group.data && group.data.total > 0)
+              .map(({ status, data }) => (
+                <Table key={pageKey(status)} role="presentation" className={tableClass}>
+                  <ColumnGroup leaves={table.getVisibleLeafColumns()} />
+                  <TableBody
+                    role="rowgroup"
+                    aria-label={status ? `${stateLabels[status]} tickets` : "Tickets"}
+                  >
+                    {status && (
+                      <TableRow
+                        className="ticket-status-heading hover:bg-transparent"
+                        data-status={status}
+                      >
+                        <TableHead
+                          scope="rowgroup"
+                          className="sticky top-8 z-10 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))] p-0"
+                          colSpan={
+                            table.getAllLeafColumns().filter((column) => column.getIsVisible())
+                              .length
+                          }
+                        >
+                          <TicketStatusHeader
+                            status={status}
+                            count={data.total}
+                            collapsed={collapsed.has(status)}
+                            onToggle={() => toggleStatus(status)}
+                            onCreate={access.canWrite ? () => setCreating({ status }) : undefined}
+                          />
+                        </TableHead>
+                      </TableRow>
+                    )}
+                    {(!status || !collapsed.has(status)) &&
+                      table
+                        .getRowModel()
+                        .rows.filter((row) => !status || row.original.status === status)
+                        .map((row) => (
+                          <TicketContextMenu key={row.id} ticket={row.original}>
+                            <TableRow
+                              className="ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60 data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]"
+                              role="row"
+                              data-id={row.id}
+                              data-selected={row.getIsSelected()}
+                              data-active={active === row.id || undefined}
+                              data-fresh={seen.fresh.has(row.id) || undefined}
+                              onClick={(event) => openRow(row.original, event)}
+                            >
+                              {row.getVisibleCells().map((cell) => (
+                                <TableCell
+                                  className={cn(
+                                    "px-3 py-2 align-middle text-xs whitespace-normal in-data-[density=comfortable]:py-4",
+                                    cell.column.id === "key" &&
+                                      "font-mono text-[11px] text-muted-foreground",
+                                  )}
+                                  key={cell.id}
+                                  role="cell"
+                                  data-column={cell.column.id}
+                                  data-label={
+                                    typeof cell.column.columnDef.header === "string"
+                                      ? cell.column.columnDef.header
+                                      : undefined
+                                  }
+                                >
+                                  <table.FlexRender cell={cell} />
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          </TicketContextMenu>
+                        ))}
+                  </TableBody>
+                </Table>
               ))}
-          </Table>
+          </div>
           {!tickets.error && tickets.data.total === 0 && (
             <EmptyState title={isDefault && !search.q ? "No tickets yet" : "No matching tickets"}>
-              {!isDefault && (
+              {!isDefault ? (
                 <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
+              ) : (
+                access.canWrite && (
+                  <Button variant="default" onClick={() => setCreating({})}>
+                    <Plus />
+                    Create the first ticket
+                  </Button>
+                )
               )}
             </EmptyState>
           )}
         </div>
       )}
-      {pinned &&
-        pinnedGroup &&
-        createPortal(
-          <div
-            className="ticket-status-pin border-b text-muted-foreground"
-            style={{
-              top: pinned.top,
-              left: pinned.left,
-              width: pinned.width,
-              height: pinned.height,
-            }}
-          >
-            <TicketStatusHeader
-              status={pinnedGroup.status}
-              count={pinnedGroup.data.total}
-              collapsed={collapsed.has(pinnedGroup.status)}
-              onToggle={() => toggleStatus(pinnedGroup.status)}
-            />
-          </div>,
-          document.body,
-        )}
       {!tickets.isPending && !tickets.error && (
-        <footer className="ticket-pagination pt-3 text-xs text-muted-foreground">
+        <footer className="shrink-0 py-2 text-xs text-muted-foreground">
           {tickets.data.total} tickets
         </footer>
       )}
-      <Modal title="New ticket" open={createOpen} onOpenChange={setCreateOpen}>
-        {createOpen && <TicketEditor projectId={project.id} onSaved={() => setCreateOpen(false)} />}
+      <Modal
+        size="composer"
+        title="New ticket"
+        open={creating !== null}
+        onOpenChange={(open) => {
+          if (!open) setCreating(null);
+        }}
+      >
+        {creating && (
+          <TicketEditor
+            projectId={project.id}
+            initial={creating}
+            onSaved={() => setCreating(null)}
+          />
+        )}
       </Modal>
     </>
   );
