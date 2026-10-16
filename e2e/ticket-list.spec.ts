@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
 import { choose, chooseTicketView, openSaveView } from "./controls.ts";
+import { priorities, priorityLabels } from "../packages/contracts/src/index.ts";
 
 async function expectFullWidth(table: Locator) {
   expect(
@@ -13,6 +14,55 @@ async function expectFullWidth(table: Locator) {
     }),
   ).toBeLessThan(1);
 }
+
+test("priority icons distinguish every level and keep names in pickers", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "PRIORITYUX", name: "Priority icons" },
+    })
+  ).json();
+  for (const priority of priorities)
+    expect(
+      (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+          data: { title: `Priority ${priority}`, priority },
+        })
+      ).ok(),
+    ).toBe(true);
+  await page.goto(`/projects/${project.id}`);
+  const table = page.getByRole("table", { name: "Tickets" });
+  await expect(table.locator("tbody tr")).toHaveCount(priorities.length);
+  const glyphs = await table
+    .locator('td[data-column="priority"] svg')
+    .evaluateAll((icons) => icons.map((icon) => icon.innerHTML));
+  expect(new Set(glyphs).size).toBe(priorities.length);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const priority of priorities) {
+      const cell = table
+        .getByRole("row")
+        .filter({ has: page.getByRole("link", { name: `Priority ${priority}`, exact: true }) })
+        .locator('[data-column="priority"]');
+      const name =
+        priority === "none" ? priorityLabels[priority] : `${priorityLabels[priority]} priority`;
+      await expect(cell.getByRole("img", { name, exact: true })).toBeVisible();
+      await expect(cell.getByRole("img")).toHaveAttribute("title", name);
+      await expect(cell).toHaveText("");
+    }
+  }
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await page.getByRole("combobox", { name: "Priority", exact: true }).click();
+  for (const priority of priorities) {
+    const option = page.getByRole("option", { name: priorityLabels[priority], exact: true });
+    await expect(option).toBeVisible();
+    await expect(option.locator(`svg`)).toHaveCount(1);
+  }
+  await page.getByRole("option", { name: "Urgent", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table.getByRole("link", { name: "Priority urgent", exact: true })).toBeVisible();
+});
 
 test("list properties persist and labels filter and sort the entire project", async ({ page }) => {
   await signIn(page);

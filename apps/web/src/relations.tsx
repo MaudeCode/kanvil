@@ -17,7 +17,7 @@ import {
   Modal,
   Select,
   SelectItem,
-  Status,
+  TicketIndicator,
   SectionHeading,
 } from "./ui.tsx";
 
@@ -92,7 +92,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
               >
                 {child.key} · {child.title}
               </Link>
-              <Status value={child.status} />
+              <TicketIndicator property="status" value={child.status} />
             </div>
           ))}
           {(children.data.total > 20 || offset > 0) && (

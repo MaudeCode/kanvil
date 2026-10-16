@@ -6,14 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  states,
-  priorities,
-  stateLabels,
-  priorityLabels,
-  type Ticket,
-  ApiError,
-} from "@kanvil/contracts";
+import { states, priorities, stateLabels, type Ticket, ApiError } from "@kanvil/contracts";
 import { api, date, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
@@ -25,7 +18,7 @@ import {
   EmptyState,
   Markdown,
   Modal,
-  Status,
+  TicketIndicator,
   Textarea,
   Select,
   SelectItem,
@@ -99,7 +92,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
           <header className="ticket-heading">
             <div className="metadata">
               <span className="key">{ticket.key}</span>
-              <Status value={ticket.status} />
+              <TicketIndicator property="status" value={ticket.status} />
               <Badge variant="outline">{ticket.kind}</Badge>
               {ticket.archived && <strong>Archived</strong>}
             </div>
@@ -167,7 +160,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
               >
                 {priorities.map((priority) => (
                   <SelectItem key={priority} value={priority}>
-                    {priorityLabels[priority]}
+                    <TicketIndicator property="priority" value={priority} />
                   </SelectItem>
                 ))}
               </Select>

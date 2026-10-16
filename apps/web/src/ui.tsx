@@ -21,12 +21,16 @@ import {
   ChevronDown,
   Check as CheckIcon,
   XCircle,
+  SignalLow,
+  SignalMedium,
+  SignalHigh,
+  Minus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { copyText } from "./lib/browser.ts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { errorMessage, stateLabels, type Ticket } from "@kanvil/contracts";
+import { errorMessage, stateLabels, priorityLabels, type Ticket } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -281,15 +285,44 @@ const statusPresentation = {
   done: { icon: CircleCheck, color: "text-[var(--success)]" },
   cancelled: { icon: XCircle, color: "text-muted-foreground" },
 };
-export function Status({ value }: { value: Ticket["status"] }) {
-  const { icon: Icon, color } = statusPresentation[value];
+const priorityPresentation = {
+  urgent: { icon: AlertCircle, color: "text-destructive" },
+  high: { icon: SignalHigh, color: "text-[var(--warning)]" },
+  medium: { icon: SignalMedium, color: "text-foreground" },
+  low: { icon: SignalLow, color: "text-muted-foreground" },
+  none: { icon: Minus, color: "text-muted-foreground" },
+};
+export function TicketIndicator({
+  property,
+  value,
+  iconOnly = false,
+}: (
+  | { property: "status"; value: Ticket["status"] }
+  | { property: "priority"; value: Ticket["priority"] }
+) & { iconOnly?: boolean }) {
+  const {
+    icon: Icon,
+    color,
+    label,
+  } = property === "status"
+    ? { ...statusPresentation[value], label: stateLabels[value] }
+    : { ...priorityPresentation[value], label: priorityLabels[value] };
+  const accessibleLabel = property === "priority" && value !== "none" ? `${label} priority` : label;
   return (
     <Badge
       variant="outline"
-      className={cn("status gap-1.5 border-transparent bg-transparent px-0 font-normal", color)}
+      className={cn(
+        property === "status" ? "status" : "text-xs",
+        "gap-1.5 border-transparent bg-transparent px-0 font-normal",
+        color,
+      )}
+      data-priority={property === "priority" ? value : undefined}
+      role={iconOnly ? "img" : undefined}
+      aria-label={iconOnly ? accessibleLabel : undefined}
+      title={iconOnly ? accessibleLabel : undefined}
     >
-      <Icon className="size-3.5" />
-      {stateLabels[value]}
+      <Icon className={property === "status" ? "size-3.5" : "size-4"} aria-hidden="true" />
+      {!iconOnly && label}
     </Badge>
   );
 }

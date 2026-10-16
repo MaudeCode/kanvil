@@ -14,13 +14,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { z } from "zod";
-import {
-  ticketFilter,
-  priorityLabels,
-  type Ticket,
-  type Project,
-  type Output,
-} from "@kanvil/contracts";
+import { ticketFilter, type Ticket, type Project, type Output } from "@kanvil/contracts";
 import { api, date, ActorName, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
@@ -31,7 +25,7 @@ import {
   Input,
   Loading,
   Modal,
-  Status,
+  TicketIndicator,
 } from "./ui.tsx";
 import {
   Table,
@@ -147,14 +141,16 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     header: "Status",
     size: 125,
     minSize: 110,
-    cell: ({ row }) => <Status value={row.original.status} />,
+    cell: ({ row }) => <TicketIndicator property="status" value={row.original.status} />,
   },
   {
     accessorKey: "priority",
     header: "Priority",
-    size: 95,
-    minSize: 90,
-    cell: ({ row }) => priorityLabels[row.original.priority],
+    size: 72,
+    minSize: 64,
+    cell: ({ row }) => (
+      <TicketIndicator property="priority" value={row.original.priority} iconOnly />
+    ),
   },
   {
     accessorKey: "difficulty",

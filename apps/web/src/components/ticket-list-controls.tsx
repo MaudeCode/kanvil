@@ -9,9 +9,9 @@ import {
   X,
 } from "lucide-react";
 import { z } from "zod";
-import { ticketFilter, states, priorities, stateLabels, priorityLabels } from "@kanvil/contracts";
+import { ticketFilter, states, priorities, stateLabels } from "@kanvil/contracts";
 import { api } from "../data.tsx";
-import { Button, Check, ErrorNotice, Input, Select, SelectItem } from "../ui.tsx";
+import { Button, Check, ErrorNotice, Input, Select, SelectItem, TicketIndicator } from "../ui.tsx";
 import {
   searchSchema,
   ticketDensitySchema,
@@ -142,7 +142,7 @@ export function TicketListControls({
                 <SelectItem value="">All priorities</SelectItem>
                 {priorities.map((priority) => (
                   <SelectItem key={priority} value={priority}>
-                    {priorityLabels[priority]}
+                    <TicketIndicator property="priority" value={priority} />
                   </SelectItem>
                 ))}
               </Select>
@@ -297,7 +297,7 @@ export function TicketListControls({
           )}
           {search.priority && (
             <Button variant="secondary" size="sm" onClick={() => filter({ priority: undefined })}>
-              {priorityLabels[search.priority]} priority
+              <TicketIndicator property="priority" value={search.priority} /> priority
               <X className="size-3" />
             </Button>
           )}

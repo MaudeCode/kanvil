@@ -9,7 +9,6 @@ import {
   kinds,
   difficulties,
   stateLabels,
-  priorityLabels,
   type Ticket,
 } from "@kanvil/contracts";
 import { api, useIdentity, useOperation } from "./data.tsx";
@@ -22,6 +21,7 @@ import {
   Select,
   SelectItem,
   Textarea,
+  TicketIndicator,
   useModalBusy,
 } from "./ui.tsx";
 import { Maximize2, Minimize2 } from "lucide-react";
@@ -188,7 +188,7 @@ export function TicketEditor({
           >
             {priorities.map((priority) => (
               <SelectItem key={priority} value={priority}>
-                {priorityLabels[priority]}
+                <TicketIndicator property="priority" value={priority} />
               </SelectItem>
             ))}
           </Select>

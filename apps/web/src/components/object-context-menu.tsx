@@ -18,16 +18,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
-import {
-  errorMessage,
-  states,
-  priorities,
-  priorityLabels,
-  type Ticket,
-  type Project,
-} from "@kanvil/contracts";
+import { errorMessage, states, priorities, type Ticket, type Project } from "@kanvil/contracts";
 import { api, useOperation, useProjectAccess } from "../data.tsx";
-import { Confirm, Modal, Status, Loading } from "../ui.tsx";
+import { Confirm, Modal, TicketIndicator, Loading } from "../ui.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -158,7 +151,7 @@ export function TicketContextMenu({
               >
                 {states.map((status) => (
                   <ContextMenuRadioItem key={status} value={status}>
-                    <Status value={status} />
+                    <TicketIndicator property="status" value={status} />
                   </ContextMenuRadioItem>
                 ))}
               </ContextMenuRadioGroup>
@@ -176,7 +169,7 @@ export function TicketContextMenu({
               >
                 {priorities.map((priority) => (
                   <ContextMenuRadioItem key={priority} value={priority}>
-                    {priorityLabels[priority]}
+                    <TicketIndicator property="priority" value={priority} />
                   </ContextMenuRadioItem>
                 ))}
               </ContextMenuRadioGroup>
