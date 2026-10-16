@@ -23,3 +23,4 @@ test-results/
 /apps/mobile/android/
 
 /snapshot-fallback.png
+scripts/.probe/

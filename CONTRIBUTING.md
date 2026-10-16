@@ -44,11 +44,23 @@ Native setup, session storage, deep links, and validation commands are in [docs/
 
 ## Web UI
 
-The web app uses Tailwind v4 and the Base UI version of [shadcn/ui](https://ui.shadcn.com/docs). Its registry configuration is in `apps/web/components.json`. Add components with `pnpm --filter @kanvil/web exec shadcn add <component>`, then format and validate the generated code against this repository's TypeScript and lint rules.
+The web app uses Tailwind v4 and the Base UI version of [shadcn/ui](https://ui.shadcn.com/docs). Its registry configuration is in `apps/web/components.json`. Add components with `pnpm --filter @kanvil/web exec shadcn add <component>`, then customize the generated file in `src/components/ui` and validate it against this repository's TypeScript and lint rules.
 
-Reuse `apps/web/src/components/ui` for interaction primitives and `src/ui.tsx` for labeled fields, icon actions, Markdown, and confirmation flows. Keep these shared components instead of introducing page-specific button, input, menu, or dialog implementations. The workspace uses shadcn's inset Sidebar with persisted drag/keyboard resizing, icon collapse, its keyboard shortcut, and its mobile Sheet. Context menus reuse shadcn primitives and server-authorized operations. Application compositions live in `src/components`.
+Style with Tailwind utilities on the element. `src/style.css` holds only the design tokens, base resets, global touch-target rules, Markdown prose rules, and the responsive ticket-table layout; do not add `@apply` component classes. Appearance uses shadcn's semantic CSS variables; `ThemeProvider` persists the light/dark/system mode and color theme, and [themes](docs/themes.md) lists the palettes and adaptation rules.
 
-Appearance uses shadcn's semantic CSS variables in `src/style.css`. `ThemeProvider` persists the light/dark/system mode and color theme; Settings → Appearance uses that provider. Eighteen named palettes and custom theme import/export use full light/dark tokens; custom colors are validated for text contrast. Aligned is the default palette; [themes](docs/themes.md) lists upstream palettes and adaptation rules. Add colors through these tokens so dialogs, menus, inputs, and navigation stay consistent. Browser tests cover theme persistence, system appearance, sidebar collapse, keyboard navigation, and the mobile sidebar.
+Reuse `src/components/ui` for primitives and `src/ui.tsx` for the app wrappers: labeled fields, `Modal` and `FormActions` for dialog forms, `Confirm`, icon actions, `RelativeTime`, `PageHeader`, `SectionHeading`, Markdown rendering, and `reportError` for toast failures. Ticket properties (status, priority, assignee, kind, difficulty) render and edit through `TicketProperty` in `src/components/ticket-property.tsx`; ticket references use `TicketLink`; labels and scopes use `TicketTag`, `TicketTags`, and the `TagInput` editor. Application compositions live in `src/components`.
+
+The workspace uses shadcn's inset Sidebar with persisted resizing, icon collapse, and its mobile Sheet. The `⌘K` palette searches projects, pages, actions, and the current project's tickets; single-key shortcuts (`C`, `/`, `E`, `?`) register through `useShortcut`. Context menus and inline edits reuse the same server-authorized operations as forms.
+
+Settings pages show current state first and open task-specific editors from their actions. `useModalBusy()` prevents closing a shared dialog while a write is pending. Account cache persistence must be paused before clearing private browser data on sign-out.
+
+Ticket lists use TanStack column visibility and the shared `TicketListControls` composition. Property visibility, row spacing, and label display are per-user browser preferences; filters and ordering remain in the URL and saved views. Query `list_ticket_labels` for label choices, never a paginated ticket list. Selection actions live in `TicketSelectionToolbar` outside document flow and apply immediately. Lists group rows by status with counts, collapse controls, and a quick-create action per section; every matching ticket is fetched in bounded batches and shown in full. Whole rows navigate to the ticket; status, priority, difficulty, kind, and assignee cells edit inline.
+
+The ticket composer is a compact modal: title, property pills, description, optional acceptance criteria, and a footer with the draft state and submit. Drafts persist per ticket in this browser until saved or discarded.
+
+Project settings include a searchable label directory with create, rename, recolor, and delete actions for project admins. `ProjectLabelProvider` reads the catalog once per project route. Label rename and delete operations pass affected tickets through the shared ticket-update handler.
+
+Browser tests cover theme persistence, system appearance, sidebar collapse, keyboard navigation, the mobile sidebar, and the ticket workflows above; update them in the same change when accessible names change.
 
 Optional infrastructure adapters, configuration precedence, backup rules, and `pnpm test:services` are documented in [infrastructure](docs/infrastructure.md). Keep provider SDK calls in the adapters and durability/authorization in the application services.
 
