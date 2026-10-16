@@ -1,24 +1,12 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Settings2, Users } from "lucide-react";
+import { Settings2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api, useAllProjects, useOperation, useWorkspaces } from "../data.tsx";
-import {
-  Button,
-  CopyValue,
-  EmptyState,
-  ErrorNotice,
-  Input,
-  Loading,
-  Modal,
-  SectionHeading,
-  Textarea,
-  FormActions,
-  IconButton,
-} from "../ui.tsx";
+import { Button, CopyButton, EmptyState, ErrorNotice, Loading } from "../ui.tsx";
+import { Badge } from "@/components/ui/badge";
 import { TabsContent } from "@/components/ui/tabs";
-import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
+import { EditableHeading, SettingsLayout, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 const sections = [
   { id: "general", label: "General", icon: Settings2 },
@@ -42,8 +30,6 @@ export function WorkspaceSettings({
   });
   const update = useOperation("update_workspace"),
     member = useOperation("set_workspace_member");
-  const [editing, setEditing] = useState(false),
-    [draft, setDraft] = useState({ name: "", description: "", version: 1 });
   if (spaces.isPending) return <Loading />;
   if (!workspace?.role)
     return (
@@ -64,32 +50,36 @@ export function WorkspaceSettings({
       >
         <TabsContent value="general">
           <section>
-            <SectionHeading
-              title={workspace.name}
-              action={
-                canAdmin && (
-                  <IconButton
-                    label="Edit workspace"
-                    onClick={() => {
-                      setDraft({
-                        name: workspace.name,
-                        description: workspace.description,
-                        version: workspace.version,
-                      });
-                      update.reset();
-                      setEditing(true);
-                    }}
-                  >
-                    <Pencil />
-                  </IconButton>
-                )
+            <EditableHeading
+              name={workspace.name}
+              description={workspace.description}
+              nameLabel="Workspace name"
+              canEdit={canAdmin}
+              version={workspace.version}
+              pending={update.isPending}
+              error={update.error}
+              editLabel="Edit workspace"
+              badges={
+                <>
+                  <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
+                    {workspace.slug}
+                  </Badge>
+                  <CopyButton label="Copy workspace key" value={workspace.slug} size="icon-xs" />
+                </>
+              }
+              onSave={(draft) =>
+                update
+                  .mutateAsync({
+                    workspaceId,
+                    expectedVersion: workspace.version,
+                    name: draft.name,
+                    description: draft.description,
+                  })
+                  .then(() => toast.success("Workspace saved"))
               }
             />
-            {workspace.description && (
-              <p className="max-w-xl whitespace-pre-wrap text-muted-foreground">
-                {workspace.description}
-              </p>
-            )}
+          </section>
+          <section>
             <SettingRow
               title="Projects"
               description={`${count} ${count === 1 ? "project" : "projects"} you can access in this workspace.`}
@@ -102,9 +92,6 @@ export function WorkspaceSettings({
             >
               <Button onClick={() => onSectionChange("members")}>Manage members</Button>
             </SettingRow>
-            <div className="pt-6">
-              <CopyValue label="Workspace key" value={workspace.slug} />
-            </div>
           </section>
         </TabsContent>
         <TabsContent value="members">
@@ -119,52 +106,6 @@ export function WorkspaceSettings({
           />
         </TabsContent>
       </SettingsLayout>
-      <Modal
-        title="Edit workspace"
-        open={editing}
-        onOpenChange={setEditing}
-        busy={update.isPending}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void update
-              .mutateAsync({
-                workspaceId,
-                expectedVersion: draft.version,
-                name: draft.name,
-                description: draft.description,
-              })
-              .then(() => {
-                setEditing(false);
-                toast.success("Workspace saved");
-              })
-              .catch(() => {});
-          }}
-        >
-          <Input
-            label="Workspace name"
-            value={draft.name}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            required
-            maxLength={120}
-            autoFocus
-          />
-          <Textarea
-            label="Description"
-            value={draft.description}
-            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            maxLength={5000}
-          />
-          <FormActions
-            error={update.error}
-            pending={update.isPending}
-            submitLabel="Save workspace"
-            submitDisabled={workspace.version !== draft.version}
-            onCancel={() => setEditing(false)}
-          />
-        </form>
-      </Modal>
     </>
   );
 }

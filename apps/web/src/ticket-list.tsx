@@ -463,7 +463,7 @@ export function TicketList({
   const views = useQuery(api.query("list_views", { projectId: project.id }));
   const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
-  const [creating, setCreating] = useState<Partial<Pick<Ticket, "status">> | null>(null);
+  const [creating, setCreating] = useState(false);
   const [viewName, setViewName] = useState(""),
     [savingView, setSavingView] = useState(false);
   const [deletingView, setDeletingView] = useState<Output<"list_views">[number] | null>(null);
@@ -520,7 +520,7 @@ export function TicketList({
         : Math.min(orderedIds.length - 1, Math.max(0, index + delta));
     setActive(orderedIds[next] ?? null);
   };
-  const rowKeys = { enabled: creating === null };
+  const rowKeys = { enabled: !creating };
   // Enter and the arrows keep their default on focused links, buttons, and pickers, except
   // inside the highlighted row, where a closed picker still has focus after Escape.
   const navKeys = {
@@ -583,9 +583,9 @@ export function TicketList({
   useShortcut(
     "c",
     () => {
-      if (access.canWrite) setCreating({});
+      if (access.canWrite) setCreating(true);
     },
-    { enabled: creating === null },
+    { enabled: !creating },
   );
   const openRow = (ticket: Ticket, event: MouseEvent<HTMLTableRowElement>) => {
     if (event.defaultPrevented) return;
@@ -667,7 +667,7 @@ export function TicketList({
             title="New ticket (C)"
             variant="default"
             disabled={!access.canWrite}
-            onClick={() => setCreating({})}
+            onClick={() => setCreating(true)}
           >
             <Plus />
           </IconButton>
@@ -942,7 +942,7 @@ export function TicketList({
                 <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
               ) : (
                 access.canWrite && (
-                  <Button variant="default" onClick={() => setCreating({})}>
+                  <Button variant="default" onClick={() => setCreating(true)}>
                     <Plus />
                     Create the first ticket
                   </Button>
@@ -957,21 +957,8 @@ export function TicketList({
           {tickets.data.total} tickets
         </footer>
       )}
-      <Modal
-        size="composer"
-        title="New ticket"
-        open={creating !== null}
-        onOpenChange={(open) => {
-          if (!open) setCreating(null);
-        }}
-      >
-        {creating && (
-          <TicketEditor
-            projectId={project.id}
-            initial={creating}
-            onSaved={() => setCreating(null)}
-          />
-        )}
+      <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
+        {creating && <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />}
       </Modal>
     </>
   );

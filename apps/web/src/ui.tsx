@@ -20,7 +20,6 @@ import {
   Copy,
   Eye,
   EyeOff,
-  ChevronDown,
   Check as CheckIcon,
   XCircle,
   ArrowDown,
@@ -83,7 +82,6 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -779,32 +777,5 @@ export function CopyValue({
       </span>
       {body}
     </div>
-  );
-}
-
-export function Disclosure({
-  title,
-  children,
-  defaultOpen = false,
-}: {
-  title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}) {
-  return (
-    <Collapsible defaultOpen={defaultOpen} className="border-t">
-      <CollapsibleTrigger
-        render={
-          <Button
-            variant="ghost"
-            className="group w-full justify-between px-0 text-sm font-medium hover:bg-transparent"
-          />
-        }
-      >
-        {title}
-        <ChevronDown className="size-4 text-muted-foreground transition-transform group-aria-expanded:rotate-180" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pt-3 pb-2">{children}</CollapsibleContent>
-    </Collapsible>
   );
 }

@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-react";
+import { Pencil, Settings2 } from "lucide-react";
 import type { AdminInstance } from "@kanvil/contracts/instance";
 import { Badge } from "@/components/ui/badge";
 import { CopyValue, ErrorNotice, IconButton, SectionHeading } from "../ui.tsx";
@@ -26,7 +26,7 @@ export function InstanceOverview({
           title="Instance"
           action={
             <IconButton label="Edit instance" onClick={onConfigure}>
-              <Settings2 />
+              <Pencil />
             </IconButton>
           }
         />
@@ -35,9 +35,9 @@ export function InstanceOverview({
         <SettingRow title="Application version">
           <code>{data.deployment.version}</code>
         </SettingRow>
-        <div className="pt-5">
-          <CopyValue label="Public URL" value={data.deployment.url} />
-        </div>
+        <SettingRow title="Public URL">
+          <CopyValue label="Public URL" value={data.deployment.url} inline />
+        </SettingRow>
       </section>
     );
   const info =

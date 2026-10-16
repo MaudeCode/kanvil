@@ -1,26 +1,13 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Settings2, Users, Tags } from "lucide-react";
+import { Settings2, Users, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Output } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
-import {
-  Button,
-  CopyButton,
-  ErrorNotice,
-  IconButton,
-  Input,
-  RelativeTime,
-  Select,
-  SelectItem,
-  Textarea,
-  reportError,
-} from "../ui.tsx";
-import { submitOnModEnter } from "../forms.ts";
+import { Button, CopyButton, RelativeTime, Select, SelectItem, reportError } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
-import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
+import { EditableHeading, SettingsLayout, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
@@ -47,12 +34,6 @@ export function ProjectSettings({
     ...api.query("list_workspace_members", { workspaceId: project.workspaceId }),
     enabled: !!workspace.active?.role,
   });
-  const [editing, setEditing] = useState(false),
-    [draft, setDraft] = useState({
-      name: project.name,
-      description: project.description,
-      version: project.version,
-    });
   return (
     <>
       <SettingsLayout
@@ -63,122 +44,51 @@ export function ProjectSettings({
       >
         <TabsContent value="general">
           <section>
-            <div className="flex flex-wrap items-start gap-5">
-              <ProjectIconPicker project={project} disabled={!access.canAdmin} />
-              {editing ? (
-                <form
-                  className="min-w-0 flex-1 basis-60 [&_[data-slot=field-label]]:sr-only"
-                  onKeyDown={submitOnModEnter}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void update
-                      .mutateAsync({
-                        projectId: project.id,
-                        expectedVersion: draft.version,
-                        name: draft.name,
-                        description: draft.description,
-                      })
-                      .then(() => {
-                        setEditing(false);
-                        toast.success("Project saved");
-                      })
-                      .catch(() => {});
-                  }}
+            <EditableHeading
+              name={project.name}
+              description={project.description}
+              canEdit={access.canAdmin}
+              version={project.version}
+              pending={update.isPending}
+              error={update.error}
+              editLabel="Edit project"
+              media={<ProjectIconPicker project={project} disabled={!access.canAdmin} />}
+              badges={
+                <>
+                  <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
+                    {project.key}
+                  </Badge>
+                  <CopyButton label="Copy ticket prefix" value={project.key} size="icon-xs" />
+                </>
+              }
+              onSave={(draft) =>
+                update
+                  .mutateAsync({
+                    projectId: project.id,
+                    expectedVersion: project.version,
+                    name: draft.name,
+                    description: draft.description,
+                  })
+                  .then(() => toast.success("Project saved"))
+              }
+            >
+              <p className="mb-0 text-xs tabular-nums">
+                <Link
+                  to="/projects/$projectId"
+                  params={{ projectId: project.id }}
+                  className="text-muted-foreground hover:text-foreground"
                 >
-                  <Input
-                    label="Name"
-                    value={draft.name}
-                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") setEditing(false);
-                    }}
-                    required
-                    maxLength={120}
-                    autoFocus
-                    className="text-base font-semibold"
-                  />
-                  <Textarea
-                    label="Description"
-                    value={draft.description}
-                    onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") setEditing(false);
-                    }}
-                    maxLength={5000}
-                    rows={3}
-                    placeholder="Add a description"
-                    className="field-sizing-content"
-                  />
-                  {project.version !== draft.version && (
-                    <p role="alert" className="mt-2 mb-0 text-xs">
-                      This project changed elsewhere. Cancel and start again.
-                    </p>
+                  {project.openTickets === 0
+                    ? "No open tickets"
+                    : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
+                  {project.overdueTickets > 0 && (
+                    <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
                   )}
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      type="submit"
-                      variant="default"
-                      size="sm"
-                      disabled={update.isPending || project.version !== draft.version}
-                    >
-                      {update.isPending ? "Saving…" : "Save"}
-                    </Button>
-                    <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>
-                      Cancel
-                    </Button>
-                  </div>
-                  <ErrorNotice error={update.error} />
-                </form>
-              ) : (
-                <div className="min-w-0 flex-1 basis-60">
-                  <h2 className="mb-1 flex flex-wrap items-center gap-1.5 text-base">
-                    {project.name}
-                    <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
-                      {project.key}
-                    </Badge>
-                    <CopyButton label="Copy ticket prefix" value={project.key} size="icon-xs" />
-                  </h2>
-                  <p className="mb-2 max-w-xl whitespace-pre-wrap">
-                    {project.description || "No description"}
-                  </p>
-                  <p className="mb-0 text-xs tabular-nums">
-                    <Link
-                      to="/projects/$projectId"
-                      params={{ projectId: project.id }}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      {project.openTickets === 0
-                        ? "No open tickets"
-                        : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
-                      {project.overdueTickets > 0 && (
-                        <span className="text-(--warning)">
-                          {" "}
-                          · {project.overdueTickets} overdue
-                        </span>
-                      )}
-                    </Link>
-                    {" · Created "}
-                    <RelativeTime value={project.createdAt} />
-                  </p>
-                </div>
-              )}
-              {access.canAdmin && !editing && (
-                <IconButton
-                  label="Edit project"
-                  onClick={() => {
-                    setDraft({
-                      name: project.name,
-                      description: project.description,
-                      version: project.version,
-                    });
-                    update.reset();
-                    setEditing(true);
-                  }}
-                >
-                  <Pencil />
-                </IconButton>
-              )}
-            </div>
+                </Link>
+                {" · Created "}
+                <RelativeTime value={project.createdAt} />
+              </p>
+            </EditableHeading>
           </section>
           <section>
             <SettingRow

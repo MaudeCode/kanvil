@@ -52,7 +52,7 @@ Reuse `src/components/ui` for primitives and `src/ui.tsx` for the app wrappers: 
 
 The workspace uses shadcn's inset Sidebar with persisted resizing, icon collapse, and its mobile Sheet. The `⌘K` palette searches projects, pages, actions, and the current project's tickets; single-key shortcuts (`C`, `/`, `E`, `?`) register through `useShortcut`. Context menus and inline edits reuse the same server-authorized operations as forms.
 
-Settings pages show current state first and open task-specific editors from their actions. `useModalBusy()` prevents closing a shared dialog while a write is pending. Account cache persistence must be paused before clearing private browser data on sign-out.
+Settings pages show current state first; the page's own name and description edit in place through `EditableHeading`, and other editors open from their row actions. `useModalBusy()` prevents closing a shared dialog while a write is pending. Account cache persistence must be paused before clearing private browser data on sign-out.
 
 Ticket lists use TanStack column visibility and the shared `TicketListControls` composition. Property visibility, row spacing, and label display are per-user browser preferences; filters and ordering remain in the URL and saved views. Query `list_ticket_labels` for label choices, never a paginated ticket list. Selection actions live in `TicketSelectionToolbar` outside document flow and apply immediately. Lists group rows by status with counts and collapse controls; every matching ticket is fetched in bounded batches and shown in full. Whole rows navigate to the ticket; status, priority, difficulty, kind, and assignee cells edit inline.
 

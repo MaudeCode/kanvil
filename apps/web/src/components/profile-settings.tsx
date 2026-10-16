@@ -1,17 +1,10 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Camera, Trash2, Pencil } from "lucide-react";
+import { Camera, Trash2 } from "lucide-react";
 import { photoResultSchema } from "@kanvil/contracts/instance";
 import { api, auth, useIdentity } from "../data.tsx";
-import {
-  Button,
-  ErrorNotice,
-  Input,
-  Modal,
-  SectionHeading,
-  FormActions,
-  IconButton,
-} from "../ui.tsx";
+import { Button, ErrorNotice, SectionHeading } from "../ui.tsx";
+import { EditableHeading } from "./settings-layout.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
 import { prepareSquareImage } from "../lib/browser.ts";
@@ -21,9 +14,8 @@ export function ProfileSettings() {
     session = auth.useSession(),
     file = useRef<HTMLInputElement>(null),
     [pending, setPending] = useState(false),
-    [editing, setEditing] = useState(false),
-    [name, setName] = useState(identity.name),
     [error, setError] = useState<unknown>(),
+    [editError, setEditError] = useState<unknown>(),
     [message, setMessage] = useState("");
   async function refreshProfile() {
     await Promise.all([session.refetch(), cache.invalidateQueries({ queryKey: ["kanvil"] })]);
@@ -54,29 +46,36 @@ export function ProfileSettings() {
   }
   return (
     <section>
-      <SectionHeading
-        title="Profile"
-        action={
-          <IconButton
-            label="Edit profile"
-            disabled={pending}
-            onClick={() => {
-              setName(identity.name);
-              setError(undefined);
-              setEditing(true);
-            }}
-          >
-            <Pencil />
-          </IconButton>
+      <SectionHeading title="Profile" />
+      <EditableHeading
+        name={identity.name}
+        nameLabel="Display name"
+        withDescription={false}
+        canEdit
+        pending={pending}
+        error={editError}
+        editLabel="Edit profile"
+        media={
+          <UserAvatar name={identity.name} image={identity.image} className="size-16 text-xl" />
         }
-      />
-      <div className="flex flex-wrap items-center gap-4">
-        <UserAvatar name={identity.name} image={identity.image} className="size-16 text-xl" />
-        <div className="min-w-0 flex-1">
-          <h3 className="mb-1 text-base">{identity.name}</h3>
-          <p className="mb-0 break-all text-sm text-muted-foreground">{identity.email}</p>
-        </div>
-      </div>
+        onSave={async ({ name }) => {
+          setEditError(undefined);
+          setPending(true);
+          try {
+            const result = await auth.updateUser({ name });
+            if (result.error) throw new Error(result.error.message);
+            await refreshProfile();
+            setMessage("Profile saved");
+          } catch (cause) {
+            setEditError(cause);
+            throw cause;
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        <p className="mb-0 text-sm break-all text-muted-foreground">{identity.email}</p>
+      </EditableHeading>
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Button disabled={pending} onClick={() => file.current?.click()}>
           <Camera />
@@ -108,50 +107,12 @@ export function ProfileSettings() {
           event.currentTarget.value = "";
         }}
       />
-      {!editing && <ErrorNotice error={error} />}{" "}
+      <ErrorNotice error={error} />
       {message && (
         <p role="status" className="mt-4 mb-0 text-sm text-muted-foreground">
           {message}
         </p>
       )}
-      <Modal title="Edit profile" open={editing} onOpenChange={setEditing} busy={pending}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setError(undefined);
-            setPending(true);
-            void auth
-              .updateUser({ name })
-              .then(async (result) => {
-                if (result.error) throw new Error(result.error.message);
-                await refreshProfile();
-                setEditing(false);
-                setMessage("Profile saved");
-              })
-              .catch(setError)
-              .finally(() => setPending(false));
-          }}
-        >
-          <Input
-            disabled={pending}
-            label="Display name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={120}
-            autoFocus
-          />
-          <p className="text-sm text-muted-foreground">Your sign-in email is {identity.email}.</p>
-          <FormActions
-            error={error}
-            pending={pending}
-            submitLabel="Save profile"
-            pendingLabel="Saving…"
-            submitDisabled={name.trim() === identity.name}
-            onCancel={() => setEditing(false)}
-          />
-        </form>
-      </Modal>
     </section>
   );
 }
