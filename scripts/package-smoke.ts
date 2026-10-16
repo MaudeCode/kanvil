@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { cp, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -14,14 +14,17 @@ const directory = await mkdtemp(join(tmpdir(), "kanvil-package-"));
 const fixture = await createFixture();
 let server: ReturnType<typeof spawn> | undefined;
 try {
-  const packed = await exec("npm", ["pack", "--json", "--pack-destination", directory], {
-    cwd: resolve("dist/package"),
-  });
-  const [tarball] = z
-    .array(z.object({ filename: z.string(), files: z.array(z.object({ path: z.string() })) }))
+  const tarballs = (await readdir("dist")).filter((file) => file.endsWith(".tgz"));
+  assert.equal(tarballs.length, 1, "Expected one built release tarball");
+  const [filename] = tarballs;
+  assert(filename);
+  const tarball = resolve("dist", filename);
+  const packed = await exec("npm", ["pack", tarball, "--dry-run", "--json"]);
+  const [contents] = z
+    .array(z.object({ files: z.array(z.object({ path: z.string() })) }))
     .parse(JSON.parse(packed.stdout));
-  assert(tarball);
-  assert(!tarball.files.some(({ path }) => /node_modules|\.env$|\.test\.|\.map$/.test(path)));
+  assert(contents);
+  assert(!contents.files.some(({ path }) => /node_modules|\.env$|\.test\.|\.map$/.test(path)));
   await exec("npm", [
     "install",
     "--prefix",
@@ -29,9 +32,8 @@ try {
     "--ignore-scripts",
     "--no-audit",
     "--no-fund",
-    join(directory, tarball.filename),
+    tarball,
   ]);
-  await cp(join(directory, tarball.filename), resolve("dist", tarball.filename));
   const cli = join(directory, "node_modules/.bin/kanvil");
   const options = { cwd: directory };
   assert.match((await exec(cli, ["--help"], options)).stdout, /Usage: kanvil/);

@@ -25,20 +25,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Set up Vite+, Node, and pnpm
-        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          node-version-file: .node-version
-          cache: true
-          cache-save: false
-          run-install: false
+      - uses: ./.github/actions/setup
       - name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "17"
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
       - name: Generate Android project
         run: pnpm --filter @kanvil/mobile exec expo prebuild --platform android --no-install
       - name: Build standalone arm64 preview

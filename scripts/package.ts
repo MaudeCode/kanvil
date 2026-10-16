@@ -1,4 +1,6 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 
 const metadata = z.object({
@@ -44,3 +46,11 @@ await writeFile(
   ) + "\n",
 );
 console.info(`Prepared ${root.name}@${root.version} in ${output}`);
+
+for (const file of await readdir("dist"))
+  if (file.startsWith("maudecode-kanvil-") && file.endsWith(".tgz")) await rm(`dist/${file}`);
+
+execFileSync("npm", ["pack", "--silent", "--pack-destination", resolve("dist")], {
+  cwd: output,
+  stdio: "inherit",
+});
