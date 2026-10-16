@@ -294,8 +294,15 @@ describe("ticket operations on PostgreSQL", () => {
         owner,
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
+    const cursor = (await domain.readEvents(owner, 0n)).cursor;
     await domain.execute("remove_label_color", { value: "#1e90ff" }, owner);
     expect(await domain.execute("list_label_colors", {}, owner)).toEqual([]);
+    expect(
+      (await domain.readEvents(owner, cursor, project.id)).items.map((event) => [
+        event.type,
+        event.data.value,
+      ]),
+    ).toEqual([["label.color_removed", "#1e90ff"]]);
     expect(
       (await domain.execute("list_project_labels", { projectId: project.id }, owner)).find(
         (entry) => entry.id === label.id,

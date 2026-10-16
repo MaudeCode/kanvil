@@ -194,7 +194,16 @@ export const projectHandlers: Pick<
       .orderBy(desc(labelColors.createdAt), asc(labelColors.value));
   },
   async remove_label_color(ctx, input) {
-    await ctx.db.delete(labelColors).where(eq(labelColors.value, input.value));
+    const removed = await ctx.db
+      .delete(labelColors)
+      .where(eq(labelColors.value, input.value))
+      .returning();
+    // The palette is site-wide, so every readable project hears about it, like workspace events.
+    if (removed.length)
+      for (const row of await accessibleProjectRows(ctx.db, ctx.actor))
+        await publish({ ...ctx, project: toProject(row) }, "label.color_removed", null, {
+          value: input.value,
+        });
     return { ok: true };
   },
   async get_project(ctx) {
