@@ -437,7 +437,7 @@
     @apply border-t;
   }
   .project-list .project-key {
-    @apply min-w-10 rounded py-1 text-[10px];
+    @apply min-w-0 px-0 py-0 text-[10px] text-muted-foreground hover:bg-transparent;
   }
   .login {
     @apply mx-auto mt-[12vh] w-[calc(100%-3rem)] max-w-sm;

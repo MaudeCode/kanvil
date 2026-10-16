@@ -19,7 +19,7 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import {
-  ChevronRight,
+  Settings,
   WifiOff,
   FolderOpen,
   Search as SearchIcon,
@@ -54,7 +54,7 @@ import {
   useIdentity,
   clearPrivateStorage,
 } from "./data.tsx";
-import { Button, EmptyState, ErrorNotice, Loading } from "./ui.tsx";
+import { Button, EmptyState, ErrorNotice, IconButton, Loading } from "./ui.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateWorkspace } from "./components/workspace-switcher.tsx";
@@ -246,27 +246,43 @@ function Home() {
           {matches.map((project) => (
             <ProjectContextMenu key={project.id} project={project}>
               <Item
-                className="rounded-none border-x-0 border-t-0 border-b-border py-3"
-                render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
+                role="listitem"
+                className="flex-nowrap gap-3 rounded-none border-x-0 border-t-0 border-b-border py-3 hover:bg-muted/30"
               >
-                <ItemMedia>
-                  <ProjectIcon project={project} className="size-6" />
-                </ItemMedia>
-                <ItemMedia>
-                  <Badge variant="ghost" className="project-key">
-                    {project.key}
-                  </Badge>
-                </ItemMedia>
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="line-clamp-none wrap-anywhere">{project.name}</ItemTitle>
-                  {project.description && (
-                    <ItemDescription className="line-clamp-none">
-                      {project.description}
-                    </ItemDescription>
-                  )}
-                </ItemContent>
+                <Link
+                  to="/projects/$projectId"
+                  params={{ projectId: project.id }}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ItemMedia>
+                    <ProjectIcon project={project} className="size-10 rounded-lg bg-muted/50 p-1" />
+                  </ItemMedia>
+                  <ItemContent className="min-w-0 gap-0.5">
+                    <ItemTitle className="max-w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 line-clamp-none">
+                      <span className="min-w-0 wrap-anywhere text-sm font-medium">
+                        {project.name}
+                      </span>
+                      <Badge variant="ghost" className="project-key">
+                        {project.key}
+                      </Badge>
+                    </ItemTitle>
+                    {project.description && (
+                      <ItemDescription className="m-0 line-clamp-2 text-xs leading-5">
+                        {project.description}
+                      </ItemDescription>
+                    )}
+                  </ItemContent>
+                </Link>
                 <ItemActions>
-                  <ChevronRight size={16} aria-hidden="true" className="text-muted-foreground" />
+                  <IconButton
+                    label={`Project settings for ${project.name}`}
+                    className="text-muted-foreground hover:text-foreground"
+                    render={
+                      <Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />
+                    }
+                  >
+                    <Settings />
+                  </IconButton>
                 </ItemActions>
               </Item>
             </ProjectContextMenu>
