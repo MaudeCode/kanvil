@@ -24,7 +24,7 @@ export interface TicketIndex {
   initialize(instanceId: string): Promise<void>;
   reset(instanceId: string): Promise<void>;
   write(instanceId: string, documents: TicketIndexDocument[], deletedIds?: string[]): Promise<void>;
-  find(instanceId: string, projectId: string, query: string): Promise<string[]>;
+  find(instanceId: string, projectIds: readonly string[], query: string): Promise<string[]>;
   probe(instanceId: string): Promise<void>;
 }
 export type TicketIndexFactory = (configuration: {

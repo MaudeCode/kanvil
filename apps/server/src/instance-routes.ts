@@ -15,7 +15,7 @@ import {
 import { blobObjects, profilePhotos, storageBackends } from "./schema.ts";
 import { user } from "./auth-schema.ts";
 import { requireSession } from "./access.ts";
-import { fail, type Actor, one } from "./domain.ts";
+import { assertVersion, type Actor, one } from "./domain.ts";
 import type { Database } from "./database.ts";
 import type { Instance } from "./instance.ts";
 import { decodeImage, imageResponse, type BlobStorage } from "./blob-storage.ts";
@@ -159,8 +159,7 @@ export function registerInstanceRoutes(
   });
   app.patch("/api/v1/admin/instance", async (c) => {
     const input = instanceUpdateSchema.parse(await c.req.json());
-    if ((await instance.read()).version !== input.expectedVersion)
-      fail(409, "version_conflict", "Instance settings changed. Reload before saving.");
+    assertVersion(await instance.read(), input.expectedVersion, "instance settings", "saving");
     if (!instance.config.KANVIL_STORAGE_PROVIDER && input.storage.provider === "s3") {
       const candidate = await instance.resolveS3(input.storage),
         active = await instance.storage();

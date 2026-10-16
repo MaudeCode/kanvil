@@ -8,8 +8,7 @@ import {
   inArray,
   isNull,
   isNotNull,
-  lt,
-  ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -35,13 +34,36 @@ import {
   publish,
   publishMany,
   requireRow,
+  subscribe,
   type Context,
   type Handlers,
   type PendingEvent,
   one,
 } from "./domain.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { defaultOrder, type ParsedInput, type Output } from "@kanvil/contracts";
+import {
+  closedStates,
+  defaultOrder,
+  difficulties,
+  priorities,
+  states,
+  type ParsedInput,
+  type Output,
+} from "@kanvil/contracts";
+// Shared predicates so "open" and "overdue" mean one thing in filters, counts, and eligibility.
+export const openTicket = notInArray(tickets.status, [...closedStates]);
+export const overdueTicket = sql`${tickets.dueAt} < now()`;
+// Orders a column by its position in the contract's enum; values outside it sort last.
+const rank = (column: AnyColumn, values: readonly string[]) =>
+  sql`array_position(ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )}]::text[], ${column}::text)`;
+// Label names sort case-insensitively with a stable byte-order tiebreak.
+export const labelOrder = (column: AnyColumn | SQL | SQL.Aliased) => [
+  asc(sql`lower(${column}) COLLATE "C"`),
+  asc(sql`${column} COLLATE "C"`),
+];
 // Contracts carry ISO strings; the column stores a timestamp.
 const dueColumn = (dueAt: string | null | undefined) =>
   dueAt === undefined ? {} : { dueAt: dueAt ? new Date(dueAt) : null };
@@ -177,11 +199,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
       .where(eq(tickets.id, current.id))
       .returning(),
   );
-  if (row.assigneeId)
-    await ctx.db
-      .insert(subscriptions)
-      .values({ projectId: row.projectId, ticketId: row.id, userId: row.assigneeId })
-      .onConflictDoNothing();
+  await subscribe(ctx, row.projectId, row.id, [row.assigneeId]);
   const event: PendingEvent = {
     type: "ticket.updated",
     ticketId: row.id,
@@ -210,18 +228,17 @@ export function labelUsage(ctx: Context, archived: "include" | "exclude" | "only
     .from(labels)
     .groupBy(labels.name);
 }
+// Windows run from the database clock: overdue is in the past, today and week look ahead.
+const dueWithin = (interval: string) =>
+  and(sql`${tickets.dueAt} >= now()`, sql`${tickets.dueAt} < now() + ${interval}::interval`);
 function dueWhere(due: ParsedInput<"list_tickets">["due"]) {
-  const now = new Date(),
-    endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
-  const open = and(ne(tickets.status, "done"), ne(tickets.status, "cancelled"));
   switch (due) {
     case "overdue":
-      return and(lt(tickets.dueAt, now), open);
+      return and(overdueTicket, openTicket);
     case "today":
-      return and(isNotNull(tickets.dueAt), lt(tickets.dueAt, endOfDay), open);
+      return and(dueWithin("1 day"), openTicket);
     case "week":
-      return and(lt(tickets.dueAt, new Date(now.getTime() + 7 * 86_400_000)), open);
+      return and(dueWithin("7 days"), openTicket);
     case "scheduled":
       return isNotNull(tickets.dueAt);
     case "none":
@@ -272,11 +289,11 @@ export const ticketHandlers: Pick<
     return ctx.db
       .select()
       .from(labels)
-      .orderBy(asc(sql`lower(${labels.name}) COLLATE "C"`), asc(sql`${labels.name} COLLATE "C"`));
+      .orderBy(...labelOrder(labels.name));
   },
   async list_tickets(ctx, input) {
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
-    const search = input.q ? await ctx.search.where(ctx.db, project(ctx).id, input.q) : undefined;
+    const search = input.q ? await ctx.search.where(ctx.db, [project(ctx).id], input.q) : undefined;
     const where = and(
       eq(tickets.projectId, project(ctx).id),
       parent ? eq(tickets.parentId, parent.id) : undefined,
@@ -300,9 +317,7 @@ export const ticketHandlers: Pick<
         ? sql`${column} ASC NULLS LAST`
         : sql`${column} DESC NULLS LAST`;
     const primary: Record<typeof input.sort, SQL> = {
-      priority: by(
-        sql`CASE ${tickets.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
-      ),
+      priority: by(rank(tickets.priority, priorities)),
       updated: by(tickets.updatedAt),
       created: by(tickets.createdAt),
       title: by(sql`lower(${tickets.title})`),
@@ -311,12 +326,8 @@ export const ticketHandlers: Pick<
       ),
       due: by(tickets.dueAt),
       number: by(tickets.number),
-      status: by(
-        sql`CASE ${tickets.status} WHEN 'backlog' THEN 0 WHEN 'todo' THEN 1 WHEN 'in_progress' THEN 2 WHEN 'in_review' THEN 3 WHEN 'done' THEN 4 ELSE 5 END`,
-      ),
-      difficulty: by(
-        sql`CASE ${tickets.difficulty} WHEN 'low' THEN 0 WHEN 'med' THEN 1 WHEN 'high' THEN 2 ELSE NULL END`,
-      ),
+      status: by(rank(tickets.status, states)),
+      difficulty: by(rank(tickets.difficulty, difficulties)),
       kind: by(tickets.kind),
       assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
     };
@@ -368,11 +379,7 @@ export const ticketHandlers: Pick<
         })
         .returning(),
     );
-    for (const userId of new Set([ctx.actor.id, ...(row.assigneeId ? [row.assigneeId] : [])]))
-      await ctx.db
-        .insert(subscriptions)
-        .values({ projectId: row.projectId, ticketId: row.id, userId })
-        .onConflictDoNothing();
+    await subscribe(ctx, row.projectId, row.id, [ctx.actor.id, row.assigneeId]);
     await publish(ctx, "ticket.created", row.id, { key: row.key, version: row.version });
     return row;
   },
@@ -421,8 +428,7 @@ export const ticketHandlers: Pick<
   async list_eligible_tickets(ctx, input) {
     const where = and(
       eq(tickets.projectId, project(ctx).id),
-      ne(tickets.status, "done"),
-      ne(tickets.status, "cancelled"),
+      openTicket,
       eq(tickets.archived, false),
     );
     const page = await pageOf(ctx, where, [asc(tickets.number)], input);
@@ -438,21 +444,17 @@ export const ticketHandlers: Pick<
   async search_tickets(ctx, input) {
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
     if (!allowed.length) return { items: [] };
-    const conditions = [];
-    for (const row of allowed)
-      conditions.push(
-        and(
-          eq(tickets.projectId, row.id),
-          or(
-            eq(tickets.key, input.q.toUpperCase()),
-            await ctx.search.where(ctx.db, row.id, input.q),
-          ),
-        ),
-      );
+    const ids = allowed.map((row) => row.id);
     const rows = await ctx.db
       .select()
       .from(tickets)
-      .where(or(...conditions))
+      .where(
+        and(
+          inArray(tickets.projectId, ids),
+          eq(tickets.archived, false),
+          or(eq(tickets.key, input.q.toUpperCase()), await ctx.search.where(ctx.db, ids, input.q)),
+        ),
+      )
       .orderBy(
         sql`CASE WHEN ${tickets.key} = ${input.q.toUpperCase()} THEN 0 ELSE 1 END`,
         desc(tickets.updatedAt),

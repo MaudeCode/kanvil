@@ -286,7 +286,7 @@ describe("ticket operations on PostgreSQL", () => {
     expect(label.color).toBe("#1e90ff");
     expect(
       (await domain.execute("list_label_colors", {}, outsider)).map((entry) => entry.value),
-    ).toEqual(["#1e90ff"]);
+    ).toContain("#1e90ff");
     await expect(
       domain.execute(
         "create_project_label",
@@ -294,9 +294,19 @@ describe("ticket operations on PostgreSQL", () => {
         owner,
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    await expect(
+      domain.execute("remove_label_color", { value: "#1e90ff" }, writer),
+    ).rejects.toMatchObject({ status: 403 });
     const cursor = (await domain.readEvents(owner, 0n)).cursor;
     await domain.execute("remove_label_color", { value: "#1e90ff" }, owner);
-    expect(await domain.execute("list_label_colors", {}, owner)).toEqual([]);
+    expect(
+      (await domain.execute("list_label_colors", {}, owner)).map((entry) => entry.value),
+    ).not.toContain("#1e90ff");
     expect(
       (await domain.readEvents(owner, cursor, project.id)).items.map((event) => [
         event.type,
@@ -658,6 +668,32 @@ describe("ticket operations on PostgreSQL", () => {
     });
     const byKey = await domain.execute("search_tickets", { q: there.key.toLowerCase() }, owner);
     expect(byKey.items[0]?.ticket.id).toBe(there.id);
+    // A workspace filter narrows the listing; it is not a membership requirement.
+    const bound = await domain.actor(owner.id, {
+      ownerId: "credential",
+      scopes: ["read"],
+      projectIds: [project.id],
+    });
+    expect(
+      (
+        await domain.execute(
+          "search_tickets",
+          { q: "signing key", workspaceId: project.workspaceId },
+          bound,
+        )
+      ).items.map((item) => item.ticket.id),
+    ).toEqual([here.id]);
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: here.id,
+        expectedVersion: here.version,
+        changes: { archived: true },
+      },
+      owner,
+    );
+    expect((await domain.execute("search_tickets", { q: "signing key" }, bound)).items).toEqual([]);
     expect((await domain.execute("search_tickets", { q: "signing key" }, outsider)).items).toEqual(
       [],
     );
@@ -688,7 +724,8 @@ describe("ticket operations on PostgreSQL", () => {
         .execute("list_tickets", { projectId: project.id, ...filter }, owner)
         .then((page) => ({ titles: page.items.map((row) => row.title), total: page.total }));
     expect(await list({ due: "overdue" })).toEqual({ titles: ["Overdue"], total: 1 });
-    expect((await list({ due: "week" })).titles.toSorted()).toEqual(["Due soon", "Overdue"]);
+    expect(await list({ due: "today" })).toEqual({ titles: ["Due soon"], total: 1 });
+    expect(await list({ due: "week" })).toEqual({ titles: ["Due soon"], total: 1 });
     expect(await list({ due: "none" })).toEqual({ titles: ["Undated"], total: 1 });
     expect((await list({ sort: "due" })).titles).toEqual(["Overdue", "Due soon", "Undated"]);
     expect((await list({ sort: "due", order: "desc" })).titles).toEqual([

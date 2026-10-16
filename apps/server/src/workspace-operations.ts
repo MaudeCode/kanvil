@@ -8,8 +8,7 @@ import {
   assertVersion,
   workspace,
   fail,
-  publish,
-  toProject,
+  publishMany,
   type Context,
   type Handlers,
   one,
@@ -48,12 +47,19 @@ export async function publishWorkspace(
   type: string,
   data: Record<string, unknown>,
 ) {
-  for (const row of await ctx.db
-    .select()
+  const rows = await ctx.db
+    .select({ id: projects.id })
     .from(projects)
-    .where(eq(projects.workspaceId, workspaceId))) {
-    await publish({ ...ctx, project: toProject(row) }, type, null, { workspaceId, ...data });
-  }
+    .where(eq(projects.workspaceId, workspaceId));
+  await publishMany(
+    ctx,
+    rows.map((row) => ({
+      type,
+      ticketId: null,
+      projectId: row.id,
+      data: { workspaceId, ...data },
+    })),
+  );
 }
 export const workspaceHandlers: Pick<
   Handlers,

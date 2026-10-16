@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { operations, ticketFields, type Ticket } from "./index.ts";
+import { dueDate, operations, ticketFields, type Ticket } from "./index.ts";
 
 export const ticketDefaults = operations.create_ticket.input
   .omit({ projectId: true, requestId: true })
@@ -10,7 +10,7 @@ export const ticketDraftSchema = z.object({
   fields: ticketFields.extend({
     title: z.string().max(500),
     parentId: z.string().nullable(),
-    dueAt: z.iso.datetime().nullable().default(null),
+    dueAt: dueDate.nullable().default(null),
   }),
   version: z.number().int().positive().optional(),
 });

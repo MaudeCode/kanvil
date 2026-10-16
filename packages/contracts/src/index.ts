@@ -2,6 +2,8 @@ import type { palettes } from "./theme.ts";
 import { z } from "zod";
 
 export const states = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
+// Statuses that end work; "open" everywhere means not one of these.
+export const closedStates = ["done", "cancelled"] as const;
 export const priorities = ["urgent", "high", "medium", "low", "none"] as const;
 export const kinds = ["feature", "bug", "chore", "research", "documentation"] as const;
 export const difficulties = ["low", "med", "high"] as const;
@@ -37,7 +39,7 @@ export const labelColor = z.union([z.enum(projectIconColors), hexColor]);
 export type LabelColor = z.output<typeof labelColor>;
 export const isPresetColor = (value: string): value is (typeof projectIconColors)[number] =>
   projectIconColors.some((tone) => tone === value);
-export const isHexColor = (value: string) => !isPresetColor(value);
+export const isHexColor = (value: string) => hexColor.safeParse(value).success;
 export const hasAdminRole = (role: string | null | undefined) =>
   role?.split(",").includes("admin") ?? false;
 export const scopes = ["read", "write", "claim", "admin"] as const;
@@ -68,6 +70,10 @@ export const stateTones: Record<(typeof states)[number], keyof typeof palettes.l
 
 const id = z.string().min(1).max(80);
 const timestamp = z.iso.datetime();
+// PostgreSQL rejects year 0, which the ISO grammar allows.
+export const dueDate = z.iso
+  .datetime()
+  .refine((value) => new Date(value).getUTCFullYear() >= 1, "Due date must be in year 1 or later");
 const version = z.number().int().positive();
 const text = z.string().trim().min(1);
 const tags = z
@@ -169,7 +175,7 @@ export const ticketFields = z
     parentId: z.uuid().nullable(),
     automationReady: z.boolean(),
     holdReason: z.string().trim().max(2000).nullable(),
-    dueAt: z.iso.datetime().nullable(),
+    dueAt: dueDate.nullable(),
     archived: z.boolean(),
   })
   .strict();
@@ -410,7 +416,6 @@ export function formatEvent(event: ChangeEvent, includeTicket = false): string {
 }
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
-const ok = z.object({ ok: z.literal(true) });
 const op = <I extends z.ZodObject, O extends z.ZodType>(
   input: I,
   output: O,
@@ -480,7 +485,7 @@ export const operations = {
         role: z.enum(roles).nullable(),
       })
       .strict(),
-    ok,
+    okSchema,
     "POST",
     "/workspaces/{workspaceId}/members",
     "admin",
@@ -497,7 +502,7 @@ export const operations = {
     "GET",
     "/projects",
     "read",
-    "List projects accessible to the current identity.",
+    "List projects accessible to the current identity, each with its open and overdue ticket counts.",
   ),
   create_project: op(
     z
@@ -583,7 +588,7 @@ export const operations = {
   ),
   set_member: op(
     projectInput.extend({ ...mutation, email: z.email(), role: z.enum(roles).nullable() }).strict(),
-    ok,
+    okSchema,
     "POST",
     "/projects/{projectId}/members",
     "admin",
@@ -614,11 +619,13 @@ export const operations = {
     "List project label definitions, colors, and ticket counts, including unused labels and archived tickets.",
   ),
   create_project_label: op(
-    projectInput.extend({
-      ...mutation,
-      name: text.max(40),
-      color: labelColor.default("gray"),
-    }),
+    projectInput
+      .extend({
+        ...mutation,
+        name: text.max(40),
+        color: labelColor.default("gray"),
+      })
+      .strict(),
     projectLabelSchema,
     "POST",
     "/projects/{projectId}/labels",
@@ -626,13 +633,15 @@ export const operations = {
     "Create a reusable project label. Label names are unique within the project.",
   ),
   update_project_label: op(
-    projectInput.extend({
-      ...mutation,
-      labelId: z.uuid(),
-      expectedVersion: version,
-      name: text.max(40),
-      color: labelColor,
-    }),
+    projectInput
+      .extend({
+        ...mutation,
+        labelId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(40),
+        color: labelColor,
+      })
+      .strict(),
     projectLabelSchema,
     "PATCH",
     "/projects/{projectId}/labels/{labelId}",
@@ -640,7 +649,7 @@ export const operations = {
     "Rename or recolor a project label. Renames update tickets and saved-view filters atomically.",
   ),
   delete_project_label: op(
-    projectInput.extend({ ...mutation, labelId: z.uuid(), expectedVersion: version }),
+    projectInput.extend({ ...mutation, labelId: z.uuid(), expectedVersion: version }).strict(),
     okSchema,
     "DELETE",
     "/projects/{projectId}/labels/{labelId}",
@@ -661,7 +670,7 @@ export const operations = {
     "POST",
     "/label-colors/remove",
     "write",
-    "Remove a custom color from the site-wide palette. Labels already using it keep their color.",
+    "Remove a custom color from the site-wide palette; instance administrators and the person who added it may do so. Labels already using it keep their color.",
   ),
   get_ticket: op(
     ticketInput,
@@ -688,7 +697,7 @@ export const operations = {
         priority: z.enum(priorities).default("medium"),
         kind: z.enum(kinds).default("feature"),
         difficulty: z.enum(difficulties).nullable().default(null),
-        dueAt: z.iso.datetime().nullable().default(null),
+        dueAt: dueDate.nullable().default(null),
         labels: tags.default([]),
         scopes: tags.default([]),
         assigneeId: z.string().nullable().default(null),
@@ -742,7 +751,7 @@ export const operations = {
   ),
   delete_ticket: op(
     ticketInput.extend({ ...mutation, expectedVersion: version }).strict(),
-    ok,
+    okSchema,
     "DELETE",
     "/projects/{projectId}/tickets/{ticketId}",
     "admin",
@@ -767,7 +776,7 @@ export const operations = {
     "GET",
     "/tickets/search",
     "read",
-    "Search tickets by key or text across every accessible project, optionally within one workspace.",
+    "Search unarchived tickets by key or text across every accessible project, optionally within one workspace.",
   ),
   list_eligible_tickets: op(
     projectInput.extend(pagination),
@@ -802,7 +811,7 @@ export const operations = {
   ),
   remove_relation: op(
     projectInput.extend({ ...mutation, relationId: z.uuid() }).strict(),
-    ok,
+    okSchema,
     "DELETE",
     "/projects/{projectId}/relations/{relationId}",
     "write",
@@ -841,7 +850,7 @@ export const operations = {
   ),
   delete_comment: op(
     projectInput.extend({ ...mutation, commentId: z.uuid(), expectedVersion: version }).strict(),
-    ok,
+    okSchema,
     "DELETE",
     "/projects/{projectId}/comments/{commentId}",
     "write",
@@ -888,7 +897,7 @@ export const operations = {
   ),
   delete_attachment: op(
     projectInput.extend({ ...mutation, attachmentId: z.uuid() }).strict(),
-    ok,
+    okSchema,
     "DELETE",
     "/projects/{projectId}/attachments/{attachmentId}",
     "write",
@@ -943,7 +952,7 @@ export const operations = {
   ),
   release_claim: op(
     ticketInput.extend({ ...mutation, claimId: z.uuid() }).strict(),
-    ok,
+    okSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim/release",
     "claim",
@@ -958,7 +967,7 @@ export const operations = {
         confirmedStopped: z.literal(true),
       })
       .strict(),
-    ok,
+    okSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim/recover",
     "admin",
@@ -966,7 +975,7 @@ export const operations = {
   ),
   set_subscription: op(
     ticketInput.extend({ ...mutation, enabled: z.boolean() }).strict(),
-    ok,
+    okSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/subscription",
     "read",
@@ -990,7 +999,7 @@ export const operations = {
   ),
   delete_view: op(
     projectInput.extend({ ...mutation, viewId: z.uuid() }).strict(),
-    ok,
+    okSchema,
     "DELETE",
     "/projects/{projectId}/views/{viewId}",
     "read",

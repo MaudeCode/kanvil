@@ -52,7 +52,12 @@ export function AccentColorPicker<T extends LabelColor>({
   disabled?: boolean;
   custom?: boolean;
 }) {
-  const palette = useQuery({ ...api.query("list_label_colors", {}), enabled: custom });
+  // Site-wide and rarely changed: refetch each time a picker opens so removals elsewhere show.
+  const palette = useQuery({
+    ...api.query("list_label_colors", {}),
+    enabled: custom,
+    staleTime: 0,
+  });
   const remove = useOperation("remove_label_color");
   const saved = palette.data?.map((entry) => entry.value) ?? [];
   // The chosen hex shows as a swatch even before a save adds it to the site palette.

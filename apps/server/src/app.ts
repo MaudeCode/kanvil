@@ -239,10 +239,10 @@ export async function createApplication(
     ),
   );
   app.on(["GET", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => accounts.handleAuth(c.req.raw));
-  const mcpHandler = createMcp(auth, domain, access, config);
-  app.all("/mcp", (c) => mcpHandler(c.req.raw));
-  // Credentials are limited by the auth layer; sessions get a comparable budget for writes.
+  // Credentials are limited by the auth layer; sessions and MCP OAuth clients get a write budget.
   const writes = createWriteLimiter(config.KANVIL_SESSION_WRITE_LIMIT);
+  const mcpHandler = createMcp(auth, domain, access, config, (key) => writes.consume(key));
+  app.all("/mcp", (c) => mcpHandler(c.req.raw));
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);
     const actor = await access.authenticate(c.req.raw);
@@ -610,6 +610,7 @@ export async function createApplication(
         403: { description: "Insufficient permissions" },
         404: { description: "Not found" },
         409: { description: "Version, ownership, or dependency conflict" },
+        429: { description: "Too many writes from this session; see Retry-After" },
       },
     });
     app.openapi(route, async (c) => {

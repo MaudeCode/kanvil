@@ -1,7 +1,9 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { postgresSearch, type TicketSearchProvider } from "./search.ts";
+import { accessibleProjectRows } from "./project-access.ts";
 import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
+  closedStates,
   ApiError,
   operations,
   parseOutput,
@@ -114,7 +116,7 @@ export function json(value: unknown): unknown {
     ),
   );
 }
-export const complete = (status: string) => status === "done" || status === "cancelled";
+export const complete = (status: string) => closedStates.some((closed) => closed === status);
 export const hasScope = (actor: Actor, scope: (typeof scopes)[number]) =>
   actor.scopes.includes("admin") ||
   actor.scopes.includes(scope) ||
@@ -136,7 +138,7 @@ async function context(
     workspace: null,
     role: "reader",
     blobs: { put: writeLocalBlob },
-    search: { where: async (_db, _id, query) => postgresSearch(query) },
+    search: { where: async (_db, _ids, query) => postgresSearch(query) },
   };
   if (workspaceId) {
     ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
@@ -179,7 +181,35 @@ export async function getTicket(ctx: Context, identifier: string) {
       .limit(1),
   );
 }
-export type PendingEvent = { type: string; ticketId: string | null; data: Record<string, unknown> };
+export type PendingEvent = {
+  type: string;
+  ticketId: string | null;
+  data: Record<string, unknown>;
+  // Defaults to the context project; set it to fan one event out to several projects.
+  projectId?: string;
+};
+// PostgreSQL binds at most 65535 parameters per statement; keep multi-row inserts well under it.
+const insertBatch = 1000;
+async function insertAll<T, R>(rows: T[], insert: (batch: T[]) => Promise<R[]>): Promise<R[]> {
+  const out: R[] = [];
+  for (let at = 0; at < rows.length; at += insertBatch)
+    out.push(...(await insert(rows.slice(at, at + insertBatch))));
+  return out;
+}
+// Follows a ticket for each user once; duplicates are ignored.
+export async function subscribe(
+  ctx: Context,
+  projectId: string,
+  ticketId: string,
+  userIds: readonly (string | null | undefined)[],
+) {
+  const ids = [...new Set(userIds.filter((id): id is string => !!id))];
+  if (ids.length)
+    await ctx.db
+      .insert(subscriptions)
+      .values(ids.map((userId) => ({ projectId, ticketId, userId })))
+      .onConflictDoNothing();
+}
 // Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
 export async function publishMany(ctx: Context, pending: PendingEvent[]) {
   if (!pending.length) return [];
@@ -203,19 +233,17 @@ export async function publishMany(ctx: Context, pending: PendingEvent[]) {
   );
   const first = clock.value - BigInt(pending.length) + 1n;
   const source = { kind: ctx.actor.machine ? "credential" : "session", id: ctx.actor.ownerId };
-  const rows = await ctx.db
-    .insert(events)
-    .values(
-      pending.map((item, index) => ({
-        id: first + BigInt(index),
-        projectId: project(ctx).id,
-        ticketId: item.ticketId,
-        actorId: ctx.actor.id,
-        type: item.type,
-        data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
-      })),
-    )
-    .returning();
+  const rows = await insertAll(
+    pending.map((item, index) => ({
+      id: first + BigInt(index),
+      projectId: item.projectId ?? project(ctx).id,
+      ticketId: item.ticketId,
+      actorId: ctx.actor.id,
+      type: item.type,
+      data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
+    })),
+    (batch) => ctx.db.insert(events).values(batch).returning(),
+  );
   if (ticketIds.length) {
     const followers = await ctx.db
       .select({
@@ -248,33 +276,40 @@ export async function publishMany(ctx: Context, pending: PendingEvent[]) {
         .map((follower) => ({ event, follower })),
     );
     if (entries.length) {
-      const created = await ctx.db
-        .insert(notifications)
-        .values(
-          entries.map(({ event, follower }) => ({
-            userId: follower.userId,
-            projectId: project(ctx).id,
-            eventId: event.id,
-            inbox: follower.inApp ?? true,
-          })),
-        )
-        .returning();
-      const pushUsers = [
-        ...new Set(entries.filter(({ follower }) => follower.push).map((e) => e.follower.userId)),
-      ];
-      if (pushUsers.length) {
+      const created = await insertAll(
+        entries.map(({ event, follower }) => ({
+          userId: follower.userId,
+          projectId: event.projectId,
+          eventId: event.id,
+          inbox: follower.inApp ?? true,
+        })),
+        (batch) => ctx.db.insert(notifications).values(batch).returning(),
+      );
+      // Push is decided per (event, user), matched by key rather than by insert order.
+      const pushing = new Set(
+        entries
+          .filter(({ follower }) => follower.push)
+          .map(({ event, follower }) => `${event.id}:${follower.userId}`),
+      );
+      if (pushing.size) {
         const devices = await ctx.db
           .select({ id: pushDevices.id, userId: pushDevices.userId })
           .from(pushDevices)
-          .where(inArray(pushDevices.userId, pushUsers));
-        const deliveries = created.flatMap((notification, index) => {
-          const follower = entries[index]?.follower;
-          if (!follower?.push) return [];
-          return devices
-            .filter((device) => device.userId === follower.userId)
-            .map((device) => ({ notificationId: notification.id, deviceId: device.id }));
-        });
-        if (deliveries.length) await ctx.db.insert(pushDeliveries).values(deliveries);
+          .where(
+            inArray(pushDevices.userId, [
+              ...new Set(entries.filter((e) => e.follower.push).map((e) => e.follower.userId)),
+            ]),
+          );
+        const deliveries = created.flatMap((notification) =>
+          pushing.has(`${notification.eventId}:${notification.userId}`)
+            ? devices
+                .filter((device) => device.userId === notification.userId)
+                .map((device) => ({ notificationId: notification.id, deviceId: device.id }))
+            : [],
+        );
+        await insertAll(deliveries, (batch) =>
+          ctx.db.insert(pushDeliveries).values(batch).returning(),
+        );
       }
     }
   }
@@ -322,6 +357,8 @@ export function createDomain(
     ...ticketHandlers,
     ...collaborationHandlers,
   };
+  // Operations where `workspaceId` narrows a listing instead of naming a membership context.
+  const workspaceIsFilter: ReadonlySet<Operation> = new Set(["list_projects", "search_tickets"]);
   async function execute<K extends Operation>(
     name: K,
     value: unknown,
@@ -331,7 +368,7 @@ export function createDomain(
     const input = spec.input.parse(value);
     const projectId = "projectId" in input ? input.projectId : undefined;
     const workspaceId =
-      "workspaceId" in input && name !== "list_projects" ? input.workspaceId : undefined;
+      "workspaceId" in input && !workspaceIsFilter.has(name) ? input.workspaceId : undefined;
     if (actor.projectIds && spec.method !== "GET" && !projectId)
       fail(
         403,
@@ -400,8 +437,9 @@ export function createDomain(
       ...(credential?.projectIds ? { projectIds: credential.projectIds } : {}),
     };
   }
+  // Realtime and routes need the rows only; `list_projects` adds counts that would run per wake-up.
   async function accessibleProjects(identity: Actor) {
-    return execute("list_projects", {}, identity);
+    return accessibleProjectRows(database.db, identity);
   }
   async function readEvents(identity: Actor, cursor: bigint, projectId?: string) {
     if (!hasScope(identity, "read")) fail(403, "insufficient_scope", "Read permission is required");

@@ -12,8 +12,10 @@ export function createMcp(
   domain: Domain,
   access: ReturnType<typeof createAccess>,
   config: Config,
+  // Counts a write against the caller; OAuth clients are not covered by the credential limiter.
+  limitWrite: (key: string) => void,
 ) {
-  const serve = (request: Request, identity: Actor) =>
+  const serve = (request: Request, identity: Actor, limited = false) =>
     createMcpHandler(
       () => {
         const server = new McpServer({ name: "Kanvil", version: "0.1.0" });
@@ -35,6 +37,7 @@ export function createMcp(
             },
             async (input: Record<string, unknown>): Promise<CallToolResult> => {
               try {
+                if (limited && spec.method !== "GET") limitWrite(identity.ownerId);
                 const result = await domain.execute(name, input, identity);
                 return {
                   content: [{ type: "text", text: `${name} completed.` }],
@@ -76,6 +79,7 @@ export function createMcp(
           ownerId: `${claims.sub}:${clientId}`,
           scopes: permissions,
         }),
+        true,
       );
     },
     { resource: `${config.KANVIL_URL}/mcp`, challengeScopes: ["kanvil:read"] },

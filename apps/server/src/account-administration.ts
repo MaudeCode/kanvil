@@ -10,7 +10,7 @@ import {
 } from "@kanvil/contracts/users";
 import { account, session, user } from "./auth-schema.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
-import { fail, json, requireRow, type Actor, one } from "./domain.ts";
+import { fail, json, type Actor, one } from "./domain.ts";
 import type { Auth } from "./auth.ts";
 import type { Database } from "./database.ts";
 const person = {
@@ -72,13 +72,13 @@ export function createAccountAdministration(database: Database, auth: Auth) {
       ) {
         const body = mutationBody.parse(await request.clone().json());
         if (body.userId) {
-          const current = requireRow(
+          const current = one(
             (
               await lock.query<{ id: string; role: string | null; banned: boolean }>(
                 `SELECT id, role, coalesce(banned,false) AS banned FROM "user" WHERE id = $1`,
                 [body.userId],
               )
-            ).rows[0],
+            ).rows,
           );
           const role = body.role ?? body.data?.role ?? current.role;
           const candidate = z

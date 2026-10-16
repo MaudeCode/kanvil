@@ -143,7 +143,7 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
     },
     write: (identity, rows, deleted) => bulk(settings, identity, rows, deleted),
     probe: (identity) => testSearchConnection(settings, identity),
-    async find(identity, projectId, query) {
+    async find(identity, projectIds, query) {
       let scrollId: string | undefined;
       try {
         const found: string[] = [];
@@ -156,7 +156,10 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
               sort: ["_doc"],
               query: {
                 bool: {
-                  filter: [{ term: { projectId } }, { term: { instanceId: identity } }],
+                  filter: [
+                    { terms: { projectId: [...projectIds] } },
+                    { term: { instanceId: identity } },
+                  ],
                   must: [
                     {
                       multi_match: {

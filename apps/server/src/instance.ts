@@ -13,7 +13,7 @@ import {
 import { instanceSettings, storageBackends } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Config } from "./config.ts";
-import { fail, one } from "./domain.ts";
+import { assertVersion, fail, one } from "./domain.ts";
 
 // Location identity excludes credentials so rotation preserves existing file references.
 function storageIdentity(settings: S3Settings) {
@@ -189,8 +189,7 @@ export function createInstance(database: Database, config: Config) {
     return database.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361083)`);
       const current = await read(tx);
-      if (current.version !== input.expectedVersion)
-        fail(409, "version_conflict", "Instance settings changed. Reload before saving.");
+      assertVersion(current, input.expectedVersion, "instance settings", "saving");
       let storageId = current.storageBackendId,
         searchConfig = current.searchConfig,
         brokerConfig = current.brokerConfig;

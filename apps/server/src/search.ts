@@ -24,7 +24,7 @@ export function postgresSearch(query: string): SQL | undefined {
 export type TicketSearchProvider = {
   where: (
     db: Connection | Transaction,
-    projectId: string,
+    projectIds: readonly string[],
     query: string,
   ) => Promise<SQL | undefined>;
 };
@@ -105,7 +105,11 @@ export function createTicketSearch(
         });
     }
   }
-  async function where(_db: Connection | Transaction, projectId: string, query: string) {
+  async function where(
+    _db: Connection | Transaction,
+    projectIds: readonly string[],
+    query: string,
+  ) {
     const fallback = () => postgresSearch(query),
       settings = await instance.search();
     if (!settings) return fallback();
@@ -123,7 +127,7 @@ export function createTicketSearch(
     try {
       const ids = await factory({ provider: "elasticsearch", config: settings }).find(
         root.identity,
-        projectId,
+        projectIds,
         query,
       );
       return ids.length ? inArray(tickets.id, ids) : sql`false`;

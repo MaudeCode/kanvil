@@ -1,18 +1,6 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  getTableColumns,
-  inArray,
-  ne,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { isHexColor } from "@kanvil/contracts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
@@ -26,7 +14,13 @@ import {
   workspaces,
   workspaceMembers,
 } from "./schema.ts";
-import { labelUsage, updateTicketRow } from "./ticket-operations.ts";
+import {
+  labelOrder,
+  labelUsage,
+  openTicket,
+  overdueTicket,
+  updateTicketRow,
+} from "./ticket-operations.ts";
 import {
   accountByEmail,
   assertVersion,
@@ -137,10 +131,7 @@ export const projectHandlers: Pick<
       .from(projectLabels)
       .leftJoin(usage, eq(projectLabels.name, sql<string>`"usage"."name"`))
       .where(eq(projectLabels.projectId, project(ctx).id))
-      .orderBy(
-        asc(sql`lower(${projectLabels.name}) COLLATE "C"`),
-        asc(sql`${projectLabels.name} COLLATE "C"`),
-      );
+      .orderBy(...labelOrder(projectLabels.name));
   },
   async create_project_label(ctx, input) {
     await availableLabelName(ctx, input.name);
@@ -162,7 +153,7 @@ export const projectHandlers: Pick<
   async update_project_label(ctx, input) {
     const current = await getLabel(ctx, input.labelId, input.expectedVersion);
     await availableLabelName(ctx, input.name, current.id);
-    await rememberLabelColor(ctx, input.color);
+    if (input.color !== current.color) await rememberLabelColor(ctx, input.color);
     const label = one(
       await ctx.db
         .update(projectLabels)
@@ -194,16 +185,35 @@ export const projectHandlers: Pick<
       .orderBy(desc(labelColors.createdAt), asc(labelColors.value));
   },
   async remove_label_color(ctx, input) {
-    const removed = await ctx.db
-      .delete(labelColors)
-      .where(eq(labelColors.value, input.value))
-      .returning();
-    // The palette is site-wide, so every readable project hears about it, like workspace events.
-    if (removed.length)
-      for (const row of await accessibleProjectRows(ctx.db, ctx.actor))
-        await publish({ ...ctx, project: toProject(row) }, "label.color_removed", null, {
-          value: input.value,
-        });
+    const current = (
+      await ctx.db.select().from(labelColors).where(eq(labelColors.value, input.value))
+    )[0];
+    if (!current) return { ok: true };
+    if (!ctx.actor.admin && current.createdBy !== ctx.actor.id)
+      fail(
+        403,
+        "forbidden",
+        "Only an instance administrator or the person who added this color can remove it",
+      );
+    await ctx.db.delete(labelColors).where(eq(labelColors.value, input.value));
+    // The palette is site-wide; the projects the actor can write hear about it in one batch.
+    const audience = await ctx.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        ctx.actor.admin
+          ? undefined
+          : inArray(projectRoleSQL(ctx.actor.id, projects.id), ["writer", "admin"]),
+      );
+    await publishMany(
+      ctx,
+      audience.map((row) => ({
+        type: "label.color_removed",
+        ticketId: null,
+        projectId: row.id,
+        data: { value: input.value },
+      })),
+    );
     return { ok: true };
   },
   async get_project(ctx) {
@@ -244,7 +254,7 @@ export const projectHandlers: Pick<
       .select({
         projectId: tickets.projectId,
         open: count(),
-        overdue: count(sql`CASE WHEN ${tickets.dueAt} < now() THEN 1 END`),
+        overdue: count(sql`CASE WHEN ${overdueTicket} THEN 1 END`),
       })
       .from(tickets)
       .where(
@@ -254,7 +264,7 @@ export const projectHandlers: Pick<
             rows.map((row) => row.id),
           ),
           eq(tickets.archived, false),
-          notInArray(tickets.status, ["done", "cancelled"]),
+          openTicket,
         ),
       )
       .groupBy(tickets.projectId);

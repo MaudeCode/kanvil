@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import {
   ticketFilter,
+  closedStates,
   defaultOrder,
   states,
   stateLabels,
@@ -277,7 +278,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     cell: ({ row }) => (
       <DueDate
         value={row.original.dueAt}
-        open={row.original.status !== "done" && row.original.status !== "cancelled"}
+        open={!closedStates.some((closed) => closed === row.original.status)}
       />
     ),
   },

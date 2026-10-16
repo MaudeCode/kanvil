@@ -21,7 +21,9 @@ import {
   getTicket,
   project,
   publish,
+  publishMany,
   requireRow,
+  subscribe,
   type Context,
   type Handlers,
   one,
@@ -46,8 +48,14 @@ async function publishRelation(
   type: "relation.added" | "relation.removed",
   relation: typeof relations.$inferSelect,
 ) {
-  for (const ticketId of [relation.sourceId, relation.targetId])
-    await publish(ctx, type, ticketId, { relation });
+  await publishMany(
+    ctx,
+    [relation.sourceId, relation.targetId].map((ticketId) => ({
+      type,
+      ticketId,
+      data: { relation },
+    })),
+  );
 }
 export const collaborationHandlers: Pick<
   Handlers,
@@ -149,10 +157,7 @@ export const collaborationHandlers: Pick<
         })
         .returning(),
     );
-    await ctx.db
-      .insert(subscriptions)
-      .values({ projectId: row.projectId, ticketId: row.ticketId, userId: ctx.actor.id })
-      .onConflictDoNothing();
+    await subscribe(ctx, row.projectId, row.ticketId, [ctx.actor.id]);
     await publish(ctx, "comment.created", ticket.id, { commentId: row.id });
     return row;
   },
@@ -271,11 +276,7 @@ export const collaborationHandlers: Pick<
   },
   async set_subscription(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    if (input.enabled)
-      await ctx.db
-        .insert(subscriptions)
-        .values({ projectId: project(ctx).id, ticketId: ticket.id, userId: ctx.actor.id })
-        .onConflictDoNothing();
+    if (input.enabled) await subscribe(ctx, project(ctx).id, ticket.id, [ctx.actor.id]);
     else {
       await ctx.db
         .delete(subscriptions)
