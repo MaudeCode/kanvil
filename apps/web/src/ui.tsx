@@ -608,7 +608,39 @@ export function SectionHeading({
     </header>
   );
 }
-// A value with a copy action; `inline` drops the label block for use inside a setting row.
+// The one copy-to-clipboard action: copies, toasts, and shows a check briefly.
+export function CopyButton({
+  label,
+  value,
+  size = "icon",
+  className,
+}: {
+  label: string;
+  value: string;
+  size?: "icon" | "icon-sm" | "icon-xs";
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <IconButton
+      label={label}
+      size={size}
+      className={cn("text-muted-foreground hover:text-foreground", className)}
+      onClick={() => {
+        void copyText(value)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+            toast.success(`${value} copied`);
+          })
+          .catch(reportError);
+      }}
+    >
+      {copied ? <CheckIcon className="text-(--success)" /> : <Copy />}
+    </IconButton>
+  );
+}
+// A labelled value with a copy action; `inline` drops the label block for use inside a row.
 export function CopyValue({
   label,
   value,
@@ -618,8 +650,7 @@ export function CopyValue({
   value: string;
   inline?: boolean;
 }) {
-  const id = useId(),
-    [copied, setCopied] = useState(false);
+  const id = useId();
   const body = (
     <div
       role="group"
@@ -628,20 +659,11 @@ export function CopyValue({
       className={cn("flex min-w-0 items-center gap-3", !inline && "justify-between")}
     >
       <code className="min-w-0 text-xs break-all">{value}</code>
-      <IconButton
+      <CopyButton
         label={`Copy ${label.toLowerCase()}`}
+        value={value}
         size={inline ? "icon-sm" : "icon"}
-        onClick={() => {
-          void copyText(value)
-            .then(() => {
-              setCopied(true);
-              toast.success(`${label} copied`);
-            })
-            .catch((error) => toast.error(errorMessage(error)));
-        }}
-      >
-        {copied ? <CheckIcon /> : <Copy />}
-      </IconButton>
+      />
     </div>
   );
   if (inline) return body;

@@ -8,16 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import {
   Button,
-  CopyValue,
+  CopyButton,
+  ErrorNotice,
+  IconButton,
   Input,
-  Modal,
   RelativeTime,
   Select,
   SelectItem,
   Textarea,
-  FormActions,
   reportError,
 } from "../ui.tsx";
+import { submitOnModEnter } from "../forms.ts";
 import { TabsContent } from "@/components/ui/tabs";
 import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
@@ -64,35 +65,106 @@ export function ProjectSettings({
           <section>
             <div className="flex flex-wrap items-start gap-5">
               <ProjectIconPicker project={project} disabled={!access.canAdmin} variant="icon" />
-              <div className="min-w-0 flex-1 basis-60">
-                <h2 className="mb-1 flex flex-wrap items-center gap-2 text-base">
-                  {project.name}
-                  <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                    {project.key}
-                  </Badge>
-                </h2>
-                <p className="mb-2 max-w-xl whitespace-pre-wrap">
-                  {project.description || "No description"}
-                </p>
-                <p className="mb-0 text-xs tabular-nums">
-                  <Link
-                    to="/projects/$projectId"
-                    params={{ projectId: project.id }}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    {project.openTickets === 0
-                      ? "No open tickets"
-                      : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
-                    {project.overdueTickets > 0 && (
-                      <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
-                    )}
-                  </Link>
-                  {" · Created "}
-                  <RelativeTime value={project.createdAt} />
-                </p>
-              </div>
-              {access.canAdmin && (
-                <Button
+              {editing ? (
+                <form
+                  className="min-w-0 flex-1 basis-60 [&_[data-slot=field-label]]:sr-only"
+                  onKeyDown={submitOnModEnter}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void update
+                      .mutateAsync({
+                        projectId: project.id,
+                        expectedVersion: draft.version,
+                        name: draft.name,
+                        description: draft.description,
+                      })
+                      .then(() => {
+                        setEditing(false);
+                        toast.success("Project saved");
+                      })
+                      .catch(() => {});
+                  }}
+                >
+                  <Input
+                    label="Name"
+                    value={draft.name}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setEditing(false);
+                    }}
+                    required
+                    maxLength={120}
+                    autoFocus
+                    className="text-base font-semibold"
+                  />
+                  <Textarea
+                    label="Description"
+                    value={draft.description}
+                    onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setEditing(false);
+                    }}
+                    maxLength={5000}
+                    rows={3}
+                    placeholder="Add a description"
+                    className="field-sizing-content"
+                  />
+                  {project.version !== draft.version && (
+                    <p role="alert" className="mt-2 mb-0 text-xs">
+                      This project changed elsewhere. Cancel and start again.
+                    </p>
+                  )}
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button
+                      type="submit"
+                      variant="default"
+                      size="sm"
+                      disabled={update.isPending || project.version !== draft.version}
+                    >
+                      {update.isPending ? "Saving…" : "Save"}
+                    </Button>
+                    <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                  <ErrorNotice error={update.error} />
+                </form>
+              ) : (
+                <div className="min-w-0 flex-1 basis-60">
+                  <h2 className="mb-1 flex flex-wrap items-center gap-1.5 text-base">
+                    {project.name}
+                    <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
+                      {project.key}
+                    </Badge>
+                    <CopyButton label="Copy ticket prefix" value={project.key} size="icon-xs" />
+                  </h2>
+                  <p className="mb-2 max-w-xl whitespace-pre-wrap">
+                    {project.description || "No description"}
+                  </p>
+                  <p className="mb-0 text-xs tabular-nums">
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: project.id }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      {project.openTickets === 0
+                        ? "No open tickets"
+                        : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
+                      {project.overdueTickets > 0 && (
+                        <span className="text-(--warning)">
+                          {" "}
+                          · {project.overdueTickets} overdue
+                        </span>
+                      )}
+                    </Link>
+                    {" · Created "}
+                    <RelativeTime value={project.createdAt} />
+                  </p>
+                </div>
+              )}
+              {access.canAdmin && !editing && (
+                <IconButton
+                  label="Edit project"
                   onClick={() => {
                     setDraft({
                       name: project.name,
@@ -104,8 +176,7 @@ export function ProjectSettings({
                   }}
                 >
                   <Pencil />
-                  Edit project
-                </Button>
+                </IconButton>
               )}
             </div>
           </section>
@@ -143,12 +214,6 @@ export function ProjectSettings({
                 <SelectItem value="private">Only project members</SelectItem>
               </Select>
             </SettingRow>
-            <SettingRow
-              title="Ticket prefix"
-              description={`Permanent. Every ticket in this project is keyed ${project.key}-1, ${project.key}-2, and so on.`}
-            >
-              <CopyValue label="Ticket prefix" value={project.key} inline />
-            </SettingRow>
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {workspace.active?.role && (
                 <Button
@@ -181,50 +246,6 @@ export function ProjectSettings({
           <ProjectLabelSettings projectId={project.id} canAdmin={access.canAdmin} />
         </TabsContent>
       </SettingsLayout>
-      <Modal title="Edit project" open={editing} onOpenChange={setEditing} busy={update.isPending}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void update
-              .mutateAsync({
-                projectId: project.id,
-                expectedVersion: draft.version,
-                name: draft.name,
-                description: draft.description,
-              })
-              .then(() => {
-                setEditing(false);
-                toast.success("Project saved");
-              })
-              .catch(() => {});
-          }}
-        >
-          <Input
-            label="Name"
-            value={draft.name}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            required
-            maxLength={120}
-            autoFocus
-          />
-          <Textarea
-            label="Description"
-            value={draft.description}
-            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            maxLength={5000}
-          />
-          {project.version !== draft.version && (
-            <p role="alert">This project changed. Reopen the editor before saving.</p>
-          )}
-          <FormActions
-            error={update.error}
-            pending={update.isPending}
-            submitLabel="Save project"
-            submitDisabled={project.version !== draft.version}
-            onCancel={() => setEditing(false)}
-          />
-        </form>
-      </Modal>
     </>
   );
 }
