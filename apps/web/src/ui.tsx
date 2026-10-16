@@ -21,9 +21,10 @@ import {
   ChevronDown,
   Check as CheckIcon,
   XCircle,
-  SignalLow,
-  SignalMedium,
-  SignalHigh,
+  ArrowDown,
+  Equal,
+  ArrowUp,
+  OctagonAlert,
   Minus,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -286,10 +287,10 @@ const statusPresentation = {
   cancelled: { icon: XCircle, color: "text-muted-foreground" },
 };
 const priorityPresentation = {
-  urgent: { icon: AlertCircle, color: "text-destructive" },
-  high: { icon: SignalHigh, color: "text-[var(--warning)]" },
-  medium: { icon: SignalMedium, color: "text-foreground" },
-  low: { icon: SignalLow, color: "text-muted-foreground" },
+  urgent: { icon: OctagonAlert, color: "text-destructive" },
+  high: { icon: ArrowUp, color: "text-[var(--warning)]" },
+  medium: { icon: Equal, color: "text-foreground" },
+  low: { icon: ArrowDown, color: "text-primary" },
   none: { icon: Minus, color: "text-muted-foreground" },
 };
 export function TicketIndicator({
@@ -312,7 +313,7 @@ export function TicketIndicator({
     <Badge
       variant="outline"
       className={cn(
-        property === "status" ? "status" : "text-xs",
+        property === "status" ? "status" : "h-6 text-xs",
         "gap-1.5 border-transparent bg-transparent px-0 font-normal",
         color,
       )}
@@ -321,7 +322,11 @@ export function TicketIndicator({
       aria-label={iconOnly ? accessibleLabel : undefined}
       title={iconOnly ? accessibleLabel : undefined}
     >
-      <Icon className={property === "status" ? "size-3.5" : "size-4"} aria-hidden="true" />
+      <Icon
+        className={property === "status" ? "size-3.5" : "size-4.5"}
+        strokeWidth={property === "status" ? 2 : 2.5}
+        aria-hidden="true"
+      />
       {!iconOnly && label}
     </Badge>
   );
