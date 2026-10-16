@@ -1,10 +1,19 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { projectSchema } from "@kanvil/contracts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
-import { members, projects, views, workspaces, workspaceMembers } from "./schema.ts";
+import {
+  members,
+  projects,
+  projectLabels,
+  tickets,
+  views,
+  workspaces,
+  workspaceMembers,
+} from "./schema.ts";
+import { labelUsage, updateTicket } from "./ticket-operations.ts";
 import {
   accountByEmail,
   fail,
@@ -13,7 +22,64 @@ import {
   requireRow,
   workspace,
   type Handlers,
+  type Context,
 } from "./domain.ts";
+
+async function getLabel(ctx: Context, labelId: string, expectedVersion: number) {
+  const label = requireRow(
+    (
+      await ctx.db
+        .select()
+        .from(projectLabels)
+        .where(and(eq(projectLabels.projectId, project(ctx).id), eq(projectLabels.id, labelId)))
+    )[0],
+  );
+  if (label.version !== expectedVersion)
+    fail(409, "version_conflict", "This label changed. Reopen the editor before saving.");
+  return label;
+}
+async function availableLabelName(ctx: Context, name: string, exceptId?: string) {
+  if (
+    (
+      await ctx.db
+        .select({ id: projectLabels.id })
+        .from(projectLabels)
+        .where(
+          and(
+            eq(projectLabels.projectId, project(ctx).id),
+            eq(projectLabels.name, name),
+            exceptId ? ne(projectLabels.id, exceptId) : undefined,
+          ),
+        )
+    ).length
+  )
+    fail(409, "duplicate_label", "A label with this name already exists in this project.");
+}
+async function changeLabelUsage(ctx: Context, name: string, replacement?: string) {
+  const affected = await ctx.db
+    .select()
+    .from(tickets)
+    .where(and(eq(tickets.projectId, project(ctx).id), sql`${name} = ANY(${tickets.labels})`));
+  for (const ticket of affected)
+    await updateTicket(ctx, {
+      projectId: project(ctx).id,
+      ticketId: ticket.id,
+      expectedVersion: ticket.version,
+      changes: {
+        labels: replacement
+          ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
+          : ticket.labels.filter((tag) => tag !== name),
+      },
+    });
+  await ctx.db
+    .update(views)
+    .set({
+      filters: replacement
+        ? sql`jsonb_set(${views.filters}, '{label}', to_jsonb(${replacement}::text))`
+        : sql`${views.filters} - 'label'`,
+    })
+    .where(and(eq(views.projectId, project(ctx).id), sql`${views.filters}->>'label' = ${name}`));
+}
 
 export const projectHandlers: Pick<
   Handlers,
@@ -27,7 +93,73 @@ export const projectHandlers: Pick<
   | "list_views"
   | "save_view"
   | "delete_view"
+  | "list_project_labels"
+  | "create_project_label"
+  | "update_project_label"
+  | "delete_project_label"
 > = {
+  async list_project_labels(ctx) {
+    const usage = labelUsage(ctx, "include").as("usage");
+    return ctx.db
+      .select({
+        ...getTableColumns(projectLabels),
+        count: sql<number>`coalesce(${usage.count}, 0)`.mapWith(Number),
+      })
+      .from(projectLabels)
+      .leftJoin(usage, eq(projectLabels.name, sql<string>`"usage"."name"`))
+      .where(eq(projectLabels.projectId, project(ctx).id))
+      .orderBy(
+        asc(sql`lower(${projectLabels.name}) COLLATE "C"`),
+        asc(sql`${projectLabels.name} COLLATE "C"`),
+      );
+  },
+  async create_project_label(ctx, input) {
+    await availableLabelName(ctx, input.name);
+    const label = requireRow(
+      (
+        await ctx.db
+          .insert(projectLabels)
+          .values({ projectId: project(ctx).id, name: input.name, color: input.color })
+          .returning()
+      )[0],
+    );
+    await publish(ctx, "label.created", null, {
+      labelId: label.id,
+      name: label.name,
+      color: label.color,
+      version: label.version,
+    });
+    return label;
+  },
+  async update_project_label(ctx, input) {
+    const current = await getLabel(ctx, input.labelId, input.expectedVersion);
+    await availableLabelName(ctx, input.name, current.id);
+    const label = requireRow(
+      (
+        await ctx.db
+          .update(projectLabels)
+          .set({ name: input.name, color: input.color, version: current.version + 1 })
+          .where(eq(projectLabels.id, current.id))
+          .returning()
+      )[0],
+    );
+    if (current.name !== label.name) await changeLabelUsage(ctx, current.name, label.name);
+    await publish(ctx, "label.updated", null, {
+      labelId: label.id,
+      name: label.name,
+      previousName: current.name,
+      color: label.color,
+      version: label.version,
+    });
+    return label;
+  },
+  async delete_project_label(ctx, input) {
+    const label = await getLabel(ctx, input.labelId, input.expectedVersion);
+    await changeLabelUsage(ctx, label.name);
+    await ctx.db.delete(projectLabels).where(eq(projectLabels.id, label.id));
+    await publish(ctx, "label.deleted", null, { labelId: label.id, name: label.name });
+    return { ok: true };
+  },
   async get_project(ctx) {
     return project(ctx);
   },

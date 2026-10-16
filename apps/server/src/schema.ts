@@ -83,6 +83,19 @@ export const members = pgTable(
     index("member_user").on(table.userId),
   ],
 );
+export const projectLabels = pgTable(
+  "project_labels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("gray"),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [unique("project_label_name").on(table.projectId, table.name)],
+);
 export const tickets = pgTable(
   "tickets",
   {

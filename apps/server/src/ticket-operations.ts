@@ -1,5 +1,13 @@
 import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
-import { claims, members, projects, relations, subscriptions, tickets } from "./schema.ts";
+import {
+  claims,
+  members,
+  projects,
+  projectLabels,
+  relations,
+  subscriptions,
+  tickets,
+} from "./schema.ts";
 import {
   assertWorkerClaim,
   ownsLiveClaim,
@@ -78,8 +86,13 @@ export async function readiness(ctx: Context, ticket: typeof tickets.$inferSelec
 async function validateReferences(
   ctx: Context,
   ticketId: string,
-  changes: Pick<ParsedInput<"update_ticket">["changes"], "assigneeId" | "parentId">,
+  changes: Pick<ParsedInput<"update_ticket">["changes"], "assigneeId" | "parentId" | "labels">,
 ) {
+  if (changes.labels?.length)
+    await ctx.db
+      .insert(projectLabels)
+      .values(changes.labels.map((name) => ({ projectId: project(ctx).id, name })))
+      .onConflictDoNothing();
   if (
     changes.assigneeId &&
     !(
@@ -121,7 +134,7 @@ export async function assertNoCycle(ctx: Context, sourceId: string, targetId: st
     pending.push(...(edges.get(node) ?? []));
   }
 }
-async function update(ctx: Context, input: ParsedInput<"update_ticket">) {
+export async function updateTicket(ctx: Context, input: ParsedInput<"update_ticket">) {
   const current = await getTicket(ctx, input.ticketId);
   if (current.version !== input.expectedVersion)
     fail(409, "version_conflict", "The ticket changed; reload before editing", {
@@ -149,6 +162,22 @@ async function update(ctx: Context, input: ParsedInput<"update_ticket">) {
   });
   return row;
 }
+export function labelUsage(ctx: Context, archived: "include" | "exclude" | "only") {
+  const labels = ctx.db
+    .select({ name: sql<string>`unnest(${tickets.labels})`.as("name") })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.projectId, project(ctx).id),
+        archived === "include" ? undefined : eq(tickets.archived, archived === "only"),
+      ),
+    )
+    .as("ticket_labels");
+  return ctx.db
+    .select({ name: labels.name, count: count().as("count") })
+    .from(labels)
+    .groupBy(labels.name);
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -165,19 +194,10 @@ export const ticketHandlers: Pick<
   | "recover_claim"
 > = {
   async list_ticket_labels(ctx, input) {
-    const where = and(
-      eq(tickets.projectId, project(ctx).id),
-      input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
-    );
-    const labels = ctx.db
-      .select({ name: sql<string>`unnest(${tickets.labels})`.as("name") })
-      .from(tickets)
-      .where(where)
-      .as("ticket_labels");
+    const labels = labelUsage(ctx, input.archived).as("usage");
     return ctx.db
-      .select({ name: labels.name, count: count() })
+      .select()
       .from(labels)
-      .groupBy(labels.name)
       .orderBy(asc(sql`lower(${labels.name}) COLLATE "C"`), asc(sql`${labels.name} COLLATE "C"`));
   },
   async list_tickets(ctx, input) {
@@ -280,12 +300,12 @@ export const ticketHandlers: Pick<
     await publish(ctx, "ticket.created", row.id, { key: row.key, version: row.version });
     return row;
   },
-  update_ticket: update,
+  update_ticket: updateTicket,
   async bulk_update_tickets(ctx, input) {
     const result = [];
     for (const item of input.tickets)
       result.push(
-        await update(ctx, {
+        await updateTicket(ctx, {
           projectId: input.projectId,
           ticketId: item.ticketId,
           expectedVersion: item.expectedVersion,

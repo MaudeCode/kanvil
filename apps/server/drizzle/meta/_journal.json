@@ -71,6 +71,13 @@
       "when": 1792093576567,
       "tag": "0009_project_icons",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792110536444,
+      "tag": "0010_project_labels",
+      "breakpoints": true
     }
   ]
 }

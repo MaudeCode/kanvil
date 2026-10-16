@@ -54,6 +54,14 @@ const tags = z
   .array(text.max(40))
   .max(30)
   .overwrite((values) => [...new Set(values)]);
+export const projectLabelSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  name: text.max(40),
+  color: z.enum(projectIconColors),
+  version,
+});
+export type ProjectLabel = z.output<typeof projectLabelSchema>;
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -299,6 +307,9 @@ export const createdCredentialSchema = z.object({
 export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
 const eventLabels: Record<string, string> = {
+  "label.created": "Label created",
+  "label.updated": "Label updated",
+  "label.deleted": "Label deleted",
   "ticket.created": "Ticket created",
   "ticket.updated": "Ticket updated",
   "ticket.deleted": "Ticket deleted",
@@ -516,6 +527,48 @@ export const operations = {
     "/projects/{projectId}/labels",
     "read",
     "List distinct ticket labels and usage counts across the authorized project, independent of ticket pagination.",
+  ),
+  list_project_labels: op(
+    projectInput,
+    z.array(projectLabelSchema.extend({ count: z.number().int().nonnegative() })),
+    "GET",
+    "/projects/{projectId}/labels/catalog",
+    "read",
+    "List project label definitions, colors, and ticket counts, including unused labels and archived tickets.",
+  ),
+  create_project_label: op(
+    projectInput.extend({
+      ...mutation,
+      name: text.max(40),
+      color: z.enum(projectIconColors).default("gray"),
+    }),
+    projectLabelSchema,
+    "POST",
+    "/projects/{projectId}/labels",
+    "admin",
+    "Create a reusable project label. Label names are unique within the project.",
+  ),
+  update_project_label: op(
+    projectInput.extend({
+      ...mutation,
+      labelId: z.uuid(),
+      expectedVersion: version,
+      name: text.max(40),
+      color: z.enum(projectIconColors),
+    }),
+    projectLabelSchema,
+    "PATCH",
+    "/projects/{projectId}/labels/{labelId}",
+    "admin",
+    "Rename or recolor a project label. Renames update tickets and saved-view filters atomically.",
+  ),
+  delete_project_label: op(
+    projectInput.extend({ ...mutation, labelId: z.uuid(), expectedVersion: version }),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/labels/{labelId}",
+    "admin",
+    "Delete a project label and remove it from tickets and saved-view filters atomically.",
   ),
   get_ticket: op(
     ticketInput,

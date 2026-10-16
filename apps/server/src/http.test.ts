@@ -267,6 +267,30 @@ describe("HTTP, realtime, and MCP", () => {
       await sdk.connect(transport);
       const tools = await sdk.listTools();
       expect(tools.tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
+      for (const name of [
+        "list_project_labels",
+        "create_project_label",
+        "update_project_label",
+        "delete_project_label",
+      ])
+        expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
+      const managedLabel = await client().call("create_project_label", {
+        projectId: project.id,
+        name: "MCP label",
+        color: "blue",
+      });
+      const catalog = await sdk.callTool({
+        name: "list_project_labels",
+        arguments: { projectId: project.id },
+      });
+      expect(catalog.structuredContent).toMatchObject({
+        result: [{ id: managedLabel.id, name: "MCP label", color: "blue", count: 0 }],
+      });
+      const deniedLabel = await sdk.callTool({
+        name: "create_project_label",
+        arguments: { projectId: project.id, name: "Requires admin" },
+      });
+      expect(deniedLabel.isError).toBe(true);
       const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
       const discovered = z
         .object({ result: z.array(z.object({ id: z.string(), role: z.null() })) })

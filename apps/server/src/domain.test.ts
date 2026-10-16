@@ -128,6 +128,220 @@ describe("ticket operations on PostgreSQL", () => {
       domain.execute("list_ticket_labels", { projectId: project.id }, outsider),
     ).rejects.toMatchObject({ status: 404 });
   });
+  it("manages label colors and atomically renames and deletes ticket and saved-view references", async () => {
+    const first = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Active labelled ticket", labels: ["bug", "keep"] },
+      owner,
+    );
+    const archived = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Archived labelled ticket", labels: ["bug"] },
+      owner,
+    );
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: archived.id,
+        expectedVersion: 1,
+        changes: { archived: true },
+      },
+      owner,
+    );
+    const catalog = await domain.execute("list_project_labels", { projectId: project.id }, owner);
+    const bug = catalog.find((label) => label.name === "bug")!;
+    expect(bug).toMatchObject({ color: "gray", count: 2, version: 1 });
+    const unused = await domain.execute(
+      "create_project_label",
+      { projectId: project.id, name: "planned", color: "purple" },
+      owner,
+    );
+    expect(
+      (await domain.execute("list_project_labels", { projectId: project.id }, owner)).find(
+        (label) => label.id === unused.id,
+      ),
+    ).toMatchObject({ color: "purple", count: 0 });
+    await domain.execute(
+      "save_view",
+      { projectId: project.id, name: "Bug work", filters: { label: "bug", priority: "high" } },
+      owner,
+    );
+    const cursor = (await domain.snapshot(owner, project.id)).cursor;
+    const recolored = await domain.execute(
+      "update_project_label",
+      { projectId: project.id, labelId: bug.id, expectedVersion: 1, name: "bug", color: "red" },
+      owner,
+    );
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: first.id }, owner))
+        .ticket.version,
+    ).toBe(1);
+    const renamed = await domain.execute(
+      "update_project_label",
+      {
+        projectId: project.id,
+        labelId: bug.id,
+        expectedVersion: recolored.version,
+        name: "defect, server",
+        color: "orange",
+      },
+      owner,
+    );
+    expect(renamed).toMatchObject({
+      id: bug.id,
+      name: "defect, server",
+      color: "orange",
+      version: 3,
+    });
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: first.id }, owner))
+        .ticket,
+    ).toMatchObject({ labels: ["defect, server", "keep"], version: 2 });
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: archived.id }, owner))
+        .ticket,
+    ).toMatchObject({ labels: ["defect, server"], archived: true, version: 3 });
+    expect(
+      (await domain.execute("list_views", { projectId: project.id }, owner))[0]?.filters,
+    ).toMatchObject({ label: "defect, server", priority: "high" });
+    expect(
+      (
+        await domain.execute(
+          "list_tickets",
+          { projectId: project.id, label: "defect, server" },
+          owner,
+        )
+      ).total,
+    ).toBe(1);
+    await expect(
+      domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: first.id,
+          expectedVersion: 1,
+          changes: { labels: ["bug"] },
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    await expect(
+      domain.execute(
+        "update_project_label",
+        {
+          projectId: project.id,
+          labelId: bug.id,
+          expectedVersion: 1,
+          name: "stale",
+          color: "blue",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    await expect(
+      domain.execute(
+        "update_project_label",
+        {
+          projectId: project.id,
+          labelId: bug.id,
+          expectedVersion: renamed.version,
+          name: "planned",
+          color: "blue",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "duplicate_label" });
+    await domain.execute(
+      "delete_project_label",
+      { projectId: project.id, labelId: bug.id, expectedVersion: renamed.version },
+      owner,
+    );
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: first.id }, owner))
+        .ticket.labels,
+    ).toEqual(["keep"]);
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: archived.id }, owner))
+        .ticket.labels,
+    ).toEqual([]);
+    expect(
+      (await domain.execute("list_views", { projectId: project.id }, owner))[0]?.filters,
+    ).not.toHaveProperty("label");
+    expect(
+      (await domain.execute("list_views", { projectId: project.id }, owner))[0]?.filters.priority,
+    ).toBe("high");
+    const events = (await domain.readEvents(owner, BigInt(cursor), project.id)).items;
+    expect(events.filter((event) => event.type === "ticket.updated")).toHaveLength(4);
+    expect(
+      events.filter((event) => event.type.startsWith("label.")).map((event) => event.type),
+    ).toEqual(["label.updated", "label.updated", "label.deleted"]);
+  });
+  it("enforces label administration, project isolation, and idempotent creation", async () => {
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const requestId = crypto.randomUUID();
+    const input = { projectId: project.id, name: "Shared name", color: "green", requestId };
+    const label = await domain.execute("create_project_label", input, owner);
+    expect(await domain.execute("create_project_label", input, owner)).toEqual(label);
+    await expect(
+      domain.execute("create_project_label", { projectId: project.id, name: "Shared name" }, owner),
+    ).rejects.toMatchObject({ code: "duplicate_label" });
+    expect(
+      await domain.execute("list_project_labels", { projectId: project.id }, writer),
+    ).toHaveLength(1);
+    await expect(
+      domain.execute("create_project_label", { projectId: project.id, name: "Denied" }, writer),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      domain.execute(
+        "update_project_label",
+        {
+          projectId: project.id,
+          labelId: label.id,
+          expectedVersion: 1,
+          name: "Denied",
+          color: "red",
+        },
+        writer,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      domain.execute(
+        "delete_project_label",
+        { projectId: project.id, labelId: label.id, expectedVersion: 1 },
+        writer,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      domain.execute("list_project_labels", { projectId: project.id }, outsider),
+    ).rejects.toMatchObject({ status: 404 });
+    const other = await domain.execute(
+      "create_project",
+      { key: `L${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Other label project" },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "delete_project_label",
+        { projectId: other.id, labelId: label.id, expectedVersion: 1 },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Agent freeform label", labels: ["new from agent"] },
+      writer,
+    );
+    expect(
+      (await domain.execute("list_project_labels", { projectId: project.id }, owner)).find(
+        (item) => item.name === "new from agent",
+      ),
+    ).toMatchObject({ color: "gray", count: 1 });
+  });
   it("normalizes incoming relationships, preserves inverse wording, and enforces blockers", async () => {
     const current = await ticket("Current work"),
       other = await ticket("Selected work");
