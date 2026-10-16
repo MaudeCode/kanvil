@@ -185,7 +185,7 @@ test("list properties persist and labels filter and sort the entire project", as
     expect((await table.locator('th[data-column="key"]').boundingBox())!.width).toBeCloseTo(100, 0);
   }
   await expect(table.locator('td[data-column="labels"]').first()).toContainText("standard");
-  await expect(table.getByText("rare, quoted 'label'", { exact: true })).toHaveCount(0);
+  await expect(table.getByText("rare, quoted 'label'", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Display", exact: true }).click();
   for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty"])
     await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
@@ -230,7 +230,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.reload();
   await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await expect(ticketRows(page)).toHaveCount(50);
+  await expect(ticketRows(page)).toHaveCount(51);
   await chooseTicketView(page, "Rare labels");
   await expect(ticketRows(page)).toHaveCount(1);
   for (const width of [390, 320]) {

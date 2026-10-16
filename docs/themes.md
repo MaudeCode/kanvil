@@ -31,7 +31,7 @@ Old built-in selections resolve to the corresponding named palette. The former d
 
 ## Density
 
-Tickets are grouped into collapsible status sections with counts. Ordering applies within each status. The single Load more button at the bottom appends additional tickets while keeping the existing rows visible.
+Tickets are grouped into collapsible status sections with counts. Ordering applies within each status. All matching tickets are shown, with no pagination or Load more controls.
 
 Ticket lists default to Compact rows. **Display → Row spacing → Comfortable** adds room without hiding titles or labels. **Display → Label display → All labels** shows every full label and scope inline, wrapping as needed. Property visibility, row spacing, and label display are personal browser preferences. Search, filters, and ordering remain shareable through the URL and saved views. Touch controls retain their larger targets on phones.
 

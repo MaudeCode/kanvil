@@ -71,7 +71,7 @@ const features = tableFeatures({
   rowSelectionFeature,
   columnVisibilityFeature,
 });
-const pageSize = 50;
+const pageSize = 100;
 const defaultVisibility = {
   kind: false,
   scopes: false,
@@ -261,9 +261,15 @@ export function TicketList({
       total: queries[pageQueries.findIndex((entry) => entry.status === status)]?.data?.total ?? 0,
     },
   }));
-  const canLoadMore = (group: (typeof groups)[number]) =>
-    !collapsed.has(group.status) && (pages[group.status] ?? 1) * pageSize < group.data.total;
-  const loadingMore = queries.some((query) => query.isPending);
+  const requiredPages = Object.fromEntries(
+    groups.map((group) => [group.status, Math.max(1, Math.ceil(group.data.total / pageSize))]),
+  );
+  const missingPages = visibleStates.some(
+    (status) => (pages[status] ?? 1) < (requiredPages[status] ?? 1),
+  );
+  useEffect(() => {
+    if (missingPages) setPaging({ filterKey, pages: requiredPages });
+  }, [filterKey, missingPages, requiredPages]);
   const latest = new Map<string, Ticket>();
   for (const group of groups)
     for (const ticket of group.data?.items ?? []) {
@@ -271,7 +277,7 @@ export function TicketList({
       if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
     }
   const tickets = {
-    isPending: pageQueries.some((entry, index) => entry.offset === 0 && queries[index]?.isPending),
+    isPending: missingPages || queries.some((query) => query.isPending),
     error: queries.find((query) => query.error)?.error,
     data: {
       items: [...latest.values()].filter((ticket) => !collapsed.has(ticket.status)),
@@ -463,6 +469,15 @@ export function TicketList({
       )}
       {tickets.isPending ? (
         <Loading />
+      ) : tickets.error ? (
+        <Button
+          disabled={queries.some((query) => query.isFetching)}
+          onClick={() => {
+            for (const query of queries) if (query.error) void query.refetch();
+          }}
+        >
+          Retry loading tickets
+        </Button>
       ) : (
         <div className="table-scroll">
           <Table
@@ -592,35 +607,11 @@ export function TicketList({
           )}
         </div>
       )}
-      <footer className="ticket-pagination flex items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
-        <span>
-          {latest.size < tickets.data.total
-            ? `${latest.size} of ${tickets.data.total} tickets`
-            : `${tickets.data.total} tickets`}
-        </span>
-        {(groups.some(canLoadMore) || loadingMore) && (
-          <Button
-            disabled={loadingMore}
-            aria-busy={loadingMore}
-            onClick={() =>
-              setPaging({
-                filterKey,
-                pages: {
-                  ...pages,
-                  ...Object.fromEntries(
-                    groups
-                      .filter(canLoadMore)
-                      .map((group) => [group.status, (pages[group.status] ?? 1) + 1]),
-                  ),
-                },
-              })
-            }
-          >
-            {loadingMore ? "Loading…" : "Load more"}
-            <ChevronDown />
-          </Button>
-        )}
-      </footer>
+      {!tickets.isPending && !tickets.error && (
+        <footer className="ticket-pagination pt-3 text-xs text-muted-foreground">
+          {tickets.data.total} tickets
+        </footer>
+      )}
       <Modal title="New ticket" open={createOpen} onOpenChange={setCreateOpen}>
         {createOpen && <TicketEditor projectId={project.id} onSaved={() => setCreateOpen(false)} />}
       </Modal>
