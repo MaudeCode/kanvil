@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/command";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { TicketTag } from "./ticket-tags.tsx";
 
 // Extends the list's existing filter popover with personal display preferences.
 export function TicketListControls({
@@ -186,7 +187,7 @@ export function TicketListControls({
                               setLabelsOpen(false);
                             }}
                           >
-                            <span className="min-w-0 break-words">{label.name}</span>
+                            <TicketTag tag={label.name} className="h-auto max-w-full" />
                             <span className="ml-auto text-xs text-muted-foreground">
                               {label.count}
                             </span>
@@ -303,7 +304,7 @@ export function TicketListControls({
           )}
           {search.label && (
             <Button variant="secondary" size="sm" onClick={() => filter({ label: undefined })}>
-              Label: {search.label}
+              Label: <TicketTag tag={search.label} />
               <X className="size-3" />
             </Button>
           )}

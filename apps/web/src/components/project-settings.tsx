@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Pencil, Settings2, Users } from "lucide-react";
+import { Pencil, Settings2, Users, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Project } from "@kanvil/contracts";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
@@ -21,9 +21,11 @@ import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
+import { ProjectLabelSettings } from "./project-label-settings.tsx";
 const sections = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "members", label: "Members", icon: Users },
+  { id: "labels", label: "Labels", icon: Tags },
 ];
 export function ProjectSettings({
   project,
@@ -31,7 +33,7 @@ export function ProjectSettings({
   onSectionChange,
 }: {
   project: Project;
-  section: "general" | "members";
+  section: "general" | "members" | "labels";
   onSectionChange: (section: string) => void;
 }) {
   const update = useOperation("update_project"),
@@ -132,6 +134,9 @@ export function ProjectSettings({
             scope="project"
             onChange={(email, role) => member.mutateAsync({ projectId: project.id, email, role })}
           />
+        </TabsContent>
+        <TabsContent value="labels">
+          <ProjectLabelSettings projectId={project.id} canAdmin={access.canAdmin} />
         </TabsContent>
       </SettingsLayout>
       <Modal title="Edit project" open={editing} onOpenChange={setEditing} busy={update.isPending}>

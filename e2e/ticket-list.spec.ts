@@ -15,6 +15,100 @@ async function expectFullWidth(table: Locator) {
   ).toBeLessThan(1);
 }
 
+test("project settings manage reusable colored labels across live ticket views", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "LABELSET", name: "Label settings" },
+    })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Ticket with managed labels", labels: ["bug", "keep"] },
+    })
+  ).json();
+  const observer = await page.context().newPage();
+  await observer.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  await expect(
+    observer.locator(".ticket-heading [data-label-color]").filter({ hasText: /^bug$/ }),
+  ).toHaveAttribute("data-label-color", "gray");
+  await page.goto(`/projects/${project.id}/settings?section=labels`);
+  await expect(page.getByRole("heading", { name: "Labels", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Edit label bug", exact: true }).click();
+  await page.getByRole("textbox", { name: "Label name", exact: true }).fill("Defect");
+  await page.getByRole("button", { name: "red label color", exact: true }).click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const liveLabel = observer
+    .locator(".ticket-heading [data-label-color]")
+    .filter({ hasText: /^Defect$/ });
+  await expect(liveLabel).toHaveAttribute("data-label-color", "red");
+  await page.getByRole("button", { name: "Edit label Defect", exact: true }).click();
+  await page.getByRole("button", { name: "orange label color", exact: true }).click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(liveLabel).toHaveAttribute("data-label-color", "orange");
+  await page.getByRole("button", { name: "New label", exact: true }).click();
+  await page.getByRole("textbox", { name: "Label name", exact: true }).fill("release, ready");
+  await page.getByRole("button", { name: "purple label color", exact: true }).click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Edit label release, ready", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search labels", exact: true }).fill("release");
+  await expect(page.getByRole("button", { name: "Edit label Defect", exact: true })).toHaveCount(0);
+  await page.goto(`/projects/${project.id}`);
+  const table = page.getByRole("table", { name: "Tickets" });
+  await expect(
+    table.locator('[data-label-color="orange"]').filter({ hasText: /^Defect$/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).fill("Ticket from managed label");
+  await page.getByRole("button", { name: "Choose labels", exact: true }).click();
+  await page.getByRole("option", { name: "release, ready", exact: true }).click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .locator('[data-label-color="purple"]')
+      .filter({ hasText: /release, ready/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    table.locator('[data-label-color="purple"]').filter({ hasText: /^release, ready$/ }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/projects/${project.id}/settings?section=labels`);
+  await expect(
+    page.getByRole("combobox", { name: "Project settings section", exact: true }),
+  ).toContainText("Labels");
+  const labelRow = page
+    .locator('[data-slot="item"]')
+    .filter({ has: page.getByRole("button", { name: "Edit label release, ready", exact: true }) });
+  expect((await labelRow.boundingBox())!.height).toBeLessThanOrEqual(72);
+  await page.getByRole("button", { name: "Edit label release, ready", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "purple label color", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Delete label Defect", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete label Defect", exact: true })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(liveLabel).toHaveCount(0);
+  const stored = await (
+    await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)
+  ).json();
+  expect(stored.ticket.labels).toEqual(["keep"]);
+  await observer.close();
+});
+
 test("priority icons distinguish every level and keep names in pickers", async ({ page }) => {
   await signIn(page);
   const project = await (

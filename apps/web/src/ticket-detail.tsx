@@ -1,6 +1,7 @@
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { Bell, BellOff, Pencil, ArrowLeft, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TicketTag } from "./components/ticket-tags.tsx";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -99,14 +100,10 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
             <h1>{ticket.title}</h1>
             <div className="tags">
               {ticket.labels.map((label) => (
-                <Badge variant="secondary" key={label}>
-                  {label}
-                </Badge>
+                <TicketTag tag={label} key={label} />
               ))}
               {ticket.scopes.map((scope) => (
-                <Badge variant="outline" key={scope}>
-                  {scope}
-                </Badge>
+                <TicketTag tag={scope} kind="scope" key={scope} />
               ))}
             </div>
           </header>

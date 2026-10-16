@@ -15,6 +15,7 @@ import {
   Outlet,
   RouterProvider,
   useNavigate,
+  useParams,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@kanvil/contracts";
 import {
   groupSettingsSearchSchema,
+  projectSettingsSearchSchema,
   settingsSearchSchema,
   adminSearchSchema,
   searchSchema,
@@ -71,6 +73,7 @@ import {
   ItemActions,
 } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
+import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 
 const TicketList = lazy(() =>
   import("./ticket-list.tsx").then((module) => ({ default: module.TicketList })),
@@ -162,6 +165,7 @@ function SignedInSession({
   );
 }
 function Shell() {
+  const { projectId } = useParams({ strict: false });
   const connection = useLive();
   const info = useQuery({
     queryKey: ["info"],
@@ -190,7 +194,9 @@ function Shell() {
             </Alert>
           )}
           <div id="main" className="content @container" tabIndex={-1}>
-            <Outlet />
+            <ProjectLabelProvider projectId={projectId}>
+              <Outlet />
+            </ProjectLabelProvider>
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -533,7 +539,7 @@ function WorkspaceSettingsPage() {
 const projectSettings = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/settings",
-  validateSearch: groupSettingsSearchSchema,
+  validateSearch: projectSettingsSearchSchema,
   component: ProjectSettingsPage,
 });
 function ProjectSettingsPage() {
@@ -547,7 +553,7 @@ function ProjectSettingsPage() {
       project={project}
       section={search.section}
       onSectionChange={(section) => {
-        void navigate({ search: groupSettingsSearchSchema.parse({ section }), replace: true });
+        void navigate({ search: projectSettingsSearchSchema.parse({ section }), replace: true });
       }}
     />
   ) : projects.isPending ? (

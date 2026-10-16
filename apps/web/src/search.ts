@@ -28,3 +28,6 @@ export const adminSearchSchema = z.object({
 export const groupSettingsSearchSchema = z.object({
   section: z.enum(["general", "members"]).catch("general").default("general"),
 });
+export const projectSettingsSearchSchema = groupSettingsSearchSchema.extend({
+  section: z.enum(["general", "members", "labels"]).catch("general").default("general"),
+});

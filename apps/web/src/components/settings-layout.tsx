@@ -4,6 +4,7 @@ import { useIsMobile } from "../hooks/use-mobile.ts";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 export function SettingsLayout({
   title,
   value,
@@ -75,22 +76,37 @@ export function SettingRow({
   title,
   description,
   children,
+  compact = false,
 }: {
   title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <Item className="setting-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-3.5 @max-[28rem]:flex-col @max-[28rem]:items-stretch">
-      <ItemContent>
-        <ItemTitle>{title}</ItemTitle>
+    <Item
+      className={cn(
+        "setting-row rounded-none border-x-0 border-t-0 border-b-border px-0",
+        compact ? "flex-nowrap py-2" : "py-3.5 @max-[28rem]:flex-col @max-[28rem]:items-stretch",
+      )}
+    >
+      <ItemContent className={compact ? "min-w-0 gap-0.5" : undefined}>
+        <ItemTitle className={compact ? "line-clamp-none max-w-full" : undefined}>
+          {title}
+        </ItemTitle>
         {description && (
-          <ItemDescription className="line-clamp-none max-w-xl whitespace-normal">
+          <ItemDescription
+            className={cn("line-clamp-none max-w-xl whitespace-normal", compact && "m-0 text-xs")}
+          >
             {description}
           </ItemDescription>
         )}
       </ItemContent>
-      {children && <ItemActions className="@max-[28rem]:justify-start">{children}</ItemActions>}
+      {children && (
+        <ItemActions className={compact ? "shrink-0" : "@max-[28rem]:justify-start"}>
+          {children}
+        </ItemActions>
+      )}
     </Item>
   );
 }

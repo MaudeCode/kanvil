@@ -1,27 +1,43 @@
 import { useId, useState } from "react";
-import { X } from "lucide-react";
+import { X, Plus } from "lucide-react";
 import { ticketFields, errorMessage } from "@kanvil/contracts";
 import { splitTags } from "@kanvil/contracts/drafts";
 import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TicketTag } from "./ticket-tags.tsx";
+import { useProjectLabels } from "./project-label-provider.tsx";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandItem,
+  CommandEmpty,
+} from "@/components/ui/command";
 export function TagInput({
   label,
   value,
   onChange,
+  kind = "label",
 }: {
   label: string;
   value: string[];
   onChange: (tags: string[]) => void;
+  kind?: "label" | "scope";
 }) {
+  const labels = useProjectLabels();
+  const [choosing, setChoosing] = useState(false);
   const id = useId(),
     [text, setText] = useState(""),
     [error, setError] = useState<unknown>();
   function commit(raw = text) {
     if (!raw.trim()) return;
+    add(splitTags(raw));
+  }
+  function add(tags: string[]) {
     try {
-      onChange(ticketFields.shape.labels.parse([...new Set([...value, ...splitTags(raw)])]));
+      onChange(ticketFields.shape.labels.parse([...new Set([...value, ...tags])]));
       setText("");
       setError(undefined);
     } catch (cause) {
@@ -33,7 +49,7 @@ export function TagInput({
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <div className="tag-input">
         {value.map((tag) => (
-          <Badge variant="secondary" key={tag} className="max-w-full gap-1 pr-0.5">
+          <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">
             <span className="break-words whitespace-normal">{tag}</span>
             <Button
               size="icon"
@@ -44,7 +60,7 @@ export function TagInput({
             >
               <X className="size-3" />
             </Button>
-          </Badge>
+          </TicketTag>
         ))}
         <Input
           id={id}
@@ -69,6 +85,37 @@ export function TagInput({
             } else if (event.key === "Backspace" && !text) onChange(value.slice(0, -1));
           }}
         />
+        {kind === "label" && !!labels.length && (
+          <Popover open={choosing} onOpenChange={setChoosing}>
+            <PopoverTrigger
+              render={<Button variant="ghost" size="icon" aria-label="Choose labels" />}
+            >
+              <Plus />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-0">
+              <Command>
+                <CommandInput placeholder="Search labels…" aria-label="Search project labels" />
+                <CommandList>
+                  {labels
+                    .filter((entry) => !value.includes(entry.name))
+                    .map((entry) => (
+                      <CommandItem
+                        key={entry.id}
+                        value={entry.name}
+                        onSelect={() => {
+                          add([entry.name]);
+                          setChoosing(false);
+                        }}
+                      >
+                        <TicketTag tag={entry.name} color={entry.color} />
+                      </CommandItem>
+                    ))}
+                  <CommandEmpty>No matching labels</CommandEmpty>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
       {!!error && <FieldError>{errorMessage(error)}</FieldError>}
     </Field>

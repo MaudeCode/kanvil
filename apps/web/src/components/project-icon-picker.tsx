@@ -1,13 +1,15 @@
+import { accentColorClasses } from "../lib/accent-colors.ts";
+import { AccentColorPicker } from "./accent-color-picker.tsx";
 import { useRef, useState } from "react";
 import { Icon } from "@iconify/react/offline";
 import { Camera, RotateCcw } from "lucide-react";
-import { projectIconColors, type Project } from "@kanvil/contracts";
+import { type Project } from "@kanvil/contracts";
 import { useOperation } from "../data.tsx";
 import { Button, ErrorNotice, Input, Loading, Modal } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { prepareSquareImage } from "../lib/browser.ts";
-import { ProjectIcon, projectIconTones, useIconLibrary } from "./project-icon.tsx";
+import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 export function ProjectIconPicker({
   project,
   disabled = false,
@@ -70,22 +72,12 @@ export function ProjectIconPicker({
                 setLimit(96);
               }}
             />
-            <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Icon color">
-              {projectIconColors.map((tone) => (
-                <Button
-                  key={tone}
-                  disabled={busy}
-                  variant={color === tone ? "secondary" : "ghost"}
-                  size="icon"
-                  aria-label={`${tone} icon color`}
-                  aria-pressed={color === tone}
-                  className={projectIconTones[tone]}
-                  onClick={() => setColor(tone)}
-                >
-                  <span className="size-3 rounded-full bg-current" />
-                </Button>
-              ))}
-            </div>
+            <AccentColorPicker
+              label="Icon color"
+              value={color}
+              onChange={setColor}
+              disabled={busy}
+            />
             {library.isPending ? (
               <Loading />
             ) : (
@@ -98,7 +90,7 @@ export function ProjectIconPicker({
                         <Button
                           key={name}
                           variant={name === project.iconName ? "secondary" : "ghost"}
-                          className={`aspect-square h-auto min-h-11 ${projectIconTones[color]}`}
+                          className={`aspect-square h-auto min-h-11 ${accentColorClasses[color]}`}
                           disabled={busy}
                           aria-label={`Choose ${name.replaceAll("-", " ")}`}
                           title={name.replaceAll("-", " ")}

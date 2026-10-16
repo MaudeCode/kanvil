@@ -262,6 +262,7 @@ export function TicketEditor({
             </p>
             <TagInput
               label="Scopes"
+              kind="scope"
               value={fields.scopes}
               onChange={(value) => set("scopes", value)}
             />
