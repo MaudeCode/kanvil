@@ -4,7 +4,8 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
-import { type Operation, type Workspace } from "@kanvil/contracts";
+import { type ChangeEvent, type Operation, type Workspace } from "@kanvil/contracts";
+import type { Query } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const auth = createAuthClient({ plugins: [adminClient(), oauthProviderClient()] });
@@ -43,6 +44,29 @@ export function useProjects() {
       active ? projects.filter((project) => project.workspaceId === active.id) : [],
   });
 }
+// Project-wide reads that only change on these event families; ticket traffic leaves them alone.
+const settledBy: Record<string, string[]> = {
+  list_members: ["membership.", "project."],
+  list_workspace_members: ["membership.", "project."],
+  list_project_labels: ["label.", "project."],
+  list_views: ["label.", "project."],
+  get_project: ["project.", "label."],
+};
+// Decides which cached queries a realtime event can have changed.
+export function affectedBy(event: ChangeEvent) {
+  return (query: Query) => {
+    const [namespace, , name, input] = query.queryKey;
+    if (namespace !== "kanvil") return false;
+    if (typeof name !== "string" || !input || typeof input !== "object") return true;
+    const families = settledBy[name];
+    if (families && !families.some((family) => event.type.startsWith(family))) return false;
+    const scope = input as { projectId?: unknown; ticketId?: unknown };
+    if (typeof scope.projectId !== "string") return true;
+    if (scope.projectId !== event.projectId) return false;
+    if (!event.ticketId || typeof scope.ticketId !== "string") return true;
+    return scope.ticketId === event.ticketId || scope.ticketId === event.data.key;
+  };
+}
 export function useLive(projectId?: string) {
   const cache = useQueryClient();
   const [state, setState] = useState("connecting");
@@ -52,7 +76,10 @@ export function useLive(projectId?: string) {
       .watch({
         ...(projectId ? { projectId } : {}),
         signal: controller.signal,
-        invalidate: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
+        invalidate: (event) =>
+          cache.invalidateQueries(
+            event ? { predicate: affectedBy(event) } : { queryKey: ["kanvil"] },
+          ),
         onState: setState,
       })
       .catch(() => setState("Sign in to reconnect"));

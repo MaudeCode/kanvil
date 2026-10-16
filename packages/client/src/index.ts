@@ -231,7 +231,7 @@ export function createClient(options: {
     },
     watch(
       observer: Pick<Parameters<typeof api.subscribe>[0], "projectId" | "signal" | "onState"> & {
-        invalidate: () => void | Promise<void>;
+        invalidate: (event?: ChangeEvent) => void | Promise<void>;
       },
     ) {
       let initial = true;
@@ -239,7 +239,7 @@ export function createClient(options: {
         ...(observer.projectId ? { projectId: observer.projectId } : {}),
         signal: observer.signal,
         ...(observer.onState ? { onState: observer.onState } : {}),
-        onEvent: observer.invalidate,
+        onEvent: (event) => observer.invalidate(event),
         onCursor: async () => {
           if (initial) {
             initial = false;
