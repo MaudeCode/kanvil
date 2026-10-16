@@ -5,6 +5,7 @@ import {
   Archive,
   Bell,
   BellOff,
+  CircleDot,
   Copy,
   ExternalLink,
   Flag,
@@ -142,7 +143,10 @@ export function TicketContextMenu({
             Edit ticket
           </ContextMenuItem>
           <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={!access.canWrite}>Status</ContextMenuSubTrigger>
+            <ContextMenuSubTrigger disabled={!access.canWrite}>
+              <CircleDot />
+              Status
+            </ContextMenuSubTrigger>
             <ContextMenuSubContent>
               <ContextMenuRadioGroup
                 value={current.status}

@@ -39,7 +39,7 @@ test("project settings manage reusable colored labels across live ticket views",
   const observer = await page.context().newPage();
   await observer.goto(`/projects/${project.id}/tickets/${ticket.id}`);
   await expect(
-    observer.locator(".ticket-heading [data-label-color]").filter({ hasText: /^bug$/ }),
+    observer.locator(".ticket-properties [data-label-color]").filter({ hasText: /^bug$/ }),
   ).toHaveAttribute("data-label-color", "gray");
   await page.goto(`/projects/${project.id}/settings?section=labels`);
   await expect(page.getByRole("heading", { name: "Labels", exact: true })).toBeVisible();
@@ -49,7 +49,7 @@ test("project settings manage reusable colored labels across live ticket views",
   await page.getByRole("button", { name: "Save label", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const liveLabel = observer
-    .locator(".ticket-heading [data-label-color]")
+    .locator(".ticket-properties [data-label-color]")
     .filter({ hasText: /^Defect$/ });
   await expect(liveLabel).toHaveAttribute("data-label-color", "red");
   await page.getByRole("button", { name: "Edit label Defect", exact: true }).click();

@@ -9,7 +9,6 @@ import {
   Minimize2,
   RotateCcw,
   AlertTriangle,
-  Tag,
   Bot,
   ListChecks,
   SlidersHorizontal,
@@ -25,8 +24,7 @@ import { MarkdownField } from "./components/markdown-field.tsx";
 import { TicketPicker } from "./components/ticket-picker.tsx";
 import { DatePicker, endOfDay } from "./components/date-picker.tsx";
 import { TagInput } from "./components/tag-input.tsx";
-import { TicketTag } from "./components/ticket-tags.tsx";
-import { TicketProperty } from "./components/ticket-property.tsx";
+import { TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { cn } from "@/lib/utils";
 
@@ -172,43 +170,7 @@ export function TicketEditor({
         value={fields.difficulty}
         onChange={(difficulty) => set("difficulty", difficulty)}
       />
-      <Popover>
-        <PopoverTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(pill, "max-w-96")}
-              aria-label={
-                fields.labels.length ? `Edit labels: ${fields.labels.join(", ")}` : "Edit labels"
-              }
-            />
-          }
-        >
-          <Tag className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          {fields.labels.length === 0 ? (
-            "Labels"
-          ) : (
-            <span className="flex min-w-0 items-center gap-1">
-              {fields.labels.slice(0, 3).map((label) => (
-                <TicketTag key={label} tag={label} className="max-w-28">
-                  <span className="truncate">{label}</span>
-                </TicketTag>
-              ))}
-              {fields.labels.length > 3 && (
-                <span className="text-xs text-muted-foreground">+{fields.labels.length - 3}</span>
-              )}
-            </span>
-          )}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-3">
-          <TagInput
-            label="Labels"
-            value={fields.labels}
-            onChange={(value) => set("labels", value)}
-          />
-        </PopoverContent>
-      </Popover>
+      <TagsProperty value={fields.labels} onChange={(value) => set("labels", value)} />
       <DatePicker
         variant="pill"
         label="Due date"

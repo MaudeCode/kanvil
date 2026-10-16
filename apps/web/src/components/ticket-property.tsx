@@ -7,6 +7,7 @@ import {
   CircleUserRound,
   FlaskConical,
   Sparkles,
+  Tag,
   Wrench,
 } from "lucide-react";
 import {
@@ -22,6 +23,8 @@ import {
 import { api, useIdentity, useOperation } from "../data.tsx";
 import { TicketIndicator, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
+import { TicketTag } from "./ticket-tags.tsx";
+import { TagInput } from "./tag-input.tsx";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -343,4 +346,81 @@ export function useTicketChange(ticket: Pick<Ticket, "id" | "projectId" | "versi
         });
     },
   };
+}
+
+// Labels or scopes as a composer pill or a sidebar row: the tags show on the trigger, the editor
+// opens in a popover.
+export function TagsProperty({
+  kind = "label",
+  value,
+  onChange,
+  variant = "pill",
+  disabled = false,
+  className,
+}: {
+  kind?: "label" | "scope";
+  value: string[];
+  onChange: (tags: string[]) => void;
+  variant?: "pill" | "row";
+  disabled?: boolean;
+  className?: string;
+}) {
+  const label = kind === "label" ? "Labels" : "Scopes",
+    shown = variant === "pill" ? value.slice(0, 3) : value,
+    hidden = value.length - shown.length;
+  const trigger = (
+    <PopoverTrigger
+      disabled={disabled}
+      render={
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "max-w-full min-w-0 justify-start font-normal",
+            variant === "pill" && "h-7 max-w-96 border border-transparent px-2 hover:border-border",
+            variant === "row" && "h-auto min-h-7 w-full px-2 py-1",
+            className,
+          )}
+          aria-label={
+            value.length
+              ? `Edit ${label.toLowerCase()}: ${value.join(", ")}`
+              : `Edit ${label.toLowerCase()}`
+          }
+        />
+      }
+    >
+      {variant === "pill" && (
+        <Tag className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      )}
+      {value.length === 0 ? (
+        <span className="text-muted-foreground">
+          {variant === "pill" ? label : `No ${label.toLowerCase()}`}
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
+          {shown.map((tag) => (
+            <TicketTag key={tag} tag={tag} kind={kind} className="max-w-28">
+              <span className="truncate">{tag}</span>
+            </TicketTag>
+          ))}
+          {hidden > 0 && <span className="text-xs text-muted-foreground">+{hidden}</span>}
+        </span>
+      )}
+    </PopoverTrigger>
+  );
+  return (
+    <Popover>
+      {variant === "row" ? (
+        <div className="grid grid-cols-[80px_minmax(0,1fr)] items-start gap-2">
+          <span className="pt-1.5 text-xs text-muted-foreground">{label}</span>
+          {trigger}
+        </div>
+      ) : (
+        trigger
+      )}
+      <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-3">
+        <TagInput label={label} kind={kind} value={value} onChange={onChange} />
+      </PopoverContent>
+    </Popover>
+  );
 }
