@@ -819,7 +819,11 @@
   }
   .ticket-table td[data-column="labels"],
   .ticket-table td[data-column="scopes"] {
+    flex-basis: 100%;
     order: 2;
+  }
+  .ticket-table td:is([data-column="labels"], [data-column="scopes"]):empty {
+    display: none;
   }
   .ticket-table td[data-column="createdAt"]::before,
   .ticket-table td[data-column="updatedAt"]::before {

@@ -1,6 +1,29 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
 import { appearance, choose } from "./controls.ts";
+
+async function expectSeparateTagRows(table: Locator) {
+  const layouts = await table.locator("tbody tr").evaluateAll((rows) =>
+    rows.map((row) => {
+      const cells = [...row.querySelectorAll<HTMLTableCellElement>("td")];
+      const metadata = cells.filter(
+        (cell) => !["select", "title", "labels", "scopes"].includes(cell.dataset.column ?? ""),
+      );
+      const metadataBottom = Math.max(
+        ...metadata.map((cell) => cell.getBoundingClientRect().bottom),
+      );
+      const titleLeft = row.querySelector('[data-column="title"]')!.getBoundingClientRect().left;
+      return cells
+        .filter((cell) => ["labels", "scopes"].includes(cell.dataset.column ?? ""))
+        .every((cell) => {
+          const bounds = cell.getBoundingClientRect();
+          if (!cell.querySelector(".ticket-tags-trigger")) return bounds.height === 0;
+          return bounds.top >= metadataBottom && Math.abs(bounds.left - titleLeft) < 1;
+        });
+    }),
+  );
+  expect(layouts).toEqual(layouts.map(() => true));
+}
 
 test("narrow ticket lists keep one toolbar, compact metadata, and accessible label previews", async ({
   page,
@@ -30,7 +53,8 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
         await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
           data: {
             title: i === 0 ? title : `Related work ${i}`,
-            labels,
+            labels: i === 0 ? labels : i === 1 ? ["bug"] : labels.slice(-2),
+            scopes: i === 2 ? ["server"] : [],
             difficulty: "low",
             priority: "urgent",
             status: "done",
@@ -49,7 +73,11 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
       await expect(row).toBeVisible();
       const bounds = await row.boundingBox();
       expect(bounds!.y).toBeLessThanOrEqual(160);
-      if (width <= 650) expect(bounds!.height).toBeLessThanOrEqual(140);
+      if (width <= 650) {
+        const titleBounds = await row.locator(".ticket-title").boundingBox();
+        expect(bounds!.height - titleBounds!.height).toBeLessThanOrEqual(90);
+        await expectSeparateTagRows(table);
+      }
       expect(
         await row
           .locator(".ticket-title")
@@ -69,6 +97,9 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
     }
   }
   await page.getByRole("button", { name: "Display", exact: true }).click();
+  for (const property of ["Status", "Priority", "Difficulty"])
+    await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
+  await page.getByRole("checkbox", { name: "Scopes", exact: true }).check();
   await choose(page, "Label display", "All labels");
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
@@ -76,6 +107,7 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
     await appearance(page, mode);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
+      if (width <= 650) await expectSeparateTagRows(table);
       const inlineLabels = row.getByRole("button", {
         name: `Labels: ${labels.join(", ")}`,
         exact: true,
