@@ -14,13 +14,19 @@ Unattended consumers use revocable, project-scoped API credentials in `Authoriza
 
 Use the ticket's current `version` as `expectedVersion` for updates. A stale version returns `409 version_conflict`; fetch the current ticket and reconcile the change.
 
-Reuse the same UUID `requestId` when retrying a write. Reusing it with a different operation or payload returns `409 idempotency_conflict`. Bulk edits either all commit or all roll back.
+Reuse the same UUID `requestId` when retrying a write. Reusing it with a different operation or payload returns `409 idempotency_conflict`. Bulk edits either all commit or all roll back, and publish one `ticket.updated` event per ticket with consecutive IDs in a single batch.
+
+Signed-in sessions may make `KANVIL_SESSION_WRITE_LIMIT` non-GET requests per minute (120 by default); exceeding it returns `429 rate_limited` with a `Retry-After` header. Credentials keep the rate limit applied by the authentication layer.
 
 Claims require an eligible ticket and current version. Successful claiming moves it to In progress. Renew an unexpired claim using its ID and the same credential. Once a ticket has been claimed, machine ticket updates and evidence submissions always require a current matching claim ID, including after release or recovery. Submit completion and evidence before releasing ownership. Human sessions can edit and reschedule work without a machine claim. Release unexpired ownership after the worker stops or completes. The ticket response exposes `canReleaseClaim` for the exact credential or client identity; sharing an account does not confer ownership. An expired claim remains blocking until a project administrator confirms the old worker stopped and explicitly recovers it; recovery does not automatically reschedule work.
 
 Evidence records identify the submitting account and supplied commit. A reported passing outcome is an assertion by that identity, not independent verification by Kanvil.
 
 Attachments use `upload_attachment` or the corresponding HTTP POST with `name`, `contentType`, and base64 `data`, up to 10 MB. Bytes and metadata commit together in PostgreSQL. Download content at `/api/v1/projects/{projectId}/attachments/{id}/content` using the same authorization. Filenames are metadata, never filesystem paths. Deleting an attachment deletes its bytes transactionally.
+
+Tickets carry an optional `dueAt` ISO timestamp. `list_tickets` accepts `due` as `overdue`, `today`, `week`, `scheduled`, or `none` (open tickets only for the first three) and `sort: "due"` for soonest first with undated tickets last. Other sorts: `priority` (default), `updated`, `created`, `title`, `labels`, `number`, `status`, `difficulty`, `kind`, and `assignee`. Each has a natural direction (newest first for `updated` and `created`, ascending otherwise); pass `order: "asc"` or `"desc"` to override it. Ties break by ticket number, and null values sort last in both directions. The `assigneeId` filter takes a user id or `none` for unassigned tickets. `list_projects` returns `openTickets` and `overdueTickets` per project (unarchived tickets not done or cancelled; overdue means a due date in the past).
+
+`search_tickets` (`GET /api/v1/tickets/search?q=...`) finds tickets by exact key or text across every project the caller can read, optionally limited to one `workspaceId`, returning each ticket with its project `id`, `key`, and `name`. Exact key matches sort first.
 
 Use `list_tickets` with `parentId` set to a parent UUID or ticket key to page through child tickets. Set `archived: "include"` to include archived children. `list_relations` also returns the current source/target keys and full titles, so consumers can show readable dependency context without separate lookups.
 

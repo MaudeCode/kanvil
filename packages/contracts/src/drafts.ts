@@ -7,7 +7,11 @@ export const ticketDefaults = operations.create_ticket.input
   .parse({});
 
 export const ticketDraftSchema = z.object({
-  fields: ticketFields.extend({ title: z.string().max(500), parentId: z.string().nullable() }),
+  fields: ticketFields.extend({
+    title: z.string().max(500),
+    parentId: z.string().nullable(),
+    dueAt: z.iso.datetime().nullable().default(null),
+  }),
   version: z.number().int().positive().optional(),
 });
 export function createTicketDraft(ticket?: Ticket): z.output<typeof ticketDraftSchema> {

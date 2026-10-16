@@ -1,8 +1,18 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import { and, asc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  inArray,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { projectSchema } from "@kanvil/contracts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
   members,
@@ -13,29 +23,29 @@ import {
   workspaces,
   workspaceMembers,
 } from "./schema.ts";
-import { labelUsage, updateTicket } from "./ticket-operations.ts";
+import { labelUsage, updateTicketRow } from "./ticket-operations.ts";
 import {
   accountByEmail,
+  assertVersion,
   fail,
   project,
   publish,
-  requireRow,
+  publishMany,
+  toProject,
   workspace,
   type Handlers,
   type Context,
+  one,
 } from "./domain.ts";
 
 async function getLabel(ctx: Context, labelId: string, expectedVersion: number) {
-  const label = requireRow(
-    (
-      await ctx.db
-        .select()
-        .from(projectLabels)
-        .where(and(eq(projectLabels.projectId, project(ctx).id), eq(projectLabels.id, labelId)))
-    )[0],
+  const label = one(
+    await ctx.db
+      .select()
+      .from(projectLabels)
+      .where(and(eq(projectLabels.projectId, project(ctx).id), eq(projectLabels.id, labelId))),
   );
-  if (label.version !== expectedVersion)
-    fail(409, "version_conflict", "This label changed. Reopen the editor before saving.");
+  assertVersion(label, expectedVersion, "label", "saving");
   return label;
 }
 async function availableLabelName(ctx: Context, name: string, exceptId?: string) {
@@ -60,17 +70,23 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
     .select()
     .from(tickets)
     .where(and(eq(tickets.projectId, project(ctx).id), sql`${name} = ANY(${tickets.labels})`));
+  const pending = [];
   for (const ticket of affected)
-    await updateTicket(ctx, {
-      projectId: project(ctx).id,
-      ticketId: ticket.id,
-      expectedVersion: ticket.version,
-      changes: {
-        labels: replacement
-          ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
-          : ticket.labels.filter((tag) => tag !== name),
-      },
-    });
+    pending.push(
+      (
+        await updateTicketRow(ctx, {
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          expectedVersion: ticket.version,
+          changes: {
+            labels: replacement
+              ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
+              : ticket.labels.filter((tag) => tag !== name),
+          },
+        })
+      ).event,
+    );
+  await publishMany(ctx, pending);
   await ctx.db
     .update(views)
     .set({
@@ -115,13 +131,11 @@ export const projectHandlers: Pick<
   },
   async create_project_label(ctx, input) {
     await availableLabelName(ctx, input.name);
-    const label = requireRow(
-      (
-        await ctx.db
-          .insert(projectLabels)
-          .values({ projectId: project(ctx).id, name: input.name, color: input.color })
-          .returning()
-      )[0],
+    const label = one(
+      await ctx.db
+        .insert(projectLabels)
+        .values({ projectId: project(ctx).id, name: input.name, color: input.color })
+        .returning(),
     );
     await publish(ctx, "label.created", null, {
       labelId: label.id,
@@ -134,14 +148,12 @@ export const projectHandlers: Pick<
   async update_project_label(ctx, input) {
     const current = await getLabel(ctx, input.labelId, input.expectedVersion);
     await availableLabelName(ctx, input.name, current.id);
-    const label = requireRow(
-      (
-        await ctx.db
-          .update(projectLabels)
-          .set({ name: input.name, color: input.color, version: current.version + 1 })
-          .where(eq(projectLabels.id, current.id))
-          .returning()
-      )[0],
+    const label = one(
+      await ctx.db
+        .update(projectLabels)
+        .set({ name: input.name, color: input.color, version: current.version + 1 })
+        .where(eq(projectLabels.id, current.id))
+        .returning(),
     );
     if (current.name !== label.name) await changeLabelUsage(ctx, current.name, label.name);
     await publish(ctx, "label.updated", null, {
@@ -165,12 +177,7 @@ export const projectHandlers: Pick<
   },
   async set_project_icon(ctx, input) {
     const current = project(ctx);
-    if (current.version !== input.expectedVersion)
-      fail(
-        409,
-        "version_conflict",
-        "Project appearance changed. Reopen the icon picker before saving.",
-      );
+    assertVersion(current, input.expectedVersion, "project icon", "saving");
     const icon = input.icon;
     if (icon?.kind === "library" && !icons.icons[icon.name])
       fail(400, "invalid_icon", "Choose an icon from the installed library");
@@ -179,27 +186,52 @@ export const projectHandlers: Pick<
       objectId = crypto.randomUUID();
       await ctx.blobs.put(ctx.db, objectId, decodeImage(icon), icon.contentType);
     }
-    const row = requireRow(
-      (
-        await ctx.db
-          .update(projects)
-          .set({
-            iconName: icon?.kind === "library" ? icon.name : null,
-            iconColor: icon?.kind === "library" ? icon.color : "default",
-            image: objectId ? `/api/v1/projects/${current.id}/icon?v=${objectId}` : null,
-            iconObjectId: objectId,
-            version: current.version + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(projects.id, current.id))
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .update(projects)
+        .set({
+          iconName: icon?.kind === "library" ? icon.name : null,
+          iconColor: icon?.kind === "library" ? icon.color : "default",
+          image: objectId ? `/api/v1/projects/${current.id}/icon?v=${objectId}` : null,
+          iconObjectId: objectId,
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, current.id))
+        .returning(),
     );
     await publish(ctx, "project.updated", null, { version: row.version });
     return row;
   },
   async list_projects(ctx, input) {
-    return accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    const rows = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    if (!rows.length) return [];
+    const counts = await ctx.db
+      .select({
+        projectId: tickets.projectId,
+        open: count(),
+        overdue: count(sql`CASE WHEN ${tickets.dueAt} < now() THEN 1 END`),
+      })
+      .from(tickets)
+      .where(
+        and(
+          inArray(
+            tickets.projectId,
+            rows.map((row) => row.id),
+          ),
+          eq(tickets.archived, false),
+          notInArray(tickets.status, ["done", "cancelled"]),
+        ),
+      )
+      .groupBy(tickets.projectId);
+    return rows.map((row) => {
+      const stats = counts.find((entry) => entry.projectId === row.id);
+      return {
+        ...toProject(row),
+        openTickets: stats?.open ?? 0,
+        overdueTickets: stats?.overdue ?? 0,
+      };
+    });
   },
   async create_project(ctx, input) {
     if (ctx.actor.projectIds)
@@ -229,13 +261,11 @@ export const projectHandlers: Pick<
             .limit(1);
       workspaceId = available[0]?.workspaceId;
       if (!workspaceId) {
-        const personal = requireRow(
-          (
-            await ctx.db
-              .insert(workspaces)
-              .values({ name: "Personal workspace", slug: `personal-${crypto.randomUUID()}` })
-              .returning()
-          )[0],
+        const personal = one(
+          await ctx.db
+            .insert(workspaces)
+            .values({ name: "Personal workspace", slug: `personal-${crypto.randomUUID()}` })
+            .returning(),
         );
         workspaceId = personal.id;
         await ctx.db
@@ -248,56 +278,39 @@ export const projectHandlers: Pick<
         .length
     )
       fail(409, "duplicate_prefix", "This project prefix is already in use");
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(projects)
-          .values({
-            workspaceId,
-            visibility: input.visibility,
-            key: input.key,
-            name: input.name,
-            description: input.description,
-          })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(projects)
+        .values({
+          workspaceId,
+          visibility: input.visibility,
+          key: input.key,
+          name: input.name,
+          description: input.description,
+        })
+        .returning(),
     );
     await ctx.db.insert(members).values({ projectId: row.id, userId: ctx.actor.id, role: "admin" });
-    await publish(
-      {
-        ...ctx,
-        project: projectSchema.parse({
-          ...row,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        }),
-      },
-      "project.created",
-      null,
-      { projectId: row.id },
-    );
+    await publish({ ...ctx, project: toProject(row) }, "project.created", null, {
+      projectId: row.id,
+    });
     return row;
   },
   async update_project(ctx, input) {
     const current = project(ctx);
-    if (current.version !== input.expectedVersion)
-      fail(409, "version_conflict", "The project changed; reload before editing", {
-        currentVersion: current.version,
-      });
-    const row = requireRow(
-      (
-        await ctx.db
-          .update(projects)
-          .set({
-            name: input.name,
-            ...(input.visibility ? { visibility: input.visibility } : {}),
-            description: input.description,
-            version: current.version + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(projects.id, current.id))
-          .returning()
-      )[0],
+    assertVersion(current, input.expectedVersion, "project");
+    const row = one(
+      await ctx.db
+        .update(projects)
+        .set({
+          name: input.name,
+          ...(input.visibility ? { visibility: input.visibility } : {}),
+          description: input.description,
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, current.id))
+        .returning(),
     );
     await publish(ctx, "project.updated", null, { version: row.version });
     return row;
@@ -396,34 +409,30 @@ export const projectHandlers: Pick<
       .orderBy(views.name);
   },
   async save_view(ctx, input) {
-    return requireRow(
-      (
-        await ctx.db
-          .insert(views)
-          .values({
-            projectId: project(ctx).id,
-            userId: ctx.actor.id,
-            name: input.name,
-            filters: input.filters,
-          })
-          .returning({ id: views.id })
-      )[0],
+    return one(
+      await ctx.db
+        .insert(views)
+        .values({
+          projectId: project(ctx).id,
+          userId: ctx.actor.id,
+          name: input.name,
+          filters: input.filters,
+        })
+        .returning({ id: views.id }),
     );
   },
   async delete_view(ctx, input) {
-    requireRow(
-      (
-        await ctx.db
-          .delete(views)
-          .where(
-            and(
-              eq(views.projectId, project(ctx).id),
-              eq(views.userId, ctx.actor.id),
-              eq(views.id, input.viewId),
-            ),
-          )
-          .returning()
-      )[0],
+    one(
+      await ctx.db
+        .delete(views)
+        .where(
+          and(
+            eq(views.projectId, project(ctx).id),
+            eq(views.userId, ctx.actor.id),
+            eq(views.id, input.viewId),
+          ),
+        )
+        .returning(),
     );
     return { ok: true };
   },

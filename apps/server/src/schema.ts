@@ -119,6 +119,7 @@ export const tickets = pgTable(
     automationReady: boolean("automation_ready").notNull().default(false),
     claimRequired: boolean("claim_required").notNull().default(false),
     holdReason: text("hold_reason"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
     archived: boolean("archived").notNull().default(false),
     createdBy: text("created_by")
       .notNull()

@@ -77,12 +77,63 @@ export const ticketFilter = z
     kind: z.enum(kinds).optional(),
     difficulty: z.enum(difficulties).optional(),
     label: z.string().max(40).optional(),
-    assigneeId: id.optional(),
+    // A user id, or "none" for unassigned tickets.
+    assigneeId: z.union([id, z.literal("none")]).optional(),
     parentId: id.optional(),
     archived: z.enum(["include", "only", "exclude"]).default("exclude"),
-    sort: z.enum(["priority", "updated", "created", "title", "labels"]).default("priority"),
+    due: z.enum(["overdue", "today", "week", "scheduled", "none"]).optional(),
+    sort: z
+      .enum([
+        "priority",
+        "updated",
+        "created",
+        "title",
+        "labels",
+        "due",
+        "number",
+        "status",
+        "difficulty",
+        "kind",
+        "assignee",
+      ])
+      .default("priority"),
+    order: z.enum(["asc", "desc"]).optional(),
   })
   .strict();
+export const sortLabels: Record<z.output<typeof ticketFilter>["sort"], string> = {
+  priority: "Priority",
+  updated: "Recently updated",
+  created: "Recently created",
+  title: "Title",
+  labels: "Labels",
+  due: "Due date",
+  number: "Ticket number",
+  status: "Status",
+  difficulty: "Difficulty",
+  kind: "Kind",
+  assignee: "Assignee",
+};
+// The direction each sort uses unless the caller sets `order`.
+export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" | "desc"> = {
+  priority: "asc",
+  updated: "desc",
+  created: "desc",
+  title: "asc",
+  labels: "asc",
+  due: "asc",
+  number: "asc",
+  status: "asc",
+  difficulty: "asc",
+  kind: "asc",
+  assignee: "asc",
+};
+export const dueFilterLabels: Record<NonNullable<z.output<typeof ticketFilter>["due"]>, string> = {
+  overdue: "Overdue",
+  today: "Due today",
+  week: "Due this week",
+  scheduled: "Has a due date",
+  none: "No due date",
+};
 export const ticketFields = z
   .object({
     title: text.max(500).overwrite((value) => value.replace(/\s+/gu, " ")),
@@ -98,6 +149,7 @@ export const ticketFields = z
     parentId: z.uuid().nullable(),
     automationReady: z.boolean(),
     holdReason: z.string().trim().max(2000).nullable(),
+    dueAt: z.iso.datetime().nullable(),
     archived: z.boolean(),
   })
   .strict();
@@ -416,7 +468,12 @@ export const operations = {
   ),
   list_projects: op(
     z.object({ workspaceId: z.uuid().optional() }),
-    z.array(projectSchema),
+    z.array(
+      projectSchema.extend({
+        openTickets: z.number().int().nonnegative(),
+        overdueTickets: z.number().int().nonnegative(),
+      }),
+    ),
     "GET",
     "/projects",
     "read",
@@ -595,6 +652,7 @@ export const operations = {
         priority: z.enum(priorities).default("medium"),
         kind: z.enum(kinds).default("feature"),
         difficulty: z.enum(difficulties).nullable().default(null),
+        dueAt: z.iso.datetime().nullable().default(null),
         labels: tags.default([]),
         scopes: tags.default([]),
         assigneeId: z.string().nullable().default(null),
@@ -653,6 +711,27 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}",
     "admin",
     "Delete a ticket and publish a deletion event.",
+  ),
+  search_tickets: op(
+    z
+      .object({
+        q: z.string().trim().min(1).max(200),
+        workspaceId: z.uuid().optional(),
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+      })
+      .strict(),
+    z.object({
+      items: z.array(
+        z.object({
+          ticket: ticketSchema,
+          project: z.object({ id: z.uuid(), key: z.string(), name: z.string() }),
+        }),
+      ),
+    }),
+    "GET",
+    "/tickets/search",
+    "read",
+    "Search tickets by key or text across every accessible project, optionally within one workspace.",
   ),
   list_eligible_tickets: op(
     projectInput.extend(pagination),

@@ -1,4 +1,20 @@
-import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  isNotNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+  type AnyColumn,
+} from "drizzle-orm";
 import {
   claims,
   members,
@@ -9,6 +25,7 @@ import {
   tickets,
 } from "./schema.ts";
 import {
+  assertVersion,
   assertWorkerClaim,
   ownsLiveClaim,
   complete,
@@ -16,11 +33,18 @@ import {
   getTicket,
   project,
   publish,
+  publishMany,
   requireRow,
   type Context,
   type Handlers,
+  type PendingEvent,
+  one,
 } from "./domain.ts";
-import type { ParsedInput, Output } from "@kanvil/contracts";
+import { accessibleProjectRows } from "./project-access.ts";
+import { defaultOrder, type ParsedInput, type Output } from "@kanvil/contracts";
+// Contracts carry ISO strings; the column stores a timestamp.
+const dueColumn = (dueAt: string | null | undefined) =>
+  dueAt === undefined ? {} : { dueAt: dueAt ? new Date(dueAt) : null };
 
 async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelect)[]) {
   const ids = selected.map((ticket) => ticket.id);
@@ -134,32 +158,40 @@ export async function assertNoCycle(ctx: Context, sourceId: string, targetId: st
     pending.push(...(edges.get(node) ?? []));
   }
 }
-export async function updateTicket(ctx: Context, input: ParsedInput<"update_ticket">) {
+// Applies one update and returns its event so callers can publish singly or in a batch.
+export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_ticket">) {
   const current = await getTicket(ctx, input.ticketId);
-  if (current.version !== input.expectedVersion)
-    fail(409, "version_conflict", "The ticket changed; reload before editing", {
-      currentVersion: current.version,
-    });
+  assertVersion(current, input.expectedVersion, "ticket");
   await assertWorkerClaim(ctx, current, input.claimId);
   await validateReferences(ctx, current.id, input.changes);
-  const row = requireRow(
-    (
-      await ctx.db
-        .update(tickets)
-        .set({ ...input.changes, version: current.version + 1, updatedAt: new Date() })
-        .where(eq(tickets.id, current.id))
-        .returning()
-    )[0],
+  const { dueAt, ...changes } = input.changes;
+  const row = one(
+    await ctx.db
+      .update(tickets)
+      .set({
+        ...changes,
+        ...dueColumn(dueAt),
+        version: current.version + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(tickets.id, current.id))
+      .returning(),
   );
   if (row.assigneeId)
     await ctx.db
       .insert(subscriptions)
       .values({ projectId: row.projectId, ticketId: row.id, userId: row.assigneeId })
       .onConflictDoNothing();
-  await publish(ctx, "ticket.updated", row.id, {
-    version: row.version,
-    changedFields: Object.keys(input.changes),
-  });
+  const event: PendingEvent = {
+    type: "ticket.updated",
+    ticketId: row.id,
+    data: { version: row.version, changedFields: Object.keys(input.changes) },
+  };
+  return { row, event };
+}
+export async function updateTicket(ctx: Context, input: ParsedInput<"update_ticket">) {
+  const { row, event } = await updateTicketRow(ctx, input);
+  await publish(ctx, event.type, event.ticketId, event.data);
   return row;
 }
 export function labelUsage(ctx: Context, archived: "include" | "exclude" | "only") {
@@ -178,6 +210,47 @@ export function labelUsage(ctx: Context, archived: "include" | "exclude" | "only
     .from(labels)
     .groupBy(labels.name);
 }
+function dueWhere(due: ParsedInput<"list_tickets">["due"]) {
+  const now = new Date(),
+    endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  const open = and(ne(tickets.status, "done"), ne(tickets.status, "cancelled"));
+  switch (due) {
+    case "overdue":
+      return and(lt(tickets.dueAt, now), open);
+    case "today":
+      return and(isNotNull(tickets.dueAt), lt(tickets.dueAt, endOfDay), open);
+    case "week":
+      return and(lt(tickets.dueAt, new Date(now.getTime() + 7 * 86_400_000)), open);
+    case "scheduled":
+      return isNotNull(tickets.dueAt);
+    case "none":
+      return isNull(tickets.dueAt);
+    default:
+      return undefined;
+  }
+}
+// One round trip returns the page and its total; a second count runs only for an empty page past the start.
+async function pageOf(
+  ctx: Context,
+  where: ReturnType<typeof and>,
+  order: SQL[],
+  input: { limit: number; offset: number },
+) {
+  const rows = await ctx.db
+    .select({ ...getTableColumns(tickets), total: sql<number>`count(*) over()`.mapWith(Number) })
+    .from(tickets)
+    .where(where)
+    .orderBy(...order)
+    .limit(input.limit)
+    .offset(input.offset);
+  const total =
+    rows[0]?.total ??
+    (input.offset
+      ? one(await ctx.db.select({ count: count() }).from(tickets).where(where)).count
+      : 0);
+  return { items: rows.map(({ total: _total, ...row }) => row), total };
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -187,6 +260,7 @@ export const ticketHandlers: Pick<
   | "update_ticket"
   | "bulk_update_tickets"
   | "delete_ticket"
+  | "search_tickets"
   | "list_eligible_tickets"
   | "claim_ticket"
   | "renew_claim"
@@ -210,39 +284,44 @@ export const ticketHandlers: Pick<
       input.priority ? eq(tickets.priority, input.priority) : undefined,
       input.kind ? eq(tickets.kind, input.kind) : undefined,
       input.difficulty ? eq(tickets.difficulty, input.difficulty) : undefined,
-      input.assigneeId ? eq(tickets.assigneeId, input.assigneeId) : undefined,
+      input.assigneeId === "none"
+        ? isNull(tickets.assigneeId)
+        : input.assigneeId
+          ? eq(tickets.assigneeId, input.assigneeId)
+          : undefined,
       input.label ? sql`${input.label} = ANY(${tickets.labels})` : undefined,
       input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
+      dueWhere(input.due),
       search,
     );
-    const order =
-      input.sort === "priority"
-        ? [
-            sql`CASE ${tickets.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
-            asc(tickets.number),
-          ]
-        : input.sort === "labels"
-          ? [
-              sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label) ASC NULLS LAST`,
-              asc(tickets.number),
-            ]
-          : input.sort === "title"
-            ? [asc(tickets.title), asc(tickets.id)]
-            : [
-                desc(input.sort === "created" ? tickets.createdAt : tickets.updatedAt),
-                asc(tickets.id),
-              ];
-    return {
-      items: await ctx.db
-        .select()
-        .from(tickets)
-        .where(where)
-        .orderBy(...order)
-        .limit(input.limit)
-        .offset(input.offset),
-      total: requireRow((await ctx.db.select({ count: count() }).from(tickets).where(where))[0])
-        .count,
+    const direction = input.order ?? defaultOrder[input.sort];
+    const by = (column: SQL | AnyColumn, flip = false) =>
+      (direction === "asc") !== flip
+        ? sql`${column} ASC NULLS LAST`
+        : sql`${column} DESC NULLS LAST`;
+    const primary: Record<typeof input.sort, SQL> = {
+      priority: by(
+        sql`CASE ${tickets.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
+      ),
+      updated: by(tickets.updatedAt),
+      created: by(tickets.createdAt),
+      title: by(sql`lower(${tickets.title})`),
+      labels: by(
+        sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label)`,
+      ),
+      due: by(tickets.dueAt),
+      number: by(tickets.number),
+      status: by(
+        sql`CASE ${tickets.status} WHEN 'backlog' THEN 0 WHEN 'todo' THEN 1 WHEN 'in_progress' THEN 2 WHEN 'in_review' THEN 3 WHEN 'done' THEN 4 ELSE 5 END`,
+      ),
+      difficulty: by(
+        sql`CASE ${tickets.difficulty} WHEN 'low' THEN 0 WHEN 'med' THEN 1 WHEN 'high' THEN 2 ELSE NULL END`,
+      ),
+      kind: by(tickets.kind),
+      assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
     };
+    const order = [primary[input.sort], asc(tickets.number)];
+    return pageOf(ctx, where, order, input);
   },
   async get_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
@@ -267,30 +346,27 @@ export const ticketHandlers: Pick<
   async create_ticket(ctx, input) {
     const id = crypto.randomUUID();
     await validateReferences(ctx, id, input);
-    const counter = requireRow(
-      (
-        await ctx.db
-          .update(projects)
-          .set({ nextNumber: sql`${projects.nextNumber} + 1` })
-          .where(eq(projects.id, project(ctx).id))
-          .returning()
-      )[0],
+    const counter = one(
+      await ctx.db
+        .update(projects)
+        .set({ nextNumber: sql`${projects.nextNumber} + 1` })
+        .where(eq(projects.id, project(ctx).id))
+        .returning(),
     );
-    const { projectId: _projectId, requestId: _requestId, ...fields } = input;
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(tickets)
-          .values({
-            ...fields,
-            id,
-            projectId: counter.id,
-            number: counter.nextNumber - 1,
-            key: `${counter.key}-${counter.nextNumber - 1}`,
-            createdBy: ctx.actor.id,
-          })
-          .returning()
-      )[0],
+    const { projectId: _projectId, requestId: _requestId, dueAt, ...fields } = input;
+    const row = one(
+      await ctx.db
+        .insert(tickets)
+        .values({
+          ...fields,
+          ...dueColumn(dueAt),
+          id,
+          projectId: counter.id,
+          number: counter.nextNumber - 1,
+          key: `${counter.key}-${counter.nextNumber - 1}`,
+          createdBy: ctx.actor.id,
+        })
+        .returning(),
     );
     for (const userId of new Set([ctx.actor.id, ...(row.assigneeId ? [row.assigneeId] : [])]))
       await ctx.db
@@ -302,22 +378,24 @@ export const ticketHandlers: Pick<
   },
   update_ticket: updateTicket,
   async bulk_update_tickets(ctx, input) {
-    const result = [];
-    for (const item of input.tickets)
-      result.push(
-        await updateTicket(ctx, {
-          projectId: input.projectId,
-          ticketId: item.ticketId,
-          expectedVersion: item.expectedVersion,
-          changes: input.changes,
-        }),
-      );
+    const result = [],
+      pending: PendingEvent[] = [];
+    for (const item of input.tickets) {
+      const { row, event } = await updateTicketRow(ctx, {
+        projectId: input.projectId,
+        ticketId: item.ticketId,
+        expectedVersion: item.expectedVersion,
+        changes: input.changes,
+      });
+      result.push(row);
+      pending.push(event);
+    }
+    await publishMany(ctx, pending);
     return result;
   },
   async delete_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    if (ticket.version !== input.expectedVersion)
-      fail(409, "version_conflict", "The ticket changed; reload before deleting");
+    assertVersion(ticket, input.expectedVersion, "ticket", "deleting");
     if ((await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id))).length)
       fail(409, "claim_conflict", "Release ownership before deleting this ticket");
     const children = await ctx.db
@@ -325,12 +403,18 @@ export const ticketHandlers: Pick<
       .set({ parentId: null, version: sql`${tickets.version} + 1`, updatedAt: new Date() })
       .where(eq(tickets.parentId, ticket.id))
       .returning();
-    for (const child of children)
-      await publish(ctx, "ticket.updated", child.id, {
-        version: child.version,
-        changedFields: ["parentId"],
-      });
-    await publish(ctx, "ticket.deleted", ticket.id, { key: ticket.key, version: ticket.version });
+    await publishMany(ctx, [
+      ...children.map((child) => ({
+        type: "ticket.updated",
+        ticketId: child.id,
+        data: { version: child.version, changedFields: ["parentId"] },
+      })),
+      {
+        type: "ticket.deleted",
+        ticketId: ticket.id,
+        data: { key: ticket.key, version: ticket.version },
+      },
+    ]);
     await ctx.db.delete(tickets).where(eq(tickets.id, ticket.id));
     return { ok: true };
   },
@@ -341,54 +425,77 @@ export const ticketHandlers: Pick<
       ne(tickets.status, "cancelled"),
       eq(tickets.archived, false),
     );
+    const page = await pageOf(ctx, where, [asc(tickets.number)], input);
+    const eligibility = await readinessMany(ctx, page.items);
+    return {
+      items: page.items.map((ticket) => ({
+        ticket,
+        readiness: requireRow(eligibility.get(ticket.id)),
+      })),
+      total: page.total,
+    };
+  },
+  async search_tickets(ctx, input) {
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    if (!allowed.length) return { items: [] };
+    const conditions = [];
+    for (const row of allowed)
+      conditions.push(
+        and(
+          eq(tickets.projectId, row.id),
+          or(
+            eq(tickets.key, input.q.toUpperCase()),
+            await ctx.search.where(ctx.db, row.id, input.q),
+          ),
+        ),
+      );
     const rows = await ctx.db
       .select()
       .from(tickets)
-      .where(where)
-      .orderBy(asc(tickets.number))
-      .limit(input.limit)
-      .offset(input.offset);
-    const eligibility = await readinessMany(ctx, rows);
+      .where(or(...conditions))
+      .orderBy(
+        sql`CASE WHEN ${tickets.key} = ${input.q.toUpperCase()} THEN 0 ELSE 1 END`,
+        desc(tickets.updatedAt),
+      )
+      .limit(input.limit);
     return {
-      items: rows.map((ticket) => ({ ticket, readiness: requireRow(eligibility.get(ticket.id)) })),
-      total: requireRow((await ctx.db.select({ count: count() }).from(tickets).where(where))[0])
-        .count,
+      items: rows.flatMap((ticket) => {
+        const owner = allowed.find((row) => row.id === ticket.projectId);
+        return owner
+          ? [{ ticket, project: { id: owner.id, key: owner.key, name: owner.name } }]
+          : [];
+      }),
     };
   },
   async claim_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    if (ticket.version !== input.expectedVersion)
-      fail(409, "version_conflict", "The ticket changed; refresh its eligibility");
+    assertVersion(ticket, input.expectedVersion, "ticket", "claiming");
     const eligible = await readiness(ctx, ticket);
     if (!eligible.ready) fail(409, "not_ready", "The ticket is not ready to claim", eligible);
-    const claim = requireRow(
-      (
-        await ctx.db
-          .insert(claims)
-          .values({
-            projectId: project(ctx).id,
-            ticketId: ticket.id,
-            actorId: ctx.actor.id,
-            ownerId: ctx.actor.ownerId,
-            workerId: input.workerId,
-            expiresAt: new Date(Date.now() + input.leaseSeconds * 1000),
-          })
-          .returning()
-      )[0],
+    const claim = one(
+      await ctx.db
+        .insert(claims)
+        .values({
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          actorId: ctx.actor.id,
+          ownerId: ctx.actor.ownerId,
+          workerId: input.workerId,
+          expiresAt: new Date(Date.now() + input.leaseSeconds * 1000),
+        })
+        .returning(),
     );
-    const row = requireRow(
-      (
-        await ctx.db
-          .update(tickets)
-          .set({
-            status: "in_progress",
-            claimRequired: true,
-            version: ticket.version + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(tickets.id, ticket.id))
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .update(tickets)
+        .set({
+          status: "in_progress",
+          claimRequired: true,
+          version: ticket.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.id, ticket.id))
+        .returning(),
     );
     await publish(ctx, "ticket.claimed", ticket.id, {
       claimId: claim.id,
@@ -399,24 +506,20 @@ export const ticketHandlers: Pick<
   },
   async renew_claim(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const current = requireRow(
-      (
-        await ctx.db
-          .select()
-          .from(claims)
-          .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id)))
-      )[0],
+    const current = one(
+      await ctx.db
+        .select()
+        .from(claims)
+        .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
     );
     if (!ownsLiveClaim(ctx, current))
       fail(409, "claim_conflict", "Only the current worker can renew an unexpired claim");
-    const claim = requireRow(
-      (
-        await ctx.db
-          .update(claims)
-          .set({ expiresAt: new Date(Date.now() + input.leaseSeconds * 1000) })
-          .where(eq(claims.id, current.id))
-          .returning()
-      )[0],
+    const claim = one(
+      await ctx.db
+        .update(claims)
+        .set({ expiresAt: new Date(Date.now() + input.leaseSeconds * 1000) })
+        .where(eq(claims.id, current.id))
+        .returning(),
     );
     await publish(ctx, "claim.renewed", ticket.id, {
       claimId: claim.id,
@@ -426,13 +529,11 @@ export const ticketHandlers: Pick<
   },
   async release_claim(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const current = requireRow(
-      (
-        await ctx.db
-          .select()
-          .from(claims)
-          .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id)))
-      )[0],
+    const current = one(
+      await ctx.db
+        .select()
+        .from(claims)
+        .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
     );
     if (!ownsLiveClaim(ctx, current))
       fail(
@@ -446,13 +547,11 @@ export const ticketHandlers: Pick<
   },
   async recover_claim(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const current = requireRow(
-      (
-        await ctx.db
-          .select()
-          .from(claims)
-          .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id)))
-      )[0],
+    const current = one(
+      await ctx.db
+        .select()
+        .from(claims)
+        .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
     );
     if (current.expiresAt > new Date())
       fail(409, "claim_not_expired", "The current claim has not expired");

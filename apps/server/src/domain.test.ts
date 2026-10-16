@@ -578,6 +578,106 @@ describe("ticket operations on PostgreSQL", () => {
         .ticket,
     ).toMatchObject({ version: 1, priority: "medium" });
   });
+  it("publishes bulk edits as one consecutive batch of per-ticket events", async () => {
+    const first = await ticket("Batch one"),
+      second = await ticket("Batch two");
+    const cursor = (await domain.readEvents(owner, 0n)).cursor;
+    const rows = await domain.execute(
+      "bulk_update_tickets",
+      {
+        projectId: project.id,
+        tickets: [
+          { ticketId: first.id, expectedVersion: first.version },
+          { ticketId: second.id, expectedVersion: second.version },
+        ],
+        changes: { priority: "urgent" },
+      },
+      owner,
+    );
+    expect(rows.map((row) => row.priority)).toEqual(["urgent", "urgent"]);
+    const events = (await domain.readEvents(owner, cursor, project.id)).items;
+    expect(events.map((event) => [event.type, event.ticketId])).toEqual([
+      ["ticket.updated", first.id],
+      ["ticket.updated", second.id],
+    ]);
+    expect(events[1]!.id - events[0]!.id).toBe(1n);
+    expect(events.map((event) => event.data.key)).toEqual([first.key, second.key]);
+  });
+  it("searches tickets by key or text across accessible projects", async () => {
+    const other = await domain.execute(
+      "create_project",
+      { key: `S${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Second project" },
+      owner,
+    );
+    const here = await ticket("Rotate the signing key");
+    const there = await domain.execute(
+      "create_ticket",
+      { projectId: other.id, title: "Signing key rotation runbook" },
+      owner,
+    );
+    const found = await domain.execute("search_tickets", { q: "signing key" }, owner);
+    expect(found.items.map((item) => item.ticket.id).toSorted()).toEqual(
+      [here.id, there.id].toSorted(),
+    );
+    expect(found.items.find((item) => item.ticket.id === there.id)?.project).toMatchObject({
+      id: other.id,
+      key: other.key,
+      name: "Second project",
+    });
+    const byKey = await domain.execute("search_tickets", { q: there.key.toLowerCase() }, owner);
+    expect(byKey.items[0]?.ticket.id).toBe(there.id);
+    expect((await domain.execute("search_tickets", { q: "signing key" }, outsider)).items).toEqual(
+      [],
+    );
+  });
+  it("stores due dates and filters and sorts by them", async () => {
+    const soon = new Date(Date.now() + 3_600_000).toISOString(),
+      late = new Date(Date.now() - 86_400_000).toISOString();
+    const dated = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Due soon", dueAt: soon },
+      owner,
+    );
+    expect(dated.dueAt).toBe(soon);
+    const overdue = await ticket("Overdue");
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: overdue.id,
+        expectedVersion: overdue.version,
+        changes: { dueAt: late },
+      },
+      owner,
+    );
+    await ticket("Undated");
+    const list = (filter: Record<string, unknown>) =>
+      domain
+        .execute("list_tickets", { projectId: project.id, ...filter }, owner)
+        .then((page) => ({ titles: page.items.map((row) => row.title), total: page.total }));
+    expect(await list({ due: "overdue" })).toEqual({ titles: ["Overdue"], total: 1 });
+    expect((await list({ due: "week" })).titles.toSorted()).toEqual(["Due soon", "Overdue"]);
+    expect(await list({ due: "none" })).toEqual({ titles: ["Undated"], total: 1 });
+    expect((await list({ sort: "due" })).titles).toEqual(["Overdue", "Due soon", "Undated"]);
+    expect((await list({ sort: "due", order: "desc" })).titles).toEqual([
+      "Due soon",
+      "Overdue",
+      "Undated",
+    ]);
+    expect((await list({ sort: "number", order: "desc" })).titles).toEqual([
+      "Undated",
+      "Overdue",
+      "Due soon",
+    ]);
+    expect((await list({ assigneeId: "none" })).total).toBe(3);
+    expect((await list({ assigneeId: owner.id })).total).toBe(0);
+    const listed = await domain.execute("list_projects", {}, owner);
+    expect(listed.find((entry) => entry.id === project.id)).toMatchObject({
+      openTickets: 3,
+      overdueTickets: 1,
+    });
+    expect(await list({ limit: 1, offset: 5 })).toEqual({ titles: [], total: 3 });
+  });
   it("rejects cycles across blockers and parent relationships and explains readiness", async () => {
     const first = await ticket(),
       second = await ticket("Dependent ticket");
