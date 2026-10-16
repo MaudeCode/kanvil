@@ -79,7 +79,7 @@ try {
   await page
     .getByLabel("Title", { exact: true })
     .fill("Restore tickets, sessions, events, credentials, and binary attachments together");
-  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page
     .getByRole("link", {
