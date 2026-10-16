@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
@@ -39,16 +40,38 @@ const buttonVariants = cva(
   },
 );
 
+type ButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants>;
+function isElement(value: unknown): value is React.ReactElement<Record<string, unknown>> {
+  return React.isValidElement(value);
+}
+// A link or other element styled as a button keeps its own semantics; only real buttons get Base UI's button behavior.
 function Button({
   className,
   variant = "outline",
   size = "default",
+  render,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonProps) {
+  if (isElement(render) && render.type !== "button") {
+    const { nativeButton: _native, focusableWhenDisabled: _focusable, children, ...rest } = props;
+    return React.cloneElement(
+      render,
+      {
+        ...rest,
+        "data-slot": "button",
+        className: cn(
+          buttonVariants({ variant, size, className }),
+          typeof render.props.className === "string" ? render.props.className : undefined,
+        ),
+      },
+      ...(children === undefined ? [] : [children]),
+    );
+  }
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      render={render}
       {...props}
     />
   );

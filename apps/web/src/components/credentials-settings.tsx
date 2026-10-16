@@ -23,6 +23,7 @@ import {
   SectionHeading,
   Select,
   SelectItem,
+  FormActions,
 } from "../ui.tsx";
 import {
   Field,
@@ -129,7 +130,7 @@ export function Credentials() {
                 <TableRow key={credential.id}>
                   <TableCell className="max-w-64 whitespace-normal">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="resource-icon">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <KeyRound className="size-4" />
                       </span>
                       <div className="min-w-0">
@@ -266,7 +267,10 @@ function Permission({
   const id = useId(),
     text = permissionText[scope];
   return (
-    <Field orientation="horizontal" className="permission-row">
+    <Field
+      orientation="horizontal"
+      className="border-b py-3 last:border-0 [&_[data-slot=field-description]]:m-0 [&_[data-slot=field-description]]:text-xs"
+    >
       <Checkbox id={id} checked={checked} onCheckedChange={onChange} />
       <FieldContent>
         <FieldLabel htmlFor={id}>{text.name}</FieldLabel>
@@ -292,6 +296,14 @@ function CreateKey({
 }) {
   const spaces = useWorkspaces();
   const workspaceNames = new Map(spaces.data?.map((space) => [space.id, space.name]));
+  const [{ tomorrow, lastDay }] = useState(() => {
+    const first = new Date();
+    first.setHours(0, 0, 0, 0);
+    first.setDate(first.getDate() + 1);
+    const last = new Date();
+    last.setDate(last.getDate() + 365);
+    return { tomorrow: first, lastDay: last };
+  });
   const [projectIds, setProjectIds] = useState<string[]>(
       projects.length === 1 && projects[0] ? [projects[0].id] : [],
     ),
@@ -424,20 +436,22 @@ function CreateKey({
             ))}
           </FieldSet>
         )}
-        <DatePicker label="Expires on" value={expiresAt} onChange={setExpiresAt} />
-        <ErrorNotice error={error} />
-        <div className="dialog-actions">
-          <Button onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="default"
-            disabled={pending || !projectIds.length || !permissions.length}
-          >
-            {pending ? "Creating…" : "Create API key"}
-          </Button>
-        </div>
+        <DatePicker
+          label="Expires on"
+          value={expiresAt}
+          onChange={(chosen) => {
+            if (chosen) setExpiresAt(chosen);
+          }}
+          bounds={{ from: tomorrow, to: lastDay }}
+        />
+        <FormActions
+          error={error}
+          pending={pending}
+          submitLabel="Create API key"
+          pendingLabel="Creating…"
+          submitDisabled={!projectIds.length || !permissions.length}
+          onCancel={onCancel}
+        />
       </FieldSet>
     </form>
   );

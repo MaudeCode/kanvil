@@ -8,13 +8,13 @@ import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import {
   Button,
   CopyValue,
-  ErrorNotice,
   Input,
   Modal,
   SectionHeading,
   Select,
   SelectItem,
   Textarea,
+  FormActions,
 } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
@@ -185,19 +185,13 @@ export function ProjectSettings({
           {project.version !== draft.version && (
             <p role="alert">This project changed. Reopen the editor before saving.</p>
           )}
-          <ErrorNotice error={update.error} />
-          <div className="dialog-actions">
-            <Button disabled={update.isPending} onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={update.isPending || project.version !== draft.version}
-            >
-              Save project
-            </Button>
-          </div>
+          <FormActions
+            error={update.error}
+            pending={update.isPending}
+            submitLabel="Save project"
+            submitDisabled={project.version !== draft.version}
+            onCancel={() => setEditing(false)}
+          />
         </form>
       </Modal>
     </>

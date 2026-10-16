@@ -1,4 +1,4 @@
-import { Select, SelectItem } from "../ui.tsx";
+import { PageHeader, Select, SelectItem } from "../ui.tsx";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "@/components/ui/item";
 import { useIsMobile } from "../hooks/use-mobile.ts";
 import type { ReactNode } from "react";
@@ -21,9 +21,7 @@ export function SettingsLayout({
   const mobile = useIsMobile(1024);
   return (
     <>
-      <header className="page-header">
-        <h1>{title}</h1>
-      </header>
+      <PageHeader title={title} />
       <Tabs
         orientation={mobile ? "horizontal" : "vertical"}
         value={value}
@@ -33,7 +31,8 @@ export function SettingsLayout({
         {mobile && (
           <Select
             label={`${title} section`}
-            className="settings-section-picker mb-0"
+            labelHidden
+            className="mb-0"
             value={value}
             onValueChange={(next) => {
               if (next) onChange(next);
@@ -66,7 +65,9 @@ export function SettingsLayout({
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="settings @container mx-0 min-w-0 max-w-5xl">{children}</div>
+        <div className="settings @container mx-0 max-w-5xl min-w-0 [&_form]:max-w-none [&_p]:text-sm [&_p]:text-muted-foreground [&_section]:border-t [&_section]:py-5 [&_section:first-child]:border-0 [&_section:first-child]:pt-0 [&>[data-slot=tabs-content]>section:first-child]:border-0 [&>[data-slot=tabs-content]>section:first-child]:pt-0">
+          {children}
+        </div>
       </Tabs>
     </>
   );

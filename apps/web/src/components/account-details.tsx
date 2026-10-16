@@ -16,6 +16,7 @@ import {
   Modal,
   Select,
   SelectItem,
+  FormActions,
 } from "../ui.tsx";
 import {
   Sheet,
@@ -419,15 +420,13 @@ export function AccountDetails({
                 </p>
               </>
             )}
-            <ErrorNotice error={error} />
-            <div className="dialog-actions">
-              <Button disabled={pending} onClick={() => setEditing(null)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="default" disabled={pending}>
-                {pending ? "Saving…" : "Save changes"}
-              </Button>
-            </div>
+            <FormActions
+              error={error}
+              pending={pending}
+              submitLabel="Save changes"
+              pendingLabel="Saving…"
+              onCancel={() => setEditing(null)}
+            />
           </form>
         </Modal>
       )}

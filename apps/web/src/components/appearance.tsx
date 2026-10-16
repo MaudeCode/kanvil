@@ -43,7 +43,7 @@ function ThemeChoice({
 }) {
   return (
     <div
-      className="theme-library-choice relative overflow-hidden rounded-xl border border-border/70 bg-background transition-colors hover:bg-accent/10"
+      className="relative overflow-hidden rounded-xl border border-border/70 bg-background transition-colors hover:bg-accent/10 has-[>[data-slot=radio-group-item]:focus-visible]:ring-2 has-[>[data-slot=radio-group-item]:focus-visible]:ring-ring has-[>[data-slot=radio-group-item]:focus-visible]:ring-offset-2 has-[>[data-slot=radio-group-item]:focus-visible]:ring-offset-background data-[selected=true]:bg-accent/30 data-[selected=true]:shadow-[inset_0_0_0_1px_var(--ring)]"
       data-selected={active}
     >
       <RadioGroupItem
@@ -145,7 +145,7 @@ export function AppearanceSettings() {
               />
               <Label
                 htmlFor={`mode-${mode}`}
-                className="theme-choice"
+                className="theme-choice flex w-full cursor-pointer flex-col gap-2 rounded-lg border border-border bg-background p-2 text-xs font-medium transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background hover:bg-muted/50 data-[selected=true]:border-primary data-[selected=true]:ring-1 data-[selected=true]:ring-primary [&_svg]:overflow-hidden [&_svg]:border [&_svg]:border-foreground/10"
                 data-selected={theme.mode === mode}
               >
                 <ThemePreview theme={preview} mode={mode} className="h-[8.75rem]" />

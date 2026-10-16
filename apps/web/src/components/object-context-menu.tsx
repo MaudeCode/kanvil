@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { errorMessage, states, priorities, type Ticket, type Project } from "@kanvil/contracts";
+import { states, priorities, type Ticket, type Project } from "@kanvil/contracts";
 import { api, useOperation, useProjectAccess } from "../data.tsx";
-import { Confirm, Modal, TicketIndicator, Loading } from "../ui.tsx";
+import { Confirm, Modal, TicketIndicator, Loading, reportError } from "../ui.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -44,13 +44,12 @@ import {
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
 } from "@/components/ui/context-menu";
-const report = (error: unknown) => toast.error(errorMessage(error));
 async function copy(value: string, label: string) {
   try {
     await copyText(value);
     toast.success(`${label} copied`);
   } catch (error) {
-    report(error);
+    reportError(error);
   }
 }
 export function TicketContextMenu({
@@ -93,7 +92,7 @@ export function TicketContextMenu({
         expectedVersion: current.version,
         changes,
       })
-      .catch(report);
+      .catch(reportError);
   };
   return (
     <>
@@ -205,7 +204,7 @@ export function TicketContextMenu({
                   ticketId: ticket.id,
                   enabled: !read.data?.subscribed,
                 })
-                .catch(report);
+                .catch(reportError);
             }}
           >
             {read.data?.subscribed ? <BellOff /> : <Bell />}
@@ -229,7 +228,7 @@ export function TicketContextMenu({
           </ContextMenuItem>
         </Content>
       </Root>
-      <Modal title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
+      <Modal size="composer" title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
         {editing && (
           <Suspense fallback={<Loading />}>
             <TicketEditor
@@ -315,7 +314,7 @@ export function ProjectContextMenu({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      <Modal title="New ticket" open={creating} onOpenChange={setCreating}>
+      <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
         {creating && (
           <Suspense fallback={<Loading />}>
             <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />

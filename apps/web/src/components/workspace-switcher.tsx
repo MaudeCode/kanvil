@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "@tanstack/react-router";
 import { Building2, ChevronsUpDown, Plus, Settings } from "lucide-react";
 import { useOperation, useWorkspace } from "../data.tsx";
-import { Button, ErrorNotice, Input, Modal } from "../ui.tsx";
+import { Button, Input, Modal, FormActions } from "../ui.tsx";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import {
   DropdownMenu,
@@ -69,15 +69,12 @@ function WorkspaceCreateDialog({ onOpenChange }: { onOpenChange: (open: boolean)
           pattern="[a-z0-9][a-z0-9-]{1,79}"
           placeholder="my-workspace"
         />
-        <ErrorNotice error={create.error} />
-        <div className="dialog-actions">
-          <Button disabled={create.isPending} onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="default" disabled={create.isPending}>
-            Create workspace
-          </Button>
-        </div>
+        <FormActions
+          error={create.error}
+          pending={create.isPending}
+          submitLabel="Create workspace"
+          onCancel={() => onOpenChange(false)}
+        />
       </form>
     </Modal>
   );

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { infoSchema } from "@kanvil/contracts";
 import { api, auth } from "./data.tsx";
-import { Button, ErrorNotice, Input, Modal, SectionHeading, Loading } from "./ui.tsx";
+import { Button, ErrorNotice, Input, Modal, SectionHeading, Loading, FormActions } from "./ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -160,15 +160,12 @@ export function AccountSettings({
               minLength={12}
               maxLength={128}
             />
-            <ErrorNotice error={error} />
-            <div className="dialog-actions">
-              <Button onClick={() => setPasswordOpen(false)} disabled={pending}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="default" disabled={pending}>
-                Change password
-              </Button>
-            </div>
+            <FormActions
+              error={error}
+              pending={pending}
+              submitLabel="Change password"
+              onCancel={() => setPasswordOpen(false)}
+            />
           </form>
         </Modal>
       </TabsContent>

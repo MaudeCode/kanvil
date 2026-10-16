@@ -14,6 +14,7 @@ import {
   Loading,
   Modal,
   SectionHeading,
+  FormActions,
 } from "../ui.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { SettingRow } from "./settings-layout.tsx";
@@ -174,15 +175,13 @@ export function ProjectLabelSettings({
                 Renaming updates this label on tickets and in saved views.
               </p>
             )}
-            <ErrorNotice error={create.error ?? update.error} />
-            <div className="dialog-actions">
-              <Button disabled={busy} onClick={() => setDraft(null)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="default" disabled={busy || !draft.name.trim()}>
-                Save label
-              </Button>
-            </div>
+            <FormActions
+              error={create.error ?? update.error}
+              pending={busy}
+              submitLabel="Save label"
+              submitDisabled={!draft.name.trim()}
+              onCancel={() => setDraft(null)}
+            />
           </form>
         )}
       </Modal>

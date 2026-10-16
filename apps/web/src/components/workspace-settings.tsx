@@ -14,6 +14,7 @@ import {
   Modal,
   SectionHeading,
   Textarea,
+  FormActions,
 } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
@@ -154,19 +155,13 @@ export function WorkspaceSettings({
             onChange={(event) => setDraft({ ...draft, description: event.target.value })}
             maxLength={5000}
           />
-          <ErrorNotice error={update.error} />
-          <div className="dialog-actions">
-            <Button disabled={update.isPending} onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={update.isPending || workspace.version !== draft.version}
-            >
-              Save workspace
-            </Button>
-          </div>
+          <FormActions
+            error={update.error}
+            pending={update.isPending}
+            submitLabel="Save workspace"
+            submitDisabled={workspace.version !== draft.version}
+            onCancel={() => setEditing(false)}
+          />
         </form>
       </Modal>
     </>

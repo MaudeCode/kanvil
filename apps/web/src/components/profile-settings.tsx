@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Camera, Trash2, Pencil } from "lucide-react";
 import { photoResultSchema } from "@kanvil/contracts/instance";
 import { api, auth, useIdentity } from "../data.tsx";
-import { Button, ErrorNotice, Input, Modal, SectionHeading } from "../ui.tsx";
+import { Button, ErrorNotice, Input, Modal, SectionHeading, FormActions } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
 import { prepareSquareImage } from "../lib/browser.ts";
@@ -62,7 +62,7 @@ export function ProfileSettings() {
           </Button>
         }
       />
-      <div className="profile-overview">
+      <div className="flex flex-wrap items-center gap-4">
         <UserAvatar name={identity.name} image={identity.image} className="size-16 text-xl" />
         <div className="min-w-0 flex-1">
           <h3 className="mb-1 text-base">{identity.name}</h3>
@@ -134,19 +134,14 @@ export function ProfileSettings() {
             autoFocus
           />
           <p className="text-sm text-muted-foreground">Your sign-in email is {identity.email}.</p>
-          <ErrorNotice error={error} />
-          <div className="dialog-actions">
-            <Button disabled={pending} onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={pending || name.trim() === identity.name}
-            >
-              {pending ? "Saving…" : "Save profile"}
-            </Button>
-          </div>
+          <FormActions
+            error={error}
+            pending={pending}
+            submitLabel="Save profile"
+            pendingLabel="Saving…"
+            submitDisabled={name.trim() === identity.name}
+            onCancel={() => setEditing(false)}
+          />
         </form>
       </Modal>
     </section>

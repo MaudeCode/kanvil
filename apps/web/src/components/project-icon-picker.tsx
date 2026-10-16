@@ -5,7 +5,7 @@ import { Icon } from "@iconify/react/offline";
 import { Camera, RotateCcw } from "lucide-react";
 import { type Project } from "@kanvil/contracts";
 import { useOperation } from "../data.tsx";
-import { Button, ErrorNotice, Input, Loading, Modal } from "../ui.tsx";
+import { Button, ErrorNotice, Input, Loading, Modal, ModalActions } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { prepareSquareImage } from "../lib/browser.ts";
@@ -145,7 +145,7 @@ export function ProjectIconPicker({
           }}
         />
         <ErrorNotice error={error ?? library.error} />
-        <div className="dialog-actions">
+        <ModalActions>
           <Button
             disabled={busy}
             onClick={() => {
@@ -158,7 +158,7 @@ export function ProjectIconPicker({
           <Button disabled={busy} onClick={() => setOpen(false)}>
             Cancel
           </Button>
-        </div>
+        </ModalActions>
       </Modal>
     </>
   );

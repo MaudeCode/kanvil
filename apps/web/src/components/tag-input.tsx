@@ -6,6 +6,7 @@ import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TicketTag } from "./ticket-tags.tsx";
+import { fieldClass } from "../ui.tsx";
 import { useProjectLabels } from "./project-label-provider.tsx";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
@@ -45,9 +46,9 @@ export function TagInput({
     }
   }
   return (
-    <Field className="field">
+    <Field className={fieldClass}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <div className="tag-input">
+      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         {value.map((tag) => (
           <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">
             <span className="break-words whitespace-normal">{tag}</span>

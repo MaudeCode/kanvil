@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   AlertCircle,
+  CalendarClock,
   Circle,
   CircleCheck,
   CircleDashed,
@@ -28,10 +29,17 @@ import {
   Minus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDistanceToNowStrict, isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { errorMessage, stateLabels, priorityLabels, type Ticket } from "@kanvil/contracts";
+import {
+  errorMessage,
+  formatTimestamp,
+  stateLabels,
+  priorityLabels,
+  type Ticket,
+} from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -55,6 +63,8 @@ import {
   Dialog,
   DialogTrigger,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -73,6 +83,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyHeader, EmptyTitle, EmptyMedia } from "@/components/ui/empty";
 
@@ -96,6 +107,10 @@ export function Brand() {
   );
 }
 
+export const fieldClass =
+  "relative mb-4 min-w-0 [&>[data-slot=field-label]]:text-xs [&>[data-slot=field-label]]:font-medium [&>[data-slot=field-label]]:text-muted-foreground";
+// One place decides how a failed write is surfaced to the user.
+export const reportError = (error: unknown) => toast.error(errorMessage(error));
 export function IconButton({
   label,
   children,
@@ -114,7 +129,7 @@ export function Input({ label, ...props }: ComponentProps<typeof TextInput> & { 
   const id = useId(),
     [visible, setVisible] = useState(false);
   return (
-    <Field className="field">
+    <Field className={fieldClass}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {props.type === "password" ? (
         <InputGroup>
@@ -143,7 +158,7 @@ export function Textarea({
 }: ComponentProps<typeof TextareaInput> & { label: string }) {
   const id = useId();
   return (
-    <Field className="field">
+    <Field className={fieldClass}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <TextareaInput {...props} id={id} />
     </Field>
@@ -154,12 +169,14 @@ export function Select({
   children,
   className,
   layout = "field",
+  labelHidden = false,
   ...props
 }: Omit<ComponentProps<typeof SelectRoot<string>>, "children" | "items"> & {
   label: string;
   children: ReactNode;
   className?: string;
   layout?: "field" | "property";
+  labelHidden?: boolean;
 }) {
   const id = useId();
   const items = Children.toArray(children).flatMap((child) =>
@@ -170,14 +187,17 @@ export function Select({
   return (
     <Field
       className={cn(
-        "field",
+        fieldClass,
         layout === "property" && "mb-0 grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2",
         className,
       )}
     >
       <FieldLabel
         htmlFor={id}
-        className={layout === "property" ? "text-xs font-normal text-muted-foreground" : undefined}
+        className={cn(
+          layout === "property" && "text-xs font-normal text-muted-foreground",
+          labelHidden && "sr-only",
+        )}
       >
         {label}
       </FieldLabel>
@@ -208,7 +228,7 @@ export function Check({
   return (
     <Field
       orientation="horizontal"
-      className={cn("check w-auto", compact && "my-0 min-h-4 justify-center")}
+      className={cn("my-2 min-h-7 w-auto", compact && "my-0 min-h-4 justify-center")}
     >
       <Checkbox
         {...props}
@@ -313,7 +333,7 @@ export function TicketIndicator({
     <Badge
       variant="outline"
       className={cn(
-        property === "status" ? "status" : "h-6 text-xs",
+        property === "status" ? "status text-xs whitespace-nowrap" : "h-6 text-xs",
         "gap-1.5 border-transparent bg-transparent px-0 font-normal",
         color,
       )}
@@ -349,20 +369,29 @@ export function Markdown({ children }: { children: string }) {
 }
 const ModalBusyContext = createContext<((busy: boolean) => void) | null>(null);
 export const useModalBusy = () => useContext(ModalBusyContext);
+const modalSizes = {
+  default: "max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl",
+  composer:
+    "flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl has-[[data-expanded=true]]:h-[calc(100dvh-1rem)] has-[[data-expanded=true]]:w-[calc(100%-1rem)] has-[[data-expanded=true]]:sm:max-w-[calc(100%-1rem)] max-sm:h-dvh max-sm:w-full max-sm:max-w-none max-sm:rounded-none",
+};
 export function Modal({
   title,
+  description,
   trigger,
   children,
   open,
   onOpenChange,
   busy = false,
+  size = "default",
 }: {
   title: string;
+  description?: ReactNode;
   trigger?: ReactNode;
   busy?: boolean;
   children: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  size?: keyof typeof modalSizes;
 }) {
   const [childBusy, setChildBusy] = useState(false),
     isBusy = busy || childBusy;
@@ -378,17 +407,64 @@ export function Modal({
         {trigger && <DialogTrigger render={<Button variant="outline" />}>{trigger}</DialogTrigger>}
         <DialogContent
           showCloseButton={!isBusy}
-          className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-2xl has-[.ticket-composer]:flex has-[.ticket-composer]:h-[min(60rem,92dvh)] has-[.ticket-composer]:max-h-none has-[.ticket-composer]:w-full has-[.ticket-composer]:max-w-none has-[.ticket-composer]:flex-col has-[.ticket-composer]:gap-0 has-[.ticket-composer]:overflow-hidden has-[.ticket-composer]:p-0 has-[.ticket-composer]:max-sm:h-dvh has-[.ticket-composer]:max-sm:rounded-none has-[.ticket-composer]:sm:w-[min(80rem,calc(100%-3rem))] has-[.ticket-composer[data-expanded=true]]:sm:w-[calc(100%-1rem)] has-[.ticket-composer[data-expanded=true]]:sm:h-[calc(100dvh-1rem)]"
+          className={modalSizes[size]}
           aria-describedby={undefined}
         >
-          <DialogHeader className="mb-2">
-            <DialogTitle className="mb-0 text-lg">{title}</DialogTitle>
+          <DialogHeader
+            className={cn("mb-2", size === "composer" && "m-0 shrink-0 border-b px-5 py-3 pr-24")}
+          >
+            <DialogTitle className={cn("mb-0", size === "composer" ? "text-sm" : "text-lg")}>
+              {title}
+            </DialogTitle>
+            {description && <DialogDescription>{description}</DialogDescription>}
           </DialogHeader>
           {children}
         </DialogContent>
       </Dialog>
     </ModalBusyContext>
   );
+}
+// Every dialog form ends the same way: an error notice, Cancel, and the primary submit button.
+export function FormActions({
+  error,
+  pending = false,
+  submitLabel,
+  pendingLabel,
+  onCancel,
+  cancelLabel = "Cancel",
+  submitDisabled = false,
+  children,
+}: {
+  error?: unknown;
+  pending?: boolean;
+  submitLabel: ReactNode;
+  pendingLabel?: ReactNode;
+  onCancel?: (() => void) | undefined;
+  cancelLabel?: string;
+  submitDisabled?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      <ErrorNotice error={error} />
+      <ModalActions>
+        {children}
+        {onCancel && (
+          <Button disabled={pending} onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+        )}
+        <Button type="submit" variant="default" disabled={pending || submitDisabled}>
+          {pending && <Spinner />}
+          {pending && pendingLabel ? pendingLabel : submitLabel}
+        </Button>
+      </ModalActions>
+    </>
+  );
+}
+// Standard dialog footer: actions right-aligned over a muted strip.
+export function ModalActions({ children, className }: { children: ReactNode; className?: string }) {
+  return <DialogFooter className={cn("mt-4", className)}>{children}</DialogFooter>;
 }
 export function Confirm({
   label,
@@ -459,20 +535,74 @@ export function Confirm({
   );
 }
 
+export function RelativeTime({ value, className }: { value: string; className?: string }) {
+  const parsed = new Date(value);
+  return (
+    <time dateTime={value} title={formatTimestamp(value)} className={className}>
+      {formatDistanceToNowStrict(parsed, { addSuffix: true })}
+    </time>
+  );
+}
+
+// A due date reads as "in 3 days" or "2 days ago", red once it has passed on an open ticket.
+export function DueDate({
+  value,
+  open = true,
+  className,
+}: {
+  value: string | null;
+  open?: boolean;
+  className?: string;
+}) {
+  if (!value) return null;
+  const overdue = open && isPast(new Date(value));
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5",
+        overdue ? "text-destructive" : "text-muted-foreground",
+        className,
+      )}
+    >
+      <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
+      <RelativeTime value={value} />
+    </span>
+  );
+}
+export function PageHeader({ title, children }: { title: ReactNode; children?: ReactNode }) {
+  return (
+    <header className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3">
+      {typeof title === "string" ? <h1 className="m-0 text-base">{title}</h1> : title}
+      {children}
+    </header>
+  );
+}
 export function SectionHeading({
   title,
   description,
   action,
+  compact = false,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <header className="section-heading">
+    <header
+      className={cn(
+        "mb-4 flex flex-wrap items-start justify-between gap-3",
+        compact &&
+          "mb-3 items-center gap-2 [&_[data-slot=button]]:h-7 [&_[data-slot=button]]:text-xs",
+      )}
+    >
       <div>
-        <h2>{title}</h2>
-        {description && <p>{description}</p>}
+        <h2 className={cn("mb-0 text-sm", compact && "text-xs font-medium text-muted-foreground")}>
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-1.5 mb-0 max-w-xl text-sm text-muted-foreground">{description}</p>
+        )}
       </div>
       {action}
     </header>
@@ -482,10 +612,16 @@ export function CopyValue({ label, value }: { label: string; value: string }) {
   const id = useId(),
     [copied, setCopied] = useState(false);
   return (
-    <div className="copy-value">
-      <span id={id}>{label}</span>
-      <div role="group" aria-labelledby={id}>
-        <code>{value}</code>
+    <div className="mb-4 min-w-0">
+      <span id={id} className="mb-1 block text-xs text-muted-foreground">
+        {label}
+      </span>
+      <div
+        role="group"
+        aria-labelledby={id}
+        className="flex min-w-0 items-center justify-between gap-3"
+      >
+        <code className="min-w-0 text-xs break-all">{value}</code>
         <IconButton
           label={`Copy ${label.toLowerCase()}`}
           onClick={() => {
@@ -514,7 +650,7 @@ export function Disclosure({
   defaultOpen?: boolean;
 }) {
   return (
-    <Collapsible defaultOpen={defaultOpen} className="disclosure">
+    <Collapsible defaultOpen={defaultOpen} className="border-t">
       <CollapsibleTrigger
         render={
           <Button
@@ -526,7 +662,7 @@ export function Disclosure({
         {title}
         <ChevronDown className="size-4 text-muted-foreground transition-transform group-aria-expanded:rotate-180" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="disclosure-body">{children}</CollapsibleContent>
+      <CollapsibleContent className="pt-3 pb-2">{children}</CollapsibleContent>
     </Collapsible>
   );
 }

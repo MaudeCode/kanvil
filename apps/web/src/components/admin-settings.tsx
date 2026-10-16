@@ -223,7 +223,7 @@ function InstanceSettings({
         busy={pending}
       >
         <form
-          className="instance-configuration"
+          className="[&_section]:py-0 [&>[data-slot=field-set]>section:first-child]:pt-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (!locked) void action(save, "Instance settings saved", true);
@@ -293,7 +293,7 @@ function InstanceSettings({
                         onChange={(event) => setS3({ endpoint: event.target.value })}
                       />
                       <p className="-mt-2 text-xs">Leave the endpoint empty for Amazon S3.</p>
-                      <div className="form-grid">
+                      <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
                         <Input
                           label="Bucket"
                           value={draft.s3.bucket}
@@ -372,10 +372,13 @@ function InstanceSettings({
                   <section>
                     <h2>Existing storage locations</h2>
                     {data.locations.map((location) => (
-                      <div className="resource-row" key={location.id}>
+                      <div
+                        className="flex flex-wrap items-center gap-3 border-b py-2.5 text-xs wrap-anywhere [&>:first-child]:min-w-24 [&>:first-child]:flex-1"
+                        key={location.id}
+                      >
                         <span className="grid gap-1">
                           <strong>{location.bucket}</strong>
-                          <span className="muted">
+                          <span className="text-muted-foreground">
                             {location.endpoint || "Amazon S3"} / {location.prefix}
                           </span>
                         </span>
@@ -469,7 +472,7 @@ function InstanceSettings({
                           />
                         )}
                         {draft.elastic.auth === "basic" && (
-                          <div className="form-grid">
+                          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
                             <Input
                               label="Search username"
                               autoComplete="off"
@@ -486,7 +489,7 @@ function InstanceSettings({
                           </div>
                         )}
                       </FieldSet>
-                      <div className="actions">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Button
                           onClick={() => {
                             void action(
@@ -651,7 +654,7 @@ function InstanceSettings({
       <TabsContent value="authentication">
         <section>
           <SectionHeading title="Authentication" />
-          <dl className="settings-facts">
+          <dl className="mb-6 divide-y border-y [&>div]:flex [&>div]:flex-wrap [&>div]:items-center [&>div]:justify-between [&>div]:gap-3 [&>div]:py-3 [&>div]:text-[13px] [&_dt]:text-muted-foreground">
             <div>
               <dt>Local email and password</dt>
               <dd>

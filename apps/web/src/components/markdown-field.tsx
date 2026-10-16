@@ -3,6 +3,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupTextarea, InputGroupAddon } from "@/components/ui/input-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Markdown } from "../ui.tsx";
+import { cn } from "@/lib/utils";
 export function MarkdownField({
   label,
   value,
@@ -27,7 +28,16 @@ export function MarkdownField({
   const id = useId(),
     [mode, setMode] = useState("write");
   return (
-    <Field className="markdown-field" data-variant={variant} aria-label={`${label} editor`}>
+    <Field
+      className={cn(
+        "mb-6 [&_[data-slot=tabs-list]]:shrink-0 [&_[data-slot=tabs-trigger]]:text-xs",
+        variant === "compact" && "[&_textarea]:field-sizing-fixed [&_textarea]:max-h-[28rem]",
+        variant === "document" &&
+          "border-t pt-5 has-[textarea:focus]:border-t-primary has-[textarea:focus]:[&_[data-slot=field-label]]:text-primary",
+      )}
+      data-variant={variant}
+      aria-label={`${label} editor`}
+    >
       <Tabs value={mode} onValueChange={(next) => setMode(String(next))}>
         <div className="flex items-center justify-between gap-3">
           <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -67,7 +77,13 @@ export function MarkdownField({
           </InputGroup>
         </TabsContent>
         <TabsContent value="preview">
-          <div className="markdown-preview">
+          <div
+            className={cn(
+              "min-h-28 rounded-lg border bg-muted/20 p-4",
+              variant === "document" &&
+                "rounded-none border-0 bg-transparent px-1 py-3 text-base leading-7",
+            )}
+          >
             {value ? (
               <Markdown>{value}</Markdown>
             ) : (

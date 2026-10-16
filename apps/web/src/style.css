@@ -90,6 +90,15 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
+  --animate-row-in: row-in 1.8s ease-out;
+  @keyframes row-in {
+    from {
+      background-color: color-mix(in oklab, var(--primary) 16%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
 }
 @layer base {
   * {
@@ -140,210 +149,14 @@
   }
 }
 @layer components {
-  .brand {
-    @apply text-foreground;
-    background: transparent;
-  }
-  .skip-link {
-    @apply fixed left-3 top-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0;
-  }
-  .workspace-header {
-    @apply sticky top-0 z-20 rounded-t-lg bg-background/95 backdrop-blur-sm;
-  }
-  .content {
-    @apply w-full min-w-0 px-5 pb-12 pt-4 md:px-8;
-  }
-  .content > * {
-    @apply mx-auto max-w-[1440px];
-  }
-  .page-header {
-    @apply mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3;
-  }
-  .page-header h1 {
-    @apply m-0 text-base;
-  }
-  .project-title {
-    @apply flex items-center gap-2;
-  }
-  .project-prefix,
-  .project-key {
-    @apply inline-flex min-w-8 items-center justify-center rounded px-1.5 py-1 font-mono text-[11px] font-normal text-muted-foreground;
-  }
-  .actions {
-    @apply flex flex-wrap items-center gap-2;
-  }
-  .actions > small:first-child {
-    @apply mr-auto;
-  }
-  .field {
-    @apply relative mb-4 min-w-0;
-  }
-  .field > [data-slot="field-label"] {
-    @apply text-xs font-medium text-muted-foreground;
-  }
-  .check {
-    @apply my-2 min-h-7;
-  }
-  .form-grid {
-    @apply grid grid-cols-1 gap-x-5 sm:grid-cols-2;
-  }
-  .toolbar {
-    @apply mb-3 flex items-end gap-2;
-  }
-  .toolbar > .field {
-    @apply mb-0 max-w-md flex-1;
-  }
-  .toolbar > .field > [data-slot="field-label"] {
-    @apply sr-only;
-  }
-  .filter-fields {
-    @apply grid grid-cols-1;
-  }
-  .content:has(> .ticket-list-controls) {
-    padding-top: 0.5rem;
-  }
-  .content:has(> .ticket-list-controls) > * {
-    max-width: none;
-  }
-  .ticket-list-controls {
-    @apply mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1;
-  }
-  .ticket-view-picker {
-    @apply mr-auto min-w-0 flex-1;
-  }
   .ticket-tags-trigger {
     @apply text-left;
   }
   .ticket-tags-count-narrow {
     display: none;
   }
-  .selection-dock {
-    @apply pointer-events-none fixed bottom-4 right-5 z-40 w-[100cqw] max-w-none md:right-10;
-  }
-  .selection-toolbar {
-    @apply pointer-events-auto mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg;
-  }
-  .selection-toolbar .field {
-    @apply mb-0;
-  }
-  .selection-toolbar [data-slot="field-label"] {
-    @apply sr-only;
-  }
-  .selection-toolbar [role="alert"] {
-    @apply basis-full;
-  }
-  .ticket-pagination {
-    @apply pb-24;
-  }
-  .table-scroll {
-    @apply min-w-0;
-  }
-  .ticket-table {
-    @apply table-fixed;
-  }
-  .ticket-table th {
-    @apply relative h-8 bg-transparent px-3 text-[11px] font-normal text-muted-foreground;
-  }
-  .ticket-table td {
-    @apply whitespace-normal px-3 py-2 align-middle text-xs;
-  }
-  .ticket-table td[data-column="key"] {
-    @apply font-mono text-[11px] text-muted-foreground;
-  }
-  .ticket-table tr[data-selected="true"] {
-    @apply bg-primary/5;
-  }
-  .ticket-table .ticket-status-heading > th {
-    @apply p-0;
-  }
-  .ticket-table .ticket-status-heading {
-    @apply bg-muted/30;
-  }
-  .ticket-status-pin {
-    @apply fixed z-10;
-    /* Match TableRow's section tint with an opaque surface over scrolling tickets. */
-    background: color-mix(in oklab, var(--muted) 50%, var(--background));
-  }
-  .ticket-title {
-    @apply block text-[13px] font-normal leading-5 text-foreground hover:text-primary;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
-  .status {
-    @apply whitespace-nowrap text-xs;
-  }
-  .resizer {
-    @apply absolute bottom-2 right-0 top-2 h-auto w-2 min-w-0 rounded-none border-r bg-transparent p-0 hover:border-primary hover:bg-transparent;
-    cursor: col-resize;
-    touch-action: none;
-  }
-  .pagination {
-    @apply mt-5 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground;
-  }
-  .pagination > span {
-    @apply mr-auto;
-  }
-  .conflict {
-    @apply mb-5 border-l-2 border-primary bg-muted/50 p-4;
-    overflow-wrap: anywhere;
-  }
-  .ticket-detail {
-    @apply max-w-6xl;
-  }
-  .ticket-heading > h1 {
-    @apply my-4 max-w-4xl text-2xl font-semibold leading-snug tracking-tight;
-  }
-  .metadata {
-    @apply flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground;
-  }
-  .key {
-    @apply font-mono text-xs text-muted-foreground;
-  }
-  .tags {
-    @apply mb-7 flex flex-wrap gap-2;
-  }
-  .tags:empty {
-    display: none;
-  }
-  .ticket-body {
-    @apply mt-5 grid grid-cols-[minmax(0,1fr)_260px] gap-x-8;
-  }
-  .ticket-requirements,
-  .ticket-collaboration,
-  .ticket-aside {
-    @apply min-w-0;
-  }
-  .ticket-collaboration {
-    @apply col-start-1;
-  }
-  .ticket-aside {
-    @apply col-start-2 row-span-2 row-start-1 border-l pl-5;
-  }
-  .ticket-detail section,
-  .settings section {
-    @apply border-t py-5;
-  }
-  .ticket-requirements > section:first-child,
-  .ticket-aside > section:first-child {
-    @apply border-0 pt-0;
-  }
-  .ticket-aside h2 {
-    @apply text-xs font-medium text-muted-foreground;
-  }
-  .ticket-aside .inline-form > .field {
-    @apply basis-full;
-  }
-  .ticket-aside .resource-row > :first-child {
-    @apply min-w-0 basis-full;
-  }
-  .ticket-aside ul {
-    @apply mb-4 list-disc pl-4 text-xs leading-relaxed text-muted-foreground;
-  }
-  .ticket-aside p {
-    @apply text-xs;
-  }
   .markdown {
-    @apply max-w-[76ch] text-[13px] leading-6;
+    @apply max-w-[90ch] text-[13px] leading-6;
     overflow-wrap: anywhere;
   }
   .markdown a {
@@ -384,167 +197,6 @@
   .markdown img {
     @apply max-w-full;
   }
-  .resource-row {
-    @apply flex flex-wrap items-center gap-3 border-b py-2.5 text-xs;
-    overflow-wrap: anywhere;
-  }
-  .resource-row > :first-child {
-    @apply min-w-24 flex-1;
-  }
-  .resource-row .field {
-    @apply m-0;
-  }
-  .resource-row a {
-    @apply text-primary hover:underline;
-  }
-  .comment {
-    @apply border-b py-4;
-  }
-  .comment .metadata {
-    @apply mb-3;
-  }
-  .comment > .actions {
-    @apply mt-3;
-  }
-  .inline-form {
-    @apply mt-4 flex flex-wrap items-end gap-3;
-  }
-  .inline-form > .field {
-    @apply mb-0 min-w-40 flex-1;
-  }
-  .activity,
-  .inbox {
-    @apply m-0 list-none p-0;
-  }
-  .activity li {
-    @apply flex flex-col gap-1 border-b py-3 text-xs;
-  }
-  .settings {
-    @apply max-w-4xl;
-  }
-  .settings section:first-child {
-    @apply border-0 pt-0;
-  }
-  .settings form {
-    @apply max-w-none;
-  }
-  .settings p {
-    @apply text-sm text-muted-foreground;
-  }
-  .oidc {
-    @apply mt-6;
-  }
-  .inbox li {
-    @apply flex flex-wrap justify-between gap-3 border-b px-4 py-5;
-  }
-  .inbox li > a {
-    @apply min-w-0 flex-1 font-medium hover:text-primary;
-    overflow-wrap: anywhere;
-  }
-  .inbox li[data-unread="true"] {
-    @apply border-l-2 border-l-primary bg-primary/5;
-  }
-  .project-list {
-    @apply border-t;
-  }
-  .project-list .project-key {
-    @apply min-w-0 px-0 py-0 text-[10px] text-muted-foreground hover:bg-transparent;
-  }
-  .login {
-    @apply mx-auto mt-[12vh] w-[calc(100%-3rem)] max-w-sm;
-  }
-  .login .brand {
-    @apply mb-10 inline-flex items-center gap-2;
-  }
-  .login form {
-    @apply mb-5 mt-7;
-  }
-  .login form > [data-slot="button"],
-  .login > [data-slot="button"] {
-    @apply mt-3 w-full;
-  }
-  .login form > small {
-    @apply mb-5 block;
-  }
-  .login ul {
-    @apply mb-6 list-disc pl-6;
-  }
-  .muted {
-    @apply text-muted-foreground;
-  }
-  .success {
-    color: var(--success);
-  }
-  .empty {
-    @apply p-12 text-muted-foreground;
-  }
-  .theme-choice {
-    @apply flex w-full cursor-pointer flex-col gap-2 rounded-lg border border-border bg-background p-2 text-xs font-medium transition-colors hover:bg-muted/50;
-  }
-  .theme-choice[data-selected="true"] {
-    @apply border-primary ring-1 ring-primary;
-  }
-  .theme-library-choice[data-selected="true"] {
-    @apply bg-accent/30;
-    box-shadow: inset 0 0 0 1px var(--ring);
-  }
-  .theme-library-choice:has(> [data-slot="radio-group-item"]:focus-visible) {
-    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
-  }
-  .peer:focus-visible + .theme-choice {
-    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
-  }
-  .theme-choice svg {
-    @apply overflow-hidden border border-foreground/10;
-  }
-  .settings-facts {
-    @apply mb-6 divide-y border-y;
-  }
-  .settings-facts > div {
-    @apply flex flex-wrap items-center justify-between gap-3 py-3 text-[13px];
-  }
-  .settings-facts dt {
-    @apply text-muted-foreground;
-  }
-  .section-heading {
-    @apply mb-4 flex flex-wrap items-start justify-between gap-3;
-  }
-  .section-heading h2 {
-    @apply mb-0 text-sm;
-  }
-  .section-heading p {
-    @apply mb-0 mt-1.5 max-w-xl text-sm text-muted-foreground;
-  }
-  .dialog-actions {
-    @apply mt-4 flex justify-end gap-2 border-t pt-4;
-  }
-  .permission-row {
-    @apply border-b py-3 last:border-0;
-  }
-  .permission-row [data-slot="field-description"] {
-    @apply m-0 text-xs;
-  }
-  .resource-icon {
-    @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground;
-  }
-  .copy-value {
-    @apply mb-4 min-w-0;
-  }
-  .copy-value > span {
-    @apply mb-1 block text-xs text-muted-foreground;
-  }
-  .copy-value > div {
-    @apply flex min-w-0 items-center justify-between gap-3;
-  }
-  .copy-value code {
-    @apply min-w-0 break-all text-xs;
-  }
-  .disclosure {
-    @apply border-t;
-  }
-  .disclosure-body {
-    @apply pb-2 pt-3;
-  }
   .markdown-field {
     @apply mb-6;
   }
@@ -573,158 +225,6 @@
   .markdown-preview {
     @apply min-h-28 rounded-lg border bg-muted/20 p-4;
   }
-  .tag-input {
-    @apply flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50;
-  }
-  [data-slot="dialog-content"]:has(.ticket-composer) [data-slot="dialog-header"] {
-    @apply m-0 shrink-0 border-b px-6 py-4 pr-28;
-  }
-  .ticket-composer {
-    @apply flex min-h-0 flex-1 flex-col;
-  }
-  .composer-body {
-    @apply grid min-h-0 min-w-0 flex-1 grid-cols-1 items-start overflow-y-auto overscroll-contain lg:grid-cols-[minmax(0,1fr)_264px];
-  }
-  .composer-writing {
-    @apply mx-auto w-full min-w-0 max-w-5xl space-y-8 px-6 py-7 sm:px-10;
-  }
-  .composer-writing > .field:first-child > [data-slot="field-label"] {
-    @apply sr-only;
-  }
-  .composer-writing > .field:first-child:has(textarea:focus) {
-    box-shadow: 0 1px 0 var(--primary);
-  }
-  .composer-properties {
-    @apply min-w-0 border-t bg-muted/20 p-6 lg:sticky lg:top-0 lg:min-h-full lg:border-l lg:border-t-0;
-  }
-  .composer-properties h3 {
-    @apply mb-5 text-xs text-muted-foreground;
-  }
-  .composer-properties .field {
-    @apply mb-4;
-  }
-  .composer-footer {
-    @apply z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-4;
-  }
-  .profile-overview {
-    @apply flex flex-wrap items-center gap-4;
-  }
-  .member-row {
-    @apply flex flex-wrap items-center gap-3 border-b py-3;
-  }
-  .member-role > [data-slot="field-label"] {
-    @apply sr-only;
-  }
-  .ticket-aside .section-heading {
-    @apply mb-3 items-center gap-2;
-  }
-  .ticket-aside .section-heading h2 {
-    @apply mb-0 text-xs font-medium text-muted-foreground;
-  }
-  .ticket-aside .section-heading [data-slot="button"] {
-    @apply h-7 text-xs;
-  }
-  .attachment-row {
-    @apply flex items-center gap-2 border-b py-3 text-xs;
-  }
-  .attachment-row [data-slot="button"] {
-    @apply size-7;
-  }
-  .comment-composer {
-    @apply mt-6;
-  }
-  .comment > .metadata {
-    @apply min-h-8 pr-20;
-  }
-  .comment > .actions {
-    @apply absolute right-0 top-3 mt-0;
-  }
-  .comment > .actions [data-slot="button"] {
-    @apply size-7;
-  }
-  .evidence-outcome[data-outcome="passed"] {
-    color: var(--success);
-  }
-  .evidence-outcome[data-outcome="failed"] {
-    @apply text-destructive;
-  }
-  .ticket-properties {
-    @apply space-y-2;
-  }
-  .instance-configuration > [data-slot="field-set"] > section:first-child {
-    @apply pt-0;
-  }
-  .instance-configuration section {
-    @apply py-0;
-  }
-  .settings > [data-slot="tabs-content"] > section {
-    @apply first:border-0 first:pt-0;
-  }
-  .project-search {
-    @apply mb-4 flex flex-wrap items-center justify-between gap-3;
-  }
-  .project-search > [data-slot="input-group"] {
-    @apply max-w-md;
-  }
-  .project-search > span {
-    @apply text-xs text-muted-foreground;
-  }
-  .inbox li {
-    @apply p-0;
-  }
-  .inbox li > a,
-  .notification-row {
-    @apply flex w-full min-w-0 flex-wrap items-center gap-3 px-3 py-3;
-  }
-  .inbox li > a {
-    @apply text-foreground hover:bg-muted/40 hover:no-underline;
-  }
-  .notification-icon {
-    @apply flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground;
-  }
-  .notification-icon > svg {
-    @apply size-4;
-  }
-  .notification-title {
-    @apply block break-words text-[13px] font-medium leading-5;
-  }
-  .notification-context {
-    @apply mt-1 block text-xs font-normal text-muted-foreground;
-  }
-  .inbox time {
-    @apply ml-auto text-xs text-muted-foreground;
-  }
-  .ticket-collaboration [data-slot="tabs-content"] > section {
-    @apply border-0 pt-0;
-  }
-  .comment code {
-    overflow-wrap: anywhere;
-  }
-  .activity li {
-    @apply relative border-b-0 border-l pl-5;
-  }
-  .activity li::before {
-    content: "";
-    @apply absolute -left-[3px] top-4 size-[5px] rounded-full bg-muted-foreground/50;
-  }
-  .login-methods {
-    @apply mt-7 flex flex-col gap-3;
-  }
-  .login-methods > [data-slot="button"] {
-    @apply min-h-10 w-full;
-  }
-  .login-email {
-    @apply border-t pt-6;
-  }
-  .active-filters {
-    @apply mb-4 flex flex-wrap items-center gap-2;
-  }
-  .active-filters [data-slot="button"] {
-    @apply h-7 text-xs;
-  }
-  .settings-section-picker > [data-slot="field-label"] {
-    @apply sr-only;
-  }
 }
 
 .ticket-table[data-label-display="all"] .ticket-tags-trigger {
@@ -747,7 +247,8 @@
 }
 
 @container (min-width: 851px) {
-  .ticket-table th[data-column="title"] {
+  .ticket-table th[data-column="title"],
+  .ticket-table col[data-column="title"] {
     width: auto !important;
   }
 }
@@ -757,30 +258,17 @@
   }
 }
 @container (max-width: 850px) {
-  .ticket-body {
-    display: flex;
-    flex-direction: column;
-  }
-  .ticket-aside {
-    border-left: 0;
-    padding-left: 0;
-  }
-  .ticket-aside > section:first-child {
-    border-top: 1px solid var(--border);
-    padding-top: 1.5rem;
-  }
   .ticket-table {
     display: block;
     width: 100%;
     max-width: 100%;
     min-width: 0;
   }
+  .ticket-table table,
   .ticket-table thead,
   .ticket-table tbody {
     display: block;
-  }
-  .ticket-control-label {
-    display: none;
+    width: 100%;
   }
   .ticket-table:not([data-label-display="all"]) .ticket-tags-trigger [data-secondary],
   .ticket-tags-count-wide {
@@ -791,9 +279,6 @@
   }
   .ticket-table:not([data-label-display="all"]) .ticket-tags-overflow[data-wide-overflow="false"] {
     display: inline-flex;
-  }
-  .ticket-list-controls > [data-slot] {
-    padding-inline: 0.5rem;
   }
   .ticket-table thead {
     position: absolute;
@@ -853,35 +338,15 @@
     content: attr(data-label) ": ";
     color: var(--muted-foreground);
   }
-  .ticket-table .status {
-    white-space: normal;
+  /* The row must not box the heading cell, or sticky has no room to move inside its section. */
+  .ticket-table .ticket-status-heading {
+    display: contents;
   }
-  .ticket-table .ticket-status-heading,
   .ticket-table .ticket-status-heading > th {
     display: block;
     width: 100% !important;
     padding: 0;
-  }
-}
-@media (max-width: 650px) {
-  .selection-dock {
-    right: 1rem;
-  }
-  .content {
-    padding: 1.5rem 1rem 2.5rem;
-  }
-  .workspace-header [data-slot="breadcrumb-list"] {
-    gap: 0.35rem;
-    font-size: 0.75rem;
-  }
-  .workspace-header [data-slot="breadcrumb-item"] {
-    min-width: 0;
-  }
-  .workspace-header [data-slot="breadcrumb-link"] {
-    max-width: 7rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    top: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -894,6 +359,12 @@
 }
 
 @media (max-width: 767px) {
+  /* Inline row editors stay compact so a ticket row remains scannable. */
+  .ticket-table tr.ticket-row [data-slot="button"],
+  .ticket-table tr.ticket-row [data-slot="popover-trigger"] {
+    min-height: 2rem;
+    min-width: 0;
+  }
   [data-slot="button"],
   [data-slot="popover-trigger"],
   [data-slot="dropdown-menu-trigger"],

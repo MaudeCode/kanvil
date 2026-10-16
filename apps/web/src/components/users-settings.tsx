@@ -1,9 +1,10 @@
 import { UserContextMenu } from "./object-context-menu.tsx";
-import { UserPlus, MoreHorizontal } from "lucide-react";
+import { UserPlus, MoreHorizontal, Search } from "lucide-react";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { auth, api, date } from "../data.tsx";
+import { auth, api } from "../data.tsx";
 import {
   Button,
   ErrorNotice,
@@ -14,6 +15,8 @@ import {
   SectionHeading,
   Select,
   SelectItem,
+  RelativeTime,
+  FormActions,
 } from "../ui.tsx";
 import { formText } from "../forms.ts";
 import { UserIdentity } from "./user-avatar.tsx";
@@ -86,15 +89,13 @@ function AccountAdministration({
           <SelectItem value="user">User</SelectItem>
           <SelectItem value="admin">Administrator</SelectItem>
         </Select>
-        <ErrorNotice error={error} />
-        <div className="dialog-actions">
-          <Button disabled={pending} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="default" disabled={pending}>
-            {pending ? "Creating…" : "Create account"}
-          </Button>
-        </div>
+        <FormActions
+          error={error}
+          pending={pending}
+          submitLabel="Create account"
+          pendingLabel="Creating…"
+          onCancel={onCancel}
+        />
       </form>
     </section>
   );
@@ -133,23 +134,26 @@ export function UsersSettings() {
           </Button>
         }
       />
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-52 flex-1">
-          <Input
-            label="Search users"
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <InputGroup className="min-w-52 flex-1 sm:max-w-md">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
             type="search"
-            placeholder="Name or email…"
+            aria-label="Search users"
+            placeholder="Search users…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setOffset(0);
             }}
-            className="mb-0"
           />
-        </div>
+        </InputGroup>
         <Select
           label="Instance role filter"
-          className="mb-0 w-36"
+          labelHidden
+          className="mb-0 w-40"
           value={role}
           onValueChange={(value) => {
             if (value) setRole(value);
@@ -162,7 +166,8 @@ export function UsersSettings() {
         </Select>
         <Select
           label="Account status filter"
-          className="mb-0 w-36"
+          labelHidden
+          className="mb-0 w-40"
           value={status}
           onValueChange={(value) => {
             if (value) setStatus(value);
@@ -229,7 +234,7 @@ export function UsersSettings() {
                       </Badge>
                     </TableCell>
                     <TableCell data-label="Joined" className="text-xs text-muted-foreground">
-                      {date(person.createdAt)}
+                      <RelativeTime value={person.createdAt} />
                     </TableCell>
                     <TableCell>
                       <Button
@@ -249,7 +254,7 @@ export function UsersSettings() {
         </div>
       )}
       {((users.data?.total ?? 0) > 25 || offset > 0) && (
-        <footer className="pagination">
+        <footer className="mt-5 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground [&>span]:mr-auto">
           <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 25))}>
             Previous users
           </Button>

@@ -13,8 +13,10 @@ import {
   SectionHeading,
   Select,
   SelectItem,
+  FormActions,
 } from "../ui.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item";
 import { UserIdentity } from "./user-avatar.tsx";
 import { UserPicker } from "./user-picker.tsx";
 export const roleLabels = { reader: "Read only", writer: "Can edit", admin: "Admin" };
@@ -91,56 +93,64 @@ export function MemberDirectory({
       {loading ? (
         <Loading />
       ) : matches.length ? (
-        matches.map((person) => (
-          <div key={person.userId} className="member-row">
-            <div className="min-w-0 flex-1">
-              <UserIdentity name={person.name} email={person.email} image={person.image} />
-              {scope === "project" && person.source === "workspace" && (
-                <p className="mt-1 mb-0 pl-11 text-xs text-muted-foreground">Workspace access</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                label={`Role for ${person.name}`}
-                className="member-role mb-0 w-36"
-                value={person.role}
-                disabled={
-                  !canAdmin ||
-                  pending ||
-                  (scope === "project" && person.source === "workspace" && person.role === "admin")
-                }
-                onValueChange={(role) => {
-                  void change(person.email, z.enum(roles).parse(role)).catch(() => {});
-                }}
-              >
-                {roles.map((role) => (
-                  <SelectItem key={role} value={role}>
-                    {roleLabels[role]}
-                  </SelectItem>
-                ))}
-              </Select>
-              {canAdmin && (scope === "workspace" || person.source !== "workspace") && (
-                <Confirm
-                  label={
-                    scope === "project" && person.inheritedRole
-                      ? "Use workspace access"
-                      : "Remove member"
+        <ItemGroup className="gap-0">
+          {matches.map((person) => (
+            <Item
+              key={person.userId}
+              className="member-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-3"
+            >
+              <ItemContent className="min-w-0">
+                <UserIdentity name={person.name} email={person.email} image={person.image} />
+                {scope === "project" && person.source === "workspace" && (
+                  <p className="mt-1 mb-0 pl-11 text-xs text-muted-foreground">Workspace access</p>
+                )}
+              </ItemContent>
+              <ItemActions>
+                <Select
+                  label={`Role for ${person.name}`}
+                  labelHidden
+                  className="mb-0 w-36"
+                  value={person.role}
+                  disabled={
+                    !canAdmin ||
+                    pending ||
+                    (scope === "project" &&
+                      person.source === "workspace" &&
+                      person.role === "admin")
                   }
-                  icon={scope === "project" && person.inheritedRole ? <RotateCcw /> : <Trash2 />}
-                  danger={!(scope === "project" && person.inheritedRole)}
-                  description={
-                    scope === "workspace"
-                      ? `Remove ${person.name} from this workspace and all of its projects?`
-                      : person.inheritedRole
-                        ? `Restore ${roleLabels[person.inheritedRole]} workspace access for ${person.name}?`
-                        : `Remove ${person.name}'s project access?`
-                  }
-                  onConfirm={() => change(person.email, null)}
-                />
-              )}
-            </div>
-          </div>
-        ))
+                  onValueChange={(role) => {
+                    void change(person.email, z.enum(roles).parse(role)).catch(() => {});
+                  }}
+                >
+                  {roles.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {roleLabels[role]}
+                    </SelectItem>
+                  ))}
+                </Select>
+                {canAdmin && (scope === "workspace" || person.source !== "workspace") && (
+                  <Confirm
+                    label={
+                      scope === "project" && person.inheritedRole
+                        ? "Use workspace access"
+                        : "Remove member"
+                    }
+                    icon={scope === "project" && person.inheritedRole ? <RotateCcw /> : <Trash2 />}
+                    danger={!(scope === "project" && person.inheritedRole)}
+                    description={
+                      scope === "workspace"
+                        ? `Remove ${person.name} from this workspace and all of its projects?`
+                        : person.inheritedRole
+                          ? `Restore ${roleLabels[person.inheritedRole]} workspace access for ${person.name}?`
+                          : `Remove ${person.name}'s project access?`
+                    }
+                    onConfirm={() => change(person.email, null)}
+                  />
+                )}
+              </ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
       ) : (
         <EmptyState title={query ? "No matching members" : "No members"} className="py-10" />
       )}
@@ -169,15 +179,13 @@ export function MemberDirectory({
               </SelectItem>
             ))}
           </Select>
-          <ErrorNotice error={failure} />
-          <div className="dialog-actions">
-            <Button disabled={pending} onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="default" disabled={pending || !email}>
-              Add member
-            </Button>
-          </div>
+          <FormActions
+            error={failure}
+            pending={pending}
+            submitLabel="Add member"
+            submitDisabled={!email}
+            onCancel={() => setAdding(false)}
+          />
         </form>
       </Modal>
     </section>
