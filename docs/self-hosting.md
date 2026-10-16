@@ -4,7 +4,7 @@ Kanvil runs as one application service and PostgreSQL 18. Tickets, comments, aut
 
 ## Install from npm
 
-Requires Node `>=24.22.0 <25` and a PostgreSQL 18 server. The package includes the backend, built web app, and schema migrations; pnpm and a source checkout are unnecessary. Package and image installation become available after the first release is published; see [release setup](releasing.md).
+Requires Node `>=24.22.0 <25` and a PostgreSQL 18 server. The package includes the backend, built web app, and schema migrations; pnpm and a source checkout are unnecessary.
 
 ```sh
 npm install --global @maudecode/kanvil
@@ -47,7 +47,7 @@ docker compose pull
 docker compose up -d --wait
 ```
 
-The image supports Linux amd64 and arm64. Replace `latest` with a release version such as `0.1.0`, or pin `ghcr.io/maudecode/kanvil@sha256:YOUR_DIGEST` for an immutable deployment. Use a published version; these examples do not assert that `0.1.0` already exists. The first GHCR publication must be made public by a repository administrator, as described in [release setup](releasing.md).
+The image supports Linux amd64 and arm64. Replace `latest` with a release version such as `0.1.0`, or pin `ghcr.io/maudecode/kanvil@sha256:YOUR_DIGEST` for an immutable deployment.
 
 The app binds to loopback port 5180; change the host port with `KANVIL_PORT`. Set up the HTTPS reverse proxy below before opening the site. The application runs as the `node` user with a read-only root filesystem and temporary `/tmp`. Its health check verifies database connectivity. PostgreSQL storage is kept in the `postgres-data` volume. `docker compose down` retains that volume; removing volumes deletes instance data.
 

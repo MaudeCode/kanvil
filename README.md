@@ -19,9 +19,9 @@ Projects can be grouped into separate [workspaces](docs/workspaces.md), with inh
 
 ## Installation
 
-Install the app with `npm install --global @maudecode/kanvil`, or run `ghcr.io/maudecode/kanvil` with Docker Compose. Both need PostgreSQL 18. See [installation and upgrades](docs/self-hosting.md) for configuration, HTTPS, first-owner setup, and backups. These registry paths become available after the first published release.
+Install the app with `npm install --global @maudecode/kanvil`, or run `ghcr.io/maudecode/kanvil` with Docker Compose. Both need PostgreSQL 18. See [installation and upgrades](docs/self-hosting.md) for configuration, HTTPS, first-owner setup, and backups.
 
-[Release setup](docs/releasing.md) covers version tags, npm trusted publishing, and GHCR permissions.
+[Releases](docs/releasing.md) describes version tags and the publishing workflow.
 
 ## Development
 
