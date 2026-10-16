@@ -34,7 +34,11 @@ Use the pinned pnpm version. Its lockfile intentionally contains an environment 
 
 Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server.
 
-The single CI job runs on pull requests and pushes to `main`. Dependency updates arrive as grouped Dependabot pull requests for review.
+PRs and pushes to `main` fan out into independent jobs: formatting, lint, type checks, unit/database tests, optional-service integration tests, the web/npm build, installed-tarball validation, four browser shards, PocketID login, the iOS bundle export, and native amd64/arm64 Docker restoration checks. Each job starts only its required services. The always-running `Checks` job requires every job and matrix entry to succeed; keep that one status in branch protection. Tagged releases reuse the same graph.
+
+The build job uploads the npm tarball and web assets once; npm/browser jobs download them instead of rebuilding. Docker builds use architecture-specific BuildKit caches, with dependency layers independent of application source changes. The shared `.github/actions/setup` action owns pinned tools, workspace installation, and Chromium setup. Release publishers promote the tested tarball and image archives; npm and per-architecture image pushes run in parallel, then Docker manifests join the two digests.
+
+Run `pnpm test:package` locally to build and verify the npm artifact. `pnpm package` creates the public app and tarball in `dist` from the existing server/web builds; `node scripts/package-smoke.ts` verifies an existing tarball without rebuilding. Workspace libraries stay private. Release setup is in [docs/releasing.md](docs/releasing.md). Dependency updates arrive as grouped Dependabot pull requests for review.
 
 `pnpm test:oidc` also starts a disposable PocketID instance on loopback port 51411, runs the browser suite with a virtual passkey, and removes the fixture container afterward. PocketID data lives on tmpfs. The test uses only its fixed isolated API key; it never accepts a real provider URL or credentials. CI runs this provider flow alongside the MCP OAuth consent/PKCE exchange.
 

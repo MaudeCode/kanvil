@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const { values } = parseArgs({ options: { production: { type: "string" } } });
@@ -33,7 +34,7 @@ if (origin)
     .replace(/^KANVIL_URL=.*$/m, `KANVIL_URL=${origin}`)
     .replace(/^HOST=.*$/m, "HOST=0.0.0.0")
     .replace(/^KANVIL_TRUSTED_ORIGINS=.*$/m, "KANVIL_TRUSTED_ORIGINS=");
-await writeFile(new URL(".env", root), contents, { mode: 0o600, flag: "wx" });
+await writeFile(resolve(".env"), contents, { mode: 0o600, flag: "wx" });
 console.info(
   "Created private .env configuration. The initial owner setup token is stored as KANVIL_SETUP_TOKEN.",
 );

@@ -1,10 +1,10 @@
 name: CI
 
 on:
+  workflow_call:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -13,12 +13,169 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
+  EXPO_NO_TELEMETRY: "1"
+
 jobs:
-  check:
-    name: Checks
+  static:
+    name: ${{ matrix.command }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        command: ["fmt:check", lint, typecheck]
+    steps:
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm ${{ matrix.command }}
+
+  tests:
+    name: Unit and database tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
+      postgres: &postgres
+        image: postgres:18
+        env:
+          POSTGRES_USER: kanvil
+          POSTGRES_PASSWORD: kanvil
+          POSTGRES_DB: kanvil
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kanvil -d kanvil"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+      - run: pnpm exec vp test run --exclude '**/*.integration.test.ts'
+
+  broker:
+    name: RabbitMQ integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres: *postgres
+      rabbitmq:
+        image: rabbitmq:4.3.6-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: kanvil-test
+          RABBITMQ_DEFAULT_PASS: isolated-test-password
+          RABBITMQ_DEFAULT_VHOST: kanvil-test
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 2s --health-timeout 5s --health-retries 60
+    env:
+      TEST_RABBITMQ_URL: amqp://kanvil-test:isolated-test-password@127.0.0.1:5672/kanvil-test
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+      - run: pnpm exec vp test run apps/server/src/broker.integration.test.ts
+
+  search:
+    name: Elasticsearch integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres: *postgres
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          xpack.ml.enabled: "false"
+          ES_JAVA_OPTS: -Xms256m -Xmx256m
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+    env:
+      TEST_ELASTICSEARCH_URL: http://127.0.0.1:9200
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+      - run: pnpm exec vp test run apps/server/src/search.integration.test.ts
+
+  build:
+    name: Build web and npm artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+        with:
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - run: pnpm package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-release
+          path: dist/*.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist
+          path: apps/web/dist/
+          if-no-files-found: error
+
+  npm:
+    name: Installed npm package
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres: *postgres
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-release
+          path: dist
+      - run: node scripts/package-smoke.ts
+
+  browser:
+    name: Browser (${{ matrix.shard }}/4)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres: *postgres
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+        with:
+          browser: "true"
+      - &download-web
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: apps/web/dist
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/4
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 5
+
+  oidc:
+    name: PocketID browser login
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres: *postgres
       pocket-id:
         image: ghcr.io/pocket-id/pocket-id:v2.18.0@sha256:323e7ef5bfacf7cf32f22f3d10ccdf48e0c97c94d67e7e40b0b996830deb5165
         env:
@@ -28,100 +185,92 @@ jobs:
           ANALYTICS_DISABLED: "true"
           VERSION_CHECK_DISABLED: "true"
           ICON_LIBRARY_URL: disabled
-        ports:
-          - 51411:1411
+        ports: ["51411:1411"]
         options: >-
           --health-cmd "/app/pocket-id healthcheck"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 30
-      rabbitmq:
-        image: rabbitmq:4.3.6-alpine
-        env:
-          RABBITMQ_DEFAULT_USER: kanvil-test
-          RABBITMQ_DEFAULT_PASS: isolated-test-password
-          RABBITMQ_DEFAULT_VHOST: kanvil-test
-        ports:
-          - 5672:5672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 60
-      elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
-        env:
-          discovery.type: single-node
-          xpack.security.enabled: "false"
-          xpack.ml.enabled: "false"
-          ES_JAVA_OPTS: -Xms256m -Xmx256m
-        ports:
-          - 9200:9200
-        options: >-
-          --health-cmd "curl -fs http://localhost:9200/_cluster/health"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 60
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: kanvil
-          POSTGRES_PASSWORD: kanvil
-          POSTGRES_DB: kanvil
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U kanvil -d kanvil"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
+          --health-interval 2s --health-timeout 5s --health-retries 30
     env:
-      TEST_ELASTICSEARCH_URL: http://127.0.0.1:9200
-      TEST_RABBITMQ_URL: amqp://kanvil-test:isolated-test-password@127.0.0.1:5672/kanvil-test
       KANVIL_TEST_POCKET_ID: "1"
-      TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - *checkout
+      - uses: ./.github/actions/setup
         with:
-          persist-credentials: false
-
-      - name: Set up Vite+, Node, and pnpm
-        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          node-version-file: .node-version
-          cache: true
-          cache-save: ${{ github.event_name == 'push' }}
-          run-install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Check
-        run: pnpm check
-
-      - name: Build web application
-        run: pnpm build
-
-      - name: Install browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Browser workflows
-        run: pnpm exec playwright test
-
-      - name: Export native applications
-        env:
-          EXPO_NO_TELEMETRY: "1"
-        run: pnpm mobile:export
-
-      - name: Verify self-hosting and database restoration
-        run: pnpm test:docker
-
-      - name: Preserve browser failure evidence
+          browser: "true"
+      - *download-web
+      - run: pnpm exec playwright test e2e/pocket-id.pocket.ts
+      - name: Preserve OIDC failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-failure-evidence
+          name: oidc-failure
           path: test-results/
           if-no-files-found: ignore
           retention-days: 5
+
+  mobile:
+    name: iOS bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @kanvil/mobile exec expo export --platform ios
+
+  docker:
+    name: Docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - *checkout
+      - uses: ./.github/actions/setup
+        with:
+          browser: "true"
+      - name: Expose the GitHub cache service to BuildKit
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
+        with:
+          script: |
+            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL', 'ACTIONS_CACHE_URL', 'ACTIONS_CACHE_SERVICE_V2']) {
+              if (process.env[name]) core.exportVariable(name, process.env[name]);
+            }
+      - name: Build and load the native image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          version="$(node scripts/release-version.ts)"
+          docker buildx create --driver docker-container --use --bootstrap
+          docker buildx build --platform "linux/$ARCH" --load --tag kanvil:local \
+            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$GITHUB_SHA" \
+            --cache-from "type=gha,scope=docker-$ARCH" \
+            --cache-to "type=gha,scope=docker-$ARCH,mode=max" .
+      - name: Verify image, MCP, and database restoration
+        run: node scripts/docker-smoke.ts
+      - name: Save tested release image
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: docker save kanvil:local | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: docker-release-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+
+  check:
+    name: Checks
+    if: always()
+    needs: [static, tests, broker, search, build, npm, browser, oidc, mobile, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every suite
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'

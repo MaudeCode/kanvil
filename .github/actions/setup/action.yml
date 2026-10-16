@@ -1,0 +1,27 @@
+name: Set up Kanvil
+description: Shared pinned toolchain, dependency installation, and optional Chromium.
+inputs:
+  install:
+    description: Install workspace dependencies.
+    default: "true"
+  browser:
+    description: Install Chromium and its system dependencies.
+    default: "false"
+  cache-save:
+    description: Save the dependency cache from the build job on main.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+      with:
+        node-version-file: .node-version
+        cache: true
+        cache-save: ${{ inputs.cache-save }}
+        run-install: false
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - if: inputs.browser == 'true'
+      shell: bash
+      run: pnpm exec playwright install --with-deps chromium

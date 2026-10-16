@@ -1,8 +1,7 @@
 name: kanvil
 services:
   app:
-    build: .
-    image: kanvil:local
+    image: ${KANVIL_IMAGE:-ghcr.io/maudecode/kanvil:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
