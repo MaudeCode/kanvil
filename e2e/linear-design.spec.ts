@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { toggleDisplay } from "./controls.ts";
 import { builtInThemes } from "../apps/web/src/lib/themes.ts";
 
 test("Aligned is the default and every named theme applies in both appearances", async ({
@@ -155,7 +155,7 @@ test("compact list spacing remains readable and comfortable spacing persists", a
   const compact = (await row.boundingBox())!.height;
   expect(compact).toBeLessThanOrEqual(48);
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await choose(page, "Row spacing", "Comfortable");
+  await toggleDisplay(page, "Comfortable");
   await page.getByRole("button", { name: "Display", exact: true }).click();
   expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(compact + 12);
   await page.reload();

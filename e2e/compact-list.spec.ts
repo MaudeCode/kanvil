@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { appearance, choose } from "./controls.ts";
+import { appearance, toggleDisplay } from "./controls.ts";
 
 async function expectSeparateTagRows(table: Locator) {
   const layouts = await table.locator("tbody tr.ticket-row").evaluateAll((rows) =>
@@ -100,7 +100,7 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
   for (const property of ["Status", "Priority", "Difficulty"])
     await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "Scopes", exact: true }).check();
-  await choose(page, "Label display", "All labels");
+  await toggleDisplay(page, "All labels");
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
   for (const mode of ["Light", "Dark"]) {
@@ -133,8 +133,9 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
   await expect(table).toHaveAttribute("data-label-display", "all");
   await expect(row.getByText(labels.at(-1)!, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Label display", exact: true })).toContainText(
-    "All labels",
+  await expect(page.getByRole("button", { name: "All labels", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
   await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await page.keyboard.press("Escape");
@@ -150,7 +151,7 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
   await page.getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("button", { name: "New ticket", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Created from the compact toolbar");
-  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     table.getByRole("link", { name: "Created from the compact toolbar", exact: true }),

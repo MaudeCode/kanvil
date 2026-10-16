@@ -1,7 +1,10 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
+// Prefers the combobox inside the open popover or dialog, since list rows carry inline editors too.
 export async function choose(page: Page, label: string, option: string) {
-  await page.getByRole("combobox", { name: label, exact: true }).click();
+  const overlay = page.locator('[data-slot="popover-content"], [role="dialog"]').last();
+  const scope = (await overlay.count()) ? overlay : page;
+  await scope.getByRole("combobox", { name: label, exact: true }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
 export async function chooseTicketView(page: Page, name: string) {
@@ -41,4 +44,18 @@ export async function expand(page: Page, label: string) {
 
 export function ticketRows(page: Page) {
   return page.getByRole("table", { name: "Tickets", exact: true }).locator("tbody tr.ticket-row");
+}
+
+export async function setProperty(scope: Page | Locator, label: string, option: string) {
+  await scope.getByRole("combobox", { name: label, exact: true }).click();
+  const page = "page" in scope ? scope.page() : scope;
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+export async function addAcceptanceCriteria(page: Page, text: string) {
+  const reveal = page.getByRole("button", { name: "Add acceptance criteria", exact: true });
+  if (await reveal.isVisible()) await reveal.click();
+  await page.getByLabel("Acceptance criteria", { exact: true }).fill(text);
+}
+export async function toggleDisplay(page: Page, option: string) {
+  await page.getByRole("button", { name: option, exact: true }).click();
 }

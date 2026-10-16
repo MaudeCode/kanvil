@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signIn, ownerPassword, useEmailLogin } from "./auth.ts";
-import { choose, expand } from "./controls.ts";
+import { addAcceptanceCriteria, choose } from "./controls.ts";
 
 test("ticket writing, parent selection, inline properties, and contextual actions work without raw IDs", async ({
   page,
@@ -24,17 +24,18 @@ test("ticket writing, parent selection, inline properties, and contextual action
   await page
     .getByLabel("Description", { exact: true })
     .fill("## Requirements\nThe writing area comes first.");
-  await page
-    .getByLabel("Acceptance criteria", { exact: true })
-    .fill("- [ ] A title is enough to start.");
-  const writing = await page.getByLabel("Description", { exact: true }).boundingBox(),
+  await addAcceptanceCriteria(page, "- [ ] A title is enough to start.");
+  const title = await page.getByLabel("Title", { exact: true }).boundingBox(),
+    writing = await page.getByLabel("Description", { exact: true }).boundingBox(),
     status = await page.getByRole("combobox", { name: "Status", exact: true }).boundingBox();
-  expect(writing && status).toBeTruthy();
-  expect(writing?.x).toBeLessThan(status?.x ?? 0);
+  expect(title && writing && status).toBeTruthy();
+  expect(title?.y).toBeLessThan(status?.y ?? 0);
+  expect(status?.y).toBeLessThan(writing?.y ?? 0);
+  await page.getByRole("button", { name: "Edit labels", exact: true }).click();
   await page.getByLabel("Labels", { exact: true }).fill("workflow, ux");
   await page.getByLabel("Labels", { exact: true }).press("Enter");
   await expect(page.getByRole("button", { name: "Remove labels ux", exact: true })).toBeVisible();
-  await expand(page, "More properties");
+  await page.keyboard.press("Escape");
   await page.getByRole("combobox", { name: "Parent ticket", exact: true }).click();
   await page.getByRole("combobox", { name: "Search parent ticket", exact: true }).fill(parent.key);
   await page.getByRole("option", { name: new RegExp(parent.title) }).click();
@@ -232,7 +233,7 @@ test("an in-flight ticket save cannot be dismissed or submit twice", async ({ pa
     await page.goto(`/projects/${project.id}`);
     await page.getByRole("button", { name: "New ticket", exact: true }).click();
     await page.getByLabel("Title", { exact: true }).fill("Keep the save result visible");
-    await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+    await page.getByRole("button", { name: "Create ticket", exact: true }).click();
     await expect(page.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
@@ -314,8 +315,9 @@ test("long ticket drafts have growing document fields, an expanded view, and rea
     description = page.getByLabel("Description", { exact: true }),
     criteria = page.getByLabel("Acceptance criteria", { exact: true });
   const normal = await dialog.boundingBox();
-  expect(normal?.width).toBeGreaterThanOrEqual(1200);
-  expect((await description.boundingBox())?.height).toBeGreaterThanOrEqual(280);
+  expect(normal?.width).toBeGreaterThanOrEqual(700);
+  expect((await description.boundingBox())?.height).toBeGreaterThanOrEqual(200);
+  await page.getByRole("button", { name: "Add acceptance criteria", exact: true }).click();
   await page
     .getByLabel("Title", { exact: true })
     .fill("Keep a detailed implementation brief readable while writing");
@@ -346,10 +348,11 @@ test("long ticket drafts have growing document fields, an expanded view, and rea
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => Math.round((await dialog.boundingBox())?.width ?? 0)).toBe(390);
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await criteria.fill(
+  await addAcceptanceCriteria(
+    page,
     "- [ ] Long descriptions remain readable.\n- [ ] Drafts survive closing and reopening.",
   );
-  const save = page.getByRole("button", { name: "Save ticket", exact: true });
+  const save = page.getByRole("button", { name: "Create ticket", exact: true });
   await expect(save).toBeInViewport();
   await criteria.press("ControlOrMeta+Enter");
   await expect(dialog).toHaveCount(0);

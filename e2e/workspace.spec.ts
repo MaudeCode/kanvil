@@ -3,7 +3,8 @@ import {
   ticketRows,
   choose,
   signOut,
-  expand,
+  setProperty,
+  addAcceptanceCriteria,
   chooseTicketView,
   openSaveView,
   searchTickets,
@@ -38,7 +39,7 @@ test("parent, child, and relationship links show ticket titles", async ({ page }
     ).ok(),
   ).toBe(true);
   await page.goto(`/projects/${project.id}/tickets/${parent.id}`);
-  await expect(page.getByRole("heading", { name: "Child tickets", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Child tickets/ })).toBeVisible();
   await expect(
     page.getByRole("link", { name: `${peer.key} · ${peer.title}`, exact: true }),
   ).toBeVisible();
@@ -67,9 +68,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page
     .getByLabel("Description", { exact: true })
     .fill("## Context\nKeep the complete title readable.");
-  await page
-    .getByLabel("Acceptance criteria", { exact: true })
-    .fill("- [ ] Titles wrap\n- [ ] Changes appear live");
+  await addAcceptanceCriteria(page, "- [ ] Titles wrap\n- [ ] Changes appear live");
   await page
     .getByRole("group", { name: "Description editor", exact: true })
     .getByRole("tab", { name: "Preview", exact: true })
@@ -82,13 +81,17 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await expect(page.getByLabel("Description", { exact: true })).toHaveValue(
     "## Context\nKeep the complete title readable.",
   );
-  await expand(page, "More properties");
-  await choose(page, "Difficulty", "med");
+  await choose(page, "Difficulty", "Medium");
+  await page.getByRole("button", { name: "Edit labels", exact: true }).click();
   await page.getByLabel("Labels", { exact: true }).fill("web, agents");
   await page.getByLabel("Labels", { exact: true }).press("Enter");
-  await expand(page, "Automation");
-  await page.getByRole("checkbox", { name: /Ready for agents/ }).check();
-  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Ready for agents", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Ready for agents", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const link = page.getByRole("link", { name: title, exact: true });
   await expect(link).toBeVisible();
@@ -174,9 +177,12 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await searchTickets(page, "Changed by another agent");
   await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("checkbox", { name: "Select KAN-1", exact: true }).check();
-  await choose(page, "New status", "In review");
-  await page.getByRole("button", { name: "Apply status", exact: true }).click();
-  await expect(page.getByRole("cell", { name: "In review", exact: false })).toBeVisible();
+  await setProperty(
+    page.getByRole("region", { name: "Selected tickets", exact: true }),
+    "Status",
+    "In review",
+  );
+  await expect(ticketRows(page).first()).toContainText("In review");
   await openSaveView(page);
   await page.getByLabel("View name", { exact: true }).fill("Agent edits");
   await page.getByRole("button", { name: "Save view", exact: true }).click();

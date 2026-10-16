@@ -6,7 +6,7 @@ test("approved branding and metadata are served by the self-hosted application",
 }) => {
   const response = await page.goto("/");
   expect(response?.headers()["cache-control"]).toBe("no-store");
-  await expect(page.locator(".brand-mark path")).toHaveAttribute("d", brandMark.path);
+  await expect(page.locator(".brand-mark path").first()).toHaveAttribute("d", brandMark.path);
   const origin = new URL(page.url()).origin;
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",

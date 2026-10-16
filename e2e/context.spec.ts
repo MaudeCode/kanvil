@@ -71,7 +71,9 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await link().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Status", exact: true }).hover();
   await page.getByRole("menuitemradio", { name: "In progress", exact: true }).click();
-  await expect(page.getByRole("cell", { name: "In progress", exact: false })).toBeVisible();
+  await expect(
+    page.getByRole("row").filter({ hasText: "Contextual ticket actions" }).first(),
+  ).toContainText("In progress");
   await link().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Copy key and title", exact: true }).click();
   await expect(page.getByText("Ticket copied", { exact: true })).toBeVisible();

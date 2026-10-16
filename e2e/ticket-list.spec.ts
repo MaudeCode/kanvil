@@ -1,6 +1,13 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose, chooseTicketView, openSaveView, ticketRows } from "./controls.ts";
+import {
+  choose,
+  chooseTicketView,
+  openSaveView,
+  setProperty,
+  ticketRows,
+  toggleDisplay,
+} from "./controls.ts";
 import { priorities, priorityLabels } from "../packages/contracts/src/index.ts";
 
 async function expectFullWidth(table: Locator) {
@@ -67,15 +74,18 @@ test("project settings manage reusable colored labels across live ticket views",
   ).toBeVisible();
   await page.getByRole("button", { name: "New ticket", exact: true }).click();
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Ticket from managed label");
+  await page.getByRole("button", { name: "Edit labels", exact: true }).click();
   await page.getByRole("button", { name: "Choose labels", exact: true }).click();
   await page.getByRole("option", { name: "release, ready", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(
     page
       .getByRole("dialog")
       .locator('[data-label-color="purple"]')
-      .filter({ hasText: /release, ready/ }),
+      .filter({ hasText: /release, ready/ })
+      .first(),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Save ticket", exact: true }).click();
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     table.locator('[data-label-color="purple"]').filter({ hasText: /^release, ready$/ }),
@@ -146,7 +156,10 @@ test("priority icons distinguish every level and keep names in pickers", async (
     }
   }
   await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByRole("combobox", { name: "Priority", exact: true }).click();
+  await page
+    .locator('[data-slot="popover-content"]')
+    .getByRole("combobox", { name: "Priority", exact: true })
+    .click();
   for (const priority of priorities) {
     const option = page.getByRole("option", { name: priorityLabels[priority], exact: true });
     await expect(option).toBeVisible();
@@ -187,7 +200,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await expect(table.locator('td[data-column="labels"]').first()).toContainText("standard");
   await expect(table.getByText("rare, quoted 'label'", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty"])
+  for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty", "Due"])
     await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
   await expect(table.locator("thead th")).toHaveCount(2);
   await expectFullWidth(table);
@@ -202,7 +215,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.reload();
   await expect(table.locator('[data-column="priority"]')).toHaveCount(0);
   await expect(table.locator('[data-column="labels"]')).toHaveCount(0);
-  await expect(table.locator('td[data-column="kind"]').first()).toContainText("feature");
+  await expect(table.locator('td[data-column="kind"]').first()).toContainText(/feature/i);
   await expect(table.locator('td[data-column="scopes"]').first()).toContainText("web");
   await expect(table.locator('td[data-column="assigneeId"]').first()).toContainText("Unassigned");
   await expect(table.locator('td[data-column="createdAt"]').first()).not.toBeEmpty();
@@ -210,9 +223,25 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Labels", exact: true })).toBeChecked();
-  await choose(page, "Order by", "Labels A–Z");
+  await choose(page, "Order by", "Labels");
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await expect(ticketRows(page).first()).toContainText("Ticket 51");
+  // Column headers sort too: first click uses the column's natural direction, second flips it.
+  const ticketHeader = table.locator('th[data-column="key"]');
+  await ticketHeader.getByRole("button", { name: "Ticket", exact: true }).click();
+  await expect(ticketHeader).toHaveAttribute("aria-sort", "ascending");
+  await expect(ticketRows(page).first().locator('td[data-column="key"]')).toHaveText("LABELUX-1");
+  await ticketHeader.getByRole("button", { name: "Ticket", exact: true }).click();
+  await expect(ticketHeader).toHaveAttribute("aria-sort", "descending");
+  await expect(ticketRows(page).first().locator('td[data-column="key"]')).toHaveText("LABELUX-51");
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await toggleDisplay(page, "None");
+  await expect(page.getByRole("rowgroup", { name: "To do tickets" })).toHaveCount(0);
+  await expect(ticketRows(page)).toHaveCount(51);
+  await page.getByRole("button", { name: "Reset display", exact: true }).click();
+  await expect(page.getByRole("rowgroup", { name: "To do tickets" })).toBeVisible();
+  await expect(ticketHeader).not.toHaveAttribute("aria-sort");
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByRole("combobox", { name: "Label", exact: true }).click();
   await page.getByRole("combobox", { name: "Search labels", exact: true }).fill("rare");
@@ -279,7 +308,6 @@ test("selection floats without moving rows and retains selection on failed updat
   expect(Math.abs((await first.boundingBox())!.y - before!.y)).toBeLessThan(1);
   await page.getByRole("checkbox", { name: "Select SELECTUX-2", exact: true }).check();
   await expect(dock.getByRole("status")).toHaveText("2 selected");
-  await choose(page, "New status", "In review");
   const bulkPath = `**/api/v1/projects/${project.id}/tickets/bulk`;
   await page.route(bulkPath, (route) =>
     route.fulfill({
@@ -287,11 +315,11 @@ test("selection floats without moving rows and retains selection on failed updat
       json: { error: { code: "version_conflict", message: "Reload changed tickets" } },
     }),
   );
-  await dock.getByRole("button", { name: "Apply status", exact: true }).click();
-  await expect(dock.getByRole("alert")).toBeVisible();
+  await setProperty(dock, "Status", "In review");
+  await expect(page.getByText("Reload changed tickets", { exact: true })).toBeVisible();
   await expect(dock.getByRole("status")).toHaveText("2 selected");
   await page.unroute(bulkPath);
-  await dock.getByRole("button", { name: "Apply status", exact: true }).click();
+  await setProperty(dock, "Status", "In review");
   await expect(dock).toHaveCount(0);
   await expect(first).toContainText("In review");
   for (const width of [1440, 390, 320]) {
@@ -327,6 +355,7 @@ test("relationships can be created from either direction with readable inverse l
   ).json();
   await page.goto(`/projects/${project.id}/tickets/${current.id}`);
   await page.getByRole("button", { name: "Add relationship", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Link existing ticket", exact: true }).click();
   await page.getByRole("combobox", { name: "Relationship", exact: true }).click();
   for (const name of [
     "Is blocked by",
@@ -362,4 +391,55 @@ test("relationships can be created from either direction with readable inverse l
   expect(links[0].targetId).toBe(current.id);
   await page.goto(`/projects/${project.id}/tickets/${prerequisite.id}`);
   await expect(page.getByText("Blocks", { exact: true })).toBeVisible();
+});
+test("keyboard highlight walks the list, opens tickets, and the detail steps through the same order", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "KEYNAV", name: "Keyboard navigation" },
+    })
+  ).json();
+  const me = (await (await page.request.get("/api/auth/get-session")).json()).user;
+  for (const [index, title] of ["Alpha", "Bravo", "Charlie"].entries())
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title, ...(index === 1 ? { assigneeId: me.id } : {}) },
+    });
+  await page.goto("/");
+  await expect(
+    page.locator(".project-list").getByRole("listitem").filter({ hasText: "Keyboard navigation" }),
+  ).toContainText("3 open");
+  await page.goto(`/projects/${project.id}`);
+  await expect(ticketRows(page)).toHaveCount(3);
+  await page.keyboard.press("j");
+  await page.keyboard.press("j");
+  await expect(page.locator("tr[data-active=true]")).toHaveCount(1);
+  await expect(page.locator("tr[data-active=true]")).toContainText("KEYNAV-2");
+  await page.keyboard.press("x");
+  await expect(page.getByRole("region", { name: "Selected tickets", exact: true })).toBeVisible();
+  await page.keyboard.press("x");
+  await page.keyboard.press("s");
+  await page.getByRole("option", { name: /In progress/ }).click();
+  await expect(page.locator("tr[data-active=true]")).toContainText("In progress");
+  await page.keyboard.press("Enter");
+  // The status change moved Bravo into the In progress section, which renders last.
+  await expect(page.getByRole("heading", { name: "Bravo", exact: true })).toBeVisible();
+  await expect(page.getByText("3 / 3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next ticket", exact: true })).toBeDisabled();
+  await page.keyboard.press("k");
+  await expect(page.getByRole("heading", { name: "Charlie", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Previous ticket", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous ticket", exact: true })).toBeDisabled();
+  await page.goto(`/projects/${project.id}`);
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await choose(page, "Assignee", "Me");
+  await page.keyboard.press("Escape");
+  await expect(ticketRows(page)).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Assigned to me", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
+  await choose(page, "Assignee", "Unassigned");
+  await page.keyboard.press("Escape");
+  await expect(ticketRows(page)).toHaveCount(2);
 });

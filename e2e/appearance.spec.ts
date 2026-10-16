@@ -44,23 +44,25 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
     await expect(page.locator("html")).toHaveClass(mode === "dark" ? /dark/ : /^$/);
     for (const width of [1440, 1024, 650, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(page.getByRole("table", { name: "Tickets", exact: true })).toHaveCSS(
-        "display",
-        width <= 1150 ? "block" : "table",
-      );
+      await expect(
+        page.getByRole("table", { name: "Tickets", exact: true }).locator("table").first(),
+      ).toHaveCSS("display", width <= 1150 ? "block" : "table");
       for (const title of titles) {
         const link = page.getByRole("link", { name: title, exact: true });
         await expect(link).toBeVisible();
-        const layout = await link.evaluate((element) => {
-          const rect = element.getBoundingClientRect();
-          return {
-            left: rect.left,
-            right: rect.right,
-            overflow: element.scrollWidth > element.clientWidth,
-          };
-        });
+        const measure = () =>
+          link.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+              left: rect.left,
+              right: rect.right,
+              overflow: element.scrollWidth > element.clientWidth,
+            };
+          });
+        // Container queries settle one layout pass after a resize.
+        await expect.poll(async () => (await measure()).right).toBeLessThanOrEqual(width);
+        const layout = await measure();
         expect(layout.left).toBeGreaterThanOrEqual(0);
-        expect(layout.right).toBeLessThanOrEqual(width);
         expect(layout.overflow).toBe(false);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
@@ -91,7 +93,7 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
   await choose(page, "Status", "To do");
   await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
-  await expect(page.getByLabel("Status", { exact: true })).toBeHidden();
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
   await choose(page, "Status", "All statuses");
   await expect(ticketRows(page)).toHaveCount(4);
