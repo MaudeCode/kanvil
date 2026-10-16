@@ -77,11 +77,10 @@ jobs:
           name: docker-release-${{ matrix.arch }}
           path: release
       - &login
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Push the tested image and record its digest
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
@@ -117,7 +116,6 @@ jobs:
           pattern: release-digest-*
           path: digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - *login
       - name: Publish version and latest manifests from tested digests
         env:

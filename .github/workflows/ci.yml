@@ -237,21 +237,23 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browser: "true"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Read image version
-        id: version
-        run: echo "version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - name: Expose the GitHub cache service to BuildKit
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
         with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: kanvil:local
-          build-args: |
-            KANVIL_VERSION=${{ steps.version.outputs.version }}
-            KANVIL_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=docker-${{ matrix.arch }}
-          cache-to: type=gha,scope=docker-${{ matrix.arch }},mode=max
+          script: |
+            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL', 'ACTIONS_CACHE_URL', 'ACTIONS_CACHE_SERVICE_V2']) {
+              if (process.env[name]) core.exportVariable(name, process.env[name]);
+            }
+      - name: Build and load the native image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')"
+          docker buildx create --driver docker-container --use --bootstrap
+          docker buildx build --platform "linux/$ARCH" --load --tag kanvil:local \
+            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$GITHUB_SHA" \
+            --cache-from "type=gha,scope=docker-$ARCH" \
+            --cache-to "type=gha,scope=docker-$ARCH,mode=max" .
       - name: Verify image, MCP, and database restoration
         run: node scripts/docker-smoke.ts
       - name: Save tested release image
