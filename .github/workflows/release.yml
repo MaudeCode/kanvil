@@ -22,15 +22,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify version and main ancestry
+      - uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - name: Verify release tag and main ancestry
         id: version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')"
-          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          test "$RELEASE_TAG" = "v$version"
-          test "$version" != "0.0.0"
+          test "$GITHUB_REF_TYPE" = tag
+          version="$(node scripts/release-version.ts)"
           git merge-base --is-ancestor HEAD origin/main
           echo "version=$version" >> "$GITHUB_OUTPUT"
 

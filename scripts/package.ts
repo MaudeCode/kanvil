@@ -2,15 +2,17 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { releaseVersion } from "./release-version.ts";
 
 const metadata = z.object({
   name: z.string(),
-  version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),
+  version: z.string(),
   description: z.string(),
   license: z.string(),
   engines: z.record(z.string(), z.string()),
 });
 const root = metadata.parse(JSON.parse(await readFile("package.json", "utf8")));
+root.version = releaseVersion(root.version);
 const server = z
   .object({ dependencies: z.record(z.string(), z.string()) })
   .parse(JSON.parse(await readFile("apps/server/package.json", "utf8")));

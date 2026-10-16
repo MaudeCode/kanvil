@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { releaseVersion } from "./release-version.ts";
 import { createFixture } from "../apps/server/src/test-fixture.ts";
 
 const exec = promisify(execFile);
@@ -40,7 +41,10 @@ try {
   const metadata = z
     .object({ version: z.string() })
     .parse(JSON.parse(await readFile("package.json", "utf8")));
-  assert.equal((await exec(cli, ["--version"], options)).stdout.trim(), metadata.version);
+  assert.equal(
+    (await exec(cli, ["--version"], options)).stdout.trim(),
+    releaseVersion(metadata.version),
+  );
   await assert.rejects(exec(cli, ["invalid"], options));
   await exec(cli, ["configure", "--production", "https://kanvil.example.test"], options);
   assert.equal((await stat(join(directory, ".env"))).mode & 0o777, 0o600);

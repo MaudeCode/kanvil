@@ -248,7 +248,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')"
+          version="$(node scripts/release-version.ts)"
           docker buildx create --driver docker-container --use --bootstrap
           docker buildx build --platform "linux/$ARCH" --load --tag kanvil:local \
             --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$GITHUB_SHA" \

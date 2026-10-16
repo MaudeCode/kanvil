@@ -14,7 +14,7 @@ test("npm publishing retries require identical bytes and only E404 permits a pub
     await mkdir(join(directory, "release"));
     await writeFile(
       join(directory, "package.json"),
-      JSON.stringify({ name: "@maudecode/kanvil", version: "0.1.0" }),
+      JSON.stringify({ name: "@maudecode/kanvil", version: "0.0.0" }),
     );
     const tarball = Buffer.from("tested release bytes");
     await writeFile(join(directory, "release/package.tgz"), tarball);
@@ -24,6 +24,7 @@ test("npm publishing retries require identical bytes and only E404 permits a pub
       `#!/usr/bin/env node
 const fs = require("node:fs");
 if (process.argv[2] === "view") {
+  fs.writeFileSync("lookup", process.argv[3]);
   if (process.env.SCENARIO === "same") console.log(JSON.stringify(process.env.INTEGRITY));
   else if (process.env.SCENARIO === "different") console.log(JSON.stringify("sha512-other"));
   else { console.log(JSON.stringify({ error: { code: process.env.SCENARIO } })); process.exit(1); }
@@ -38,9 +39,12 @@ if (process.argv[2] === "view") {
         PATH: `${directory}:${process.env.PATH}`,
         SCENARIO: scenario,
         INTEGRITY: integrity,
+        GITHUB_REF_TYPE: "tag",
+        GITHUB_REF_NAME: "v1.2.3",
       },
     });
     await exec(process.execPath, [script], options("same"));
+    expect(await readFile(join(directory, "lookup"), "utf8")).toBe("@maudecode/kanvil@1.2.3");
     await expect(readFile(join(directory, "published"))).rejects.toThrow();
     await expect(exec(process.execPath, [script], options("different"))).rejects.toThrow();
     await expect(exec(process.execPath, [script], options("E403"))).rejects.toThrow();

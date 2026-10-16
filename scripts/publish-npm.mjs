@@ -1,9 +1,11 @@
+import { releaseVersion } from "./release-version.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 
 const metadata = JSON.parse(readFileSync("package.json", "utf8"));
+metadata.version = releaseVersion(metadata.version);
 const tarballs = readdirSync("release").filter((file) => file.endsWith(".tgz"));
 assert.equal(tarballs.length, 1, "Expected one tested release tarball");
 const tarball = `release/${tarballs[0]}`;
