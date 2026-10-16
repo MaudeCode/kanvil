@@ -71,7 +71,7 @@ All integration fixtures use disposable test-owned databases/accounts. Existing 
 
 The web app now uses compact shared controls, navigation, table rows, settings rows, and typography. Compact and Comfortable ticket density are personal browser preferences. Table layout remains available on laptop widths, with the title taking the remaining space; phone layouts retain wrapping titles and larger touch targets. The shadcn inset sidebar, resizing, keyboard access, and contextual actions remain in use.
 
-The default palette is Linear. Eighteen named themes have light/dark mappings and a searchable gallery. Built-in palette checks cover body, sidebar, muted, secondary, popover, primary-button, and status-text contrast. Custom JSON import/export remains version one, and old built-in IDs resolve to named replacements. Sources and notices are listed in [themes](themes.md).
+The default palette is Aligned. Eighteen named themes have light/dark mappings and a searchable gallery. Built-in palette checks cover body, sidebar, muted, secondary, popover, primary-button, and status-text contrast. Custom JSON import/export remains version one, and old built-in IDs resolve to named replacements. Sources and notices are listed in [themes](themes.md).
 
 Validation for this pass:
 

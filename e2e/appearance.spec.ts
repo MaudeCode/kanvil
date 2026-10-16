@@ -164,13 +164,13 @@ test("inset sidebar, project search, icon actions, and color themes work across 
     ["GitHub", "github"],
     ["Catppuccin Mocha", "catppuccin-mocha"],
     ["Dracula", "dracula"],
-    ["Linear", "linear"],
+    ["Aligned", "aligned"],
   ] as const) {
     await appearance(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", id);
   }
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "linear");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Sidebar", exact: true });

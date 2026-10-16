@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Check, Download, Pencil, Plus, Trash2, Upload, Search } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, Upload, Search } from "lucide-react";
 import { z } from "zod";
 import { useTheme, modeNames } from "./theme-provider.tsx";
 import { ThemePreview } from "./theme-preview.tsx";
@@ -37,10 +37,7 @@ function ThemeChoice({ theme, active }: { theme: ThemeDefinition; active: boolea
       />
       <Label htmlFor={`theme-${theme.id}`} className="theme-choice" data-selected={active}>
         <ThemePreview theme={theme} />
-        <span className="flex w-full items-center justify-between gap-2 px-1 pb-1">
-          <span>{theme.name}</span>
-          {active && <Check className="size-4 text-primary" />}
-        </span>
+        <span className="px-1 pb-1">{theme.name}</span>
       </Label>
     </div>
   );

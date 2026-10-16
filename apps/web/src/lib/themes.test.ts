@@ -38,8 +38,8 @@ it("keeps all bundled theme pairs readable and exports portable custom themes", 
     expect(custom).toEqual([{ ...theme, id: `custom-${theme.id}` }]);
   }
 });
-it("defaults to Linear and resolves old palette preferences without touching custom themes", () => {
-  expect(builtInThemes[0].id).toBe("linear");
+it("defaults to Aligned and resolves old palette preferences without touching custom themes", () => {
+  expect(builtInThemes[0].id).toBe("aligned");
   expect(builtInThemes.length).toBeGreaterThanOrEqual(18);
   expect(new Set(builtInThemes.map((t) => t.id)).size).toBe(builtInThemes.length);
   for (const name of [
@@ -58,8 +58,9 @@ it("defaults to Linear and resolves old palette preferences without touching cus
     "Ayu",
   ])
     expect(builtInThemes.some((t) => t.name === name)).toBe(true);
-  expect(resolveThemeId(null)).toBe("linear");
-  expect(resolveThemeId("kanvil")).toBe("linear");
+  expect(resolveThemeId(null)).toBe("aligned");
+  expect(resolveThemeId("kanvil")).toBe("aligned");
+  expect(resolveThemeId("linear")).toBe("aligned");
   expect(resolveThemeId("ocean")).toBe("tokyo-night");
   expect(resolveThemeId("custom-my-theme")).toBe("custom-my-theme");
 });

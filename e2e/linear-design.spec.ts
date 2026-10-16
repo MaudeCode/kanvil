@@ -3,18 +3,25 @@ import { signIn } from "./auth.ts";
 import { choose } from "./controls.ts";
 import { builtInThemes } from "../apps/web/src/lib/themes.ts";
 
-test("Linear is the default and every named theme applies in both appearances", async ({
+test("Aligned is the default and every named theme applies in both appearances", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await signIn(page);
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "linear");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
+  await page.evaluate(() => localStorage.setItem("kanvil:color-theme", "linear"));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "aligned");
+  expect(await page.evaluate(() => localStorage.getItem("kanvil:color-theme"))).toBe("aligned");
   await expect
     .poll(() => page.evaluate(() => document.documentElement.style.colorScheme))
     .toBe("dark");
   await page.goto("/settings?section=appearance");
+  await expect(page.getByRole("radio", { name: "Aligned", exact: true })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Linear", exact: true })).toHaveCount(0);
+  await expect(page.locator(".theme-choice .lucide-check")).toHaveCount(0);
   for (const mode of ["light", "dark"] as const) {
     await page
       .getByRole("radio", { name: mode === "light" ? "Light" : "Dark", exact: true })

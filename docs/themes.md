@@ -1,6 +1,6 @@
 # Appearance and themes
 
-Kanvil's default **Linear** palette uses neutral light/dark surfaces and an indigo accent. The layout follows Linear's [current interface guidance](https://linear.app/now/behind-the-latest-design-refresh): compact headers, quieter navigation, softer separators, and more information in each row. Kanvil keeps its own branding and shadcn components.
+Kanvil's default **Aligned** palette uses neutral light/dark surfaces and an indigo accent. The layout follows Linear's [current interface guidance](https://linear.app/now/behind-the-latest-design-refresh): compact headers, quieter navigation, softer separators, and more information in each row. Kanvil keeps its own branding and shadcn components.
 
 Choose Light, Dark, or System under **Settings → Appearance**. Search the theme gallery by name. Choices and custom themes persist in this browser. The default respects the system appearance; switching palettes does not change that preference.
 
@@ -8,7 +8,7 @@ Choose Light, Dark, or System under **Settings → Appearance**. Search the them
 
 | Theme                               | Light / dark palette source                                                                                        |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Linear                              | Kanvil's adaptation of Linear's neutral interface                                                                  |
+| Aligned                             | Kanvil's adaptation of Linear's neutral interface                                                                  |
 | Catppuccin Mocha, Macchiato, Frappé | [Catppuccin](https://github.com/catppuccin/palette); Latte in light mode                                           |
 | Solarized                           | [Ethan Schoonover's Solarized](https://ethanschoonover.com/solarized/)                                             |
 | GitHub                              | [GitHub Primer](https://github.com/primer/primitives)                                                              |
@@ -25,7 +25,7 @@ Choose Light, Dark, or System under **Settings → Appearance**. Search the them
 
 These are interface adaptations, not editor syntax themes. Backgrounds and accent families come from the upstream palettes; shades are adjusted where needed for readable buttons and text. Derived surfaces, sidebar text, muted text, and status colors use the shared theme helper. Tests enforce at least 4.5:1 text contrast across the principal surfaces in both modes. Palette notices ship at `/third-party-themes.txt`.
 
-Old built-in selections resolve to the corresponding named palette. The former default resolves to Linear. Existing custom themes keep their IDs and colors, and their version-one JSON import/export format is unchanged.
+Old built-in selections resolve to the corresponding named palette. The former default selections, including `linear`, resolve to Aligned. Existing custom themes keep their IDs and colors, and their version-one JSON import/export format is unchanged.
 
 ## Density
 

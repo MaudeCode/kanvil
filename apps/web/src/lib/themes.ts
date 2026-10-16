@@ -51,8 +51,8 @@ const latte = colors("#eff1f5", "#4c4f69", "#e6e9ef", "#8839ef", "#ffffff");
 const roseDawn = colors("#faf4ed", "#575279", "#f2e9e1", "#907aa9", "#ffffff");
 export const builtInThemes: [ThemeDefinition, ...ThemeDefinition[]] = [
   {
-    id: "linear",
-    name: "Linear",
+    id: "aligned",
+    name: "Aligned",
     light: colors("#ffffff", "#202020", "#f7f7f7", "#5e6ad2", "#ffffff"),
     dark: colors("#171717", "#eeeeee", "#111111", "#8a8ff5", "#181822"),
   },
@@ -160,7 +160,8 @@ export const builtInThemes: [ThemeDefinition, ...ThemeDefinition[]] = [
   },
 ];
 const legacyThemes: Record<string, string> = {
-  kanvil: "linear",
+  kanvil: "aligned",
+  linear: "aligned",
   graphite: "github",
   forest: "everforest",
   ember: "gruvbox",
