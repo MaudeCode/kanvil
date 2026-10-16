@@ -3,23 +3,24 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Pencil, Settings2, Users, Tags } from "lucide-react";
 import { toast } from "sonner";
-import type { Project } from "@kanvil/contracts";
+import type { Output } from "@kanvil/contracts";
+import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import {
   Button,
   CopyValue,
   Input,
   Modal,
-  SectionHeading,
+  RelativeTime,
   Select,
   SelectItem,
   Textarea,
   FormActions,
+  reportError,
 } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { SettingsLayout, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
-import { ProjectIcon } from "./project-icon.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
 const sections = [
@@ -32,7 +33,7 @@ export function ProjectSettings({
   section,
   onSectionChange,
 }: {
-  project: Project;
+  project: Output<"list_projects">[number];
   section: "general" | "members" | "labels";
   onSectionChange: (section: string) => void;
 }) {
@@ -49,7 +50,6 @@ export function ProjectSettings({
     [draft, setDraft] = useState({
       name: project.name,
       description: project.description,
-      visibility: project.visibility,
       version: project.version,
     });
   return (
@@ -62,39 +62,92 @@ export function ProjectSettings({
       >
         <TabsContent value="general">
           <section>
-            <SectionHeading
-              title={project.name}
-              action={
-                access.canAdmin && (
-                  <Button
-                    onClick={() => {
-                      setDraft({
-                        name: project.name,
-                        description: project.description,
-                        visibility: project.visibility,
-                        version: project.version,
-                      });
-                      update.reset();
-                      setEditing(true);
-                    }}
+            <div className="flex flex-wrap items-start gap-5">
+              <ProjectIconPicker project={project} disabled={!access.canAdmin} variant="icon" />
+              <div className="min-w-0 flex-1 basis-60">
+                <h2 className="mb-1 flex flex-wrap items-center gap-2 text-base">
+                  {project.name}
+                  <Badge variant="secondary" className="font-mono text-[10px] font-normal">
+                    {project.key}
+                  </Badge>
+                </h2>
+                <p className="mb-2 max-w-xl whitespace-pre-wrap">
+                  {project.description || "No description"}
+                </p>
+                <p className="mb-0 text-xs tabular-nums">
+                  <Link
+                    to="/projects/$projectId"
+                    params={{ projectId: project.id }}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    <Pencil />
-                    Edit project
-                  </Button>
-                )
-              }
-            />
-            <div className="mb-8 flex items-center gap-5">
-              <ProjectIcon project={project} className="size-14" />
-              <p className="mb-0 max-w-xl whitespace-pre-wrap text-sm text-muted-foreground">
-                {project.description || "No description"}
-              </p>
+                    {project.openTickets === 0
+                      ? "No open tickets"
+                      : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
+                    {project.overdueTickets > 0 && (
+                      <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
+                    )}
+                  </Link>
+                  {" · Created "}
+                  <RelativeTime value={project.createdAt} />
+                </p>
+              </div>
+              {access.canAdmin && (
+                <Button
+                  onClick={() => {
+                    setDraft({
+                      name: project.name,
+                      description: project.description,
+                      version: project.version,
+                    });
+                    update.reset();
+                    setEditing(true);
+                  }}
+                >
+                  <Pencil />
+                  Edit project
+                </Button>
+              )}
             </div>
+          </section>
+          <section>
             <SettingRow
-              title="Project icon"
-              description="Choose a library icon or upload your own."
+              title="Project access"
+              description={
+                project.visibility === "workspace"
+                  ? "Workspace members inherit access from their workspace role."
+                  : "Only members you add and workspace administrators can see this project."
+              }
             >
-              <ProjectIconPicker project={project} disabled={!access.canAdmin} />
+              <Select
+                label="Project access"
+                labelHidden
+                className="mb-0 w-56"
+                value={project.visibility}
+                disabled={!access.canAdmin || update.isPending}
+                onValueChange={(value) => {
+                  const visibility = value === "private" ? "private" : "workspace";
+                  if (visibility === project.visibility) return;
+                  void update
+                    .mutateAsync({
+                      projectId: project.id,
+                      expectedVersion: project.version,
+                      name: project.name,
+                      description: project.description,
+                      visibility,
+                    })
+                    .then(() => toast.success("Project access updated"))
+                    .catch(reportError);
+                }}
+              >
+                <SelectItem value="workspace">Everyone in the workspace</SelectItem>
+                <SelectItem value="private">Only project members</SelectItem>
+              </Select>
+            </SettingRow>
+            <SettingRow
+              title="Ticket prefix"
+              description={`Permanent. Every ticket in this project is keyed ${project.key}-1, ${project.key}-2, and so on.`}
+            >
+              <CopyValue label="Ticket prefix" value={project.key} inline />
             </SettingRow>
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {workspace.active?.role && (
@@ -110,17 +163,6 @@ export function ProjectSettings({
                 </Button>
               )}
             </SettingRow>
-            <SettingRow
-              title="Project access"
-              description={
-                project.visibility === "workspace"
-                  ? "Workspace members inherit access from their workspace role."
-                  : "Only project members and workspace administrators can access this project."
-              }
-            />
-            <div className="pt-6">
-              <CopyValue label="Permanent ticket prefix" value={project.key} />
-            </div>
           </section>
         </TabsContent>
         <TabsContent value="members">
@@ -149,7 +191,6 @@ export function ProjectSettings({
                 expectedVersion: draft.version,
                 name: draft.name,
                 description: draft.description,
-                visibility: draft.visibility,
               })
               .then(() => {
                 setEditing(false);
@@ -172,16 +213,6 @@ export function ProjectSettings({
             onChange={(event) => setDraft({ ...draft, description: event.target.value })}
             maxLength={5000}
           />
-          <Select
-            label="Project access"
-            value={draft.visibility}
-            onValueChange={(value) =>
-              setDraft({ ...draft, visibility: value === "workspace" ? "workspace" : "private" })
-            }
-          >
-            <SelectItem value="workspace">Everyone in this workspace</SelectItem>
-            <SelectItem value="private">Only project members</SelectItem>
-          </Select>
           {project.version !== draft.version && (
             <p role="alert">This project changed. Reopen the editor before saving.</p>
           )}

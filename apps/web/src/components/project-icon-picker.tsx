@@ -13,9 +13,12 @@ import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 export function ProjectIconPicker({
   project,
   disabled = false,
+  variant = "button",
 }: {
   project: Project;
   disabled?: boolean;
+  // "icon" shows the large project icon itself as the trigger, with a camera overlay on hover.
+  variant?: "button" | "icon";
 }) {
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -39,22 +42,41 @@ export function ProjectIconPicker({
       setError(cause);
     }
   }
+  const start = () => {
+    update.reset();
+    setError(undefined);
+    setColor(project.iconColor);
+    setQuery("");
+    setLimit(96);
+    setOpen(true);
+  };
   return (
     <>
-      <Button
-        disabled={disabled}
-        onClick={() => {
-          update.reset();
-          setError(undefined);
-          setColor(project.iconColor);
-          setQuery("");
-          setLimit(96);
-          setOpen(true);
-        }}
-      >
-        <ProjectIcon project={project} className="size-4" />
-        Change icon
-      </Button>
+      {variant === "icon" ? (
+        <button
+          type="button"
+          aria-label="Change icon"
+          title="Change icon"
+          disabled={disabled}
+          onClick={start}
+          className="group/icon relative shrink-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+        >
+          <ProjectIcon project={project} className="size-16 rounded-xl bg-muted/50 p-1.5" />
+          {!disabled && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/80 text-foreground opacity-0 transition-opacity group-hover/icon:opacity-100 group-focus-visible/icon:opacity-100"
+            >
+              <Camera className="size-5" />
+            </span>
+          )}
+        </button>
+      ) : (
+        <Button disabled={disabled} onClick={start}>
+          <ProjectIcon project={project} className="size-4" />
+          Change icon
+        </Button>
+      )}
       <Modal title="Project icon" open={open} onOpenChange={setOpen} busy={busy}>
         <Tabs defaultValue="library">
           <TabsList variant="line">

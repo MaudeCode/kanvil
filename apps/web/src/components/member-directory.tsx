@@ -17,6 +17,7 @@ import {
 } from "../ui.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
 import { UserIdentity } from "./user-avatar.tsx";
 import { UserPicker } from "./user-picker.tsx";
 export const roleLabels = { reader: "Read only", writer: "Can edit", admin: "Admin" };
@@ -102,7 +103,9 @@ export function MemberDirectory({
               <ItemContent className="min-w-0">
                 <UserIdentity name={person.name} email={person.email} image={person.image} />
                 {scope === "project" && person.source === "workspace" && (
-                  <p className="mt-1 mb-0 pl-11 text-xs text-muted-foreground">Workspace access</p>
+                  <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
+                    Workspace access
+                  </Badge>
                 )}
               </ItemContent>
               <ItemActions>

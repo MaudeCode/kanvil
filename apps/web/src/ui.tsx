@@ -608,34 +608,49 @@ export function SectionHeading({
     </header>
   );
 }
-export function CopyValue({ label, value }: { label: string; value: string }) {
+// A value with a copy action; `inline` drops the label block for use inside a setting row.
+export function CopyValue({
+  label,
+  value,
+  inline = false,
+}: {
+  label: string;
+  value: string;
+  inline?: boolean;
+}) {
   const id = useId(),
     [copied, setCopied] = useState(false);
+  const body = (
+    <div
+      role="group"
+      aria-label={inline ? label : undefined}
+      aria-labelledby={inline ? undefined : id}
+      className={cn("flex min-w-0 items-center gap-3", !inline && "justify-between")}
+    >
+      <code className="min-w-0 text-xs break-all">{value}</code>
+      <IconButton
+        label={`Copy ${label.toLowerCase()}`}
+        size={inline ? "icon-sm" : "icon"}
+        onClick={() => {
+          void copyText(value)
+            .then(() => {
+              setCopied(true);
+              toast.success(`${label} copied`);
+            })
+            .catch((error) => toast.error(errorMessage(error)));
+        }}
+      >
+        {copied ? <CheckIcon /> : <Copy />}
+      </IconButton>
+    </div>
+  );
+  if (inline) return body;
   return (
     <div className="mb-4 min-w-0">
       <span id={id} className="mb-1 block text-xs text-muted-foreground">
         {label}
       </span>
-      <div
-        role="group"
-        aria-labelledby={id}
-        className="flex min-w-0 items-center justify-between gap-3"
-      >
-        <code className="min-w-0 text-xs break-all">{value}</code>
-        <IconButton
-          label={`Copy ${label.toLowerCase()}`}
-          onClick={() => {
-            void copyText(value)
-              .then(() => {
-                setCopied(true);
-                toast.success(`${label} copied`);
-              })
-              .catch((error) => toast.error(errorMessage(error)));
-          }}
-        >
-          {copied ? <CheckIcon /> : <Copy />}
-        </IconButton>
-      </div>
+      {body}
     </div>
   );
 }

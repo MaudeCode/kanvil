@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLabel } from "@kanvil/contracts";
@@ -90,8 +91,15 @@ export function ProjectLabelSettings({
                 className="h-auto max-w-full border-0 bg-transparent px-0 text-[13px] font-normal"
               />
             }
-            description={`${label.count} ${label.count === 1 ? "ticket" : "tickets"}`}
           >
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId }}
+              search={{ label: label.name }}
+              className="text-xs whitespace-nowrap text-muted-foreground tabular-nums hover:text-foreground"
+            >
+              {label.count} {label.count === 1 ? "ticket" : "tickets"}
+            </Link>
             {canAdmin && (
               <>
                 <IconButton label={`Edit label ${label.name}`} onClick={() => edit(label)}>
