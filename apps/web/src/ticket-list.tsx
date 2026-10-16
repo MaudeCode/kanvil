@@ -102,13 +102,11 @@ function TicketStatusHeader({
   count,
   collapsed,
   onToggle,
-  onCreate,
 }: {
   status: Ticket["status"];
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-  onCreate?: (() => void) | undefined;
 }) {
   return (
     <div className="flex items-center">
@@ -125,18 +123,6 @@ function TicketStatusHeader({
         <TicketIndicator property="status" value={status} />
         <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
       </Button>
-      {onCreate && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="mr-2 text-muted-foreground"
-          aria-label={`New ${stateLabels[status]} ticket`}
-          title={`New ${stateLabels[status]} ticket`}
-          onClick={onCreate}
-        >
-          <Plus />
-        </Button>
-      )}
     </div>
   );
 }
@@ -905,7 +891,6 @@ export function TicketList({
                             count={data.total}
                             collapsed={collapsed.has(status)}
                             onToggle={() => toggleStatus(status)}
-                            onCreate={access.canWrite ? () => setCreating({ status }) : undefined}
                           />
                         </TableHead>
                       </TableRow>
