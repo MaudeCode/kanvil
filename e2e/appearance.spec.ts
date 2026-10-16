@@ -196,10 +196,11 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(sheet).toHaveCount(0);
   await expect(create).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Mobile project", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  const menu = page.getByRole("menu");
-  await expect(menu).toBeVisible();
-  await menu.press("Escape");
-  await expect(menu).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Appearance", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Appearance", exact: true })).toHaveCount(0);
+  await page.goto("/settings?section=appearance");
+  const dark = page.getByRole("radio", { name: "Dark", exact: true });
+  await dark.focus();
+  await dark.press("ArrowLeft");
+  await expect(page.getByRole("radio", { name: "Light", exact: true })).toBeFocused();
+  await expect(page.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
 });

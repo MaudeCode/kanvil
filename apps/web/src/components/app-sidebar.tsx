@@ -7,7 +7,6 @@ import { Bell, ChevronsUpDown, Layers, LogOut, Search, Settings, ShieldCheck } f
 import { auth, useIdentity, useProjects } from "../data.tsx";
 import { Brand, ErrorNotice, IconButton } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
-import { ThemeMenu } from "./appearance.tsx";
 import {
   Sidebar,
   SidebarHeader,
@@ -357,17 +356,15 @@ export function WorkspaceHeader() {
           )}
         </BreadcrumbList>
       </Breadcrumb>
-      <div className="ml-auto flex items-center gap-1">
-        {projectList && (
-          <IconButton
-            label="Project settings"
-            render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
-          >
-            <Settings />
-          </IconButton>
-        )}
-        <ThemeMenu />
-      </div>
+      {projectList && (
+        <IconButton
+          label="Project settings"
+          className="ml-auto"
+          render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
+        >
+          <Settings />
+        </IconButton>
+      )}
     </header>
   );
 }

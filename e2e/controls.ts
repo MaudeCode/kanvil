@@ -19,10 +19,10 @@ export async function searchTickets(page: Page, text: string) {
   await page.keyboard.press("Escape");
 }
 export async function appearance(page: Page, option: string) {
-  await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: option, exact: true }).click();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
+  const previousUrl = page.url();
+  await page.goto("/settings?section=appearance");
+  await page.getByRole("radio", { name: option, exact: true }).check();
+  await page.goto(previousUrl);
 }
 export async function signOut(page: Page) {
   if ((page.viewportSize()?.width ?? 1440) < 768)

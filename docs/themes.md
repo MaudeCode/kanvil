@@ -2,7 +2,7 @@
 
 Kanvil's default **Linear** palette uses neutral light/dark surfaces and an indigo accent. The layout follows Linear's [current interface guidance](https://linear.app/now/behind-the-latest-design-refresh): compact headers, quieter navigation, softer separators, and more information in each row. Kanvil keeps its own branding and shadcn components.
 
-Choose Light, Dark, or System under **Settings → Appearance**, or from the header's Appearance menu. Search the theme gallery by name. Choices and custom themes persist in this browser. The default respects the system appearance; switching palettes does not change that preference.
+Choose Light, Dark, or System under **Settings → Appearance**. Search the theme gallery by name. Choices and custom themes persist in this browser. The default respects the system appearance; switching palettes does not change that preference.
 
 ## Bundled palettes
 

@@ -1,17 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  Check,
-  Download,
-  Monitor,
-  Moon,
-  Palette,
-  Pencil,
-  Plus,
-  Sun,
-  Trash2,
-  Upload,
-  Search,
-} from "lucide-react";
+import { Check, Download, Pencil, Plus, Trash2, Upload, Search } from "lucide-react";
 import { z } from "zod";
 import { useTheme, modeNames } from "./theme-provider.tsx";
 import { ThemePreview } from "./theme-preview.tsx";
@@ -28,62 +16,7 @@ import { Input as FileInput } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
-const modes = ["light", "dark", "system"] as const,
-  modeIcons = { light: Sun, dark: Moon, system: Monitor };
-export function ThemeMenu() {
-  const theme = useTheme();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Appearance" />}>
-        <Palette />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-[80dvh] w-52">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Appearance</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={theme.mode}
-            onValueChange={(value) => theme.setMode(z.enum(modes).parse(value))}
-          >
-            {modes.map((mode) => {
-              const Icon = modeIcons[mode];
-              return (
-                <DropdownMenuRadioItem key={mode} value={mode}>
-                  <Icon />
-                  {modeNames[mode]}
-                </DropdownMenuRadioItem>
-              );
-            })}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Color theme</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={theme.color}
-            onValueChange={(value) => theme.setColor(String(value))}
-          >
-            {theme.themes.map((item) => (
-              <DropdownMenuRadioItem key={item.id} value={item.id}>
-                <span className="size-3 rounded-full" style={{ background: item.dark.primary }} />
-                {item.name}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+const modes = ["light", "dark", "system"] as const;
 function download(theme: ThemeDefinition) {
   const url = URL.createObjectURL(
       new Blob([encodeThemeFile([theme])], { type: "application/json" }),
