@@ -41,6 +41,7 @@ const envSchema = z
     OIDC_CLIENT_ID: optionalEnv(z.string().min(1)),
     OIDC_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     OIDC_NAME: z.string().default("PocketID"),
+    KANVIL_SESSION_WRITE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(120),
     KANVIL_PUSH_ENABLED: z
       .enum(["true", "false"])
       .default("false")

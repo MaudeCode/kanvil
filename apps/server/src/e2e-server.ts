@@ -44,6 +44,8 @@ const application = await createApplication(fixture.database, {
   trustedOrigins: [baseUrl, "kanvil://"],
   KANVIL_SETUP_TOKEN: "kanvil-browser-tests-only-setup-token",
   KANVIL_PUSH_ENABLED: process.env.KANVIL_TEST_PUSH === "1",
+  // Browser suites share one owner account and write far faster than a person would.
+  KANVIL_SESSION_WRITE_LIMIT: 100_000,
   ...(oidc
     ? {
         OIDC_DISCOVERY_URL: `${pocketUrl}/.well-known/openid-configuration`,

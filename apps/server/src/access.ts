@@ -9,6 +9,29 @@ import { eq } from "drizzle-orm";
 
 const credentialPermissions = z.object({ kanvil: z.array(z.enum(scopes)) });
 const credentialMetadata = z.object({ projectIds: z.array(z.uuid()).max(1000) });
+// ponytail: per-process sliding window; move to PostgreSQL or the broker if Kanvil runs on several instances.
+export function createWriteLimiter(max: number, windowMs = 60_000) {
+  const recent = new Map<string, number[]>();
+  return {
+    consume(key: string, now = Date.now()) {
+      const hits = (recent.get(key) ?? []).filter((at) => at > now - windowMs);
+      if (hits.length >= max) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil(((hits[0] ?? now) + windowMs - now) / 1000),
+        );
+        fail(429, "rate_limited", "Too many changes in a short time; wait and retry", {
+          retryAfterSeconds,
+        });
+      }
+      hits.push(now);
+      recent.set(key, hits);
+      if (recent.size > 10_000)
+        for (const [id, stamps] of recent)
+          if (!stamps.some((at) => at > now - windowMs)) recent.delete(id);
+    },
+  };
+}
 export function requireSession(actor: Actor) {
   if (actor.machine) fail(403, "session_required", "Use a signed-in account for this action");
   return actor;

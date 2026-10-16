@@ -44,6 +44,8 @@ location / {
 
 Keep `KANVIL_URL` equal to the public HTTPS origin. Add `KANVIL_TRUSTED_ORIGINS` only for additional browser clients you explicitly operate. Web, API, MCP, login, consent, and realtime use the same application origin. No separate message broker or search service is required.
 
+Signed-in sessions may make `KANVIL_SESSION_WRITE_LIMIT` write requests per minute (120 by default) before receiving `429 rate_limited`; API credentials are limited separately by the authentication layer. The counter is per application process.
+
 ## PocketID / OIDC
 
 Create a confidential OIDC client in PocketID, enable PKCE, and register:
