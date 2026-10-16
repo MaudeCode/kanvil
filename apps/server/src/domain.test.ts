@@ -277,6 +277,31 @@ describe("ticket operations on PostgreSQL", () => {
       events.filter((event) => event.type.startsWith("label.")).map((event) => event.type),
     ).toEqual(["label.updated", "label.updated", "label.deleted"]);
   });
+  it("keeps custom label colors in a site-wide palette until removed", async () => {
+    const label = await domain.execute(
+      "create_project_label",
+      { projectId: project.id, name: "Brand", color: "#1E90FF" },
+      owner,
+    );
+    expect(label.color).toBe("#1e90ff");
+    expect(
+      (await domain.execute("list_label_colors", {}, outsider)).map((entry) => entry.value),
+    ).toEqual(["#1e90ff"]);
+    await expect(
+      domain.execute(
+        "create_project_label",
+        { projectId: project.id, name: "Bad", color: "blueish" },
+        owner,
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await domain.execute("remove_label_color", { value: "#1e90ff" }, owner);
+    expect(await domain.execute("list_label_colors", {}, owner)).toEqual([]);
+    expect(
+      (await domain.execute("list_project_labels", { projectId: project.id }, owner)).find(
+        (entry) => entry.id === label.id,
+      )?.color,
+    ).toBe("#1e90ff");
+  });
   it("enforces label administration, project isolation, and idempotent creation", async () => {
     await domain.execute(
       "set_member",

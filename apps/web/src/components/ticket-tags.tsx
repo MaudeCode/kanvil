@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { useProjectLabels } from "./project-label-provider.tsx";
-import { accentColorClasses } from "../lib/accent-colors.ts";
+import { accentColor } from "../lib/accent-colors.ts";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
 import type { ProjectLabel } from "@kanvil/contracts";
@@ -28,7 +28,8 @@ export function TicketTag({
       {tone && (
         <span
           aria-hidden="true"
-          className={cn("size-1.5 shrink-0 rounded-full bg-current", accentColorClasses[tone])}
+          className={cn("size-1.5 shrink-0 rounded-full bg-current", accentColor(tone).className)}
+          style={accentColor(tone).style}
         />
       )}
       {children ?? <span className="min-w-0 break-words whitespace-normal">{tag}</span>}

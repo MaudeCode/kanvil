@@ -164,6 +164,7 @@ export function ProjectLabelSettings({
               value={draft.color}
               onChange={(color) => setDraft({ ...draft, color })}
               disabled={busy}
+              custom
             />
             {!!draft.name.trim() && (
               <div className="mb-4">

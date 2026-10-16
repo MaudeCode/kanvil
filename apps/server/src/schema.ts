@@ -96,6 +96,12 @@ export const projectLabels = pgTable(
   },
   (table) => [unique("project_label_name").on(table.projectId, table.name)],
 );
+// Site-wide palette of custom label colors; a hex value joins it when any label is saved with it.
+export const labelColors = pgTable("label_colors", {
+  value: text("value").primaryKey(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 export const tickets = pgTable(
   "tickets",
   {

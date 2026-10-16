@@ -4,6 +4,7 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   getTableColumns,
   inArray,
@@ -13,9 +14,11 @@ import {
   sql,
 } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
+import { isHexColor } from "@kanvil/contracts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
   members,
+  labelColors,
   projects,
   projectLabels,
   tickets,
@@ -47,6 +50,14 @@ async function getLabel(ctx: Context, labelId: string, expectedVersion: number) 
   );
   assertVersion(label, expectedVersion, "label", "saving");
   return label;
+}
+// A custom color becomes part of the site-wide palette the first time a label uses it.
+async function rememberLabelColor(ctx: Context, color: string) {
+  if (isHexColor(color))
+    await ctx.db
+      .insert(labelColors)
+      .values({ value: color, createdBy: ctx.actor.id })
+      .onConflictDoNothing();
 }
 async function availableLabelName(ctx: Context, name: string, exceptId?: string) {
   if (
@@ -113,6 +124,8 @@ export const projectHandlers: Pick<
   | "create_project_label"
   | "update_project_label"
   | "delete_project_label"
+  | "list_label_colors"
+  | "remove_label_color"
 > = {
   async list_project_labels(ctx) {
     const usage = labelUsage(ctx, "include").as("usage");
@@ -131,6 +144,7 @@ export const projectHandlers: Pick<
   },
   async create_project_label(ctx, input) {
     await availableLabelName(ctx, input.name);
+    await rememberLabelColor(ctx, input.color);
     const label = one(
       await ctx.db
         .insert(projectLabels)
@@ -148,6 +162,7 @@ export const projectHandlers: Pick<
   async update_project_label(ctx, input) {
     const current = await getLabel(ctx, input.labelId, input.expectedVersion);
     await availableLabelName(ctx, input.name, current.id);
+    await rememberLabelColor(ctx, input.color);
     const label = one(
       await ctx.db
         .update(projectLabels)
@@ -170,6 +185,16 @@ export const projectHandlers: Pick<
     await changeLabelUsage(ctx, label.name);
     await ctx.db.delete(projectLabels).where(eq(projectLabels.id, label.id));
     await publish(ctx, "label.deleted", null, { labelId: label.id, name: label.name });
+    return { ok: true };
+  },
+  async list_label_colors(ctx) {
+    return ctx.db
+      .select({ value: labelColors.value, createdAt: labelColors.createdAt })
+      .from(labelColors)
+      .orderBy(desc(labelColors.createdAt), asc(labelColors.value));
+  },
+  async remove_label_color(ctx, input) {
+    await ctx.db.delete(labelColors).where(eq(labelColors.value, input.value));
     return { ok: true };
   },
   async get_project(ctx) {

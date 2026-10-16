@@ -49,6 +49,7 @@ const settledBy: Record<string, string[]> = {
   list_members: ["membership.", "project."],
   list_workspace_members: ["membership.", "project."],
   list_project_labels: ["label.", "project."],
+  list_label_colors: ["label."],
   list_views: ["label.", "project."],
   get_project: ["project.", "label."],
 };

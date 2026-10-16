@@ -10,14 +10,34 @@ export const projectIconColors = [
   "default",
   "red",
   "orange",
+  "amber",
   "yellow",
+  "lime",
   "green",
+  "emerald",
   "teal",
+  "cyan",
+  "sky",
   "blue",
+  "indigo",
+  "violet",
   "purple",
+  "fuchsia",
   "pink",
+  "rose",
   "gray",
 ] as const;
+// A preset name or a custom hex color such as #1e90ff. Custom colors used on a label are kept in
+// the site-wide palette (`list_label_colors`).
+export const hexColor = z
+  .string()
+  .regex(/^#[0-9a-f]{6}$/i)
+  .overwrite((value) => value.toLowerCase());
+export const labelColor = z.union([z.enum(projectIconColors), hexColor]);
+export type LabelColor = z.output<typeof labelColor>;
+export const isPresetColor = (value: string): value is (typeof projectIconColors)[number] =>
+  projectIconColors.some((tone) => tone === value);
+export const isHexColor = (value: string) => !isPresetColor(value);
 export const hasAdminRole = (role: string | null | undefined) =>
   role?.split(",").includes("admin") ?? false;
 export const scopes = ["read", "write", "claim", "admin"] as const;
@@ -58,7 +78,7 @@ export const projectLabelSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   name: text.max(40),
-  color: z.enum(projectIconColors),
+  color: labelColor,
   version,
 });
 export type ProjectLabel = z.output<typeof projectLabelSchema>;
@@ -597,7 +617,7 @@ export const operations = {
     projectInput.extend({
       ...mutation,
       name: text.max(40),
-      color: z.enum(projectIconColors).default("gray"),
+      color: labelColor.default("gray"),
     }),
     projectLabelSchema,
     "POST",
@@ -611,7 +631,7 @@ export const operations = {
       labelId: z.uuid(),
       expectedVersion: version,
       name: text.max(40),
-      color: z.enum(projectIconColors),
+      color: labelColor,
     }),
     projectLabelSchema,
     "PATCH",
@@ -626,6 +646,22 @@ export const operations = {
     "/projects/{projectId}/labels/{labelId}",
     "admin",
     "Delete a project label and remove it from tickets and saved-view filters atomically.",
+  ),
+  list_label_colors: op(
+    z.object({}),
+    z.array(z.object({ value: hexColor, createdAt: timestamp })),
+    "GET",
+    "/label-colors",
+    "read",
+    "List the site-wide custom label colors, newest first. A custom color joins the list when a label is saved with it.",
+  ),
+  remove_label_color: op(
+    z.object({ ...mutation, value: hexColor }).strict(),
+    okSchema,
+    "POST",
+    "/label-colors/remove",
+    "write",
+    "Remove a custom color from the site-wide palette. Labels already using it keep their color.",
   ),
   get_ticket: op(
     ticketInput,
