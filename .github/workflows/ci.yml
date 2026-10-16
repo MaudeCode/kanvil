@@ -208,17 +208,13 @@ jobs:
           retention-days: 5
 
   mobile:
-    name: Mobile bundle (${{ matrix.platform }})
+    name: iOS bundle
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [ios, android]
     steps:
       - *checkout
       - uses: ./.github/actions/setup
-      - run: pnpm --filter @kanvil/mobile exec expo export --platform ${{ matrix.platform }}
+      - run: pnpm --filter @kanvil/mobile exec expo export --platform ios
 
   docker:
     name: Docker (${{ matrix.arch }})
