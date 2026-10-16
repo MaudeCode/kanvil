@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Plus, ChevronDown, BookmarkPlus, Trash2 } from "lucide-react";
@@ -56,6 +57,7 @@ import {
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { TicketEditor } from "./ticket-editor.tsx";
+import { useStickyTicketSections } from "./hooks/use-sticky-ticket-sections.ts";
 
 import {
   searchSchema,
@@ -79,6 +81,31 @@ const defaultVisibility = {
   createdAt: false,
   updatedAt: false,
 };
+function TicketStatusHeader({
+  status,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  status: Ticket["status"];
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      className="w-full justify-start gap-2 rounded-none px-3"
+      aria-label={`${collapsed ? "Expand" : "Collapse"} ${stateLabels[status]} tickets`}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+    >
+      <ChevronDown className={collapsed ? "size-3 -rotate-90" : "size-3"} />
+      <TicketIndicator property="status" value={status} />
+      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+    </Button>
+  );
+}
 function readDisplayPreference<T>(key: string, schema: z.ZodType<T>, fallback: T): T {
   try {
     const result = schema.safeParse(localStorage.getItem(key));
@@ -285,6 +312,10 @@ export function TicketList({
     },
   };
   const views = useQuery(api.query("list_views", { projectId: project.id }));
+  const { ref: tableScrollRef, pinned } = useStickyTicketSections(
+    !tickets.isPending && !tickets.error,
+  );
+  const pinnedGroup = groups.find((group) => group.status === pinned?.status);
   const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
   const [createOpen, setCreateOpen] = useState(false);
@@ -310,6 +341,15 @@ export function TicketList({
     onColumnVisibilityChange: setVisibility,
   });
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
+  const toggleStatus = (status: Ticket["status"]) => {
+    table.resetRowSelection();
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  };
   const changeSearch = (next: TicketSearch) => {
     table.resetRowSelection();
     setPaging({ filterKey: JSON.stringify({ ...next, offset: 0 }), pages: {} });
@@ -479,7 +519,7 @@ export function TicketList({
           Retry loading tickets
         </Button>
       ) : (
-        <div className="table-scroll">
+        <div className="table-scroll" ref={tableScrollRef}>
           <Table
             className="ticket-table min-w-full @min-[1051px]:w-(--table-width)"
             role="table"
@@ -534,36 +574,24 @@ export function TicketList({
                   role="rowgroup"
                   aria-label={`${stateLabels[group.status]} tickets`}
                 >
-                  <TableRow className="ticket-status-heading">
+                  <TableRow
+                    className="ticket-status-heading"
+                    data-status={group.status}
+                    inert={pinned?.status === group.status}
+                    aria-hidden={pinned?.status === group.status || undefined}
+                  >
                     <TableHead
                       scope="rowgroup"
                       colSpan={
                         table.getAllLeafColumns().filter((column) => column.getIsVisible()).length
                       }
                     >
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-2 rounded-none px-3"
-                        aria-label={`${collapsed.has(group.status) ? "Expand" : "Collapse"} ${stateLabels[group.status]} tickets`}
-                        aria-expanded={!collapsed.has(group.status)}
-                        onClick={() => {
-                          table.resetRowSelection();
-                          setCollapsed((previous) => {
-                            const next = new Set(previous);
-                            if (next.has(group.status)) next.delete(group.status);
-                            else next.add(group.status);
-                            return next;
-                          });
-                        }}
-                      >
-                        <ChevronDown
-                          className={collapsed.has(group.status) ? "size-3 -rotate-90" : "size-3"}
-                        />
-                        <TicketIndicator property="status" value={group.status} />
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {group.data?.total}
-                        </span>
-                      </Button>
+                      <TicketStatusHeader
+                        status={group.status}
+                        count={group.data.total}
+                        collapsed={collapsed.has(group.status)}
+                        onToggle={() => toggleStatus(group.status)}
+                      />
                     </TableHead>
                   </TableRow>
                   {!collapsed.has(group.status) &&
@@ -607,6 +635,27 @@ export function TicketList({
           )}
         </div>
       )}
+      {pinned &&
+        pinnedGroup &&
+        createPortal(
+          <div
+            className="ticket-status-pin border-b text-muted-foreground"
+            style={{
+              top: pinned.top,
+              left: pinned.left,
+              width: pinned.width,
+              height: pinned.height,
+            }}
+          >
+            <TicketStatusHeader
+              status={pinnedGroup.status}
+              count={pinnedGroup.data.total}
+              collapsed={collapsed.has(pinnedGroup.status)}
+              onToggle={() => toggleStatus(pinnedGroup.status)}
+            />
+          </div>,
+          document.body,
+        )}
       {!tickets.isPending && !tickets.error && (
         <footer className="ticket-pagination pt-3 text-xs text-muted-foreground">
           {tickets.data.total} tickets

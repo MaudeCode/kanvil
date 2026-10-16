@@ -259,6 +259,11 @@
   .ticket-table .ticket-status-heading {
     @apply bg-muted/30;
   }
+  .ticket-status-pin {
+    @apply fixed z-10;
+    /* Match TableRow's section tint with an opaque surface over scrolling tickets. */
+    background: color-mix(in oklab, var(--muted) 50%, var(--background));
+  }
   .ticket-title {
     @apply block text-[13px] font-normal leading-5 text-foreground hover:text-primary;
     overflow-wrap: anywhere;
