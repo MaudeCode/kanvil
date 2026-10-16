@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches:
@@ -17,7 +18,7 @@ jobs:
   check:
     name: Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       pocket-id:
         image: ghcr.io/pocket-id/pocket-id:v2.18.0@sha256:323e7ef5bfacf7cf32f22f3d10ccdf48e0c97c94d67e7e40b0b996830deb5165
@@ -100,8 +101,15 @@ jobs:
       - name: Check
         run: pnpm check
 
-      - name: Build web application
-        run: pnpm build
+      - name: Build and verify installed npm package
+        run: pnpm test:package
+
+      - name: Preserve npm release tarball
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-release
+          path: dist/*.tgz
+          if-no-files-found: error
 
       - name: Install browser
         run: pnpm exec playwright install --with-deps chromium

@@ -13,6 +13,7 @@ const base = "http://localhost:5191",
 const env = {
   ...process.env,
   COMPOSE_PROJECT_NAME: project,
+  KANVIL_IMAGE: process.env.KANVIL_IMAGE ?? "kanvil:local",
   KANVIL_PORT: "5191",
   KANVIL_DATABASE: "kanvil",
   POSTGRES_PASSWORD: randomBytes(32).toString("hex"),

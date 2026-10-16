@@ -34,7 +34,7 @@ Use the pinned pnpm version. Its lockfile intentionally contains an environment 
 
 Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server.
 
-The single CI job runs on pull requests and pushes to `main`. Dependency updates arrive as grouped Dependabot pull requests for review.
+The `Checks` CI job runs on pull requests and pushes to `main`; tagged releases call the same workflow before publishing. It runs `pnpm check`, builds the app, installs and starts the npm tarball outside the checkout, runs browser workflows, exports native bundles, and tests the Docker image plus database restoration. Run `pnpm test:package` locally to reproduce npm packaging validation. `pnpm package` assembles the public app in `dist/package` from the existing server and web builds; workspace libraries stay private. Release setup is in [docs/releasing.md](docs/releasing.md). Dependency updates arrive as grouped Dependabot pull requests for review.
 
 `pnpm test:oidc` also starts a disposable PocketID instance on loopback port 51411, runs the browser suite with a virtual passkey, and removes the fixture container afterward. PocketID data lives on tmpfs. The test uses only its fixed isolated API key; it never accepts a real provider URL or credentials. CI runs this provider flow alongside the MCP OAuth consent/PKCE exchange.
 

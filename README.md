@@ -17,6 +17,12 @@ See [self-hosting](docs/self-hosting.md), [agent/API interfaces](docs/api.md), [
 
 Projects can be grouped into separate [workspaces](docs/workspaces.md), with inherited or private access, library or uploaded project icons, and instance account administration.
 
+## Installation
+
+Install the app with `npm install --global @maudecode/kanvil`, or run `ghcr.io/maudecode/kanvil` with Docker Compose. Both need PostgreSQL 18. See [installation and upgrades](docs/self-hosting.md) for configuration, HTTPS, first-owner setup, and backups. These registry paths become available after the first published release.
+
+[Release setup](docs/releasing.md) covers version tags, npm trusted publishing, and GHCR permissions.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and [AGENTS.md](AGENTS.md) for agent instructions.

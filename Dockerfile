@@ -8,6 +8,7 @@ RUN pnpm --filter @kanvil/server deploy --prod --no-optional --legacy /runtime/s
 
 FROM node:24.22.0-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=5180
+LABEL org.opencontainers.image.source="https://github.com/MaudeCode/kanvil"
 WORKDIR /app/apps/server
 COPY --from=build --chown=node:node /runtime/server ./
 COPY --from=build --chown=node:node /source/apps/web/dist /app/apps/web/dist
