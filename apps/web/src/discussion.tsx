@@ -4,8 +4,20 @@ import { submitOnModEnter } from "./forms.ts";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Ticket } from "@kanvil/contracts";
-import { api, date, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
-import { Button, IconButton, Confirm, ErrorNotice, Markdown, Textarea } from "./ui.tsx";
+import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
+import {
+  Button,
+  IconButton,
+  Confirm,
+  ErrorNotice,
+  Markdown,
+  RelativeTime,
+  EmptyState,
+} from "./ui.tsx";
+import { Spinner } from "@/components/ui/spinner";
+import { Kbd } from "@/components/ui/kbd";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { MessageSquare } from "lucide-react";
 
 export function Discussion({ ticket }: { ticket: Ticket }) {
   const [offset, setOffset] = useState(0),
@@ -18,26 +30,32 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
   return (
     <section>
       <ErrorNotice error={comments.error ?? add.error} />
-      {comments.data?.items.map((comment) => (
-        <Comment key={comment.id} comment={comment} />
-      ))}
+      {comments.data?.total === 0 && (
+        <EmptyState title="No comments yet" icon={MessageSquare} className="py-8" />
+      )}
+      <div className="divide-y">
+        {comments.data?.items.map((comment) => (
+          <Comment key={comment.id} comment={comment} />
+        ))}
+      </div>
       {((comments.data?.total ?? 0) > 50 || offset > 0) && (
-        <div className="pagination">
-          <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
+        <ButtonGroup className="mt-5 justify-end">
+          <Button size="sm" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
             Previous comments
           </Button>
           <Button
+            size="sm"
             disabled={offset + 50 >= (comments.data?.total ?? 0)}
             onClick={() => setOffset(offset + 50)}
           >
             Next comments
           </Button>
-        </div>
+        </ButtonGroup>
       )}
       {access.canWrite && (
         <form
           onKeyDown={submitOnModEnter}
-          className="comment-composer"
+          className="mt-6"
           onSubmit={(event) => {
             event.preventDefault();
             void add
@@ -56,8 +74,14 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
             placeholder="Write a comment…"
             footer={
               <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
-                <Send />
+                {add.isPending ? <Spinner /> : <Send />}
                 {add.isPending ? "Posting…" : "Comment"}
+                <Kbd
+                  aria-hidden="true"
+                  className="ml-1 hidden bg-primary-foreground/20 text-primary-foreground sm:inline-flex"
+                >
+                  ⌘↵
+                </Kbd>
               </Button>
             }
           />
@@ -78,17 +102,19 @@ function Comment({
   const [editing, setEditing] = useState(false),
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
+  const own = comment.actorId === identity.id;
   return (
-    <article className="comment relative">
-      <div className="metadata">
-        <strong>
+    <article className="group/comment relative py-4 animate-in fade-in-0 duration-200">
+      <div className="mb-3 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pr-20 text-xs text-muted-foreground">
+        <strong className="text-foreground">
           <ActorName projectId={comment.projectId} actorId={comment.actorId} avatar />
         </strong>
-        <time dateTime={comment.createdAt}>{date(comment.createdAt)}</time>
+        <RelativeTime value={comment.createdAt} />
         {comment.updatedAt !== comment.createdAt && <span>Edited</span>}
       </div>
       {editing ? (
         <form
+          onKeyDown={submitOnModEnter}
           onSubmit={(event) => {
             event.preventDefault();
             void update
@@ -102,34 +128,43 @@ function Comment({
               .catch(() => {});
           }}
         >
-          <Textarea
+          <MarkdownField
             label="Edit comment"
-            disabled={update.isPending}
             value={body}
+            onChange={setBody}
+            rows={4}
             required
             maxLength={50000}
-            onChange={(event) => setBody(event.target.value)}
+            footer={
+              <>
+                <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="default"
+                  disabled={update.isPending || !body.trim()}
+                >
+                  {update.isPending ? <Spinner /> : null}
+                  Save
+                </Button>
+              </>
+            }
           />
-          <div className="actions">
-            <Button onClick={() => setEditing(false)}>Cancel</Button>
-            <Button type="submit" disabled={update.isPending}>
-              Save
-            </Button>
-          </div>
         </form>
       ) : (
         <Markdown>{comment.body}</Markdown>
       )}
-      {!editing && access.canWrite && (comment.actorId === identity.id || identity.admin) && (
-        <div className="actions">
+      {!editing && access.canWrite && (own || identity.admin) && (
+        <div className="absolute top-3 right-0 flex items-center gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-md:opacity-100">
           <IconButton
             label="Edit comment"
+            size="icon-sm"
             onClick={() => {
-              if (!editing) {
-                setBody(comment.body);
-                setEditingVersion(comment.version);
-              }
-              setEditing(!editing);
+              setBody(comment.body);
+              setEditingVersion(comment.version);
+              setEditing(true);
             }}
           >
             <Pencil />

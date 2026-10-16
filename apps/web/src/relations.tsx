@@ -1,8 +1,8 @@
 import { TicketPicker } from "./components/ticket-picker.tsx";
-import { Unlink, Plus } from "lucide-react";
-import { useState } from "react";
+import { TicketLink } from "./components/ticket-link.tsx";
+import { Unlink, Plus, GitBranchPlus, CornerLeftUp } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import {
   relationReference,
   relationChoices,
@@ -14,12 +14,24 @@ import {
   Button,
   IconButton,
   ErrorNotice,
+  Loading,
   Modal,
   Select,
   SelectItem,
   TicketIndicator,
   SectionHeading,
+  FormActions,
 } from "./ui.tsx";
+import { Item, ItemContent, ItemActions, ItemGroup } from "@/components/ui/item";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+const TicketEditor = lazy(() =>
+  import("./ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
+);
 
 export function Relations({ ticket }: { ticket: Ticket }) {
   const access = useProjectAccess(ticket.projectId);
@@ -27,6 +39,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
     api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
   );
   const [open, setOpen] = useState(false),
+    [creatingChild, setCreatingChild] = useState(false),
     [target, setTarget] = useState<string | null>(null),
     [offset, setOffset] = useState(0),
     [validationError, setValidationError] = useState<unknown>();
@@ -51,56 +64,78 @@ export function Relations({ ticket }: { ticket: Ticket }) {
   return (
     <section>
       <SectionHeading
+        compact
         title="Relationships"
         action={
           access.canWrite && (
-            <IconButton
-              label="Add relationship"
-              onClick={() => {
-                add.reset();
-                setValidationError(undefined);
-                setTarget(null);
-                setOpen(true);
-              }}
-            >
-              <Plus />
-            </IconButton>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<IconButton label="Add relationship" />}>
+                <Plus />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={() => {
+                    add.reset();
+                    setValidationError(undefined);
+                    setTarget(null);
+                    setOpen(true);
+                  }}
+                >
+                  <Unlink />
+                  Link existing ticket
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setCreatingChild(true)}>
+                  <GitBranchPlus />
+                  New child ticket
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )
         }
       />
       {ticket.parentId && (
-        <p>
-          Parent:{" "}
-          <Link
-            to="/projects/$projectId/tickets/$ticketId"
-            params={{ projectId: ticket.projectId, ticketId: ticket.parentId }}
-          >
-            {parent.data
-              ? `${parent.data.ticket.key} · ${parent.data.ticket.title}`
-              : ticket.parentId}
-          </Link>
-        </p>
+        <Item size="xs" className="px-0">
+          <CornerLeftUp className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <ItemContent className="min-w-0">
+            <span className="text-xs text-muted-foreground">Parent</span>
+            <TicketLink
+              projectId={ticket.projectId}
+              ticketId={ticket.parentId}
+              ticket={parent.data?.ticket}
+            />
+          </ItemContent>
+        </Item>
       )}
       {children.data && (children.data.total > 0 || offset > 0) && (
         <>
-          <h3>Child tickets</h3>
-          {children.data.items.map((child) => (
-            <div className="resource-row" key={child.id}>
-              <Link
-                to="/projects/$projectId/tickets/$ticketId"
-                params={{ projectId: ticket.projectId, ticketId: child.id }}
-              >
-                {child.key} · {child.title}
-              </Link>
-              <TicketIndicator property="status" value={child.status} />
-            </div>
-          ))}
+          <h3 className="mt-3 mb-1 text-xs text-muted-foreground">
+            Child tickets{" "}
+            <span className="tabular-nums">
+              {children.data.items.filter((child) => child.status === "done").length}/
+              {children.data.total}
+            </span>
+          </h3>
+          <ItemGroup className="gap-0">
+            {children.data.items.map((child) => (
+              <Item size="xs" className="px-0" key={child.id}>
+                <TicketIndicator property="status" value={child.status} iconOnly />
+                <ItemContent className="min-w-0">
+                  <TicketLink projectId={ticket.projectId} ticketId={child.id} ticket={child} />
+                </ItemContent>
+              </Item>
+            ))}
+          </ItemGroup>
           {(children.data.total > 20 || offset > 0) && (
-            <div className="actions">
-              <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 20))}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={!offset}
+                onClick={() => setOffset(Math.max(0, offset - 20))}
+              >
                 Previous children
               </Button>
               <Button
+                size="sm"
                 disabled={offset + 20 >= children.data.total}
                 onClick={() => setOffset(offset + 20)}
               >
@@ -110,30 +145,37 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           )}
         </>
       )}
-      {relations.data?.map((relation) => {
-        const reference = relationReference(relation, ticket.id);
-        return (
-          <div className="resource-row" key={relation.id}>
-            <span>{reference.label}</span>
-            <Link
-              to="/projects/$projectId/tickets/$ticketId"
-              params={{ projectId: ticket.projectId, ticketId: reference.id }}
-            >
-              {reference.title}
-            </Link>
-            {access.canWrite && (
-              <IconButton
-                label={`Remove ${relation.type} relationship`}
-                onClick={() =>
-                  remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
-                }
-              >
-                <Unlink />
-              </IconButton>
-            )}
-          </div>
-        );
-      })}
+      <ItemGroup className="gap-0">
+        {relations.data?.map((relation) => {
+          const reference = relationReference(relation, ticket.id);
+          return (
+            <Item size="xs" className="px-0" key={relation.id}>
+              <ItemContent className="min-w-0 gap-0">
+                <span className="text-xs text-muted-foreground">{reference.label}</span>
+                <TicketLink projectId={ticket.projectId} ticketId={reference.id}>
+                  {reference.title}
+                </TicketLink>
+              </ItemContent>
+              {access.canWrite && (
+                <ItemActions>
+                  <IconButton
+                    size="icon-sm"
+                    label={`Remove ${relation.type} relationship`}
+                    onClick={() =>
+                      remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
+                    }
+                  >
+                    <Unlink />
+                  </IconButton>
+                </ItemActions>
+              )}
+            </Item>
+          );
+        })}
+      </ItemGroup>
+      {!ticket.parentId && !children.data?.total && relations.data?.length === 0 && (
+        <p className="mb-0 text-xs text-muted-foreground">No relationships</p>
+      )}
       <Modal title="Add relationship" open={open} onOpenChange={setOpen} busy={add.isPending}>
         <form
           onSubmit={(event) => {
@@ -168,11 +210,30 @@ export function Relations({ ticket }: { ticket: Ticket }) {
             allowClear={false}
           />
 
-          <ErrorNotice error={validationError ?? add.error} />
-          <Button type="submit" disabled={add.isPending || !target}>
-            Add relationship
-          </Button>
+          <FormActions
+            error={validationError ?? add.error}
+            pending={add.isPending}
+            submitLabel="Add relationship"
+            submitDisabled={!target}
+            onCancel={() => setOpen(false)}
+          />
         </form>
+      </Modal>
+      <Modal
+        size="composer"
+        title={`New child of ${ticket.key}`}
+        open={creatingChild}
+        onOpenChange={setCreatingChild}
+      >
+        {creatingChild && (
+          <Suspense fallback={<Loading />}>
+            <TicketEditor
+              projectId={ticket.projectId}
+              initial={{ parentId: ticket.id, labels: ticket.labels, scopes: ticket.scopes }}
+              onSaved={() => setCreatingChild(false)}
+            />
+          </Suspense>
+        )}
       </Modal>
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
     </section>
