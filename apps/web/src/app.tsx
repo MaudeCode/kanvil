@@ -16,6 +16,7 @@ import {
   RouterProvider,
   useNavigate,
   useParams,
+  useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import {
@@ -25,7 +26,9 @@ import {
   Search as SearchIcon,
   MessageSquare,
   Bell,
+  Check,
   CheckCheck,
+  ChevronRight,
 } from "lucide-react";
 import {
   hasAdminRole,
@@ -46,7 +49,6 @@ import { Login, Consent } from "./auth.tsx";
 import {
   api,
   auth,
-  date,
   Identity,
   useLive,
   useProjects,
@@ -54,7 +56,15 @@ import {
   useIdentity,
   clearPrivateStorage,
 } from "./data.tsx";
-import { Button, EmptyState, ErrorNotice, IconButton, Loading } from "./ui.tsx";
+import {
+  Button,
+  EmptyState,
+  ErrorNotice,
+  IconButton,
+  Loading,
+  PageHeader,
+  RelativeTime,
+} from "./ui.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateWorkspace } from "./components/workspace-switcher.tsx";
@@ -94,7 +104,11 @@ const ProjectSettings = lazy(() =>
 );
 function Root() {
   const session = auth.useSession();
-  if (session.isPending) return <Loading />;
+  // The session hook reports pending again on every background refetch (for example on window
+  // focus); only the first resolution may replace the screen, or the login form loses its input.
+  const [settled, setSettled] = useState(false);
+  if (!session.isPending && !settled) setSettled(true);
+  if (session.isPending && !settled) return <Loading />;
   if (!session.data) return <Login />;
   return (
     <SignedInSession
@@ -166,6 +180,7 @@ function SignedInSession({
 }
 function Shell() {
   const { projectId } = useParams({ strict: false });
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const connection = useLive();
   const info = useQuery({
     queryKey: ["info"],
@@ -179,11 +194,14 @@ function Shell() {
   return (
     <WorkspaceProvider>
       <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
-        <a className="skip-link" href="#main">
+        <a
+          className="fixed top-3 left-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0"
+          href="#main"
+        >
           Skip to content
         </a>
         <AppSidebar />
-        <SidebarInset className="min-w-0">
+        <SidebarInset className="min-w-0 has-[.ticket-list-controls]:max-h-svh md:has-[.ticket-list-controls]:max-h-[calc(100svh-1rem)]">
           <WorkspaceHeader />
           {connection !== "connected" && connection !== "connecting" && (
             <Alert className="mx-6 mt-4 w-auto">
@@ -193,9 +211,21 @@ function Shell() {
               </AlertDescription>
             </Alert>
           )}
-          <div id="main" className="content @container" tabIndex={-1}>
+          <div
+            id="main"
+            className="content @container w-full min-w-0 px-5 pt-4 pb-12 has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col has-[.ticket-list-controls]:pt-2 has-[.ticket-list-controls]:pb-0 max-[650px]:px-4 max-[650px]:pt-6 max-[650px]:pb-10 md:px-8"
+            tabIndex={-1}
+          >
             <ProjectLabelProvider projectId={projectId}>
-              <Outlet />
+              <div
+                key={pathname}
+                className="mx-auto max-w-[1440px] animate-in fade-in-0 duration-200 has-[.ticket-detail]:max-w-none has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:w-full has-[.ticket-list-controls]:max-w-none has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col"
+              >
+                {/* Lazy route chunks suspend here, so the shell and sidebar never flash or lose focus. */}
+                <Suspense fallback={<Loading />}>
+                  <Outlet />
+                </Suspense>
+              </div>
             </ProjectLabelProvider>
           </div>
         </SidebarInset>
@@ -215,13 +245,12 @@ function Home() {
     ) ?? [];
   return (
     <>
-      <header className="page-header">
-        <h1>Projects</h1>
+      <PageHeader title="Projects">
         {workspace.active ? <CreateProject /> : <CreateWorkspace />}
-      </header>
+      </PageHeader>
       {!!projects.data?.length && (
-        <div className="project-search">
-          <InputGroup>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+          <InputGroup className="max-w-md">
             <InputGroupAddon>
               <SearchIcon />
             </InputGroupAddon>
@@ -242,12 +271,12 @@ function Home() {
       {projects.isPending || workspace.pending ? (
         <Loading />
       ) : (
-        <ItemGroup className="project-list gap-0">
+        <ItemGroup className="project-list gap-0 border-t">
           {matches.map((project) => (
             <ProjectContextMenu key={project.id} project={project}>
               <Item
                 role="listitem"
-                className="flex-nowrap gap-3 rounded-none border-x-0 border-t-0 border-b-border py-3 hover:bg-muted/30"
+                className="group/project flex-nowrap gap-3 rounded-none border-x-0 border-t-0 border-b-border py-3 transition-colors hover:bg-muted/40"
               >
                 <Link
                   to="/projects/$projectId"
@@ -255,17 +284,31 @@ function Home() {
                   className="flex min-w-0 flex-1 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <ItemMedia>
-                    <ProjectIcon project={project} className="size-10 rounded-lg bg-muted/50 p-1" />
+                    <ProjectIcon
+                      project={project}
+                      className="size-10 rounded-lg bg-muted/50 p-1 transition-transform group-hover/project:scale-105"
+                    />
                   </ItemMedia>
                   <ItemContent className="min-w-0 gap-0.5">
-                    <ItemTitle className="max-w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 line-clamp-none">
+                    <ItemTitle className="line-clamp-none flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="min-w-0 wrap-anywhere text-sm font-medium">
                         {project.name}
                       </span>
-                      <Badge variant="ghost" className="project-key">
+                      <Badge variant="secondary" className="font-mono text-[10px] font-normal">
                         {project.key}
                       </Badge>
                     </ItemTitle>
+                    <p className="m-0 text-xs text-muted-foreground tabular-nums">
+                      {project.openTickets === 0
+                        ? "No open tickets"
+                        : `${project.openTickets} open`}
+                      {project.overdueTickets > 0 && (
+                        <span className="text-(--warning)">
+                          {" "}
+                          · {project.overdueTickets} overdue
+                        </span>
+                      )}
+                    </p>
                     {project.description && (
                       <ItemDescription className="m-0 line-clamp-2 text-xs leading-5">
                         {project.description}
@@ -276,13 +319,14 @@ function Home() {
                 <ItemActions>
                   <IconButton
                     label={`Project settings for ${project.name}`}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground opacity-0 transition-opacity group-hover/project:opacity-100 focus-visible:opacity-100 hover:text-foreground max-md:opacity-100"
                     render={
                       <Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />
                     }
                   >
                     <Settings />
                   </IconButton>
+                  <ChevronRight className="size-4 text-muted-foreground/60" aria-hidden="true" />
                 </ItemActions>
               </Item>
             </ProjectContextMenu>
@@ -336,8 +380,7 @@ function Inbox() {
   }
   return (
     <>
-      <header className="page-header">
-        <h1>Inbox</h1>
+      <PageHeader title="Inbox">
         <Button
           disabled={pending || !unread.length}
           onClick={() => {
@@ -347,7 +390,7 @@ function Inbox() {
           <CheckCheck />
           Mark all read
         </Button>
-      </header>
+      </PageHeader>
       <Tabs value={view} onValueChange={(value) => setView(String(value))} className="mb-5">
         <TabsList variant="line">
           <TabsTrigger value="unread">
@@ -365,7 +408,7 @@ function Inbox() {
       {items.isPending ? (
         <Loading />
       ) : (
-        <ol className="inbox">
+        <ItemGroup className="inbox gap-0 border-t">
           {visible.map((item) => {
             const title =
                 typeof item.event.data.title === "string"
@@ -373,40 +416,66 @@ function Inbox() {
                   : formatEvent(item.event),
               key = typeof item.event.data.key === "string" ? item.event.data.key : null,
               project = projects.data?.find((candidate) => candidate.id === item.event.projectId),
-              content = (
-                <>
-                  <span className="notification-icon">
-                    {item.event.type.startsWith("comment.") ? <MessageSquare /> : <Bell />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="notification-title">{title}</span>
-                    <span className="notification-context">
-                      {project?.name}
-                      {key && ` · ${key}`} · {formatEvent(item.event)}
-                    </span>
-                  </span>
-                  <time dateTime={item.event.createdAt}>{date(item.event.createdAt)}</time>
-                </>
-              );
+              linked = !!item.event.ticketId && item.event.type !== "ticket.deleted";
+            const body = (
+              <>
+                <ItemMedia variant="icon">
+                  {item.event.type.startsWith("comment.") ? <MessageSquare /> : <Bell />}
+                </ItemMedia>
+                <ItemContent className="min-w-0 gap-0.5">
+                  <ItemTitle className="line-clamp-none max-w-full text-[13px] leading-5 wrap-anywhere">
+                    {title}
+                  </ItemTitle>
+                  <ItemDescription className="m-0 text-xs">
+                    {project?.name}
+                    {key && ` · ${key}`} · {formatEvent(item.event)}
+                  </ItemDescription>
+                </ItemContent>
+              </>
+            );
             return (
-              <li key={item.id} data-unread={!item.readAt}>
-                {item.event.ticketId && item.event.type !== "ticket.deleted" ? (
+              <Item
+                key={item.id}
+                data-unread={!item.readAt}
+                className="flex-nowrap rounded-none border-x-0 border-t-0 border-b-border px-3 py-3 data-[unread=true]:border-l-2 data-[unread=true]:border-l-primary data-[unread=true]:bg-primary/5"
+              >
+                {linked ? (
                   <Link
                     to="/projects/$projectId/tickets/$ticketId"
-                    params={{ projectId: item.event.projectId, ticketId: item.event.ticketId }}
+                    params={{
+                      projectId: item.event.projectId,
+                      ticketId: item.event.ticketId ?? "",
+                    }}
                     onClick={() => {
                       if (!item.readAt) void mark([item.id]);
                     }}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    {content}
+                    {body}
                   </Link>
                 ) : (
-                  <div className="notification-row">{content}</div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">{body}</div>
                 )}
-              </li>
+                <ItemActions className="gap-2 self-start">
+                  {!item.readAt && (
+                    <IconButton
+                      label="Mark read"
+                      size="icon-sm"
+                      disabled={pending}
+                      onClick={() => void mark([item.id])}
+                    >
+                      <Check />
+                    </IconButton>
+                  )}
+                  <RelativeTime
+                    value={item.event.createdAt}
+                    className="text-xs whitespace-nowrap text-muted-foreground"
+                  />
+                </ItemActions>
+              </Item>
             );
           })}
-        </ol>
+        </ItemGroup>
       )}
       {!items.isPending && !visible.length && (
         <EmptyState

@@ -1,17 +1,41 @@
 import { SidebarGroupAction } from "@/components/ui/sidebar";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, Users, Lock } from "lucide-react";
 import { formText } from "../forms.ts";
 import { useOperation, useWorkspace } from "../data.tsx";
-import { Button, Input, Modal, Textarea, ErrorNotice, Select, SelectItem } from "../ui.tsx";
+import { Button, Input, Modal, Textarea, fieldClass, FormActions } from "../ui.tsx";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
+// Suggests a ticket prefix from the name: initials of up to three words, or the first letters.
+export function suggestKey(name: string) {
+  const words = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const raw = words.length > 1 ? words.map((word) => word[0]).join("") : (words[0] ?? "");
+  const key = raw.replace(/^[^A-Z]+/, "").slice(0, 4);
+  return key.length >= 2 ? key : raw.slice(0, 3).replace(/^[^A-Z]+/, "");
+}
 export function CreateProject({ sidebarAction = false }: { sidebarAction?: boolean }) {
   const { active: workspace } = useWorkspace();
   const canCreate = !!workspace && (workspace.role === "writer" || workspace.role === "admin");
   const [open, setOpen] = useState(false),
+    [name, setName] = useState(""),
+    [key, setKey] = useState(""),
+    [customKey, setCustomKey] = useState(false),
+    [visibility, setVisibility] = useState<"workspace" | "private">("workspace"),
     create = useOperation("create_project"),
     navigate = useNavigate();
+  function reset() {
+    setName("");
+    setKey("");
+    setCustomKey(false);
+    setVisibility("workspace");
+    create.reset();
+  }
   return (
     <>
       {sidebarAction ? (
@@ -34,7 +58,16 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
           New project
         </Button>
       )}
-      <Modal title="New project" open={open} onOpenChange={setOpen}>
+      <Modal
+        title="New project"
+        description={workspace ? `In ${workspace.name}` : undefined}
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) reset();
+        }}
+        busy={create.isPending}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -42,37 +75,85 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             void create
               .mutateAsync({
                 workspaceId: workspace?.id,
-                visibility: formText(values, "visibility") === "private" ? "private" : "workspace",
-                key: formText(values, "key"),
-                name: formText(values, "name"),
+                visibility,
+                key,
+                name,
                 description: formText(values, "description"),
               })
               .then(async (project) => {
                 setOpen(false);
+                reset();
                 await navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
               })
               .catch(() => {});
           }}
         >
-          <Input label="Project name" name="name" required maxLength={120} />
           <Input
-            label="Permanent ticket prefix"
-            name="key"
+            label="Project name"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (!customKey) setKey(suggestKey(event.target.value));
+            }}
             required
-            minLength={2}
-            maxLength={10}
-            pattern="[A-Z][A-Z0-9]{1,9}"
-            placeholder="KAN"
+            maxLength={120}
+            autoFocus
+            placeholder="Mobile app"
           />
-          <Textarea label="Description" name="description" maxLength={5000} />
-          <Select label="Project access" name="visibility" defaultValue="workspace">
-            <SelectItem value="workspace">Everyone in this workspace</SelectItem>
-            <SelectItem value="private">Only project members</SelectItem>
-          </Select>
-          <ErrorNotice error={create.error} />
-          <Button type="submit" variant="default" disabled={create.isPending}>
-            Create project
-          </Button>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+            <Input
+              label="Permanent ticket prefix"
+              value={key}
+              onChange={(event) => {
+                setCustomKey(true);
+                setKey(event.target.value.toUpperCase());
+              }}
+              required
+              minLength={2}
+              maxLength={10}
+              pattern="[A-Z][A-Z0-9]{1,9}"
+              placeholder="KAN"
+              className="font-mono uppercase"
+            />
+            <p className="mb-4 h-8 min-w-24 content-center font-mono text-xs text-muted-foreground tabular-nums">
+              {key ? `${key}-1, ${key}-2…` : ""}
+            </p>
+          </div>
+          <Textarea label="Description" name="description" maxLength={5000} rows={3} />
+          <Field className={fieldClass}>
+            <FieldLabel>Project access</FieldLabel>
+            <ToggleGroup
+              aria-label="Project access"
+              value={[visibility]}
+              onValueChange={(next) => {
+                const chosen = next[0];
+                if (chosen === "workspace" || chosen === "private") setVisibility(chosen);
+              }}
+              variant="outline"
+              spacing={0}
+              className="w-full *:flex-1"
+            >
+              <ToggleGroupItem value="workspace" aria-label="Everyone in this workspace">
+                <Users />
+                Everyone in the workspace
+              </ToggleGroupItem>
+              <ToggleGroupItem value="private" aria-label="Only project members">
+                <Lock />
+                Only project members
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <FieldDescription>
+              {visibility === "workspace"
+                ? "Workspace members inherit access from their workspace role."
+                : "Only members you add and workspace administrators can see this project."}
+            </FieldDescription>
+          </Field>
+          <FormActions
+            error={create.error}
+            pending={create.isPending}
+            submitLabel="Create project"
+            onCancel={() => setOpen(false)}
+          />
         </form>
       </Modal>
     </>

@@ -1,12 +1,29 @@
 import { ProjectIcon } from "./project-icon.tsx";
 import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu } from "./object-context-menu.tsx";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { Bell, ChevronsUpDown, Layers, LogOut, Search, Settings, ShieldCheck } from "lucide-react";
-import { auth, useIdentity, useProjects } from "../data.tsx";
-import { Brand, ErrorNotice, IconButton } from "../ui.tsx";
+import {
+  Bell,
+  ChevronsUpDown,
+  Layers,
+  LogOut,
+  Moon,
+  Plus,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sun,
+  Keyboard,
+  UserCheck,
+} from "lucide-react";
+import { notificationsSchema } from "@kanvil/contracts";
+import { api, auth, useIdentity, useProjects, useProjectAccess, useWorkspace } from "../data.tsx";
+import { Brand, ErrorNotice, IconButton, Loading, Modal, TicketIndicator } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
+import { useTheme } from "./theme-provider.tsx";
+import { useShortcut } from "../hooks/use-shortcut.ts";
 import {
   Sidebar,
   SidebarHeader,
@@ -51,11 +68,29 @@ import {
   CommandItem,
   CommandShortcut,
 } from "@/components/ui/command";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+const TicketEditor = lazy(() =>
+  import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
+);
 
+export function useUnreadNotifications() {
+  const projects = useProjects();
+  const items = useQuery({
+    queryKey: ["kanvil", "notifications"],
+    queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
+  });
+  return (
+    items.data?.filter(
+      (item) =>
+        !item.readAt && projects.data?.some((project) => project.id === item.event.projectId),
+    ).length ?? 0
+  );
+}
 export function AppSidebar() {
   const projects = useProjects(),
     pathname = useRouterState({ select: (state) => state.location.pathname }),
-    { setOpenMobile } = useSidebar();
+    { setOpenMobile } = useSidebar(),
+    unread = useUnreadNotifications();
   const router = useRouter();
   useEffect(
     () => router.subscribe("onBeforeNavigate", () => setOpenMobile(false)),
@@ -63,17 +98,17 @@ export function AppSidebar() {
   );
   return (
     <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="pb-2 pt-2">
+      <SidebarHeader className="pt-2 pb-2">
         <Link
           to="/"
           aria-label="Kanvil"
           activeProps={{ className: "" }}
-          className="brand flex h-9 items-center gap-2 px-1.5"
+          className="brand flex h-9 items-center gap-2 bg-transparent px-1.5 text-foreground"
         >
           <Brand />
         </Link>
         <WorkspaceSwitcher />
-        <ProjectSwitcher />
+        <CommandPalette />
       </SidebarHeader>
       <SidebarContent>
         <nav aria-label="Workspace">
@@ -99,6 +134,14 @@ export function AppSidebar() {
                     <Bell />
                     <span>Inbox</span>
                   </SidebarMenuButton>
+                  {unread > 0 && (
+                    <SidebarMenuBadge
+                      className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground tabular-nums animate-in zoom-in-75 duration-200"
+                      aria-label={`${unread} unread`}
+                    >
+                      {unread > 99 ? "99+" : unread}
+                    </SidebarMenuBadge>
+                  )}
                 </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
@@ -202,10 +245,43 @@ function AccountMenu() {
     </>
   );
 }
-function ProjectSwitcher() {
+const shortcuts: [string, string][] = [
+  ["⌘ K", "Go to anything"],
+  ["C", "New ticket"],
+  ["/", "Search tickets"],
+  ["J K", "Highlight the next or previous ticket"],
+  ["↵", "Open the highlighted ticket"],
+  ["X", "Select the highlighted ticket"],
+  ["S P A", "Set status, priority, or assignee of the highlighted ticket"],
+  ["E", "Edit the open ticket"],
+  ["⌘ B", "Toggle sidebar"],
+  ["⌘ ↵", "Save a ticket or comment"],
+  ["?", "This list"],
+];
+function CommandPalette() {
   const [open, setOpen] = useState(false),
+    [help, setHelp] = useState(false),
+    [query, setQuery] = useState(""),
+    [creating, setCreating] = useState(false),
     projects = useProjects(),
-    navigate = useNavigate();
+    navigate = useNavigate(),
+    identity = useIdentity(),
+    { setMode } = useTheme(),
+    pathname = useRouterState({ select: (state) => state.location.pathname });
+  const resolved = document.documentElement.classList.contains("dark") ? "dark" : "light";
+  const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const project = projects.data?.find((item) => item.id === projectId);
+  const access = useProjectAccess(projectId ?? "", !!projectId);
+  const trimmed = query.trim();
+  const workspace = useWorkspace();
+  const tickets = useQuery({
+    ...api.query("search_tickets", {
+      q: trimmed,
+      ...(workspace.active ? { workspaceId: workspace.active.id } : {}),
+      limit: 8,
+    }),
+    enabled: open && trimmed.length > 1,
+  });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
@@ -216,10 +292,20 @@ function ProjectSwitcher() {
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, []);
+  useShortcut("?", () => setHelp(true), { enabled: !help && !open });
   const go = (to: string) => {
     setOpen(false);
     void navigate({ to });
   };
+  const run = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+  // A typed key such as TAL-1061 jumps straight to that ticket in any accessible project.
+  const keyMatch = /^([a-z][a-z0-9]{1,9})-(\d+)$/i.exec(trimmed),
+    keyProject = keyMatch
+      ? projects.data?.find((item) => item.key === keyMatch[1]?.toUpperCase())
+      : undefined;
   return (
     <>
       <SidebarMenu>
@@ -231,50 +317,185 @@ function ProjectSwitcher() {
           >
             <Search />
             <span>Go to…</span>
-            <span className="ml-auto text-[10px] group-data-[collapsible=icon]:hidden">⌘ K</span>
+            <Kbd className="ml-auto group-data-[collapsible=icon]:hidden">⌘K</Kbd>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
       <CommandDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
         title="Go to"
-        description="Find a project or page"
+        description="Find a project, ticket, page, or action"
+        className="sm:max-w-xl"
       >
         <Command>
-          <CommandInput placeholder="Find a project or page…" />
+          <CommandInput
+            placeholder="Search tickets, projects, pages, actions…"
+            value={query}
+            onValueChange={setQuery}
+          />
           <CommandList>
-            <CommandEmpty>No results</CommandEmpty>
-            <CommandGroup heading="Workspace">
-              <CommandItem onSelect={() => go("/")}>
-                <Layers />
-                All projects<CommandShortcut>↵</CommandShortcut>
-              </CommandItem>
-              <CommandItem onSelect={() => go("/inbox")}>
-                <Bell />
-                Inbox
-              </CommandItem>
-              <CommandItem onSelect={() => go("/settings")}>
-                <Settings />
-                Settings
-              </CommandItem>
+            <CommandEmpty>{tickets.isFetching ? "Searching…" : "No results"}</CommandEmpty>
+            {keyProject && keyMatch && (
+              <CommandGroup heading="Jump to">
+                <CommandItem
+                  value={`${trimmed} jump open`}
+                  onSelect={() => go(`/projects/${keyProject.id}/tickets/${trimmed.toUpperCase()}`)}
+                >
+                  <ProjectIcon project={keyProject} className="size-4" />
+                  Open {trimmed.toUpperCase()} in {keyProject.name}
+                </CommandItem>
+              </CommandGroup>
+            )}
+            {trimmed.length > 1 && (
+              <CommandGroup
+                heading={workspace.active ? `Tickets in ${workspace.active.name}` : "Tickets"}
+              >
+                {tickets.data?.items.map(({ ticket, project: owner }) => (
+                  <CommandItem
+                    key={ticket.id}
+                    value={`${ticket.key} ${ticket.title} ${owner.name}`}
+                    onSelect={() => go(`/projects/${ticket.projectId}/tickets/${ticket.id}`)}
+                  >
+                    <TicketIndicator property="status" value={ticket.status} iconOnly />
+                    <span className="min-w-0 truncate">{ticket.title}</span>
+                    <CommandShortcut className="shrink-0 font-mono whitespace-nowrap">
+                      {ticket.key}
+                    </CommandShortcut>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading="Actions">
+              {project && access.canWrite && (
+                <CommandItem
+                  value="new ticket create"
+                  onSelect={() => run(() => setCreating(true))}
+                >
+                  <Plus />
+                  New ticket in {project.name}
+                  <CommandShortcut>C</CommandShortcut>
+                </CommandItem>
+              )}
+              {project && (
+                <CommandItem
+                  value="my tickets assigned to me"
+                  onSelect={() =>
+                    run(() => {
+                      void navigate({
+                        to: "/projects/$projectId",
+                        params: { projectId: project.id },
+                        search: { assigneeId: identity.id },
+                      });
+                    })
+                  }
+                >
+                  <UserCheck />
+                  My tickets in {project.name}
+                </CommandItem>
+              )}
+              {
+                <CommandItem
+                  value={`switch to ${resolved === "dark" ? "light" : "dark"} mode theme appearance`}
+                  onSelect={() => run(() => setMode(resolved === "dark" ? "light" : "dark"))}
+                >
+                  {resolved === "dark" ? <Sun /> : <Moon />}
+                  Switch to {resolved === "dark" ? "light" : "dark"} mode
+                </CommandItem>
+              }
+              {
+                <CommandItem
+                  value="keyboard shortcuts help"
+                  onSelect={() => run(() => setHelp(true))}
+                >
+                  <Keyboard />
+                  Keyboard shortcuts
+                  <CommandShortcut>?</CommandShortcut>
+                </CommandItem>
+              }
+            </CommandGroup>
+            <CommandGroup heading="Pages">
+              {
+                <CommandItem value="all projects home" onSelect={() => go("/")}>
+                  <Layers />
+                  All projects
+                </CommandItem>
+              }
+              {
+                <CommandItem value="inbox notifications" onSelect={() => go("/inbox")}>
+                  <Bell />
+                  Inbox
+                </CommandItem>
+              }
+              {
+                <CommandItem
+                  value="settings account appearance api keys"
+                  onSelect={() => go("/settings")}
+                >
+                  <Settings />
+                  Settings
+                </CommandItem>
+              }
+              {identity.admin && (
+                <CommandItem value="administration admin users" onSelect={() => go("/admin")}>
+                  <ShieldCheck />
+                  Administration
+                </CommandItem>
+              )}
+              {project && access.canAdmin && (
+                <CommandItem
+                  value={`${project.name} project settings labels members`}
+                  onSelect={() => go(`/projects/${project.id}/settings`)}
+                >
+                  <Settings />
+                  {project.name} settings
+                </CommandItem>
+              )}
             </CommandGroup>
             <CommandGroup heading="Projects">
-              {projects.data?.map((project) => (
+              {projects.data?.map((item) => (
                 <CommandItem
-                  key={project.id}
-                  value={`${project.name} ${project.key}`}
-                  onSelect={() => go(`/projects/${project.id}`)}
+                  key={item.id}
+                  value={`${item.name} ${item.key}`}
+                  onSelect={() => go(`/projects/${item.id}`)}
                 >
-                  <ProjectIcon project={project} className="size-4" />
-                  {project.name}
-                  <CommandShortcut>{project.key}</CommandShortcut>
+                  <ProjectIcon project={item} className="size-4" />
+                  {item.name}
+                  <CommandShortcut>{item.key}</CommandShortcut>
                 </CommandItem>
               ))}
             </CommandGroup>
           </CommandList>
         </Command>
       </CommandDialog>
+      <Modal title="Keyboard shortcuts" open={help} onOpenChange={setHelp}>
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-2.5 text-sm">
+          {shortcuts.map(([keys, label]) => (
+            <div key={keys} className="contents">
+              <dt>
+                <KbdGroup>
+                  {keys.split(" ").map((key) => (
+                    <Kbd key={key}>{key}</Kbd>
+                  ))}
+                </KbdGroup>
+              </dt>
+              <dd className="m-0">{label}</dd>
+            </div>
+          ))}
+        </dl>
+      </Modal>
+      {project && (
+        <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
+          {creating && (
+            <Suspense fallback={<Loading />}>
+              <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />
+            </Suspense>
+          )}
+        </Modal>
+      )}
     </>
   );
 }
@@ -282,6 +503,11 @@ export function WorkspaceHeader() {
   const pathname = useRouterState({ select: (state) => state.location.pathname }),
     projects = useProjects();
   const project = projects.data?.find((item) => pathname.startsWith(`/projects/${item.id}`));
+  const ticketId = pathname.match(/\/tickets\/([^/]+)/)?.[1];
+  const ticket = useQuery({
+    ...api.query("get_ticket", { projectId: project?.id ?? "", ticketId: ticketId ?? "" }),
+    enabled: !!project && !!ticketId,
+  });
   const projectList = project && pathname === `/projects/${project.id}`;
   const page =
     pathname === "/admin"
@@ -294,11 +520,11 @@ export function WorkspaceHeader() {
             ? "Workspace settings"
             : pathname.endsWith("/settings")
               ? "Project settings"
-              : pathname.includes("/tickets/")
-                ? "Ticket"
+              : ticketId
+                ? (ticket.data?.ticket.key ?? "Ticket")
                 : "Tickets";
   return (
-    <header className="workspace-header flex h-11 shrink-0 items-center gap-3 border-b px-4 md:px-6">
+    <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />
       <Breadcrumb className={projectList ? "min-w-0 flex-1" : undefined}>
         <BreadcrumbList className={projectList ? "min-w-0 flex-nowrap overflow-hidden" : undefined}>
@@ -334,7 +560,9 @@ export function WorkspaceHeader() {
             <>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
-                <BreadcrumbPage>{page}</BreadcrumbPage>
+                <BreadcrumbPage className={ticketId ? "font-mono text-xs" : undefined}>
+                  {page}
+                </BreadcrumbPage>
               </BreadcrumbItem>
             </>
           )}
