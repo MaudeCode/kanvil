@@ -2,7 +2,8 @@ import { ProjectIcon } from "./components/project-icon.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createPrivatePersister } from "./lib/private-cache.ts";
@@ -20,7 +21,6 @@ import {
 } from "@tanstack/react-router";
 import {
   Settings,
-  WifiOff,
   FolderOpen,
   MessageSquare,
   Bell,
@@ -71,7 +71,6 @@ import { CreateProject } from "./components/create-project.tsx";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { ThemeProvider } from "./components/theme-provider.tsx";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Item,
   ItemGroup,
@@ -177,10 +176,63 @@ function SignedInSession({
     </Identity>
   );
 }
+// A lost connection becomes a toast only after it stays lost; the stream retries every second or
+// two, so brief blips never surface. Reconnecting after a shown toast confirms with a success toast.
+function useConnectionToast(connection: string) {
+  const state = useRef({ hadConnected: false, shown: false, timer: 0 });
+  useEffect(() => {
+    const current = state.current;
+    if (connection === "connected") {
+      current.hadConnected = true;
+      window.clearTimeout(current.timer);
+      current.timer = 0;
+      if (current.shown) {
+        current.shown = false;
+        toast.success("Connection restored", {
+          id: "connection",
+          description: undefined,
+          duration: 2500,
+        });
+      }
+      return;
+    }
+    if (connection === "closed") return;
+    const signIn = connection !== "connecting" && connection !== "offline";
+    if (!current.hadConnected && !signIn) return;
+    if (current.timer || current.shown) return;
+    current.timer = window.setTimeout(
+      () => {
+        current.timer = 0;
+        current.shown = true;
+        if (signIn)
+          toast.error(connection, {
+            id: "connection",
+            duration: Infinity,
+            action: { label: "Reload", onClick: () => window.location.reload() },
+          });
+        else
+          toast.warning("Connection lost", {
+            id: "connection",
+            description: "Reconnecting…",
+            duration: Infinity,
+          });
+      },
+      signIn ? 0 : 8000,
+    );
+  }, [connection]);
+  useEffect(() => {
+    const current = state.current;
+    return () => {
+      window.clearTimeout(current.timer);
+      toast.dismiss("connection");
+    };
+  }, []);
+}
 function Shell() {
   const { projectId } = useParams({ strict: false });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const connection = useLive();
+  useConnectionToast(connection);
   const info = useQuery({
     queryKey: ["info"],
     queryFn: () => api.request("/api/v1/info", infoSchema),
@@ -202,14 +254,6 @@ function Shell() {
         <AppSidebar />
         <SidebarInset className="min-w-0 has-[.ticket-list-controls]:max-h-svh md:has-[.ticket-list-controls]:max-h-[calc(100svh-1rem)]">
           <WorkspaceHeader />
-          {connection !== "connected" && connection !== "connecting" && (
-            <Alert className="mx-6 mt-4 w-auto">
-              <WifiOff />
-              <AlertDescription>
-                {connection === "offline" ? "Connection lost. Reconnecting…" : connection}
-              </AlertDescription>
-            </Alert>
-          )}
           <div
             id="main"
             className="content @container w-full min-w-0 px-5 pt-4 pb-12 has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col has-[.ticket-list-controls]:pt-2 has-[.ticket-list-controls]:pb-0 max-[650px]:px-4 max-[650px]:pt-6 max-[650px]:pb-10 md:px-8"
