@@ -51,7 +51,7 @@ if (process.argv[2] === "view") {
     await expect(readFile(join(directory, "published"))).rejects.toThrow();
     await exec(process.execPath, [script], options("E404"));
     expect(await readFile(join(directory, "published"), "utf8")).toBe(
-      "publish release/package.tgz --access public --provenance",
+      "publish ./release/package.tgz --access public --provenance",
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

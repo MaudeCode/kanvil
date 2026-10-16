@@ -8,7 +8,7 @@ const metadata = JSON.parse(readFileSync("package.json", "utf8"));
 metadata.version = releaseVersion(metadata.version);
 const tarballs = readdirSync("release").filter((file) => file.endsWith(".tgz"));
 assert.equal(tarballs.length, 1, "Expected one tested release tarball");
-const tarball = `release/${tarballs[0]}`;
+const tarball = `./release/${tarballs[0]}`;
 const integrity = `sha512-${createHash("sha512").update(readFileSync(tarball)).digest("base64")}`;
 let published;
 try {
