@@ -416,7 +416,7 @@ export function TicketList({
       ) : (
         <div className="table-scroll">
           <Table
-            className="ticket-table @min-[1051px]:w-(--table-width)"
+            className="ticket-table min-w-full @min-[1051px]:w-(--table-width)"
             role="table"
             aria-label="Tickets"
             data-density={density}

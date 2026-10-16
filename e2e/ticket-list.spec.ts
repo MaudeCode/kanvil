@@ -1,6 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { signIn } from "./auth.ts";
 import { choose, chooseTicketView, openSaveView } from "./controls.ts";
+
+async function expectFullWidth(table: Locator) {
+  expect(
+    await table.evaluate((node) => {
+      const content = node.closest<HTMLElement>(".content")!;
+      const style = getComputedStyle(content);
+      const available =
+        content.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return Math.abs(node.getBoundingClientRect().width - available);
+    }),
+  ).toBeLessThan(1);
+}
 
 test("list properties persist and labels filter and sort the entire project", async ({ page }) => {
   await signIn(page);
@@ -22,9 +34,20 @@ test("list properties persist and labels filter and sort the entire project", as
   }
   await page.goto(`/projects/${project.id}`);
   const table = page.getByRole("table", { name: "Tickets" });
+  for (const width of [1440, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(table.locator("tbody tr").first()).toBeVisible();
+    await expectFullWidth(table);
+    expect((await table.locator('th[data-column="key"]').boundingBox())!.width).toBeCloseTo(100, 0);
+  }
   await expect(table.locator('td[data-column="labels"]').first()).toContainText("standard");
   await expect(table.getByText("rare, quoted 'label'", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Display", exact: true }).click();
+  for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty"])
+    await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
+  await expect(table.locator("th")).toHaveCount(2);
+  await expectFullWidth(table);
+  await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await page.getByRole("checkbox", { name: "Priority", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "Labels", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "Kind", exact: true }).check();
@@ -39,6 +62,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await expect(table.locator('td[data-column="scopes"]').first()).toContainText("web");
   await expect(table.locator('td[data-column="assigneeId"]').first()).toContainText("Unassigned");
   await expect(table.locator('td[data-column="createdAt"]').first()).not.toBeEmpty();
+  await expectFullWidth(table);
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Labels", exact: true })).toBeChecked();

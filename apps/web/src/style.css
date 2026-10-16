@@ -202,6 +202,9 @@
   .content:has(> .ticket-list-controls) {
     padding-top: 0.5rem;
   }
+  .content:has(> .ticket-list-controls) > * {
+    max-width: none;
+  }
   .ticket-list-controls {
     @apply mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1;
   }
@@ -725,10 +728,12 @@
   display: none;
 }
 
-@container (min-width: 851px) and (max-width: 1050px) {
+@container (min-width: 851px) {
   .ticket-table th[data-column="title"] {
     width: auto !important;
   }
+}
+@container (min-width: 851px) and (max-width: 1050px) {
   .ticket-table th[data-column="title"] .resizer {
     display: none;
   }
