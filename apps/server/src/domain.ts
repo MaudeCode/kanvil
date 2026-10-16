@@ -67,6 +67,28 @@ export function requireRow<T>(row: T | undefined): T {
   if (!row) fail(404, "not_found", "The requested record was not found");
   return row;
 }
+// The first row of a query that must exist; most reads and all `returning()` writes use it.
+export const one = <T>(rows: readonly T[]): T => requireRow(rows[0]);
+// Every optimistic-concurrency check reports the same code and carries the current version.
+export function assertVersion(
+  current: { version: number },
+  expected: number,
+  subject: string,
+  action = "editing",
+) {
+  if (current.version !== expected)
+    fail(409, "version_conflict", `The ${subject} changed; reload before ${action}`, {
+      currentVersion: current.version,
+    });
+}
+// Database rows carry Date columns; the contracts expect ISO strings.
+export function toProject(row: typeof projects.$inferSelect): Project {
+  return projectSchema.parse({
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
 export async function accountByEmail(db: Context["db"], email: string) {
   const found = (
     await db.select().from(user).where(eq(user.email, email.toLowerCase())).limit(1)
@@ -122,16 +144,14 @@ async function context(
       fail(403, "forbidden", "Workspace write access is required");
   }
   if (!projectId) return ctx;
-  const row = requireRow(
-    (
-      await db
-        .select()
-        .from(projects)
-        .where(
-          or(eq(projects.key, projectId.toUpperCase()), sql`${projects.id}::text = ${projectId}`),
-        )
-        .limit(1)
-    )[0],
+  const row = one(
+    await db
+      .select()
+      .from(projects)
+      .where(
+        or(eq(projects.key, projectId.toUpperCase()), sql`${projects.id}::text = ${projectId}`),
+      )
+      .limit(1),
   );
   if (actor.projectIds && !actor.projectIds.includes(row.id))
     fail(404, "not_found", "Project was not found");
@@ -143,77 +163,63 @@ async function context(
     fail(403, "forbidden", "Project administration permission is required");
   if ((scope === "write" || scope === "claim") && role === "reader")
     fail(403, "forbidden", "Project write permission is required");
-  return {
-    ...ctx,
-    project: projectSchema.parse({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    }),
-    role,
-  };
+  return { ...ctx, project: toProject(row), role };
 }
 export async function getTicket(ctx: Context, identifier: string) {
-  return requireRow(
-    (
-      await ctx.db
-        .select()
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.projectId, project(ctx).id),
-            or(eq(tickets.key, identifier.toUpperCase()), sql`${tickets.id}::text = ${identifier}`),
-          ),
-        )
-        .limit(1)
-    )[0],
+  return one(
+    await ctx.db
+      .select()
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.projectId, project(ctx).id),
+          or(eq(tickets.key, identifier.toUpperCase()), sql`${tickets.id}::text = ${identifier}`),
+        ),
+      )
+      .limit(1),
   );
 }
-export async function publish(
-  ctx: Context,
-  type: string,
-  ticketId: string | null,
-  data: Record<string, unknown>,
-) {
-  const ticket = ticketId
-    ? (
-        await ctx.db
-          .select({ key: tickets.key, title: tickets.title })
-          .from(tickets)
-          .where(eq(tickets.id, ticketId))
-      )[0]
-    : undefined;
-  const clock = requireRow(
-    (
-      await ctx.db
-        .update(eventClock)
-        .set({ value: sql`${eventClock.value} + 1` })
-        .where(eq(eventClock.id, 1))
-        .returning()
-    )[0],
+export type PendingEvent = { type: string; ticketId: string | null; data: Record<string, unknown> };
+// Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
+export async function publishMany(ctx: Context, pending: PendingEvent[]) {
+  if (!pending.length) return [];
+  const ticketIds = [...new Set(pending.flatMap((item) => (item.ticketId ? [item.ticketId] : [])))];
+  const titles = new Map(
+    ticketIds.length
+      ? (
+          await ctx.db
+            .select({ id: tickets.id, key: tickets.key, title: tickets.title })
+            .from(tickets)
+            .where(inArray(tickets.id, ticketIds))
+        ).map((row) => [row.id, { key: row.key, title: row.title }])
+      : [],
   );
-  const event = requireRow(
-    (
-      await ctx.db
-        .insert(events)
-        .values({
-          id: clock.value,
-          projectId: project(ctx).id,
-          ticketId,
-          actorId: ctx.actor.id,
-          type,
-          data: {
-            ...data,
-            ...ticket,
-            source: { kind: ctx.actor.machine ? "credential" : "session", id: ctx.actor.ownerId },
-          },
-        })
-        .returning()
-    )[0],
+  const clock = one(
+    await ctx.db
+      .update(eventClock)
+      .set({ value: sql`${eventClock.value} + ${pending.length}` })
+      .where(eq(eventClock.id, 1))
+      .returning(),
   );
-  if (ticketId) {
+  const first = clock.value - BigInt(pending.length) + 1n;
+  const source = { kind: ctx.actor.machine ? "credential" : "session", id: ctx.actor.ownerId };
+  const rows = await ctx.db
+    .insert(events)
+    .values(
+      pending.map((item, index) => ({
+        id: first + BigInt(index),
+        projectId: project(ctx).id,
+        ticketId: item.ticketId,
+        actorId: ctx.actor.id,
+        type: item.type,
+        data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
+      })),
+    )
+    .returning();
+  if (ticketIds.length) {
     const followers = await ctx.db
       .select({
+        ticketId: subscriptions.ticketId,
         userId: subscriptions.userId,
         inApp: notificationPreferences.inApp,
         push: notificationPreferences.push,
@@ -223,7 +229,7 @@ export async function publish(
       .leftJoin(notificationPreferences, eq(notificationPreferences.userId, subscriptions.userId))
       .where(
         and(
-          eq(subscriptions.ticketId, ticketId),
+          inArray(subscriptions.ticketId, ticketIds),
           or(
             isNotNull(projectRoleSQL(user.id, subscriptions.projectId)),
             sql`'admin' = any(string_to_array(${user.role}, ','))`,
@@ -236,36 +242,52 @@ export async function publish(
           ),
         ),
       );
-    for (const follower of followers) {
-      const notification = requireRow(
-        (
-          await ctx.db
-            .insert(notifications)
-            .values({
-              userId: follower.userId,
-              projectId: project(ctx).id,
-              eventId: event.id,
-              inbox: follower.inApp ?? true,
-            })
-            .returning()
-        )[0],
-      );
-      if (follower.push) {
+    const entries = rows.flatMap((event) =>
+      followers
+        .filter((follower) => follower.ticketId === event.ticketId)
+        .map((follower) => ({ event, follower })),
+    );
+    if (entries.length) {
+      const created = await ctx.db
+        .insert(notifications)
+        .values(
+          entries.map(({ event, follower }) => ({
+            userId: follower.userId,
+            projectId: project(ctx).id,
+            eventId: event.id,
+            inbox: follower.inApp ?? true,
+          })),
+        )
+        .returning();
+      const pushUsers = [
+        ...new Set(entries.filter(({ follower }) => follower.push).map((e) => e.follower.userId)),
+      ];
+      if (pushUsers.length) {
         const devices = await ctx.db
-          .select({ id: pushDevices.id })
+          .select({ id: pushDevices.id, userId: pushDevices.userId })
           .from(pushDevices)
-          .where(eq(pushDevices.userId, follower.userId));
-        if (devices.length)
-          await ctx.db
-            .insert(pushDeliveries)
-            .values(
-              devices.map((device) => ({ notificationId: notification.id, deviceId: device.id })),
-            );
+          .where(inArray(pushDevices.userId, pushUsers));
+        const deliveries = created.flatMap((notification, index) => {
+          const follower = entries[index]?.follower;
+          if (!follower?.push) return [];
+          return devices
+            .filter((device) => device.userId === follower.userId)
+            .map((device) => ({ notificationId: notification.id, deviceId: device.id }));
+        });
+        if (deliveries.length) await ctx.db.insert(pushDeliveries).values(deliveries);
       }
     }
   }
-  await ctx.db.execute(sql`SELECT pg_notify('kanvil_events', ${event.id.toString()})`);
-  return event;
+  await ctx.db.execute(sql`SELECT pg_notify('kanvil_events', ${clock.value.toString()})`);
+  return rows;
+}
+export async function publish(
+  ctx: Context,
+  type: string,
+  ticketId: string | null,
+  data: Record<string, unknown>,
+) {
+  return one(await publishMany(ctx, [{ type, ticketId, data }]));
 }
 export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
   return (
@@ -367,9 +389,7 @@ export function createDomain(
       projectIds?: readonly string[];
     },
   ): Promise<Actor> {
-    const row = requireRow(
-      (await database.db.select().from(user).where(eq(user.id, id)).limit(1))[0],
-    );
+    const row = one(await database.db.select().from(user).where(eq(user.id, id)).limit(1));
     if (row.banned) fail(403, "account_disabled", "This account is disabled");
     return {
       id,
@@ -390,9 +410,7 @@ export function createDomain(
       .filter((row) => !projectId || row.id === projectId || row.key === projectId.toUpperCase())
       .map((row) => row.id);
     if (projectId && !ids.length) fail(404, "not_found", "Project was not found");
-    const clock = requireRow(
-      (await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
-    );
+    const clock = one(await database.db.select().from(eventClock).where(eq(eventClock.id, 1)));
     if (cursor < clock.floor || cursor > clock.value)
       fail(410, "snapshot_required", "Fetch a fresh snapshot before reconnecting", {
         cursor: clock.value.toString(),
@@ -412,9 +430,7 @@ export function createDomain(
     return database.db.transaction(
       async (tx) => {
         const ctx = await context(tx, identity, "read", identifier);
-        const clock = requireRow(
-          (await tx.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
-        );
+        const clock = one(await tx.select().from(eventClock).where(eq(eventClock.id, 1)));
         const rows = await tx
           .select()
           .from(tickets)

@@ -13,7 +13,7 @@ import {
 import { instanceSettings, storageBackends } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Config } from "./config.ts";
-import { fail, requireRow } from "./domain.ts";
+import { fail, one } from "./domain.ts";
 
 // Location identity excludes credentials so rotation preserves existing file references.
 function storageIdentity(settings: S3Settings) {
@@ -59,14 +59,10 @@ export function createInstance(database: Database, config: Config) {
   }
   async function read(db: Connection | Transaction = database.db) {
     await db.insert(instanceSettings).values({ id: 1 }).onConflictDoNothing();
-    return requireRow(
-      (await db.select().from(instanceSettings).where(eq(instanceSettings.id, 1)))[0],
-    );
+    return one(await db.select().from(instanceSettings).where(eq(instanceSettings.id, 1)));
   }
   async function backend(id: string, db: Connection | Transaction = database.db) {
-    const row = requireRow(
-      (await db.select().from(storageBackends).where(eq(storageBackends.id, id)))[0],
-    );
+    const row = one(await db.select().from(storageBackends).where(eq(storageBackends.id, id)));
     const settings = s3SettingsSchema.parse(unseal(row.config));
     return { ...row, settings, spec: { provider: "s3", config: settings } };
   }
@@ -125,14 +121,12 @@ export function createInstance(database: Database, config: Config) {
   async function saveBackend(settings: S3Settings, db: Connection | Transaction = database.db) {
     const complete = await resolveS3(settings, db),
       identity = storageIdentity(settings);
-    return requireRow(
-      (
-        await db
-          .insert(storageBackends)
-          .values({ identity, config: seal(complete) })
-          .onConflictDoUpdate({ target: storageBackends.identity, set: { config: seal(complete) } })
-          .returning()
-      )[0],
+    return one(
+      await db
+        .insert(storageBackends)
+        .values({ identity, config: seal(complete) })
+        .onConflictDoUpdate({ target: storageBackends.identity, set: { config: seal(complete) } })
+        .returning(),
     );
   }
   async function storage() {

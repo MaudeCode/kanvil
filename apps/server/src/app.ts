@@ -25,8 +25,13 @@ import {
   pushDeviceInput,
 } from "@kanvil/contracts";
 import { defaultAdapters, type RuntimeAdapters } from "./runtime-adapters.ts";
-import { createAccess, requireSession, requireInstanceAdmin } from "./access.ts";
-import { createDomain, fail, json, requireRow, type Actor } from "./domain.ts";
+import {
+  createAccess,
+  createWriteLimiter,
+  requireSession,
+  requireInstanceAdmin,
+} from "./access.ts";
+import { createDomain, fail, json, requireRow, type Actor, one } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
 import { apikey } from "./auth-schema.ts";
 import {
@@ -136,7 +141,14 @@ export async function createApplication(
         },
         { status: error.statusCode },
       );
-    if (error instanceof ApiError)
+    if (error instanceof ApiError) {
+      const retry =
+        error.status === 429 &&
+        error.details &&
+        typeof error.details === "object" &&
+        "retryAfterSeconds" in error.details
+          ? String(error.details.retryAfterSeconds)
+          : undefined;
       return Response.json(
         {
           error: {
@@ -146,8 +158,9 @@ export async function createApplication(
             details: error.details,
           },
         },
-        { status: error.status },
+        { status: error.status, headers: retry ? { "Retry-After": retry } : {} },
       );
+    }
     if (error instanceof z.ZodError)
       return Response.json(
         {
@@ -209,8 +222,8 @@ export async function createApplication(
       const created = await auth.api.createUser({
         body: { email: input.email, name: input.name, password: input.password, role: "admin" },
       });
-      const workspace = requireRow(
-        (await tx.select().from(workspaces).where(eq(workspaces.slug, "kanvil")))[0],
+      const workspace = one(
+        await tx.select().from(workspaces).where(eq(workspaces.slug, "kanvil")),
       );
       await tx
         .insert(workspaceMembers)
@@ -228,9 +241,14 @@ export async function createApplication(
   app.on(["GET", "POST"], ["/api/auth/*", "/.well-known/*"], (c) => accounts.handleAuth(c.req.raw));
   const mcpHandler = createMcp(auth, domain, access, config);
   app.all("/mcp", (c) => mcpHandler(c.req.raw));
+  // Credentials are limited by the auth layer; sessions get a comparable budget for writes.
+  const writes = createWriteLimiter(config.KANVIL_SESSION_WRITE_LIMIT);
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);
-    c.set("actor", await access.authenticate(c.req.raw));
+    const actor = await access.authenticate(c.req.raw);
+    c.set("actor", actor);
+    if (!actor.machine && !["GET", "HEAD", "OPTIONS"].includes(c.req.method))
+      writes.consume(actor.id);
     await next();
   });
 
@@ -263,13 +281,11 @@ export async function createApplication(
       { projectId: c.req.param("projectId") },
       c.get("actor"),
     );
-    const row = requireRow(
-      (
-        await database.db
-          .select({ objectId: projects.iconObjectId })
-          .from(projects)
-          .where(eq(projects.id, project.id))
-      )[0],
+    const row = one(
+      await database.db
+        .select({ objectId: projects.iconObjectId })
+        .from(projects)
+        .where(eq(projects.id, project.id)),
     );
     if (!row.objectId) fail(404, "not_found", "This project has no uploaded icon");
     return imageResponse(await blobs.get(row.objectId));
@@ -323,13 +339,11 @@ export async function createApplication(
     const identity = c.get("actor");
     if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
     const id = c.req.param("id");
-    requireRow(
-      (
-        await database.db
-          .select({ id: apikey.id })
-          .from(apikey)
-          .where(and(eq(apikey.id, id), eq(apikey.referenceId, identity.id)))
-      )[0],
+    one(
+      await database.db
+        .select({ id: apikey.id })
+        .from(apikey)
+        .where(and(eq(apikey.id, id), eq(apikey.referenceId, identity.id))),
     );
     await auth.api.deleteApiKey({ body: { keyId: id }, headers: c.req.raw.headers });
     return Response.json({ ok: true });
@@ -340,16 +354,12 @@ export async function createApplication(
     ),
   );
   app.get("/api/v1/checkpoint", async () => {
-    const row = requireRow(
-      (await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0],
-    );
+    const row = one(await database.db.select().from(eventClock).where(eq(eventClock.id, 1)));
     return Response.json({ cursor: row.value.toString() });
   });
   app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
     const id = z.uuid().parse(c.req.param("id"));
-    const row = requireRow(
-      (await database.db.select().from(attachments).where(eq(attachments.id, id)))[0],
-    );
+    const row = one(await database.db.select().from(attachments).where(eq(attachments.id, id)));
     const authorized = await domain.execute(
       "list_attachments",
       { projectId: c.req.param("projectId"), ticketId: row.ticketId },
@@ -358,13 +368,11 @@ export async function createApplication(
     requireRow(authorized.find((item) => item.id === id));
     const bytes = row.objectId
       ? (await blobs.get(row.objectId)).data
-      : requireRow(
-          (
-            await database.db
-              .select({ data: attachmentContent.data })
-              .from(attachmentContent)
-              .where(eq(attachmentContent.id, id))
-          )[0],
+      : one(
+          await database.db
+            .select({ data: attachmentContent.data })
+            .from(attachmentContent)
+            .where(eq(attachmentContent.id, id)),
         ).data;
     if (bytes.length !== row.size)
       fail(500, "attachment_corrupt", "Attachment integrity check failed");
@@ -392,14 +400,12 @@ export async function createApplication(
   app.put("/api/v1/notifications/preferences", async (c) => {
     const identity = requireSession(c.get("actor"));
     const input = notificationPreferencesInput.parse(await c.req.json());
-    const row = requireRow(
-      (
-        await database.db
-          .insert(notificationPreferences)
-          .values({ userId: identity.id, ...input })
-          .onConflictDoUpdate({ target: notificationPreferences.userId, set: input })
-          .returning({ inApp: notificationPreferences.inApp, push: notificationPreferences.push })
-      )[0],
+    const row = one(
+      await database.db
+        .insert(notificationPreferences)
+        .values({ userId: identity.id, ...input })
+        .onConflictDoUpdate({ target: notificationPreferences.userId, set: input })
+        .returning({ inApp: notificationPreferences.inApp, push: notificationPreferences.push }),
     );
     return Response.json(notificationPreferencesSchema.parse(row));
   });
@@ -475,8 +481,7 @@ export async function createApplication(
     const raw = c.req.query("cursor") ?? c.req.header("last-event-id");
     let cursor =
       raw === undefined
-        ? requireRow((await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0])
-            .value
+        ? one(await database.db.select().from(eventClock).where(eq(eventClock.id, 1))).value
         : BigInt(
             z
               .string()

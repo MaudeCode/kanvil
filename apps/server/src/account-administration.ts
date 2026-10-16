@@ -10,7 +10,7 @@ import {
 } from "@kanvil/contracts/users";
 import { account, session, user } from "./auth-schema.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
-import { fail, json, requireRow, type Actor } from "./domain.ts";
+import { fail, json, requireRow, type Actor, one } from "./domain.ts";
 import type { Auth } from "./auth.ts";
 import type { Database } from "./database.ts";
 const person = {
@@ -210,7 +210,7 @@ export function createAccountAdministration(database: Database, auth: Auth) {
       });
       app.get("/api/v1/admin/users/:id", async (c) => {
         const id = c.req.param("id"),
-          row = requireRow((await database.db.select(person).from(user).where(eq(user.id, id)))[0]);
+          row = one(await database.db.select(person).from(user).where(eq(user.id, id)));
         const [spaces, direct, providers, sessions] = await Promise.all([
           database.db
             .select({ id: workspaces.id, name: workspaces.name, role: workspaceMembers.role })

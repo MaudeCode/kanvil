@@ -8,7 +8,7 @@ import { searchState, tickets, events, eventClock } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
 import type { SearchSettings } from "@kanvil/contracts/instance";
-import { fail, requireRow } from "./domain.ts";
+import { fail, one } from "./domain.ts";
 
 export function postgresSearch(query: string): SQL | undefined {
   const value = `%${query.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
@@ -50,11 +50,9 @@ export function createTicketSearch(
           if (!lock.rows[0]?.acquired) return;
           const root = await instance.read(tx),
             hash = fingerprint(settings),
-            clock = requireRow((await tx.select().from(eventClock).where(eq(eventClock.id, 1)))[0]);
+            clock = one(await tx.select().from(eventClock).where(eq(eventClock.id, 1)));
           await tx.insert(searchState).values({ id: 1 }).onConflictDoNothing();
-          const state = requireRow(
-            (await tx.select().from(searchState).where(eq(searchState.id, 1)))[0],
-          );
+          const state = one(await tx.select().from(searchState).where(eq(searchState.id, 1)));
           if (state.configHash === hash && state.cursor === clock.value && !state.error) return;
           await index.initialize(root.identity);
           let cursor = clock.value;

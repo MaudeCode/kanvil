@@ -1,23 +1,23 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { projectSchema, workspaceSchema } from "@kanvil/contracts";
+import { workspaceSchema } from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
 import { accessibleProjectRows } from "./project-access.ts";
 import {
   accountByEmail,
+  assertVersion,
   workspace,
   fail,
   publish,
-  requireRow,
+  toProject,
   type Context,
   type Handlers,
+  one,
 } from "./domain.ts";
 export async function requireWorkspace(ctx: Context, workspaceId: string, admin = false) {
   if (ctx.actor.projectIds)
     fail(403, "workspace_scope_required", "Use an account with workspace access for this action");
-  const row = requireRow(
-    (await ctx.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)))[0],
-  );
+  const row = one(await ctx.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)));
   const membership = (
     await ctx.db
       .select()
@@ -52,19 +52,7 @@ export async function publishWorkspace(
     .select()
     .from(projects)
     .where(eq(projects.workspaceId, workspaceId))) {
-    await publish(
-      {
-        ...ctx,
-        project: projectSchema.parse({
-          ...row,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        }),
-      },
-      type,
-      null,
-      { workspaceId, ...data },
-    );
+    await publish({ ...ctx, project: toProject(row) }, type, null, { workspaceId, ...data });
   }
 }
 export const workspaceHandlers: Pick<
@@ -112,13 +100,11 @@ export const workspaceHandlers: Pick<
       fail(403, "workspace_scope_required", "Project-bound credentials cannot create workspaces");
     if ((await ctx.db.select().from(workspaces).where(eq(workspaces.slug, input.slug))).length)
       fail(409, "duplicate_workspace", "This workspace URL key is already in use");
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(workspaces)
-          .values({ name: input.name, slug: input.slug, description: input.description })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(workspaces)
+        .values({ name: input.name, slug: input.slug, description: input.description })
+        .returning(),
     );
     await ctx.db
       .insert(workspaceMembers)
@@ -127,21 +113,18 @@ export const workspaceHandlers: Pick<
   },
   async update_workspace(ctx, input) {
     const current = workspace(ctx);
-    if (current.version !== input.expectedVersion)
-      fail(409, "version_conflict", "Workspace settings changed. Reopen the editor before saving.");
-    const row = requireRow(
-      (
-        await ctx.db
-          .update(workspaces)
-          .set({
-            name: input.name,
-            description: input.description,
-            version: current.version + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(workspaces.id, current.id))
-          .returning()
-      )[0],
+    assertVersion(current, input.expectedVersion, "workspace", "saving");
+    const row = one(
+      await ctx.db
+        .update(workspaces)
+        .set({
+          name: input.name,
+          description: input.description,
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspaces.id, current.id))
+        .returning(),
     );
     await publishWorkspace(ctx, row.id, "workspace.updated", { version: row.version });
     return { ...row, role: current.role };

@@ -15,7 +15,7 @@ import {
 import { blobObjects, profilePhotos, storageBackends } from "./schema.ts";
 import { user } from "./auth-schema.ts";
 import { requireSession } from "./access.ts";
-import { fail, requireRow, type Actor } from "./domain.ts";
+import { fail, type Actor, one } from "./domain.ts";
 import type { Database } from "./database.ts";
 import type { Instance } from "./instance.ts";
 import { decodeImage, imageResponse, type BlobStorage } from "./blob-storage.ts";
@@ -241,13 +241,11 @@ export function registerInstanceRoutes(
   });
   app.get("/api/v1/users/:id/photo", async (c) => {
     requireSession(c.get("actor"));
-    const photo = requireRow(
-      (
-        await database.db
-          .select()
-          .from(profilePhotos)
-          .where(eq(profilePhotos.userId, c.req.param("id")))
-      )[0],
+    const photo = one(
+      await database.db
+        .select()
+        .from(profilePhotos)
+        .where(eq(profilePhotos.userId, c.req.param("id"))),
     );
     const blob = await blobs.get(photo.objectId);
     return imageResponse(blob);

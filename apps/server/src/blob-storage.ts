@@ -5,7 +5,7 @@ import { and, eq, isNull, isNotNull, lt, sql, count } from "drizzle-orm";
 import { blobObjects, attachments, profilePhotos, projects } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
-import { fail, requireRow } from "./domain.ts";
+import { fail, requireRow, one } from "./domain.ts";
 import { createObjectStore } from "./adapters/object-stores.ts";
 import type {
   ObjectStoreFactory,
@@ -119,9 +119,7 @@ export function createBlobStorage(
     }
   }
   async function get(id: string) {
-    const row = requireRow(
-      (await database.db.select().from(blobObjects).where(eq(blobObjects.id, id)))[0],
-    );
+    const row = one(await database.db.select().from(blobObjects).where(eq(blobObjects.id, id)));
     let data = row.data;
     if (!data) {
       if (!row.backendId || !row.objectKey)

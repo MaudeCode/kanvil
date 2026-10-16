@@ -15,6 +15,7 @@ import {
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
 import {
+  assertVersion,
   assertWorkerClaim,
   fail,
   getTicket,
@@ -23,23 +24,21 @@ import {
   requireRow,
   type Context,
   type Handlers,
+  one,
 } from "./domain.ts";
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket");
 
 async function editableComment(ctx: Context, commentId: string, expectedVersion: number) {
-  const row = requireRow(
-    (
-      await ctx.db
-        .select()
-        .from(comments)
-        .where(and(eq(comments.projectId, project(ctx).id), eq(comments.id, commentId)))
-    )[0],
+  const row = one(
+    await ctx.db
+      .select()
+      .from(comments)
+      .where(and(eq(comments.projectId, project(ctx).id), eq(comments.id, commentId))),
   );
   if (row.actorId !== ctx.actor.id && ctx.role !== "admin")
     fail(403, "forbidden", "Only the author or a project administrator can edit this comment");
-  if (row.version !== expectedVersion)
-    fail(409, "version_conflict", "The comment changed; reload before editing");
+  assertVersion(row, expectedVersion, "comment");
   return row;
 }
 async function publishRelation(
@@ -95,34 +94,30 @@ export const collaborationHandlers: Pick<
     if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
     const [sourceId, targetId] =
       input.type === "related" ? [source.id, target.id].toSorted() : [source.id, target.id];
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(relations)
-          .values({
-            projectId: project(ctx).id,
-            sourceId: requireRow(sourceId),
-            targetId: requireRow(targetId),
-            type: input.type,
-          })
-          .onConflictDoUpdate({
-            target: [relations.sourceId, relations.targetId, relations.type],
-            set: { type: input.type },
-          })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(relations)
+        .values({
+          projectId: project(ctx).id,
+          sourceId: requireRow(sourceId),
+          targetId: requireRow(targetId),
+          type: input.type,
+        })
+        .onConflictDoUpdate({
+          target: [relations.sourceId, relations.targetId, relations.type],
+          set: { type: input.type },
+        })
+        .returning(),
     );
     await publishRelation(ctx, "relation.added", row);
     return row;
   },
   async remove_relation(ctx, input) {
-    const row = requireRow(
-      (
-        await ctx.db
-          .delete(relations)
-          .where(and(eq(relations.projectId, project(ctx).id), eq(relations.id, input.relationId)))
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .delete(relations)
+        .where(and(eq(relations.projectId, project(ctx).id), eq(relations.id, input.relationId)))
+        .returning(),
     );
     await publishRelation(ctx, "relation.removed", row);
     return { ok: true };
@@ -138,24 +133,21 @@ export const collaborationHandlers: Pick<
         .orderBy(asc(comments.createdAt), asc(comments.id))
         .limit(input.limit)
         .offset(input.offset),
-      total: requireRow((await ctx.db.select({ count: count() }).from(comments).where(where))[0])
-        .count,
+      total: one(await ctx.db.select({ count: count() }).from(comments).where(where)).count,
     };
   },
   async add_comment(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(comments)
-          .values({
-            projectId: project(ctx).id,
-            ticketId: ticket.id,
-            actorId: ctx.actor.id,
-            body: input.body,
-          })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(comments)
+        .values({
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          actorId: ctx.actor.id,
+          body: input.body,
+        })
+        .returning(),
     );
     await ctx.db
       .insert(subscriptions)
@@ -166,14 +158,12 @@ export const collaborationHandlers: Pick<
   },
   async update_comment(ctx, input) {
     const current = await editableComment(ctx, input.commentId, input.expectedVersion);
-    const row = requireRow(
-      (
-        await ctx.db
-          .update(comments)
-          .set({ body: input.body, version: current.version + 1, updatedAt: new Date() })
-          .where(eq(comments.id, current.id))
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .update(comments)
+        .set({ body: input.body, version: current.version + 1, updatedAt: new Date() })
+        .where(eq(comments.id, current.id))
+        .returning(),
     );
     await publish(ctx, "comment.updated", row.ticketId, {
       commentId: row.id,
@@ -198,8 +188,7 @@ export const collaborationHandlers: Pick<
         .orderBy(desc(events.id))
         .limit(input.limit)
         .offset(input.offset),
-      total: requireRow((await ctx.db.select({ count: count() }).from(events).where(where))[0])
-        .count,
+      total: one(await ctx.db.select({ count: count() }).from(events).where(where)).count,
     };
   },
   async upload_attachment(ctx, input) {
@@ -207,22 +196,20 @@ export const collaborationHandlers: Pick<
     const bytes = decodeBlobData(input.data, attachmentLimit);
     const id = crypto.randomUUID();
     await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(attachments)
-          .values({
-            id,
-            objectId: id,
-            projectId: project(ctx).id,
-            ticketId: ticket.id,
-            actorId: ctx.actor.id,
-            name: input.name,
-            contentType: input.contentType,
-            size: bytes.length,
-          })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(attachments)
+        .values({
+          id,
+          objectId: id,
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          actorId: ctx.actor.id,
+          name: input.name,
+          contentType: input.contentType,
+          size: bytes.length,
+        })
+        .returning(),
     );
     await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
     return row;
@@ -236,15 +223,13 @@ export const collaborationHandlers: Pick<
       .orderBy(asc(attachments.createdAt));
   },
   async delete_attachment(ctx, input) {
-    const row = requireRow(
-      (
-        await ctx.db
-          .delete(attachments)
-          .where(
-            and(eq(attachments.projectId, project(ctx).id), eq(attachments.id, input.attachmentId)),
-          )
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .delete(attachments)
+        .where(
+          and(eq(attachments.projectId, project(ctx).id), eq(attachments.id, input.attachmentId)),
+        )
+        .returning(),
     );
     await publish(ctx, "attachment.deleted", row.ticketId, { attachmentId: row.id });
     return { ok: true };
@@ -260,23 +245,21 @@ export const collaborationHandlers: Pick<
   async add_evidence(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
     await assertWorkerClaim(ctx, ticket, input.claimId);
-    const row = requireRow(
-      (
-        await ctx.db
-          .insert(evidence)
-          .values({
-            projectId: project(ctx).id,
-            ticketId: ticket.id,
-            actorId: ctx.actor.id,
-            title: input.title,
-            kind: input.kind,
-            url: input.url,
-            commit: input.commit,
-            outcome: input.outcome,
-            note: input.note,
-          })
-          .returning()
-      )[0],
+    const row = one(
+      await ctx.db
+        .insert(evidence)
+        .values({
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          actorId: ctx.actor.id,
+          title: input.title,
+          kind: input.kind,
+          url: input.url,
+          commit: input.commit,
+          outcome: input.outcome,
+          note: input.note,
+        })
+        .returning(),
     );
     await publish(ctx, "evidence.added", ticket.id, {
       evidenceId: row.id,
