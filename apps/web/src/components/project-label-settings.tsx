@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import type { ProjectLabel } from "@kanvil/contracts";
 import { api, useOperation } from "../data.tsx";
 import {
-  Button,
   Confirm,
   EmptyState,
   ErrorNotice,
@@ -54,28 +53,29 @@ export function ProjectLabelSettings({
       <SectionHeading
         title="Labels"
         action={
-          canAdmin && (
-            <Button variant="default" onClick={() => edit(null)}>
-              <Plus />
-              New label
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            {!!labels.data?.length && (
+              <InputGroup className="w-56">
+                <InputGroupAddon>
+                  <Search />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  aria-label="Search labels"
+                  placeholder="Search labels…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </InputGroup>
+            )}
+            {canAdmin && (
+              <IconButton label="New label" variant="default" onClick={() => edit(null)}>
+                <Plus />
+              </IconButton>
+            )}
+          </div>
         }
       />
-      {!!labels.data?.length && (
-        <InputGroup className="mb-5 max-w-md">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            type="search"
-            aria-label="Search labels"
-            placeholder="Search labels…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
-      )}
       <ErrorNotice error={labels.error} />
       {labels.isPending ? (
         <Loading />

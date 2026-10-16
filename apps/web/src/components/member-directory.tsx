@@ -4,10 +4,10 @@ import { Plus, Search, Trash2, RotateCcw } from "lucide-react";
 import { roles, memberSchema } from "@kanvil/contracts";
 import { toast } from "sonner";
 import {
-  Button,
   Confirm,
   EmptyState,
   ErrorNotice,
+  IconButton,
   Loading,
   Modal,
   SectionHeading,
@@ -61,35 +61,35 @@ export function MemberDirectory({
       <SectionHeading
         title="Members"
         action={
-          canAdmin && (
-            <Button
-              variant="default"
-              onClick={() => {
-                setFailure(undefined);
-                setEmail("");
-                setAdding(true);
-              }}
-            >
-              <Plus />
-              Add member
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            <InputGroup className="w-56">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
+                aria-label="Search members"
+                placeholder="Search members…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </InputGroup>
+            {canAdmin && (
+              <IconButton
+                label="Add member"
+                variant="default"
+                onClick={() => {
+                  setFailure(undefined);
+                  setEmail("");
+                  setAdding(true);
+                }}
+              >
+                <Plus />
+              </IconButton>
+            )}
+          </div>
         }
       />
-      <div className="mb-5 max-w-md">
-        <InputGroup>
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            type="search"
-            aria-label="Search members"
-            placeholder="Search members…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </InputGroup>
-      </div>
       {!adding && <ErrorNotice error={failure ?? error} />}
       {loading ? (
         <Loading />
