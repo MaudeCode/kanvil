@@ -108,6 +108,7 @@ export function registerInstanceRoutes(
     return Response.json({
       id: row.identity,
       version: row.version,
+      authentication: await instance.authentication(),
       name: row.name,
       description: row.description,
       storage: {
@@ -176,7 +177,7 @@ export function registerInstanceRoutes(
       const candidate = await instance.resolveBroker(input.broker);
       if (!isDeepStrictEqual(candidate, await instance.broker())) await delivery.test(candidate);
     }
-    await instance.update(input);
+    await instance.update(input, c.get("actor").id);
     return Response.json({ ok: true });
   });
   app.post("/api/v1/admin/storage/test", async (c) => {

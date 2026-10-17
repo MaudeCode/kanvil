@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { createInstance } from "./instance.ts";
 import { betterAuth } from "better-auth";
 import { admin, genericOAuth, jwt } from "better-auth/plugins";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
@@ -10,18 +13,55 @@ import * as schema from "./auth-schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
 
+const oidcIdentitySchema = z.object({
+  sub: z.string().min(1),
+  email: z.email(),
+  email_verified: z.literal(true),
+  name: z.string().optional(),
+  picture: z.string().optional(),
+});
+
 export function createAuth(database: Database, config: Config) {
+  const instance = createInstance(database, config);
   return betterAuth({
     appName: "Kanvil",
     baseURL: config.KANVIL_URL,
     secret: config.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(database.db, { provider: "pg", schema }),
+    database: drizzleAdapter(database.db, { provider: "pg", schema, transaction: true }),
     trustedOrigins: config.trustedOrigins,
     emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, allowDifferentEmails: true },
     },
     onAPIError: { errorURL: `${config.KANVIL_URL}/login` },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (
+          ctx.path === "/sign-in/email" &&
+          !(await instance.authentication()).emailPasswordEnabled
+        )
+          throw new APIError("FORBIDDEN", {
+            code: "password_sign_in_disabled",
+            message: "Use your identity provider to sign in",
+          });
+      }),
+    },
+    user: {
+      validateUserInfo: async ({ user, source }) => {
+        if (source.method !== "oauth") return undefined;
+        if (source.oauth?.providerId !== "oidc" || !user.email || user.emailVerified !== true)
+          return {
+            error: "email_not_verified",
+            errorDescription: "The identity provider must verify your email address",
+          };
+        if (source.action === "create-user" && !(await instance.authentication()).ssoAutoProvision)
+          return {
+            error: "signup_disabled",
+            errorDescription: "Ask an administrator to create and link your account",
+          };
+        return undefined;
+      },
+    },
     telemetry: { enabled: false },
     plugins: [
       admin(),
@@ -56,11 +96,28 @@ export function createAuth(database: Database, config: Config) {
                   providerId: "oidc",
                   discoveryUrl: config.OIDC_DISCOVERY_URL,
                   requireIdTokenVerification: true,
+                  getUserInfo: async (tokens) => {
+                    // Better Auth verifies this token's signature, issuer, audience and nonce before this mapper.
+                    if (!tokens.idToken) return null;
+                    const profile = oidcIdentitySchema.safeParse(
+                      JSON.parse(
+                        Buffer.from(tokens.idToken.split(".")[1] ?? "", "base64url").toString(),
+                      ),
+                    );
+                    if (!profile.success) return null;
+                    return {
+                      ...profile.data,
+                      id: profile.data.sub,
+                      emailVerified: true,
+                      image: profile.data.picture,
+                    };
+                  },
                   clientId: config.OIDC_CLIENT_ID,
                   clientSecret: config.OIDC_CLIENT_SECRET,
                   scopes: ["openid", "profile", "email"],
                   pkce: true,
-                  disableSignUp: true,
+                  // The persisted policy is checked at the user-creation boundary, including in-flight callbacks.
+                  disableSignUp: false,
                 },
               ]
             : [],

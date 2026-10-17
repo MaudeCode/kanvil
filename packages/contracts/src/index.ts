@@ -1,3 +1,4 @@
+import { authenticationPolicySchema } from "./instance.ts";
 import type { palettes } from "./theme.ts";
 import { z } from "zod";
 
@@ -342,6 +343,7 @@ export const eventSchema = z.object({
   createdAt: timestamp,
 });
 export const infoSchema = z.object({
+  authentication: authenticationPolicySchema.default(() => authenticationPolicySchema.parse({})),
   name: z.string(),
   description: z.string().default(""),
   version: z.string(),

@@ -438,9 +438,10 @@ export function Modal({
     </ModalBusyContext>
   );
 }
-// Every dialog form ends the same way: an error notice, Cancel, and the primary submit button.
+// Shared error and submit actions for dialog and inline forms.
 export function FormActions({
   error,
+  layout = "dialog",
   pending = false,
   submitLabel,
   pendingLabel,
@@ -450,6 +451,7 @@ export function FormActions({
   children,
 }: {
   error?: unknown;
+  layout?: "dialog" | "inline";
   pending?: boolean;
   submitLabel: ReactNode;
   pendingLabel?: ReactNode;
@@ -461,7 +463,9 @@ export function FormActions({
   return (
     <>
       <ErrorNotice error={error} />
-      <ModalActions>
+      <ModalActions
+        className={layout === "inline" ? "mx-0 mb-0 rounded-none border-0 bg-transparent px-0" : ""}
+      >
         {children}
         {onCancel && (
           <Button disabled={pending} onClick={onCancel}>

@@ -5,7 +5,12 @@ import { createDatabase } from "../database.ts";
 import { readConfig } from "../config.ts";
 import { localPasswordSchema, recoverLocalPassword } from "../recover-account.ts";
 
-const { values } = parseArgs({ options: { email: { type: "string" } } });
+const { values } = parseArgs({
+  options: {
+    email: { type: "string" },
+    "enable-password-sign-in": { type: "boolean", default: false },
+  },
+});
 if (!values.email)
   throw new Error(
     "Pass --email <account-email>. The new password is read privately from the terminal or stdin.",
@@ -21,7 +26,14 @@ const password = process.stdin.isTTY
 const config = readConfig(),
   database = createDatabase(config.DATABASE_URL);
 try {
-  await recoverLocalPassword(database, config, values.email, password);
+  await recoverLocalPassword(
+    database,
+    config,
+    values.email,
+    password,
+    values["enable-password-sign-in"],
+  );
+  if (values["enable-password-sign-in"]) console.info("Instance password sign-in enabled.");
   console.info(
     "Local password replaced and account sessions revoked. API credentials and linked OIDC accounts are retained.",
   );

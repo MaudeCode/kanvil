@@ -202,6 +202,7 @@ export async function createApplication(
     Response.json({
       ...(await instance.read().then((row) => ({ name: row.name, description: row.description }))),
       version: "0.1.0",
+      authentication: await instance.authentication(),
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
       oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,

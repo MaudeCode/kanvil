@@ -231,34 +231,40 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           </>
         )}
-        <Field
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="email"
-          textContentType="username"
-        />
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="password"
-          textContentType="password"
-        />
-        <Button
-          title={pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"}
-          primary
-          disabled={pending || !email || password.length < 12}
-          onPress={() => {
-            void login();
-          }}
-        />
+        {(info.data?.setupRequired || info.data?.authentication.emailPasswordEnabled) && (
+          <>
+            <Field
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="username"
+            />
+            <Field
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
+            />
+            <Button
+              title={
+                pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"
+              }
+              primary
+              disabled={pending || !email || password.length < 12}
+              onPress={() => {
+                void login();
+              }}
+            />
+          </>
+        )}
         {info.data?.oidc && !info.data.setupRequired && (
           <Button
             title={`Sign in with ${info.data.oidc.name}`}

@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   instanceUpdateSchema,
+  authenticationPolicySchema,
   brokerSettingsSchema,
   type BrokerSettings,
   s3SettingsSchema,
@@ -10,6 +11,7 @@ import {
   type S3Settings,
   type SearchSettings,
 } from "@kanvil/contracts/instance";
+import { account } from "./auth-schema.ts";
 import { instanceSettings, storageBackends } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Config } from "./config.ts";
@@ -184,12 +186,37 @@ export function createInstance(database: Database, config: Config) {
     if (!url) return fail(400, "missing_secret", "Provide the RabbitMQ connection URL");
     return { ...settings, url };
   }
-  async function update(value: unknown) {
+  async function authentication() {
+    return authenticationPolicySchema.strip().parse(await read());
+  }
+  async function update(value: unknown, actorId?: string) {
     const input = instanceUpdateSchema.parse(value);
     return database.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361083)`);
       const current = await read(tx);
       assertVersion(current, input.expectedVersion, "instance settings", "saving");
+      if (input.authentication && !input.authentication.emailPasswordEnabled) {
+        if (!config.OIDC_DISCOVERY_URL || !config.OIDC_CLIENT_ID || !config.OIDC_CLIENT_SECRET)
+          fail(
+            409,
+            "oidc_required",
+            "Configure an OIDC provider before disabling password sign-in",
+          );
+        const binding = actorId
+          ? (
+              await tx
+                .select({ id: account.id })
+                .from(account)
+                .where(and(eq(account.userId, actorId), eq(account.providerId, "oidc")))
+            )[0]
+          : undefined;
+        if (!binding)
+          fail(
+            409,
+            "oidc_binding_required",
+            "Link your OIDC account in User settings before disabling password sign-in",
+          );
+      }
       let storageId = current.storageBackendId,
         searchConfig = current.searchConfig,
         brokerConfig = current.brokerConfig;
@@ -206,6 +233,7 @@ export function createInstance(database: Database, config: Config) {
       await tx
         .update(instanceSettings)
         .set({
+          ...input.authentication,
           name: input.name,
           description: input.description,
           storageBackendId: storageId,
@@ -218,6 +246,7 @@ export function createInstance(database: Database, config: Config) {
   }
   return {
     read,
+    authentication,
     storage,
     search,
     backend,

@@ -107,7 +107,8 @@ export function Login() {
   if (info.isPending) return <Loading />;
   const provider = info.data?.oidc,
     setup = info.data?.setupRequired,
-    showEmail = setup || !provider || emailOpen;
+    emailEnabled = info.data?.authentication.emailPasswordEnabled ?? true,
+    showEmail = setup || (emailEnabled && (!provider || emailOpen));
   return (
     <AuthScreen
       title={setup ? "Create your owner account" : "Sign in"}
@@ -146,7 +147,7 @@ export function Login() {
             {pending ? <Spinner /> : null}
             Sign in with {provider.name}
           </Button>
-          {!showEmail && (
+          {emailEnabled && !showEmail && (
             <Button
               variant="outline"
               size="lg"

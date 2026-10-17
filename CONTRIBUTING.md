@@ -32,7 +32,7 @@ Dependencies are pinned to exact versions and resolved in `pnpm-lock.yaml`. Use 
 
 Use the pinned pnpm version. Its lockfile intentionally contains an environment document for the package-manager pin before the application dependency document; see the [pnpm lockfile format](https://github.com/pnpm/pnpm/blob/main/pnpm/docs/lockfile.md). Do not remove either document to satisfy a single-document YAML parser.
 
-Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server.
+Install Chromium with `pnpm exec playwright install chromium`, then run `pnpm test:e2e` for the browser workflow. It starts a separate server and creates and removes its own test database; it never reuses an existing application server. Set `KANVIL_TEST_PORT` to use a separate loopback port when running browser suites concurrently.
 
 Set `KANVIL_TEST_PORT` to run the browser suite and its isolated server on another loopback port when concurrent jobs use the default port.
 
@@ -42,7 +42,7 @@ The build job uploads the npm tarball and web assets once; npm/browser jobs down
 
 Run `pnpm test:package` locally to build and verify the npm artifact. `pnpm package` creates the public app and tarball in `dist` from the existing server/web builds; `node scripts/package-smoke.ts` verifies an existing tarball without rebuilding. Workspace libraries stay private. Release setup is in [docs/releasing.md](docs/releasing.md). Dependency updates arrive as grouped Dependabot pull requests for review.
 
-`pnpm test:oidc` also starts a disposable PocketID instance on loopback port 51411, runs the browser suite with a virtual passkey, and removes the fixture container afterward. PocketID data lives on tmpfs. The test uses only its fixed isolated API key; it never accepts a real provider URL or credentials. CI runs this provider flow alongside the MCP OAuth consent/PKCE exchange.
+`pnpm test:oidc` also starts a disposable PocketID instance on loopback port 51411, runs the browser suite with a virtual passkey, and removes the fixture container afterward. PocketID data lives on tmpfs. For concurrent provider suites, set `KANVIL_TEST_POCKET_PORT` and use a separate Compose project with `docker compose -p <project> -f compose.auth-test.yml`; use the same port when starting the browser suite. The test uses only its fixed isolated API key; it never accepts a real provider URL or credentials. CI runs this provider flow alongside the MCP OAuth consent/PKCE exchange.
 
 Native setup, session storage, deep links, and validation commands are in [docs/mobile.md](docs/mobile.md). `pnpm mobile:export` checks both native JavaScript bundles. Regenerate web and native brand assets with `pnpm assets:generate`; [branding](docs/branding.md) lists their shared source and consumers.
 

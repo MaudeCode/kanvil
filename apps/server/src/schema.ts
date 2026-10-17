@@ -270,6 +270,8 @@ export const instanceSettings = pgTable("instance_settings", {
   storageBackendId: uuid("storage_backend_id").references(() => storageBackends.id),
   searchConfig: text("search_config"),
   brokerConfig: text("broker_config"),
+  emailPasswordEnabled: boolean("email_password_enabled").notNull().default(true),
+  ssoAutoProvision: boolean("sso_auto_provision").notNull().default(false),
 });
 export const deliveryCheckpoints = pgTable("delivery_checkpoints", {
   destination: text("destination").primaryKey(),

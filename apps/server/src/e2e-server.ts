@@ -16,7 +16,7 @@ const tls =
       }
     : undefined;
 const baseUrl = `${tls ? "https" : "http"}://localhost:${port}`;
-const pocketUrl = `${process.env.KANVIL_TEST_POCKET_TLS === "1" ? "https" : "http"}://localhost:51411`;
+const pocketUrl = `${process.env.KANVIL_TEST_POCKET_TLS === "1" ? "https" : "http"}://localhost:${process.env.KANVIL_TEST_POCKET_PORT ?? 51411}`;
 const pocketHeaders = {
   "X-API-Key": "kanvil-isolated-test-admin-api-key",
   "Content-Type": "application/json",

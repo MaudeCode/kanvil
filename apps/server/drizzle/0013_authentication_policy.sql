@@ -1,0 +1,2 @@
+ALTER TABLE "instance_settings" ADD COLUMN "email_password_enabled" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "instance_settings" ADD COLUMN "sso_auto_provision" boolean DEFAULT false NOT NULL;

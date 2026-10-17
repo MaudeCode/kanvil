@@ -32,12 +32,14 @@ import {
   Modal,
   CopyValue,
   SectionHeading,
+  FormActions,
 } from "../ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { FieldSet } from "@/components/ui/field";
 import { InstanceOverview } from "./instance-overview.tsx";
-import { SettingsLayout } from "./settings-layout.tsx";
+import { SettingRow, SettingsLayout } from "./settings-layout.tsx";
 import { UsersSettings } from "./users-settings.tsx";
 import type { adminSections } from "../search.ts";
 const sections = [
@@ -63,14 +65,14 @@ export function AdminSettings({
     ...query,
     refetchInterval: ["search", "storage", "events"].includes(section) ? 5000 : false,
   });
-  return result.data ? (
+  return result.data && result.isFetchedAfterMount ? (
     <InstanceSettings
       key={section}
       data={result.data}
       section={section}
       onSectionChange={onSectionChange}
     />
-  ) : result.isPending ? (
+  ) : result.isPending || result.isFetching ? (
     <Loading />
   ) : (
     <ErrorNotice error={result.error} />
@@ -79,6 +81,7 @@ export function AdminSettings({
 function initial(data: AdminInstance) {
   return {
     expectedVersion: data.version,
+    authentication: data.authentication,
     name: data.name,
     description: data.description,
     storageProvider: data.storage.provider,
@@ -153,6 +156,7 @@ function InstanceSettings({
   async function save() {
     const payload = instanceUpdateSchema.parse({
       expectedVersion: draft.expectedVersion,
+      ...(section === "authentication" ? { authentication: draft.authentication } : {}),
       name: draft.name,
       description: draft.description,
       storage:
@@ -207,7 +211,7 @@ function InstanceSettings({
           />
         </TabsContent>
       ))}
-      {!editing && <ErrorNotice error={error} />}
+      {!editing && section !== "authentication" && <ErrorNotice error={error} />}
       <Modal
         title={
           section === "general"
@@ -654,22 +658,59 @@ function InstanceSettings({
       <TabsContent value="authentication">
         <section>
           <SectionHeading title="Authentication" />
-          <dl className="mb-6 divide-y border-y [&>div]:flex [&>div]:flex-wrap [&>div]:items-center [&>div]:justify-between [&>div]:gap-3 [&>div]:py-3 [&>div]:text-[13px] [&_dt]:text-muted-foreground">
-            <div>
-              <dt>Local email and password</dt>
-              <dd>
-                <Badge variant="secondary">Enabled</Badge>
-              </dd>
-            </div>
-            <div>
-              <dt>Public registration</dt>
-              <dd>Closed. Administrators create accounts.</dd>
-            </div>
-            <div>
-              <dt>Identity provider</dt>
-              <dd>{data.deployment.oidc?.name ?? "Not configured"}</dd>
-            </div>
-          </dl>
+          <form
+            className="mb-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void action(save, "Authentication saved", true);
+            }}
+          >
+            <SettingRow title="Email and password sign-in">
+              <Switch
+                aria-label="Email and password sign-in"
+                checked={draft.authentication.emailPasswordEnabled}
+                disabled={pending}
+                onCheckedChange={(checked) =>
+                  setDraft((current) => ({
+                    ...current,
+                    authentication: { ...current.authentication, emailPasswordEnabled: checked },
+                  }))
+                }
+              />
+            </SettingRow>
+            <SettingRow
+              title="Automatically create users from SSO"
+              description="New SSO users have no workspace or project access until invited."
+            >
+              <Switch
+                aria-label="Automatically create users from SSO"
+                checked={draft.authentication.ssoAutoProvision}
+                disabled={pending}
+                onCheckedChange={(checked) =>
+                  setDraft((current) => ({
+                    ...current,
+                    authentication: { ...current.authentication, ssoAutoProvision: checked },
+                  }))
+                }
+              />
+            </SettingRow>
+            <SettingRow title="Public email registration">Closed</SettingRow>
+            <SettingRow title="Identity provider">
+              {data.deployment.oidc?.name ?? "Not configured"}
+            </SettingRow>
+            <FormActions
+              layout="inline"
+              error={error}
+              pending={pending}
+              submitLabel="Save authentication"
+              pendingLabel="Saving…"
+              submitDisabled={
+                draft.authentication.emailPasswordEnabled ===
+                  data.authentication.emailPasswordEnabled &&
+                draft.authentication.ssoAutoProvision === data.authentication.ssoAutoProvision
+              }
+            />
+          </form>
           {data.deployment.oidc && (
             <>
               <CopyValue label="OIDC discovery URL" value={data.deployment.oidc.discoveryUrl} />

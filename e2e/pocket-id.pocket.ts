@@ -1,4 +1,4 @@
-import { accountMenu, signOut } from "./controls.ts";
+import { accountMenu, appearance, signOut } from "./controls.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { z } from "zod";
 import { signIn, ownerEmail, ownerPassword } from "./auth.ts";
@@ -48,6 +48,56 @@ async function authorize(page: Page) {
   }
   throw new Error("PocketID did not finish authentication and consent");
 }
+async function provisionPasskey(page: Page, email: string) {
+  const created = await page.request.post(`${pocket}/api/users`, {
+    headers,
+    data: {
+      username: `kanvil-${crypto.randomUUID().slice(0, 8)}`,
+      email,
+      emailVerified: true,
+      firstName: "Kanvil",
+      lastName: "Test",
+      isAdmin: false,
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const user = z.object({ id: z.string(), username: z.string() }).parse(await created.json());
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+    const codeResponse = await page.request.post(
+      `${pocket}/api/users/${user.id}/one-time-access-token`,
+      { headers, data: { ttl: "1h" } },
+    );
+    expect(codeResponse.status()).toBe(201);
+    const access = z.object({ token: z.string() }).parse(await codeResponse.json());
+    await page.goto(`${pocket}/lc/${access.token}`);
+    await expect(
+      page.getByRole("heading", { name: "Set up your passkey", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Add Passkey", exact: true }).click();
+    await page.waitForURL(`${pocket}/settings/account`);
+    return user;
+  } catch (error) {
+    await fetch(`${pocket}/api/users/${user.id}`, { method: "DELETE", headers });
+    throw error;
+  }
+}
+async function oidcSignIn(page: Page) {
+  await resetProvider(page);
+  await page.getByRole("button", { name: "Sign in with PocketID", exact: true }).click();
+  await authorize(page);
+}
 for (const email of [ownerEmail, "sso-different@example.test"]) {
   test(`PocketID explicitly links ${email} and preserves local identity`, async ({
     page,
@@ -57,44 +107,8 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
     if (!baseURL) throw new Error("Expected an isolated test server");
     const origin = baseURL;
     test.setTimeout(60_000);
-    const created = await request.post(`${pocket}/api/users`, {
-      headers,
-      data: {
-        username: `kanvil-${crypto.randomUUID().slice(0, 8)}`,
-        email,
-        emailVerified: true,
-        firstName: "Kanvil",
-        lastName: "Test",
-        isAdmin: false,
-      },
-    });
-    expect(created.status(), await created.text()).toBe(201);
-    const user = z.object({ id: z.string(), username: z.string() }).parse(await created.json());
+    const user = await provisionPasskey(page, email);
     try {
-      const cdp = await page.context().newCDPSession(page);
-      await cdp.send("WebAuthn.enable");
-      await cdp.send("WebAuthn.addVirtualAuthenticator", {
-        options: {
-          protocol: "ctap2",
-          transport: "internal",
-          hasResidentKey: true,
-          hasUserVerification: true,
-          isUserVerified: true,
-          automaticPresenceSimulation: true,
-        },
-      });
-      const codeResponse = await page.request.post(
-        `${pocket}/api/users/${user.id}/one-time-access-token`,
-        { headers, data: { ttl: "1h" } },
-      );
-      expect(codeResponse.status()).toBe(201);
-      const access = z.object({ token: z.string() }).parse(await codeResponse.json());
-      await page.goto(`${pocket}/lc/${access.token}`);
-      await expect(
-        page.getByRole("heading", { name: "Set up your passkey", exact: true }),
-      ).toBeVisible();
-      await page.getByRole("button", { name: "Add Passkey", exact: true }).click();
-      await page.waitForURL(`${pocket}/settings/account`);
       await signIn(page);
       const before = sessionSchema.parse(
         await (await page.request.get("/api/auth/get-session")).json(),
@@ -297,3 +311,130 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
     }
   });
 }
+
+test("PocketID passkeys support explicit linking and subsequent OIDC login without losing local login", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const user = await provisionPasskey(page, ownerEmail);
+  try {
+    await signIn(page);
+    const before = sessionSchema.parse(
+      await (await page.request.get("/api/auth/get-session")).json(),
+    );
+    await accountMenu(page);
+    await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
+    await page.getByRole("button", { name: "Link PocketID", exact: true }).click();
+    await authorize(page);
+    await expect(page.getByText("Linked", { exact: true })).toBeVisible();
+    await signOut(page);
+    await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await oidcSignIn(page);
+    await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+    const after = sessionSchema.parse(
+      await (await page.request.get("/api/auth/get-session")).json(),
+    );
+    expect(after.user.id).toBe(before.user.id);
+    await signOut(page);
+    await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await signIn(page);
+    const local = sessionSchema.parse(
+      await (await page.request.get("/api/auth/get-session")).json(),
+    );
+    expect(local.user.id).toBe(before.user.id);
+    await page.goto("/admin?section=authentication");
+    await page.getByRole("switch", { name: "Email and password sign-in", exact: true }).uncheck();
+    await page
+      .getByRole("switch", { name: "Automatically create users from SSO", exact: true })
+      .check();
+    await page.getByRole("button", { name: "Save authentication", exact: true }).click();
+    await expect(page.getByText("Authentication saved", { exact: true })).toBeVisible();
+    await appearance(page, "Dark");
+    await signOut(page);
+    await expect(
+      page.getByRole("button", { name: "Use email and password", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+    await page.screenshot({
+      path: "test-results/sso-only-login-desktop.png",
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: "test-results/sso-only-login-mobile.png",
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await oidcSignIn(page);
+    await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+    const second = await page.context().browser()!.newContext();
+    const newPage = await second.newPage();
+    const newcomer = await provisionPasskey(
+      newPage,
+      `newcomer-${crypto.randomUUID()}@example.test`,
+    );
+    try {
+      await page.goto("/admin?section=authentication");
+      await page
+        .getByRole("switch", { name: "Automatically create users from SSO", exact: true })
+        .uncheck();
+      await page.getByRole("button", { name: "Save authentication", exact: true }).click();
+      await expect(page.getByText("Authentication saved", { exact: true })).toBeVisible();
+      await newPage.goto(`${baseURL}/login`);
+      await oidcSignIn(newPage);
+      await expect(newPage).toHaveURL(/error=signup_disabled/);
+      await page
+        .getByRole("switch", { name: "Automatically create users from SSO", exact: true })
+        .check();
+      await page.getByRole("button", { name: "Save authentication", exact: true }).click();
+      await expect(page.getByText("Authentication saved", { exact: true })).toBeVisible();
+      await newPage.goto(`${baseURL}/login`);
+      await oidcSignIn(newPage);
+      await expect(newPage.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+      const firstSSO = sessionSchema.parse(
+        await (await newPage.request.get(`${baseURL}/api/auth/get-session`)).json(),
+      );
+      expect(firstSSO.user.id).not.toBe(before.user.id);
+      expect(await (await newPage.request.get(`${baseURL}/api/v1/workspaces`)).json()).toEqual([]);
+      await page.goto("/admin?section=authentication");
+      await page
+        .getByRole("switch", { name: "Automatically create users from SSO", exact: true })
+        .uncheck();
+      await page.getByRole("button", { name: "Save authentication", exact: true }).click();
+      await expect(page.getByText("Authentication saved", { exact: true })).toBeVisible();
+      await signOut(newPage);
+      await oidcSignIn(newPage);
+      await expect(newPage.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+      expect(
+        sessionSchema.parse(
+          await (await newPage.request.get(`${baseURL}/api/auth/get-session`)).json(),
+        ).user.id,
+      ).toBe(firstSSO.user.id);
+    } finally {
+      await fetch(`${pocket}/api/users/${newcomer.id}`, { method: "DELETE", headers });
+      await second.close();
+    }
+  } finally {
+    const current = await page.request.get("/api/v1/admin/instance");
+    if (current.ok()) {
+      const settings = z
+        .object({ version: z.number(), name: z.string(), description: z.string() })
+        .parse(await current.json());
+      await page.request.patch("/api/v1/admin/instance", {
+        data: {
+          expectedVersion: settings.version,
+          name: settings.name,
+          description: settings.description,
+          storage: { provider: "local" },
+          search: { provider: "postgres" },
+          authentication: { emailPasswordEnabled: true, ssoAutoProvision: false },
+        },
+      });
+    }
+    await unlink(page, baseURL);
+    await fetch(`${pocket}/api/users/${user.id}`, { method: "DELETE", headers });
+  }
+});
