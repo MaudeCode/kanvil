@@ -290,18 +290,20 @@ export function EmptyState({
 }) {
   return (
     <Empty className={cn("relative isolate overflow-hidden py-20", className)}>
-      <svg
-        aria-hidden="true"
-        viewBox={brandMark.viewBox}
-        className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-52 w-auto -translate-x-1/2 -translate-y-1/2 text-foreground/[0.07] dark:text-foreground/[0.09]"
-      >
-        <path d={brandMark.path} fill="none" stroke="currentColor" strokeWidth={5} />
-      </svg>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Icon />
         </EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyTitle className="relative">
+          <svg
+            aria-hidden="true"
+            viewBox={brandMark.viewBox}
+            className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-52 w-auto -translate-x-1/2 -translate-y-1/2 text-foreground/[0.07] dark:text-foreground/[0.09]"
+          >
+            <path d={brandMark.path} fill="none" stroke="currentColor" strokeWidth={5} />
+          </svg>
+          {title}
+        </EmptyTitle>
       </EmptyHeader>
       {children}
     </Empty>
