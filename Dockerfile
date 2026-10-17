@@ -1,3 +1,4 @@
+ARG KANVIL_VERSION=0.0.0
 FROM node:24.22.0-bookworm-slim AS build
 WORKDIR /source
 RUN npm install --global pnpm@12.11.2
@@ -9,12 +10,13 @@ COPY packages/client/package.json packages/client/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN pnpm install --frozen-lockfile
 COPY . .
+ARG KANVIL_VERSION
 RUN pnpm build
 RUN pnpm --filter @kanvil/server deploy --prod --no-optional --legacy /runtime/server
 
 FROM node:24.22.0-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=5180
-ARG KANVIL_VERSION=0.0.0
+ARG KANVIL_VERSION
 ARG KANVIL_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/MaudeCode/kanvil" \
       org.opencontainers.image.version=$KANVIL_VERSION \

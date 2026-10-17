@@ -56,7 +56,16 @@ try {
     `DATABASE_URL=${fixture.config.DATABASE_URL}\nBETTER_AUTH_SECRET=${fixture.config.BETTER_AUTH_SECRET}\nKANVIL_SETUP_TOKEN=${fixture.config.KANVIL_SETUP_TOKEN}\nKANVIL_URL=https://kanvil.example.test\nHOST=127.0.0.1\nPORT=5192\n`,
   );
   await exec(cli, ["migrate"], options);
-  server = spawn(cli, ["start"], { ...options, stdio: "inherit" });
+  server = spawn(cli, ["start"], {
+    ...options,
+    env: {
+      ...process.env,
+      GITHUB_REF_TYPE: "branch",
+      GITHUB_REF_NAME: "main",
+      KANVIL_VERSION: "1.0.0",
+    },
+    stdio: "inherit",
+  });
   const exited = once(server, "exit");
   const base = "http://127.0.0.1:5192";
   let healthy = false;
@@ -78,9 +87,15 @@ try {
   assert.equal(icon.status, 200);
   assert.match(await icon.text(), /<svg/);
   const info = z
-    .object({ setupRequired: z.boolean() })
+    .object({ setupRequired: z.boolean(), version: z.string() })
     .parse(await (await fetch(`${base}/api/v1/info`)).json());
   assert.equal(info.setupRequired, true);
+  const expectedVersion = releaseVersion(metadata.version);
+  assert.equal(info.version, expectedVersion, "Public info must report the packaged version");
+  const document = z
+    .object({ info: z.object({ version: z.string() }) })
+    .parse(await (await fetch(`${base}/api/openapi.json`)).json());
+  assert.equal(document.info.version, expectedVersion, "OpenAPI must report the packaged version");
   const setup = await fetch(`${base}/api/v1/setup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -92,6 +107,26 @@ try {
     }),
   });
   assert.equal(setup.status, 201, await setup.text());
+  const login = await fetch(`${base}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "https://kanvil.example.test" },
+    body: JSON.stringify({ email: "package@example.test", password: "Package smoke password 42!" }),
+  });
+  assert.equal(login.status, 200, await login.text());
+  const cookie = login.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
+  const settings = z
+    .object({ deployment: z.object({ version: z.string() }) })
+    .parse(
+      await (await fetch(`${base}/api/v1/admin/instance`, { headers: { Cookie: cookie } })).json(),
+    );
+  assert.equal(
+    settings.deployment.version,
+    expectedVersion,
+    "Settings must report the packaged version",
+  );
   server.kill("SIGTERM");
   await exited;
   server = undefined;

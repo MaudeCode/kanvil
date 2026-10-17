@@ -5,6 +5,7 @@ import { ApiError, operations, isOperation, scopes } from "@kanvil/contracts";
 import type { Actor, Domain } from "./domain.ts";
 import type { Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
+import { applicationVersion } from "./version.ts";
 import type { createAccess } from "./access.ts";
 
 export function createMcp(
@@ -18,7 +19,7 @@ export function createMcp(
   const serve = (request: Request, identity: Actor, limited = false) =>
     createMcpHandler(
       () => {
-        const server = new McpServer({ name: "Kanvil", version: "0.1.0" });
+        const server = new McpServer({ name: "Kanvil", version: applicationVersion });
         for (const name of Object.keys(operations).filter(isOperation)) {
           const spec = operations[name];
           const inputSchema: Record<string, z.ZodType> = spec.input.shape;

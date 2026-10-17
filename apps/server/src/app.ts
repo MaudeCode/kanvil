@@ -5,6 +5,7 @@ import { createBlobStorage, imageResponse } from "./blob-storage.ts";
 import { createTicketSearch } from "./search.ts";
 import { registerInstanceRoutes } from "./instance-routes.ts";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { applicationVersion } from "./version.ts";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
@@ -201,7 +202,7 @@ export async function createApplication(
   app.get("/api/v1/info", async () =>
     Response.json({
       ...(await instance.read().then((row) => ({ name: row.name, description: row.description }))),
-      version: "0.1.0",
+      version: applicationVersion,
       authentication: await instance.authentication(),
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
@@ -631,7 +632,7 @@ export async function createApplication(
   });
   app.doc31("/api/openapi.json", {
     openapi: "3.1.0",
-    info: { title: "Kanvil API", version: "0.1.0" },
+    info: { title: "Kanvil API", version: applicationVersion },
     servers: [{ url: config.KANVIL_URL }],
   });
   const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
