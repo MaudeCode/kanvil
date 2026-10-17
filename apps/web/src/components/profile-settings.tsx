@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Camera, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { photoResultSchema } from "@kanvil/contracts/instance";
 import { api, auth, useIdentity } from "../data.tsx";
 import { Button, ErrorNotice, SectionHeading } from "../ui.tsx";
@@ -8,6 +8,7 @@ import { EditableHeading } from "./settings-layout.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
 import { prepareSquareImage } from "../lib/browser.ts";
+import { ImageEditTrigger } from "./image-edit-trigger.tsx";
 export function ProfileSettings() {
   const cache = useQueryClient();
   const identity = useIdentity(),
@@ -56,7 +57,14 @@ export function ProfileSettings() {
         error={editError}
         editLabel="Edit profile"
         media={
-          <UserAvatar name={identity.name} image={identity.image} className="size-16 text-xl" />
+          <ImageEditTrigger
+            label="Change photo"
+            round
+            disabled={pending}
+            onClick={() => file.current?.click()}
+          >
+            <UserAvatar name={identity.name} image={identity.image} className="size-16 text-xl" />
+          </ImageEditTrigger>
         }
         onSave={async ({ name }) => {
           setEditError(undefined);
@@ -77,10 +85,6 @@ export function ProfileSettings() {
         <p className="mb-0 text-sm break-all text-muted-foreground">{identity.email}</p>
       </EditableHeading>
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Button disabled={pending} onClick={() => file.current?.click()}>
-          <Camera />
-          Change photo
-        </Button>
         {identity.image && (
           <Button
             variant="ghost"
@@ -98,6 +102,7 @@ export function ProfileSettings() {
       <FileInput
         ref={file}
         type="file"
+        disabled={pending}
         accept="image/png,image/jpeg,image/webp"
         className="hidden"
         aria-label="Profile photo file"

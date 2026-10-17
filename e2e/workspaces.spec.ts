@@ -155,6 +155,9 @@ test("workspace member roles control project actions and removal revokes access"
     ).toBeDisabled();
     await reader.goto(`/projects/${shared.id}`);
     await expect(reader.getByRole("button", { name: "New ticket", exact: true })).toBeDisabled();
+    await reader.goto(`/projects/${shared.id}/settings`);
+    await expect(reader.getByRole("button", { name: "Change icon", exact: true })).toBeDisabled();
+    await reader.goto(`/projects/${shared.id}`);
     await choose(page, "Role for Workspace reviewer", "Can edit");
     await reader.reload();
     await expect(reader.getByRole("button", { name: "New ticket", exact: true })).toBeEnabled();

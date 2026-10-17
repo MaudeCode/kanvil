@@ -3,6 +3,104 @@ import { signIn } from "./auth.ts";
 import { choose } from "./controls.ts";
 import { builtInThemes, encodeThemeFile } from "../apps/web/src/lib/themes.ts";
 
+test("profile avatar opens photo selection and supports replacement, errors, and retry", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/settings?section=account");
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
+  for (const mode of ["Light", "Dark"]) {
+    await page.goto("/settings?section=appearance");
+    await page.getByRole("radio", { name: mode, exact: true }).check();
+    await page.goto("/settings?section=account");
+    await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.screenshot({
+        path: `test-results/profile-${mode}-${width}.png`,
+        fullPage: true,
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const change = page.getByRole("button", { name: "Change photo", exact: true });
+  await expect(change).toHaveCount(1);
+  await expect(change.locator('[data-slot="avatar"]')).toBeVisible();
+  await change.hover();
+  await expect(change.locator("span[aria-hidden]").last()).toHaveCSS("opacity", "1");
+  const images = page.locator('img[src^="/api/v1/users/"]');
+  const input = page.getByLabel("Profile photo file", { exact: true });
+  const file = "apps/web/public/brand/icon-192.png";
+  const chooser = page.waitForEvent("filechooser");
+  await change.click();
+  await (await chooser).setFiles([]);
+  await expect(images).toHaveCount(0);
+  await expect(change).toBeEnabled();
+  for (const key of ["Enter", "Space"]) {
+    await change.focus();
+    await expect(change).toBeFocused();
+    const selection = page.waitForEvent("filechooser");
+    await change.press(key);
+    const updated = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/profile/photo") && response.request().method() === "POST",
+    );
+    await (await selection).setFiles(file);
+    expect((await updated).ok()).toBe(true);
+    await expect(page.getByText("Photo updated", { exact: true })).toBeVisible();
+    await expect(images).toHaveCount(2);
+  }
+  const previous = await images.first().getAttribute("src");
+  for (const invalid of [
+    { name: "invalid.txt", mimeType: "text/plain", buffer: Buffer.from("not an image") },
+    { name: "broken.png", mimeType: "image/png", buffer: Buffer.from("not an image") },
+    { name: "large.png", mimeType: "image/png", buffer: Buffer.alloc(10000001) },
+  ]) {
+    await input.setInputFiles(invalid);
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(images.first()).toHaveAttribute("src", previous!);
+    await expect(change).toBeEnabled();
+  }
+  await page.route("**/api/v1/profile/photo", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "internal_error", message: "Photo upload failed" } }),
+    }),
+  );
+  await input.setInputFiles(file);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(images.first()).toHaveAttribute("src", previous!);
+  await expect(change).toBeEnabled();
+  await page.unroute("**/api/v1/profile/photo");
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let writes = 0;
+  await page.route("**/api/v1/profile/photo", async (route) => {
+    writes++;
+    await held;
+    await route.continue();
+  });
+  await input.setInputFiles(file);
+  await expect(change).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Remove photo", exact: true })).toBeDisabled();
+  release();
+  await expect(change).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(writes).toBe(1);
+  await page.unroute("**/api/v1/profile/photo");
+  await page.getByRole("button", { name: "Remove photo", exact: true }).click();
+  await expect(page.getByText("Photo removed", { exact: true })).toBeVisible();
+  await expect(images).toHaveCount(0);
+  await expect(change.locator('[data-slot="avatar-fallback"]')).toBeVisible();
+});
+
 test("settings support custom palettes, profile photos, calendar expiry, and instance administration", async ({
   page,
 }) => {
