@@ -257,7 +257,7 @@ export async function createApplication(
     requireInstanceAdmin(c.get("actor"));
     await next();
   });
-  registerInstanceRoutes(app, database, instance, blobs, search, realtime);
+  registerInstanceRoutes(app, database, instance, blobs, search, realtime, auth);
   accounts.register(app);
   app.openAPIRegistry.registerPath({
     method: "get",

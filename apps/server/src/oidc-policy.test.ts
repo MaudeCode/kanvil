@@ -33,6 +33,11 @@ const grants = new Map<
   string,
   { sub: string; email?: string; email_verified: boolean; nonce: string; invalid?: string }
 >();
+function signedToken(claims: Record<string, unknown>, invalidSignature = false) {
+  const body = `${Buffer.from(JSON.stringify({ alg: "RS256", kid: "policy-test" })).toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}`;
+  const signature = sign("RSA-SHA256", Buffer.from(body), privateKey).toString("base64url");
+  return `${body}.${invalidSignature ? "invalid" : signature}`;
+}
 const provider = createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   if (req.url === "/.well-known/openid-configuration")
@@ -62,14 +67,16 @@ const provider = createServer(async (req, res) => {
     const { nonce, invalid, ...identity } = grant;
     const claims = {
       ...identity,
+      ...(["userinfo-email", "userinfo-mismatch"].includes(invalid ?? "")
+        ? { email: undefined }
+        : {}),
+      ...(invalid === "userinfo-verification" ? { email_verified: undefined } : {}),
       iss: invalid === "issuer" ? `${origin}/wrong` : origin,
       aud: invalid === "audience" ? "other-client" : "policy-client",
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (invalid === "expired" ? -300 : 300),
       nonce: invalid === "nonce" ? "wrong" : nonce,
     };
-    const body = `${Buffer.from(JSON.stringify({ alg: "RS256", kid: "policy-test" })).toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}`;
-    const signature = sign("RSA-SHA256", Buffer.from(body), privateKey).toString("base64url");
     return res.end(
       JSON.stringify({
         access_token: identity.sub,
@@ -77,14 +84,20 @@ const provider = createServer(async (req, res) => {
         expires_in: 300,
         ...(invalid === "missing-token"
           ? {}
-          : { id_token: `${body}.${invalid === "signature" ? "invalid" : signature}` }),
+          : { id_token: signedToken(claims, invalid === "signature") }),
       }),
     );
   }
   if (req.url === "/userinfo") {
     const sub = req.headers.authorization?.replace("Bearer ", "");
     const identity = [...grants.values()].find((value) => value.sub === sub);
-    return res.end(JSON.stringify({ ...identity, name: "SSO person" }));
+    return res.end(
+      JSON.stringify({
+        ...identity,
+        ...(identity?.invalid === "userinfo-mismatch" ? { sub: "another-subject" } : {}),
+        name: "SSO person",
+      }),
+    );
   }
   res.statusCode = 404;
   return res.end("{}");
@@ -153,8 +166,17 @@ async function userCount() {
 }
 async function linkedOwner() {
   await fixture.database.pool.query(
-    `INSERT INTO account (id, account_id, provider_id, user_id, created_at, updated_at) VALUES ($1, 'owner-subject', 'oidc', $2, now(), now()) ON CONFLICT DO NOTHING`,
-    [crypto.randomUUID(), ownerId],
+    `INSERT INTO account (id, account_id, provider_id, user_id, id_token, created_at, updated_at) VALUES ($1, 'owner-subject', 'oidc', $2, $3, now(), now()) ON CONFLICT DO NOTHING`,
+    [
+      crypto.randomUUID(),
+      ownerId,
+      signedToken({
+        sub: "owner-subject",
+        iss: origin,
+        aud: "policy-client",
+        exp: Math.floor(Date.now() / 1000) + 300,
+      }),
+    ],
   );
 }
 beforeAll(async () => {
@@ -369,5 +391,47 @@ it("rolls back new users if their provider binding cannot be saved", async () =>
     await fixture.database.pool.query(
       "DROP TRIGGER reject_policy_account ON account; DROP FUNCTION reject_policy_account()",
     );
+  }
+});
+
+it.each(["userinfo-email", "userinfo-verification"])(
+  "accepts verified UserInfo identity when %s is omitted from the ID token",
+  async (invalid) => {
+    expect((await setPolicy(true, true)).status).toBe(200);
+    const response = await callback({
+      sub: invalid,
+      email: `${invalid}@policy.test`,
+      email_verified: true,
+      invalid,
+    });
+    expect(response.headers.get("location")).toBe("http://localhost:5180/");
+    expect(
+      sessionSchema.parse(
+        await (await request("/api/auth/get-session", "GET", undefined, cookies(response))).json(),
+      ).user.role,
+    ).toBe("user");
+  },
+);
+it("rejects a UserInfo subject that differs from the verified ID token", async () => {
+  const count = await userCount();
+  const response = await callback({
+    sub: "userinfo-mismatch",
+    email: "userinfo-mismatch@policy.test",
+    email_verified: true,
+    invalid: "userinfo-mismatch",
+  });
+  expect(response.headers.get("location")).toContain("error=");
+  expect(await userCount()).toBe(count);
+});
+it("rejects an administrator binding from a previous provider configuration", async () => {
+  const previous = fixture.config.OIDC_CLIENT_ID;
+  fixture.config.OIDC_CLIENT_ID = "replacement-client";
+  try {
+    const response = await setPolicy(false, false);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "oidc_binding_required" } });
+  } finally {
+    fixture.config.OIDC_CLIENT_ID = previous;
+    expect((await setPolicy(true, false)).status).toBe(200);
   }
 });

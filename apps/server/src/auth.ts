@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { createOIDCUserInfo } from "./adapters/oidc.ts";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { createInstance } from "./instance.ts";
 import { betterAuth } from "better-auth";
@@ -12,14 +12,6 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import * as schema from "./auth-schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
-
-const oidcIdentitySchema = z.object({
-  sub: z.string().min(1),
-  email: z.email(),
-  email_verified: z.literal(true),
-  name: z.string().optional(),
-  picture: z.string().optional(),
-});
 
 export function createAuth(database: Database, config: Config) {
   const instance = createInstance(database, config);
@@ -96,22 +88,7 @@ export function createAuth(database: Database, config: Config) {
                   providerId: "oidc",
                   discoveryUrl: config.OIDC_DISCOVERY_URL,
                   requireIdTokenVerification: true,
-                  getUserInfo: async (tokens) => {
-                    // Better Auth verifies this token's signature, issuer, audience and nonce before this mapper.
-                    if (!tokens.idToken) return null;
-                    const profile = oidcIdentitySchema.safeParse(
-                      JSON.parse(
-                        Buffer.from(tokens.idToken.split(".")[1] ?? "", "base64url").toString(),
-                      ),
-                    );
-                    if (!profile.success) return null;
-                    return {
-                      ...profile.data,
-                      id: profile.data.sub,
-                      emailVerified: true,
-                      image: profile.data.picture,
-                    };
-                  },
+                  getUserInfo: createOIDCUserInfo(config),
                   clientId: config.OIDC_CLIENT_ID,
                   clientSecret: config.OIDC_CLIENT_SECRET,
                   scopes: ["openid", "profile", "email"],

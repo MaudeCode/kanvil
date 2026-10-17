@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { z } from "zod";
 import { signIn, ownerEmail, ownerPassword } from "./auth.ts";
 
-const pocket = "http://localhost:51411";
+const pocket = `http://localhost:${process.env.KANVIL_TEST_POCKET_PORT ?? 51411}`;
 const headers = { "X-API-Key": "kanvil-isolated-test-admin-api-key" };
 const sessionSchema = z.object({
   user: z.object({ id: z.string(), email: z.string(), role: z.string() }),
@@ -314,7 +314,9 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
 
 test("PocketID passkeys support explicit linking and subsequent OIDC login without losing local login", async ({
   page,
+  baseURL,
 }) => {
+  if (!baseURL) throw new Error("Expected an isolated test server");
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const user = await provisionPasskey(page, ownerEmail);

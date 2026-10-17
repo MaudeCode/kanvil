@@ -187,7 +187,7 @@ Check login, tickets, attachment downloads, and consumer access before deleting 
 
 Administration → Authentication controls **Email and password sign-in** and **Automatically create users from SSO** independently. Defaults keep password sign-in enabled and SSO provisioning disabled. Public email signup is always closed. Changes apply to subsequent authentication requests without restarting; sessions and scoped credentials keep their existing lifecycle.
 
-Before disabling password sign-in, configure OIDC and explicitly link the acting administrator's provider account in User settings. New SSO users require a provider-verified email and receive the ordinary user role with no workspace or project membership. A matching local email requires explicit account linking. Existing linked users can sign in with provisioning disabled.
+Before disabling password sign-in, configure OIDC and explicitly link the acting administrator's provider account in User settings. A binding must match the configured provider's issuer and client ID; relink the administrator after changing either. New SSO users require a provider-verified email and receive the ordinary user role with no workspace or project membership. A matching local email requires explicit account linking. Existing linked users can sign in with provisioning disabled.
 
 ## Account recovery
 

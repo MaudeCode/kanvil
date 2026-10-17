@@ -1,3 +1,4 @@
+import { decodeJwt } from "jose";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -189,7 +190,7 @@ export function createInstance(database: Database, config: Config) {
   async function authentication() {
     return authenticationPolicySchema.strip().parse(await read());
   }
-  async function update(value: unknown, actorId?: string) {
+  async function update(value: unknown, actorId?: string, oidcIssuer?: string) {
     const input = instanceUpdateSchema.parse(value);
     return database.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361083)`);
@@ -202,19 +203,34 @@ export function createInstance(database: Database, config: Config) {
             "oidc_required",
             "Configure an OIDC provider before disabling password sign-in",
           );
-        const binding = actorId
-          ? (
-              await tx
-                .select({ id: account.id })
-                .from(account)
-                .where(and(eq(account.userId, actorId), eq(account.providerId, "oidc")))
-            )[0]
-          : undefined;
-        if (!binding)
+        const bindings = actorId
+          ? await tx
+              .select({ idToken: account.idToken, accountId: account.accountId })
+              .from(account)
+              .where(and(eq(account.userId, actorId), eq(account.providerId, "oidc")))
+          : [];
+        const currentBinding =
+          oidcIssuer &&
+          bindings.some((binding) => {
+            if (!binding.idToken) return false;
+            try {
+              // Stored ID tokens were verified on linking/sign-in. Expiry does not erase a binding.
+              const claims = decodeJwt(binding.idToken);
+              const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+              return (
+                claims.iss === oidcIssuer &&
+                claims.sub === binding.accountId &&
+                audience.includes(config.OIDC_CLIENT_ID)
+              );
+            } catch {
+              return false;
+            }
+          });
+        if (!currentBinding)
           fail(
             409,
             "oidc_binding_required",
-            "Link your OIDC account in User settings before disabling password sign-in",
+            "Link your OIDC account in User settings using the configured provider before disabling password sign-in",
           );
       }
       let storageId = current.storageBackendId,
