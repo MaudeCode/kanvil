@@ -7,17 +7,74 @@ async function expectCenteredWatermark(state: Locator) {
   const watermark = state.locator('svg[aria-hidden="true"]:not(.lucide)');
   await expect(title).toBeVisible();
   await expect(watermark).toBeVisible();
-  const titleBox = await title.boundingBox();
-  const markBox = await watermark.boundingBox();
-  expect(titleBox).not.toBeNull();
-  expect(markBox).not.toBeNull();
-  if (!titleBox || !markBox) throw new Error("Empty state geometry is unavailable");
-  expect(
-    Math.abs(markBox.x + markBox.width / 2 - titleBox.x - titleBox.width / 2),
-  ).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs(markBox.y + markBox.height / 2 - titleBox.y - titleBox.height / 2),
-  ).toBeLessThanOrEqual(1);
+  const artwork = await state.evaluate((node) => {
+    const titleElement = node.querySelector('[data-slot="empty-title"]');
+    if (!titleElement) throw new Error("Empty title is unavailable");
+    const text = [...titleElement.childNodes].find(
+      (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim(),
+    );
+    if (!text) throw new Error("Empty title text is unavailable");
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const box = range.getBoundingClientRect();
+    const frame = node.getBoundingClientRect();
+    const path = node.querySelector("svg:not(.lucide) path");
+    if (!(path instanceof SVGPathElement)) throw new Error("Anvil path is missing");
+    const bounds = path.getBBox();
+    const matrix = path.getScreenCTM();
+    if (!matrix) throw new Error("Anvil transform is unavailable");
+    // The narrow body is at 60% of the artwork height, below its asymmetric horn.
+    const waistY = bounds.y + bounds.height * 0.6;
+    const crossings: number[] = [];
+    let previous = path.getPointAtLength(0);
+    const totalLength = path.getTotalLength();
+    for (let length = 1; length <= totalLength; length++) {
+      const point = path.getPointAtLength(length);
+      if ((previous.y <= waistY && point.y > waistY) || (point.y <= waistY && previous.y > waistY))
+        crossings.push(
+          previous.x + ((point.x - previous.x) * (waistY - previous.y)) / (point.y - previous.y),
+        );
+      previous = point;
+    }
+    if (crossings.length !== 2) throw new Error("Expected two edges at the anvil waist");
+    const center = new DOMPoint(
+      (Math.min(...crossings) + Math.max(...crossings)) / 2,
+      waistY,
+    ).matrixTransform(matrix);
+    const topLeft = new DOMPoint(bounds.x, bounds.y).matrixTransform(matrix);
+    const bottomRight = new DOMPoint(
+      bounds.x + bounds.width,
+      bounds.y + bounds.height,
+    ).matrixTransform(matrix);
+    return {
+      titleBox: { x: box.x, y: box.y, width: box.width, height: box.height },
+      frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+      center: { x: center.x, y: center.y },
+      top: topLeft.y,
+      left: topLeft.x,
+      bottom: bottomRight.y,
+      right: bottomRight.x,
+    };
+  });
+  const { titleBox, frame } = artwork;
+  expect
+    .soft(
+      Math.abs(artwork.center.x - titleBox.x - titleBox.width / 2),
+      "anvil body horizontal alignment",
+    )
+    .toBeLessThanOrEqual(1);
+  expect
+    .soft(
+      Math.abs(artwork.center.y - titleBox.y - titleBox.height / 2),
+      "anvil body vertical alignment",
+    )
+    .toBeLessThanOrEqual(1);
+  expect.soft(artwork.left, "anvil left edge is visible").toBeGreaterThanOrEqual(frame.x);
+  expect
+    .soft(artwork.right, "anvil right edge is visible")
+    .toBeLessThanOrEqual(frame.x + frame.width);
+  expect.soft(artwork.top, "anvil top edge is visible").toBeGreaterThanOrEqual(frame.y);
+  expect.soft(artwork.bottom, "anvil base is visible").toBeLessThanOrEqual(frame.y + frame.height);
   expect(await watermark.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe("none");
 }
 
@@ -49,7 +106,12 @@ for (const width of [1280, 390]) {
       const title = state.locator('[data-slot="empty-title"]');
       const originalHeight = (await title.boundingBox())?.height ?? 0;
       await title.evaluate((node) => {
-        node.style.maxWidth = "80px";
+        const text = [...node.childNodes].find(
+          (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim(),
+        );
+        if (!text) throw new Error("Empty title text is unavailable");
+        text.textContent =
+          "No projects yet in this workspace with a longer title that wraps onto several lines";
       });
       expect((await title.boundingBox())?.height).toBeGreaterThan(originalHeight);
       await expectCenteredWatermark(state);
