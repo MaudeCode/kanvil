@@ -9,10 +9,12 @@ The public npm application package is `@maudecode/kanvil`; the workspace root an
 1. Merge the intended changes to `main` through a reviewed PR with green `Checks`.
 2. Fetch `main`, inspect the intended commit, then create and push an annotated tag: `git tag -a vX.Y.Z COMMIT -m "Kanvil X.Y.Z"` and `git push origin vX.Y.Z`. Repository release-tag rules apply. Creating the tag authorizes public publication.
 3. Check the `Release` run. It rejects malformed or prerelease tags, `v0.0.0`, and commits outside `main` history. The full CI workflow must pass on that commit.
-4. Verify `npm view @maudecode/kanvil@X.Y.Z dist.integrity` and `docker buildx imagetools inspect ghcr.io/maudecode/kanvil:X.Y.Z`. The image includes Linux amd64 and arm64. Confirm anonymous Docker pulls work.
+4. Verify `npm view @maudecode/kanvil@X.Y.Z dist.integrity` and `docker buildx imagetools inspect ghcr.io/maudecode/kanvil:X.Y.Z`. The image includes Linux amd64 and arm64. Confirm anonymous Docker pulls work, and check the GitHub Release for the tag and its automatically generated notes.
 
 The workflow publishes the exact npm tarball installed by CI to the `latest` dist-tag, while separate amd64/arm64 publishers push the exact image archives tested by CI. Docker builds and restoration tests run on matching native runners; release publishing does not rebuild or emulate either image. A final Docker manifest job joins those immutable digests under `ghcr.io/maudecode/kanvil:X.Y.Z` and `:latest`. Stable releases only; prerelease versions are rejected. Do not tag an older version to move `latest` backward.
 
 If either registry publication fails, rerun the failed release jobs. npm and Docker publication are independent after validation. The npm step accepts an existing version only when its SHA-512 integrity matches the tested tarball; different bytes fail and require a new version. Registry publication is not atomic across npm and GHCR. Never move a published tag or reuse a version for changed bytes. Avoid rerunning an old release after a newer release, since Docker's `latest` tag would move backward.
+
+After npm publication and the Docker manifest job both succeed, the workflow creates a GitHub Release for the existing tag with an automatically generated title and release notes. Only this final job has repository contents write permission. Reruns preserve an existing release and its notes.
 
 Tag creation and package publication are separate from deploying to any running instance. Operators choose when to upgrade using [self-hosting](self-hosting.md).
