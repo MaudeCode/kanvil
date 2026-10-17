@@ -10,6 +10,7 @@ import { Input as FileInput } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { prepareSquareImage } from "../lib/browser.ts";
 import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
+import { ImageEditTrigger } from "./image-edit-trigger.tsx";
 export function ProjectIconPicker({
   project,
   disabled = false,
@@ -49,24 +50,9 @@ export function ProjectIconPicker({
   };
   return (
     <>
-      <button
-        type="button"
-        aria-label="Change icon"
-        title="Change icon"
-        disabled={disabled}
-        onClick={start}
-        className="group/icon relative shrink-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-      >
+      <ImageEditTrigger label="Change icon" disabled={disabled} onClick={start}>
         <ProjectIcon project={project} className="size-16 rounded-xl bg-muted/50 p-1.5" />
-        {!disabled && (
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/80 text-foreground opacity-0 transition-opacity group-hover/icon:opacity-100 group-focus-visible/icon:opacity-100"
-          >
-            <Camera className="size-5" />
-          </span>
-        )}
-      </button>
+      </ImageEditTrigger>
       <Modal title="Project icon" open={open} onOpenChange={setOpen} busy={busy}>
         <Tabs defaultValue="library">
           <TabsList variant="line">
