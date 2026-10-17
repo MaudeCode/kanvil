@@ -2,7 +2,7 @@
 
 PRs and `main` pushes run `.github/workflows/ci.yml`. Independent suites and browser/native/Docker matrices run in parallel; only jobs consuming build artifacts wait for the build. The always-running `Checks` status requires every suite to succeed. Releases start on a `vX.Y.Z` tag and reuse that workflow against the tagged commit. Publishing jobs have registry write permissions; PR checks have read-only repository access.
 
-The public npm application package is `@maudecode/kanvil`; the workspace root and internal packages remain private. The release tag supplies the version for both npm and Docker: `v1.2.3` publishes `@maudecode/kanvil@1.2.3` and `ghcr.io/maudecode/kanvil:1.2.3`. No `package.json` version bump is needed. PR and local builds use the development version in `package.json`.
+The public npm application package is `@maudecode/kanvil`; the workspace root and internal packages remain private. The release tag supplies the version for both npm and Docker: `v1.2.3` publishes `@maudecode/kanvil@1.2.3` and `ghcr.io/maudecode/kanvil:1.2.3`. The server build embeds that same version for Administration, public instance info, OpenAPI, and MCP. Installed artifacts need no Git checkout or release environment variables. No `package.json` version bump is needed. PR and local builds use the development version in `package.json`; custom Docker builds pass `--build-arg KANVIL_VERSION=X.Y.Z` to stamp the server and image label together. Native mobile app/store versions remain separate.
 
 ## Publish a version
 

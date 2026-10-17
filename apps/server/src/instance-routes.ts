@@ -18,6 +18,7 @@ import { user } from "./auth-schema.ts";
 import { requireSession } from "./access.ts";
 import { assertVersion, type Actor, one } from "./domain.ts";
 import type { Database } from "./database.ts";
+import { applicationVersion } from "./version.ts";
 import type { Instance } from "./instance.ts";
 import { decodeImage, imageResponse, type BlobStorage } from "./blob-storage.ts";
 import { brokerEndpoint, type EventDelivery } from "./event-delivery.ts";
@@ -136,7 +137,7 @@ export function registerInstanceRoutes(
       },
       deployment: {
         url: instance.config.KANVIL_URL,
-        version: "0.1.0",
+        version: applicationVersion,
         oidc: instance.config.OIDC_DISCOVERY_URL
           ? {
               name: instance.config.OIDC_NAME,

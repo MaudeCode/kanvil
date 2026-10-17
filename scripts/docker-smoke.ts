@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -57,6 +57,18 @@ const credentials = z.object({ id: z.string(), key: z.string() });
 const attachmentSchema = z.object({ id: z.uuid() });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
+  const expectedVersion = execFileSync(
+    "docker",
+    [
+      "image",
+      "inspect",
+      env.KANVIL_IMAGE,
+      "--format",
+      '{{index .Config.Labels "org.opencontainers.image.version"}}',
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  expect(expectedVersion).toMatch(/^\d+\.\d+\.\d+$/);
   await run("docker", ["compose", "up", "-d", "--no-build", "--wait"]);
   browser = await chromium.launch();
   const page = await browser.newPage();
@@ -69,6 +81,18 @@ try {
   await page.getByLabel("Password", { exact: true }).fill("Container smoke password 42!");
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  const info = z
+    .object({ version: z.string() })
+    .parse(await (await page.request.get(`${base}/api/v1/info`)).json());
+  expect(info.version).toBe(expectedVersion);
+  const settings = z
+    .object({ deployment: z.object({ version: z.string() }) })
+    .parse(await (await page.request.get(`${base}/api/v1/admin/instance`)).json());
+  expect(settings.deployment.version).toBe(expectedVersion);
+  const document = z
+    .object({ info: z.object({ version: z.string() }) })
+    .parse(await (await page.request.get(`${base}/api/openapi.json`)).json());
+  expect(document.info.version).toBe(expectedVersion);
   await page.getByRole("button", { name: "New project", exact: true }).last().click();
   await page.getByLabel("Project name").fill("Container project");
   await page.getByLabel("Permanent ticket prefix").fill("OPS");
@@ -125,6 +149,7 @@ try {
         requestInit: { headers: { Authorization: `Bearer ${key.key}` } },
       }),
     );
+    expect(sdk.getServerVersion()?.version).toBe(expectedVersion);
     expect((await sdk.listTools()).tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
   } finally {
     await sdk.close();
