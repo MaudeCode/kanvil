@@ -95,7 +95,7 @@ export async function createApplication(
     void search.sync().catch(() => {});
   });
   const push = adapters.push(database, config);
-  const accounts = createAccountAdministration(integrationDatabase, auth);
+  const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
       if (!result.success)
@@ -202,6 +202,7 @@ export async function createApplication(
     Response.json({
       ...(await instance.read().then((row) => ({ name: row.name, description: row.description }))),
       version: "0.1.0",
+      authentication: await instance.authentication(),
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
       oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,
@@ -256,7 +257,7 @@ export async function createApplication(
     requireInstanceAdmin(c.get("actor"));
     await next();
   });
-  registerInstanceRoutes(app, database, instance, blobs, search, realtime);
+  registerInstanceRoutes(app, database, instance, blobs, search, realtime, auth);
   accounts.register(app);
   app.openAPIRegistry.registerPath({
     method: "get",

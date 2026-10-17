@@ -183,6 +183,12 @@ docker compose up -d --no-deps --wait app
 
 Check login, tickets, attachment downloads, and consumer access before deleting any old database. Compose constructs the runtime `DATABASE_URL` from `POSTGRES_PASSWORD` and `KANVIL_DATABASE`; the `DATABASE_URL` entry in `.env` is also available for standalone Node operations. Use `COMPOSE_PROJECT_NAME` consistently if you operate multiple Compose instances.
 
+## Authentication policy
+
+Administration → Authentication controls **Email and password sign-in** and **Automatically create users from SSO** independently. Defaults keep password sign-in enabled and SSO provisioning disabled. Public email signup is always closed. Changes apply to subsequent authentication requests without restarting; sessions and scoped credentials keep their existing lifecycle.
+
+Before disabling password sign-in, configure OIDC and explicitly link the acting administrator's provider account in User settings. A binding must match the configured provider's issuer and client ID; relink the administrator after changing either. New SSO users require a provider-verified email and receive the ordinary user role with no workspace or project membership. A matching local email requires explicit account linking. Existing linked users can sign in with provisioning disabled. While password sign-in is disabled, users must retain at least one binding for the configured provider; enable password sign-in before unlinking the last one.
+
 ## Account recovery
 
 A host operator can replace an existing account's local password:
@@ -192,6 +198,8 @@ docker compose exec app node dist/recover.mjs --email admin@example.com
 ```
 
 The password is entered privately. For local source development, use `pnpm account:recover --email admin@example.com`. The command uses Better Auth's password format and revokes that account's sessions. Its role, linked OIDC account, and API credentials are retained. Revoke agent credentials separately if an account was compromised. Passwords are never accepted as command-line arguments.
+
+Password recovery alone does not enable password sign-in. If the IdP is unavailable, a host operator can recover an active administrator and explicitly re-enable password sign-in with `--enable-password-sign-in` on the same recovery command. For example, `pnpm account:recover --email admin@example.com --enable-password-sign-in` for source development, or append that flag to the Docker command above. This updates the persisted policy and revokes the recovered account's sessions atomically, without restarting. Sign in locally, repair the deployment's OIDC settings, verify linking and SSO login, then disable passwords again in Administration. Keep host access and an active local administrator recovery account available.
 
 ## Updates and validation
 

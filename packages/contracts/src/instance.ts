@@ -59,6 +59,12 @@ export const eventDeliverySettingsSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("postgres") }).strict(),
   brokerSettingsSchema.extend({ provider: z.literal("rabbitmq") }),
 ]);
+export const authenticationPolicySchema = z
+  .object({
+    emailPasswordEnabled: z.boolean().default(true),
+    ssoAutoProvision: z.boolean().default(false),
+  })
+  .strict();
 export const instanceUpdateSchema = z
   .object({
     expectedVersion: z.number().int().positive(),
@@ -67,6 +73,7 @@ export const instanceUpdateSchema = z
     storage: storageSettingsSchema,
     search: externalSearchSettingsSchema,
     broker: eventDeliverySettingsSchema.optional(),
+    authentication: authenticationPolicySchema.optional(),
   })
   .strict();
 export const publicInstanceSchema = z.object({ name: z.string(), description: z.string() });
@@ -75,6 +82,7 @@ export const adminInstanceSchema = z.object({
   version: z.number().int(),
   name: z.string(),
   description: z.string(),
+  authentication: authenticationPolicySchema.default(() => authenticationPolicySchema.parse({})),
   storage: z.object({
     provider: z.enum(["local", "s3"]),
     source: z.enum(["deployment", "admin"]),

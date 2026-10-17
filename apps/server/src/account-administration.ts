@@ -1,3 +1,5 @@
+import type { Config } from "./config.ts";
+import { matchesOIDCBinding } from "./adapters/oidc.ts";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, count, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -38,7 +40,7 @@ function authPath(request: Request) {
     return fail(400, "invalid_path", "The authentication path is invalid");
   }
 }
-export function createAccountAdministration(database: Database, auth: Auth) {
+export function createAccountAdministration(database: Database, auth: Auth, config: Config) {
   async function revokeAfterPasswordChange(headers: Headers, userId: string) {
     try {
       await auth.api.revokeUserSessions({ headers, body: { userId } });
@@ -50,10 +52,10 @@ export function createAccountAdministration(database: Database, auth: Auth) {
       );
     }
   }
-  async function mutate(request: Request, run: () => Promise<Response>) {
+  async function mutate(request: Request, run: () => Promise<Response>, administratorOnly = true) {
     const login = await auth.api.getSession({ headers: request.headers });
     if (!login) fail(401, "unauthorized", "Sign in to continue");
-    if (!hasAdminRole(login.user.role) || login.user.banned)
+    if ((administratorOnly && !hasAdminRole(login.user.role)) || login.user.banned)
       fail(403, "forbidden", "Instance administrator access is required");
     // This pool is separate from the auth adapter's pool; waiting guards cannot starve the guarded operation.
     const lock = await database.pool.connect();
@@ -62,6 +64,39 @@ export function createAccountAdministration(database: Database, auth: Auth) {
       await lock.query("SELECT pg_advisory_lock(7361083)");
       locked = true;
       const path = authPath(request);
+      if (path === "/api/auth/unlink-account") {
+        const policy = one(
+          (
+            await lock.query<{ enabled: boolean }>(
+              "SELECT email_password_enabled AS enabled FROM instance_settings WHERE id=1",
+            )
+          ).rows,
+        );
+        if (!policy.enabled) {
+          const accountId = z
+            .string()
+            .parse(mutationBody.parse(await request.clone().json()).accountId);
+          const issuer = (await auth.$context).socialProviders.find(
+            (provider) => provider.id === "oidc",
+          )?.issuer;
+          const remaining = await lock.query<
+            Pick<typeof account.$inferSelect, "accountId" | "idToken">
+          >(
+            `SELECT account_id AS "accountId", id_token AS "idToken" FROM account WHERE user_id=$1 AND provider_id='oidc' AND id<>$2`,
+            [login.user.id, accountId],
+          );
+          if (
+            !remaining.rows.some((binding) =>
+              matchesOIDCBinding(binding, issuer, config.OIDC_CLIENT_ID),
+            )
+          )
+            fail(
+              409,
+              "oidc_binding_required",
+              "Enable password sign-in before unlinking your last account for the configured OIDC provider",
+            );
+        }
+      }
       let passwordUserId: string | undefined;
       if (path.endsWith("/admin/set-user-password"))
         passwordUserId = mutationBody.parse(await request.clone().json()).userId;
@@ -132,8 +167,9 @@ export function createAccountAdministration(database: Database, auth: Auth) {
         "remove-user",
         "set-user-password",
       ].some((name) => path === `/api/auth/admin/${name}`);
-      return request.method === "POST" && guarded
-        ? mutate(request, () => auth.handler(request))
+      const unlink = path === "/api/auth/unlink-account";
+      return request.method === "POST" && (guarded || unlink)
+        ? mutate(request, () => auth.handler(request), !unlink)
         : auth.handler(request);
     },
     register(app: OpenAPIHono<{ Variables: { actor: Actor } }>) {

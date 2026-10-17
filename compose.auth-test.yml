@@ -3,13 +3,13 @@ services:
   pocket-id:
     image: ghcr.io/pocket-id/pocket-id:v2.18.0@sha256:323e7ef5bfacf7cf32f22f3d10ccdf48e0c97c94d67e7e40b0b996830deb5165
     environment:
-      APP_URL: http://localhost:51411
+      APP_URL: http://localhost:${KANVIL_TEST_POCKET_PORT:-51411}
       ENCRYPTION_KEY: kanvil-isolated-test-encryption-key
       STATIC_API_KEY: kanvil-isolated-test-admin-api-key
       ANALYTICS_DISABLED: "true"
       VERSION_CHECK_DISABLED: "true"
       ICON_LIBRARY_URL: disabled
     ports:
-      - "127.0.0.1:51411:1411"
+      - "127.0.0.1:${KANVIL_TEST_POCKET_PORT:-51411}:1411"
     tmpfs:
       - /app/data:uid=1000,gid=1000

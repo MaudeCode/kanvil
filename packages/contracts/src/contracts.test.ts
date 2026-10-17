@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatEvent, operations, parseRelationChoice, relationChoices } from "./index.ts";
+import {
+  infoSchema,
+  formatEvent,
+  operations,
+  parseRelationChoice,
+  relationChoices,
+} from "./index.ts";
 
 describe("agent write contracts", () => {
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
@@ -123,4 +129,25 @@ describe("agent write contracts", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it("defaults legacy public authentication capabilities for web and native clients", () => {
+  const legacy = {
+    name: "Kanvil",
+    description: "",
+    version: "0.1.0",
+    setupRequired: false,
+    push: false,
+    oidc: null,
+  };
+  expect(infoSchema.parse(legacy).authentication).toEqual({
+    emailPasswordEnabled: true,
+    ssoAutoProvision: false,
+  });
+  expect(
+    infoSchema.parse({
+      ...legacy,
+      authentication: { emailPasswordEnabled: false, ssoAutoProvision: true },
+    }).authentication,
+  ).toEqual({ emailPasswordEnabled: false, ssoAutoProvision: true });
 });

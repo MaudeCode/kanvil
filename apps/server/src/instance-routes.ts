@@ -1,3 +1,4 @@
+import type { Auth } from "./auth.ts";
 import { isDeepStrictEqual } from "node:util";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { z } from "zod";
@@ -29,6 +30,7 @@ export function registerInstanceRoutes(
   blobs: BlobStorage,
   search: ReturnType<typeof createTicketSearch>,
   delivery: EventDelivery,
+  auth: Auth,
 ) {
   app.openAPIRegistry.registerComponent("securitySchemes", "sessionCookie", {
     type: "apiKey",
@@ -108,6 +110,7 @@ export function registerInstanceRoutes(
     return Response.json({
       id: row.identity,
       version: row.version,
+      authentication: await instance.authentication(),
       name: row.name,
       description: row.description,
       storage: {
@@ -176,7 +179,11 @@ export function registerInstanceRoutes(
       const candidate = await instance.resolveBroker(input.broker);
       if (!isDeepStrictEqual(candidate, await instance.broker())) await delivery.test(candidate);
     }
-    await instance.update(input);
+    const issuer =
+      input.authentication && !input.authentication.emailPasswordEnabled
+        ? (await auth.$context).socialProviders.find((provider) => provider.id === "oidc")?.issuer
+        : undefined;
+    await instance.update(input, c.get("actor").id, issuer);
     return Response.json({ ok: true });
   });
   app.post("/api/v1/admin/storage/test", async (c) => {
