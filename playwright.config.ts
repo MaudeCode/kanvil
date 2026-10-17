@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+const baseURL = `http://localhost:${process.env.KANVIL_TEST_PORT ?? "5190"}`;
 export default defineConfig({
   testDir: "./e2e",
   testMatch:
@@ -6,13 +7,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   use: {
-    baseURL: "http://localhost:5190",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
     command: "node apps/server/src/e2e-server.ts",
-    url: "http://localhost:5190/healthz",
+    url: `${baseURL}/healthz`,
     reuseExistingServer: false,
   },
 });

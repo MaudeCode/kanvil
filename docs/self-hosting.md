@@ -110,7 +110,7 @@ OIDC_CLIENT_SECRET=your-client-secret
 OIDC_NAME=PocketID
 ```
 
-Sign in locally and explicitly link PocketID from account settings. Public signup and implicit account linking are closed. Use HTTPS for the provider, including native sign-in; the Expo integration requires it. The provider's ID-token signature is verified. For a private certificate authority, add a `compose.override.yml` pointing at its public certificate:
+Sign in locally and explicitly link PocketID from account settings. The provider email must be verified but may differ from your local email. Linking preserves your local account, email, permissions, and password. Public signup and implicit account linking are closed. Use HTTPS for the provider, including native sign-in; the Expo integration requires it. The provider's ID-token signature is verified. For a private certificate authority, add a `compose.override.yml` pointing at its public certificate:
 
 ```yaml
 services:

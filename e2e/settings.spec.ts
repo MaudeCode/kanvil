@@ -248,7 +248,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await expect(page.getByRole("row", { name: /owner@example.test/ })).toBeVisible();
   await page.getByRole("tab", { name: "Authentication", exact: true }).click();
   await expect(page.getByRole("group", { name: "MCP endpoint", exact: true })).toContainText(
-    "http://localhost:5190/mcp",
+    new URL("/mcp", page.url()).href,
   );
   expect(project.id).toBeTruthy();
   expect(errors).toEqual([]);

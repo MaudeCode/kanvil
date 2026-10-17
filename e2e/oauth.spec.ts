@@ -3,8 +3,6 @@ import { test, expect } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 
-const origin = "http://localhost:5190";
-const redirect = "http://127.0.0.1:5190/oauth-test/callback";
 import { signIn, ownerEmail, ownerPassword, useEmailLogin } from "./auth.ts";
 const clientSchema = z.object({ client_id: z.string() });
 const tokenSchema = z.object({
@@ -15,7 +13,13 @@ const tokenSchema = z.object({
 test("interactive MCP authorization uses sign-in, explicit consent, PKCE, and scoped tokens", async ({
   page,
   request,
+  baseURL,
 }) => {
+  if (!baseURL) throw new Error("Expected an isolated test server");
+  const origin = baseURL;
+  const callbackURL = new URL("/oauth-test/callback", origin);
+  callbackURL.hostname = "127.0.0.1";
+  const redirect = callbackURL.href;
   await signIn(page);
   const registration = await page.request.post("/api/auth/oauth2/create-client", {
     headers: { Origin: origin },

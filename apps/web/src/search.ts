@@ -20,7 +20,10 @@ export const adminSections = [
   "users",
   "authentication",
 ] as const;
-export const settingsSearchSchema = z.object({
+export const authSearchSchema = z.object({
+  error: z.string().optional().catch(undefined),
+});
+export const settingsSearchSchema = authSearchSchema.extend({
   section: z.enum(accountSections).catch("account").default("account"),
 });
 export const adminSearchSchema = z.object({

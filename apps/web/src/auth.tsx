@@ -1,3 +1,4 @@
+import { useAuthError } from "./hooks/use-auth-error.ts";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -66,11 +67,11 @@ function AuthScreen({
 }
 
 export function Login() {
+  const [error, setError] = useAuthError();
   const info = useQuery({
       queryKey: ["info"],
       queryFn: () => api.request("/api/v1/info", infoSchema),
     }),
-    [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false),
     [emailOpen, setEmailOpen] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -124,8 +125,15 @@ export function Login() {
             onClick={() => {
               setPending(true);
               setError(undefined);
+              const callbackURL = new URL(window.location.href);
+              callbackURL.searchParams.delete("error");
+              callbackURL.searchParams.delete("error_description");
               void auth.signIn
-                .social({ provider: "oidc", callbackURL: window.location.href })
+                .social({
+                  provider: "oidc",
+                  callbackURL: callbackURL.href,
+                  errorCallbackURL: `${window.location.origin}/login`,
+                })
                 .then((result) => {
                   if (result.error) throw new Error(result.error.message);
                 })

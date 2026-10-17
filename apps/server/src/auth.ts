@@ -18,7 +18,10 @@ export function createAuth(database: Database, config: Config) {
     database: drizzleAdapter(database.db, { provider: "pg", schema }),
     trustedOrigins: config.trustedOrigins,
     emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
-    account: { accountLinking: { enabled: true, disableImplicitLinking: true } },
+    account: {
+      accountLinking: { enabled: true, disableImplicitLinking: true, allowDifferentEmails: true },
+    },
+    onAPIError: { errorURL: `${config.KANVIL_URL}/login` },
     telemetry: { enabled: false },
     plugins: [
       admin(),
