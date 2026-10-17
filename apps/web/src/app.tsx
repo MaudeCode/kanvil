@@ -39,6 +39,7 @@ import {
   groupSettingsSearchSchema,
   projectSettingsSearchSchema,
   settingsSearchSchema,
+  authSearchSchema,
   adminSearchSchema,
   searchSchema,
 } from "./search.ts";
@@ -544,12 +545,22 @@ const root = createRootRoute({
 });
 const shell = createRoute({ getParentRoute: () => root, id: "workspace", component: Shell });
 const home = createRoute({ getParentRoute: () => shell, path: "/", component: Home });
-const login = createRoute({ getParentRoute: () => root, path: "/login", component: HomeRedirect });
+const login = createRoute({
+  getParentRoute: () => root,
+  path: "/login",
+  validateSearch: authSearchSchema,
+  component: HomeRedirect,
+});
 function HomeRedirect() {
   const navigate = useNavigate();
+  const { error } = login.useSearch();
   useEffect(() => {
-    void navigate({ to: "/" });
-  }, [navigate]);
+    void navigate(
+      error
+        ? { to: "/settings", search: { section: "account", error }, replace: true }
+        : { to: "/" },
+    );
+  }, [navigate, error]);
   return <Loading />;
 }
 const consent = createRoute({ getParentRoute: () => root, path: "/authorize", component: Consent });

@@ -1,3 +1,4 @@
+import { useAuthError } from "./hooks/use-auth-error.ts";
 import { UserRound, Palette, KeyRound, Bell } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,12 +28,14 @@ export function AccountSettings({
   section: (typeof accountSections)[number];
   onSectionChange: (value: string) => void;
 }) {
+  const [error, setError] = useAuthError();
   const info = useQuery({
       queryKey: ["info"],
       queryFn: () => api.request("/api/v1/info", infoSchema),
     }),
     accounts = useQuery({
       queryKey: ["accounts"],
+      refetchOnMount: "always",
       queryFn: async () => {
         const result = await auth.listAccounts();
         if (result.error) throw new Error(result.error.message);
@@ -40,7 +43,6 @@ export function AccountSettings({
       },
     });
   const [passwordOpen, setPasswordOpen] = useState(false),
-    [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false);
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -108,7 +110,11 @@ export function AccountSettings({
                     setPending(true);
                     setError(undefined);
                     void auth
-                      .linkSocial({ provider: "oidc", callbackURL: window.location.href })
+                      .linkSocial({
+                        provider: "oidc",
+                        callbackURL: `${window.location.origin}/settings?section=account`,
+                        errorCallbackURL: `${window.location.origin}/settings?section=account`,
+                      })
                       .then((result) => {
                         if (result.error) throw new Error(result.error.message);
                       })

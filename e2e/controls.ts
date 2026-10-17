@@ -36,6 +36,7 @@ export async function accountMenu(page: Page) {
 export async function signOut(page: Page) {
   await accountMenu(page);
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
 }
 export async function expand(page: Page, label: string) {
   const trigger = page.getByRole("button", { name: label, exact: true });
