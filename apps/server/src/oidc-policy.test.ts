@@ -165,6 +165,9 @@ async function userCount() {
     ?.count;
 }
 async function linkedOwner() {
+  await fixture.database.pool.query("DELETE FROM account WHERE user_id=$1 AND provider_id='oidc'", [
+    ownerId,
+  ]);
   await fixture.database.pool.query(
     `INSERT INTO account (id, account_id, provider_id, user_id, id_token, created_at, updated_at) VALUES ($1, 'owner-subject', 'oidc', $2, $3, now(), now()) ON CONFLICT DO NOTHING`,
     [
@@ -432,6 +435,131 @@ it("rejects an administrator binding from a previous provider configuration", as
     expect(await response.json()).toMatchObject({ error: { code: "oidc_binding_required" } });
   } finally {
     fixture.config.OIDC_CLIENT_ID = previous;
+    expect((await setPolicy(true, false)).status).toBe(200);
+  }
+});
+
+it("keeps an SSO-only administrator's last matching binding until passwords are enabled", async () => {
+  await linkedOwner();
+  const binding = z
+    .object({ id: z.string() })
+    .parse(
+      (
+        await fixture.database.pool.query(
+          "SELECT id FROM account WHERE user_id=$1 AND provider_id='oidc'",
+          [ownerId],
+        )
+      ).rows[0],
+    );
+  expect((await setPolicy(false, false)).status).toBe(200);
+  try {
+    const rejected = await request("/api/auth/unlink-account", "POST", { accountId: binding.id });
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({ error: { code: "oidc_binding_required" } });
+    expect(
+      (await fixture.database.pool.query("SELECT id FROM account WHERE id=$1", [binding.id]))
+        .rowCount,
+    ).toBe(1);
+    expect((await setPolicy(true, false)).status).toBe(200);
+    expect(
+      (await request("/api/auth/unlink-account", "POST", { accountId: binding.id })).status,
+    ).toBe(200);
+    expect(
+      (await fixture.database.pool.query("SELECT id FROM account WHERE id=$1", [binding.id]))
+        .rowCount,
+    ).toBe(0);
+  } finally {
+    expect((await setPolicy(true, false)).status).toBe(200);
+    await linkedOwner();
+  }
+});
+it("serializes password disabling with account unlinking", async () => {
+  expect((await setPolicy(true, false)).status).toBe(200);
+  await linkedOwner();
+  const binding = z
+    .object({ id: z.string() })
+    .parse(
+      (
+        await fixture.database.pool.query(
+          "SELECT id FROM account WHERE user_id=$1 AND provider_id='oidc'",
+          [ownerId],
+        )
+      ).rows[0],
+    );
+  try {
+    const [policy, unlink] = await Promise.all([
+      setPolicy(false, false),
+      request("/api/auth/unlink-account", "POST", { accountId: binding.id }),
+    ]);
+    expect([policy.status, unlink.status].toSorted((left, right) => left - right)).toEqual([
+      200, 409,
+    ]);
+  } finally {
+    expect((await setPolicy(true, false)).status).toBe(200);
+    await linkedOwner();
+  }
+});
+
+it("permits unlinking one of several matching OIDC bindings in SSO-only mode", async () => {
+  await linkedOwner();
+  const binding = z
+    .object({ id: z.string() })
+    .parse(
+      (
+        await fixture.database.pool.query(
+          "SELECT id FROM account WHERE user_id=$1 AND provider_id='oidc'",
+          [ownerId],
+        )
+      ).rows[0],
+    );
+  await fixture.database.pool.query(
+    `INSERT INTO account (id, account_id, provider_id, user_id, id_token, created_at, updated_at) VALUES ($1,'owner-second','oidc',$2,$3,now(),now())`,
+    [
+      crypto.randomUUID(),
+      ownerId,
+      signedToken({ sub: "owner-second", iss: origin, aud: "policy-client" }),
+    ],
+  );
+  expect((await setPolicy(false, false)).status).toBe(200);
+  try {
+    expect(
+      (await request("/api/auth/unlink-account", "POST", { accountId: binding.id })).status,
+    ).toBe(200);
+    expect(
+      (
+        await fixture.database.pool.query(
+          "SELECT id FROM account WHERE user_id=$1 AND provider_id='oidc'",
+          [ownerId],
+        )
+      ).rowCount,
+    ).toBe(1);
+  } finally {
+    expect((await setPolicy(true, false)).status).toBe(200);
+    await linkedOwner();
+  }
+});
+it("preserves ordinary users' usable sign-in methods without requiring administrator access to unlink", async () => {
+  const person = await application.auth.api.createUser({
+    body: { name: "Member", email: "unlink-member@policy.test", password, role: "user" },
+  });
+  const memberCookie = cookies(
+    await request("/api/auth/sign-in/email", "POST", { email: person.user.email, password }, ""),
+  );
+  const id = crypto.randomUUID();
+  await fixture.database.pool.query(
+    `INSERT INTO account (id, account_id, provider_id, user_id, id_token, created_at, updated_at) VALUES ($1,'member-subject','oidc',$2,$3,now(),now())`,
+    [id, person.user.id, signedToken({ sub: "member-subject", iss: origin, aud: "policy-client" })],
+  );
+  expect((await setPolicy(false, false)).status).toBe(200);
+  try {
+    expect(
+      (await request("/api/auth/unlink-account", "POST", { accountId: id }, memberCookie)).status,
+    ).toBe(409);
+    expect((await setPolicy(true, false)).status).toBe(200);
+    expect(
+      (await request("/api/auth/unlink-account", "POST", { accountId: id }, memberCookie)).status,
+    ).toBe(200);
+  } finally {
     expect((await setPolicy(true, false)).status).toBe(200);
   }
 });

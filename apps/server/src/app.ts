@@ -95,7 +95,7 @@ export async function createApplication(
     void search.sync().catch(() => {});
   });
   const push = adapters.push(database, config);
-  const accounts = createAccountAdministration(integrationDatabase, auth);
+  const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
       if (!result.success)

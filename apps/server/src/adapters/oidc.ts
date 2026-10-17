@@ -46,3 +46,19 @@ export function createOIDCUserInfo(config: Config) {
     };
   };
 }
+
+export function matchesOIDCBinding(
+  binding: { accountId: string; idToken: string | null },
+  issuer: string | undefined,
+  clientId: string | undefined,
+) {
+  if (!binding.idToken || !issuer || !clientId) return false;
+  try {
+    // Stored ID tokens were verified on linking/sign-in. Expiry does not erase a binding.
+    const claims = decodeJwt(binding.idToken);
+    const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    return claims.iss === issuer && claims.sub === binding.accountId && audience.includes(clientId);
+  } catch {
+    return false;
+  }
+}

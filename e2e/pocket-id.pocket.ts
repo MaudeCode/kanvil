@@ -352,6 +352,14 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
       .check();
     await page.getByRole("button", { name: "Save authentication", exact: true }).click();
     await expect(page.getByText("Authentication saved", { exact: true })).toBeVisible();
+    const ownerBinding = (await accounts(page)).find((account) => account.providerId === "oidc");
+    expect(ownerBinding).toBeDefined();
+    const blockedUnlink = await page.request.post("/api/auth/unlink-account", {
+      headers: { Origin: baseURL },
+      data: { accountId: ownerBinding?.id },
+    });
+    expect(blockedUnlink.status()).toBe(409);
+    expect(await blockedUnlink.json()).toMatchObject({ error: { code: "oidc_binding_required" } });
     await appearance(page, "Dark");
     await signOut(page);
     await expect(

@@ -1,4 +1,4 @@
-import { decodeJwt } from "jose";
+import { matchesOIDCBinding } from "./adapters/oidc.ts";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -209,23 +209,9 @@ export function createInstance(database: Database, config: Config) {
               .from(account)
               .where(and(eq(account.userId, actorId), eq(account.providerId, "oidc")))
           : [];
-        const currentBinding =
-          oidcIssuer &&
-          bindings.some((binding) => {
-            if (!binding.idToken) return false;
-            try {
-              // Stored ID tokens were verified on linking/sign-in. Expiry does not erase a binding.
-              const claims = decodeJwt(binding.idToken);
-              const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-              return (
-                claims.iss === oidcIssuer &&
-                claims.sub === binding.accountId &&
-                audience.includes(config.OIDC_CLIENT_ID)
-              );
-            } catch {
-              return false;
-            }
-          });
+        const currentBinding = bindings.some((binding) =>
+          matchesOIDCBinding(binding, oidcIssuer, config.OIDC_CLIENT_ID),
+        );
         if (!currentBinding)
           fail(
             409,
