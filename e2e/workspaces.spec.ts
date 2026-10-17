@@ -1,6 +1,84 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
 import { choose, openSearch } from "./controls.ts";
+
+async function expectCenteredWatermark(state: Locator) {
+  const title = state.locator('[data-slot="empty-title"]');
+  const watermark = state.locator('svg[aria-hidden="true"]:not(.lucide)');
+  await expect(title).toBeVisible();
+  await expect(watermark).toBeVisible();
+  const titleBox = await title.boundingBox();
+  const markBox = await watermark.boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(markBox).not.toBeNull();
+  if (!titleBox || !markBox) throw new Error("Empty state geometry is unavailable");
+  expect(
+    Math.abs(markBox.x + markBox.width / 2 - titleBox.x - titleBox.width / 2),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(markBox.y + markBox.height / 2 - titleBox.y - titleBox.height / 2),
+  ).toBeLessThanOrEqual(1);
+  expect(await watermark.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe("none");
+}
+
+for (const width of [1280, 390]) {
+  for (const colorScheme of ["light", "dark"] as const) {
+    test(`empty-state watermark follows the title at ${width}px in ${colorScheme}`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.emulateMedia({ colorScheme });
+      await signIn(page);
+      const workspace = await (
+        await page.request.post("/api/v1/workspaces", {
+          data: { name: `Empty ${width} ${colorScheme}`, slug: `empty-${width}-${colorScheme}` },
+        })
+      ).json();
+      await page.reload();
+      await page.getByRole("button", { name: "Switch workspace", exact: true }).click();
+      await page
+        .getByRole("menuitemradio", { name: `Empty ${width} ${colorScheme}`, exact: true })
+        .click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await page.setViewportSize({ width, height: 800 });
+      const state = page.locator('[data-slot="empty"]').filter({ hasText: "No projects yet" });
+      await expect(state).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("projects.png") });
+      await expectCenteredWatermark(state);
+      const title = state.locator('[data-slot="empty-title"]');
+      const originalHeight = (await title.boundingBox())?.height ?? 0;
+      await title.evaluate((node) => {
+        node.style.maxWidth = "80px";
+      });
+      expect((await title.boundingBox())?.height).toBeGreaterThan(originalHeight);
+      await expectCenteredWatermark(state);
+      const project = await (
+        await page.request.post("/api/v1/projects", {
+          data: {
+            workspaceId: workspace.id,
+            key: `E${width}${colorScheme === "light" ? "L" : "D"}`,
+            name: "Empty tickets",
+          },
+        })
+      ).json();
+      await page.goto(`/projects/${project.id}`);
+      const tickets = page.locator('[data-slot="empty"]').filter({ hasText: "No tickets yet" });
+      await expectCenteredWatermark(tickets);
+      await page.screenshot({ path: testInfo.outputPath("tickets.png") });
+      await tickets.getByRole("button", { name: "Create the first ticket", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.goto(`/projects/${project.id}?status=done`);
+      const filtered = page
+        .locator('[data-slot="empty"]')
+        .filter({ hasText: "No matching tickets" });
+      await expectCenteredWatermark(filtered);
+      await filtered.getByRole("button", { name: "Clear filters", exact: true }).click();
+      await expect(tickets).toBeVisible();
+    });
+  }
+}
 
 test("workspace switching, deep links, and offline project icons remain consistent", async ({
   page,
