@@ -84,21 +84,19 @@ export function ProfileSettings() {
       >
         <p className="mb-0 text-sm break-all text-muted-foreground">{identity.email}</p>
       </EditableHeading>
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {identity.image && (
-          <Button
-            variant="ghost"
-            disabled={pending}
-            onClick={() => {
-              void photo();
-            }}
-          >
-            <Trash2 />
-            Remove photo
-          </Button>
-        )}
-        <span className="text-xs text-muted-foreground">PNG, JPEG, or WebP</span>
-      </div>
+      {identity.image && (
+        <Button
+          className="mt-5"
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            void photo();
+          }}
+        >
+          <Trash2 />
+          Remove photo
+        </Button>
+      )}
       <FileInput
         ref={file}
         type="file"
