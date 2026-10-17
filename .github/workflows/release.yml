@@ -125,3 +125,20 @@ jobs:
             --tag ghcr.io/maudecode/kanvil:latest \
             "$(cat digests/amd64)" "$(cat digests/arm64)"
           docker buildx imagetools inspect "ghcr.io/maudecode/kanvil:$VERSION"
+
+  release:
+    name: Create GitHub release
+    needs: [npm, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create release with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+          fi
