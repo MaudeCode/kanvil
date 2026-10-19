@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, CornerLeftUp } from "lucide-react";
 import { z } from "zod";
+import { t } from "@kanvil/contracts/i18n";
 import { api } from "../data.tsx";
 import { Button, ErrorNotice, fieldClass } from "../ui.tsx";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -21,7 +22,7 @@ export function TicketPicker({
   exclude = [],
   allowClear = true,
   variant = "field",
-  placeholder = "Choose a ticket",
+  placeholder = t("ticket.picker.placeholder"),
 }: {
   projectId: string;
   label: string;
@@ -78,7 +79,7 @@ export function TicketPicker({
               ? ticket.key
               : `${ticket.key} · ${ticket.title}`
             : value
-              ? "Loading ticket…"
+              ? t("ticket.picker.loading")
               : placeholder}
         </span>
         {variant !== "pill" && (
@@ -88,8 +89,8 @@ export function TicketPicker({
       <PopoverContent align="start" className="w-[min(420px,var(--available-width))] p-0">
         <Command shouldFilter={false}>
           <CommandInput
-            aria-label={`Search ${label.toLowerCase()}`}
-            placeholder="Search by title or key…"
+            aria-label={t("ticket.picker.searchLabel", { label })}
+            placeholder={t("ticket.picker.searchPlaceholder")}
             value={query}
             onValueChange={setQuery}
           />
@@ -103,17 +104,18 @@ export function TicketPicker({
                     setOpen(false);
                   }}
                 >
-                  No parent{!value && <Check className="ml-auto" />}
+                  {t("ticket.picker.noParent")}
+                  {!value && <Check className="ml-auto" />}
                 </CommandItem>
               </CommandGroup>
             )}
             {matches.isPending ? (
               <div role="status" className="px-4 py-6 text-sm text-muted-foreground">
-                Searching…
+                {t("ticket.picker.searching")}
               </div>
             ) : !items.length ? (
               <div role="status" className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No tickets found
+                {t("ticket.picker.empty")}
               </div>
             ) : (
               <CommandGroup>
@@ -131,7 +133,9 @@ export function TicketPicker({
                       <span className="mb-1 block font-mono text-[11px] text-muted-foreground">
                         {item.key}
                       </span>
-                      <span className="block break-words whitespace-normal">{item.title}</span>
+                      <span dir="auto" className="block break-words whitespace-normal">
+                        {item.title}
+                      </span>
                     </span>
                     {value === item.id && <Check className="ml-auto shrink-0" />}
                   </CommandItem>

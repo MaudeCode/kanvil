@@ -1,4 +1,5 @@
 import type { Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 // Clipboard formats for a ticket, shared by every ticket menu.
 const section = (heading: string, body: string) =>
   body.trim() ? `${heading}\n\n${body.replace(/^(?:[ \t]*\n)+/u, "").trimEnd()}` : "";
@@ -7,8 +8,8 @@ export function ticketMarkdown(
 ) {
   return `${[
     `# ${ticket.key}: ${ticket.title}`,
-    section("## Description", ticket.description),
-    section("## Acceptance criteria", ticket.acceptanceCriteria),
+    section(`## ${t("ticket.copy.description")}`, ticket.description),
+    section(`## ${t("ticket.copy.acceptanceCriteria")}`, ticket.acceptanceCriteria),
   ]
     .filter(Boolean)
     .join("\n\n")}\n`;

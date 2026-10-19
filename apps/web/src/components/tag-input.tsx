@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { X, Plus } from "lucide-react";
 import { ticketFields, errorMessage } from "@kanvil/contracts";
 import { splitTags } from "@kanvil/contracts/drafts";
+import { t } from "@kanvil/contracts/i18n";
 import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,12 +58,14 @@ export function TagInput({
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         {value.map((tag) => (
           <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">
-            <span className="break-words whitespace-normal">{tag}</span>
+            <span dir="auto" className="break-words whitespace-normal">
+              {tag}
+            </span>
             <Button
               size="icon"
               variant="ghost"
               className="size-7 md:size-5"
-              aria-label={`Remove ${label.toLowerCase()} ${tag}`}
+              aria-label={t("ticket.tagInput.remove", { label, tag })}
               onClick={() => onChange(value.filter((item) => item !== tag))}
             >
               <X className="size-3" />
@@ -77,7 +80,9 @@ export function TagInput({
           <Input
             id={id}
             value={text}
-            placeholder={value.length ? "Add another…" : `Add ${label.toLowerCase()}…`}
+            placeholder={
+              value.length ? t("ticket.tagInput.addAnother") : t("ticket.tagInput.add", { label })
+            }
             className="h-7 min-w-20 flex-1 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
             onChange={(event) => setText(event.target.value)}
             onBlur={() => commit()}
@@ -106,7 +111,11 @@ export function TagInput({
                   variant="ghost"
                   size="icon"
                   className={choicesOnly ? "ml-auto" : undefined}
-                  aria-label={choicesOnly ? `Choose ${label.toLowerCase()}` : "Choose labels"}
+                  aria-label={
+                    choicesOnly
+                      ? t("ticket.tagInput.choose", { label })
+                      : t("ticket.tagInput.chooseLabels")
+                  }
                 />
               }
             >
@@ -114,7 +123,10 @@ export function TagInput({
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-0">
               <Command>
-                <CommandInput placeholder="Search labels…" aria-label="Search project labels" />
+                <CommandInput
+                  placeholder={t("ticket.tagInput.searchPlaceholder")}
+                  aria-label={t("ticket.tagInput.searchLabel")}
+                />
                 <CommandList>
                   {labels
                     .filter((entry) => !value.includes(entry.name))
@@ -130,7 +142,7 @@ export function TagInput({
                         <TicketTag tag={entry.name} color={entry.color} />
                       </CommandItem>
                     ))}
-                  <CommandEmpty>No matching labels</CommandEmpty>
+                  <CommandEmpty>{t("ticket.tagInput.empty")}</CommandEmpty>
                 </CommandList>
               </Command>
             </PopoverContent>

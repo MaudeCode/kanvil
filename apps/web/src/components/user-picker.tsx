@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { z } from "zod";
 import { Check, ChevronsUpDown } from "lucide-react";
 import type { memberSchema } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { Button } from "../ui.tsx";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,7 +18,7 @@ export function UserPicker({
   value,
   onChange,
   disabled,
-  label = "Account",
+  label = t("ticket.userPicker.label"),
   anyAccount = true,
 }: {
   people: z.output<typeof memberSchema>[];
@@ -54,16 +55,16 @@ export function UserPicker({
             />
           }
         >
-          {selected?.name ?? (value || "Choose an account")}
+          {selected?.name ?? (value || t("ticket.userPicker.placeholder"))}
           <ChevronsUpDown className="ml-3 size-4 shrink-0" />
         </PopoverTrigger>
         <PopoverContent className="w-[min(24rem,calc(100vw-3rem))] p-0" align="start">
           <Command shouldFilter={false}>
             <CommandInput
-              placeholder="Search name or email…"
+              placeholder={t("ticket.userPicker.searchPlaceholder")}
               value={query}
               onValueChange={setQuery}
-              aria-label="Search accounts"
+              aria-label={t("ticket.userPicker.searchLabel")}
             />
             <CommandList>
               {matches.slice(0, 50).map((person) => (
@@ -73,7 +74,9 @@ export function UserPicker({
                   onSelect={() => choose(person.email)}
                 >
                   <div className="min-w-0">
-                    <span className="block truncate">{person.name}</span>
+                    <span dir="auto" className="block truncate">
+                      {person.name}
+                    </span>
                     <small className="break-all">{person.email}</small>
                   </div>
                   {value === person.email && <Check className="ml-auto" />}
@@ -83,13 +86,11 @@ export function UserPicker({
                 z.email().safeParse(query.trim()).success &&
                 !matches.some((person) => person.email === query.trim()) && (
                   <CommandItem value={query.trim()} onSelect={() => choose(query.trim())}>
-                    Use {query.trim()}
+                    {t("ticket.userPicker.useEmail", { email: query.trim() })}
                   </CommandItem>
                 )}
               <CommandEmpty>
-                {anyAccount
-                  ? "Search for a member or enter an existing account’s email."
-                  : "No matching members"}
+                {anyAccount ? t("ticket.userPicker.emptyAnyAccount") : t("ticket.userPicker.empty")}
               </CommandEmpty>
             </CommandList>
           </Command>

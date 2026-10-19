@@ -6,6 +6,7 @@ import { accentColor } from "../lib/accent-colors.ts";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
 import type { ProjectLabel } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 
 export function TicketTag({
   tag,
@@ -32,7 +33,11 @@ export function TicketTag({
           style={accentColor(tone).style}
         />
       )}
-      {children ?? <span className="min-w-0 break-words whitespace-normal">{tag}</span>}
+      {children ?? (
+        <span dir="auto" className="min-w-0 break-words whitespace-normal">
+          {tag}
+        </span>
+      )}
     </Badge>
   );
 }
@@ -55,7 +60,7 @@ export function TicketTags({
           <Button
             variant="ghost"
             className="ticket-tags-trigger h-auto max-w-full min-w-0 justify-start gap-1 p-0 hover:bg-transparent"
-            aria-label={`${label}: ${tags.join(", ")}`}
+            aria-label={t("ticket.tags.summary", { label, tags: tags.join(", ") })}
           />
         }
       >
@@ -69,7 +74,9 @@ export function TicketTags({
             data-secondary={index === 1 || undefined}
             data-preview-extra={index > 1 || undefined}
           >
-            <span className="truncate">{tag}</span>
+            <span dir="auto" className="truncate">
+              {tag}
+            </span>
           </TicketTag>
         ))}
         {tags.length > 1 && (
