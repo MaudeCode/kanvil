@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, ImageUp } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import type { Output, Project } from "@kanvil/contracts";
+import { capabilitiesOf, type Output, type Project } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import {
@@ -47,11 +47,13 @@ export function ProjectSettings({
     member = useOperation("set_member"),
     access = useProjectAccess(project.id),
     workspace = useWorkspace(),
-    // Workspaces the project can move to: the administrator must also administer the destination.
+    // Workspaces the project can move to: the caller must also manage projects in the destination.
     destinations = workspace.workspaces.filter(
-      (space) => space.role === "admin" && space.id !== project.workspaceId,
+      (space) =>
+        capabilitiesOf(space).includes("project.manage") && space.id !== project.workspaceId,
     );
-  const members = useQuery(api.query("list_members", { projectId: project.id }));
+  const members = useQuery(api.query("list_members", { projectId: project.id })),
+    roles = useQuery(api.query("list_project_roles", { projectId: project.id }));
   const candidates = useQuery({
     ...api.query("list_workspace_members", { workspaceId: project.workspaceId }),
     enabled: !!workspace.active?.role,
@@ -142,11 +144,11 @@ export function ProjectSettings({
               </Select>
             </SettingRow>
             <TicketPrefix project={project} canAdmin={access.canManage} />
-            <PublicLink project={project} canAdmin={access.canManage} />
+            <PublicLink project={project} canAdmin={access.canShare} />
             <ProjectBackground project={project} canAdmin={access.canManage} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {access.canManage &&
-                workspace.active?.role === "admin" &&
+                capabilitiesOf(workspace.active ?? { role: null }).includes("project.manage") &&
                 destinations.length > 0 && (
                   <MoveProject project={project} destinations={destinations} />
                 )}
@@ -179,8 +181,10 @@ export function ProjectSettings({
             pending={member.isPending}
             loading={members.isPending}
             error={members.error}
-            canAdmin={access.canManage}
+            canAdmin={access.canManageMembers}
             scope="project"
+            roles={roles.data}
+            authority={{ admin: access.role === "admin", capabilities: access.capabilities }}
             onChange={(email, role) => member.mutateAsync({ projectId: project.id, email, role })}
           />
         </SettingsPanel>
@@ -209,8 +213,8 @@ export function ProjectSettings({
         <SettingsPanel value="calendar">
           <CalendarFeedSettings
             projectId={project.id}
-            canAdmin={access.canManage}
-            canCreate={access.canAdmin}
+            canAdmin={access.canShare}
+            canCreate={access.canShare && !access.archived}
           />
         </SettingsPanel>
       </SettingsLayout>

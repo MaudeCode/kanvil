@@ -38,6 +38,24 @@ export const workspaces = pgTable("workspaces", {
   createdAt: time("created_at"),
   updatedAt: time("updated_at"),
 });
+// A workspace's own roles beside the seeded reader, writer, and admin. An assignment names one in
+// `role_id` and keeps its seeded stand-in (`roleCategory`) in `role`; the role's edits rewrite both
+// together. The reference has no cascade, so a role is deleted only once nothing holds it.
+export const workspaceRoles = pgTable(
+  "workspace_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    permissions: text("permissions").array().notNull().default([]),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [unique("workspace_role_name").on(table.workspaceId, table.name)],
+);
 export const workspaceMembers = pgTable(
   "workspace_members",
   {
@@ -48,6 +66,7 @@ export const workspaceMembers = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    roleId: uuid("role_id").references(() => workspaceRoles.id),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.userId] }),
@@ -133,6 +152,7 @@ export const members = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    roleId: uuid("role_id").references(() => workspaceRoles.id),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.userId] }),

@@ -2,9 +2,10 @@ import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
 import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { roles, ticketFilter } from "@kanvil/contracts";
+import { permissions, roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
-import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
+import { accessibleProjectRows, permissionsOf, projectRoleSQL } from "./project-access.ts";
+import { assertHeldGrantable, assignment, rolesOf } from "./workspace-operations.ts";
 import { endPosition, positionNear, projectPositions } from "./ordering.ts";
 import { seedWorkflow } from "./workflow-operations.ts";
 import {
@@ -19,11 +20,14 @@ import {
 import { openTicket, overdueTicket } from "./ticket-operations.ts";
 import {
   accountByEmail,
+  assertGrantable,
   assertVersion,
+  capabilities,
   fail,
   project,
   projectMatch,
   publish,
+  requirePermission,
   toProject,
   workspace,
   type Handlers,
@@ -60,6 +64,7 @@ export const projectHandlers: Pick<
   | "update_project"
   | "move_project"
   | "list_members"
+  | "list_project_roles"
   | "set_member"
   | "list_views"
   | "save_view"
@@ -141,7 +146,11 @@ export const projectHandlers: Pick<
       ? []
       : await ctx.db
           // Qualified, since a single-table select renders bare "id", which the subquery binds to p.
-          .select({ id: projects.id, role: projectRoleSQL(ctx.actor.id, sql`${projects}."id"`) })
+          .select({
+            id: projects.id,
+            role: projectRoleSQL(ctx.actor.id, sql`${projects}."id"`),
+            roleId: projectRoleSQL(ctx.actor.id, sql`${projects}."id"`, undefined, "id"),
+          })
           .from(projects)
           .where(
             inArray(
@@ -149,17 +158,23 @@ export const projectHandlers: Pick<
               rows.map((row) => row.id),
             ),
           );
+    const granted = await permissionsOf(
+      ctx.db,
+      access.map((entry) => entry.roleId),
+    );
     return rows.map((row) => {
-      const stats = counts.find((entry) => entry.projectId === row.id);
+      const stats = counts.find((entry) => entry.projectId === row.id),
+        held = access.find((entry) => entry.id === row.id),
+        roleId = ctx.actor.admin ? "admin" : (held?.roleId ?? undefined);
       return {
         ...toProject(row),
         openTickets: stats?.open ?? 0,
         overdueTickets: stats?.overdue ?? 0,
         closedTickets: stats?.closed ?? 0,
         nextDueAt: stats?.nextDue ?? null,
-        role: ctx.actor.admin
-          ? ("admin" as const)
-          : z.enum(roles).parse(access.find((entry) => entry.id === row.id)?.role),
+        role: ctx.actor.admin ? ("admin" as const) : z.enum(roles).parse(held?.role),
+        roleId,
+        capabilities: capabilities(ctx.actor, ctx.actor.admin ? permissions : granted(roleId)),
       };
     });
   },
@@ -234,6 +249,17 @@ export const projectHandlers: Pick<
     const current = project(ctx);
     assertVersion(current, input.expectedVersion, "project");
     const key = input.key ?? current.key;
+    // Sharing the public view and changing details are separate actions.
+    const sharing =
+        input.publicReadEnabled !== undefined &&
+        input.publicReadEnabled !== current.publicReadEnabled,
+      details =
+        key !== current.key ||
+        input.name !== current.name ||
+        input.description !== current.description ||
+        (!!input.visibility && input.visibility !== current.visibility);
+    if (sharing) requirePermission(ctx.permissions, "sharing.manage", "project");
+    if (details || !sharing) requirePermission(ctx.permissions, "project.manage", "project");
     if (key !== current.key) {
       const reserve = await takePrefix(ctx, key, current.id);
       await reserve(current.id);
@@ -312,6 +338,7 @@ export const projectHandlers: Pick<
       .select({
         userId: user.id,
         role: workspaceMembers.role,
+        roleId: sql<string>`coalesce(${workspaceMembers.roleId}::text, ${workspaceMembers.role})`,
         name: user.name,
         email: user.email,
         image: user.image,
@@ -328,6 +355,7 @@ export const projectHandlers: Pick<
       .select({
         userId: user.id,
         role: members.role,
+        roleId: sql<string>`coalesce(${members.roleId}::text, ${members.role})`,
         name: user.name,
         email: user.email,
         image: user.image,
@@ -341,20 +369,53 @@ export const projectHandlers: Pick<
     for (const person of direct)
       if (people.get(person.userId)?.role !== "admin")
         people.set(person.userId, { ...person, source: "project" });
-    const inheritedRoles = new Map(inherited.map((person) => [person.userId, person.role]));
+    const inheritedRoles = new Map(inherited.map((person) => [person.userId, person]));
     return [...people.values()]
-      .map((person) => ({ ...person, inheritedRole: inheritedRoles.get(person.userId) ?? null }))
+      .map((person) => ({
+        ...person,
+        inheritedRole: inheritedRoles.get(person.userId)?.role ?? null,
+        inheritedRoleId: inheritedRoles.get(person.userId)?.roleId ?? null,
+      }))
       .toSorted((a, b) => a.name.localeCompare(b.name));
+  },
+  async list_project_roles(ctx) {
+    return rolesOf(ctx, project(ctx).workspaceId);
   },
   async set_member(ctx, input) {
     const member = await accountByEmail(ctx.db, input.email);
     const projectId = project(ctx).id;
+    const target = input.role ? await assignment(ctx, project(ctx).workspaceId, input.role) : null;
+    if (target) assertGrantable(ctx, target.permissions, target.role);
     const existing = (
       await ctx.db
         .select()
         .from(members)
         .where(and(eq(members.projectId, projectId), eq(members.userId, member.id)))
     )[0];
+    // A direct role replaces an inherited one, so the person's effective role here is what changes.
+    const effective = one(
+      await ctx.db
+        .select({ roleId: projectRoleSQL(member.id, projectId, undefined, "id") })
+        .from(projects)
+        .where(eq(projects.id, projectId)),
+    ).roleId;
+    await assertHeldGrantable(ctx, effective);
+    // Removing a direct role hands back the inherited one, which must be grantable as well.
+    if (!target) {
+      const inherited = (
+        await ctx.db
+          .select({ role: workspaceMembers.role, roleId: workspaceMembers.roleId })
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, project(ctx).workspaceId),
+              eq(workspaceMembers.userId, member.id),
+            ),
+          )
+      )[0];
+      if (inherited && project(ctx).visibility === "workspace")
+        await assertHeldGrantable(ctx, inherited.roleId ?? inherited.role);
+    }
     if (existing?.role === "admin" && input.role !== "admin") {
       const administrators = await ctx.db
         .select({ id: user.id })
@@ -377,19 +438,23 @@ export const projectHandlers: Pick<
       if (!administrators.length)
         fail(409, "last_administrator", "Keep at least one project or workspace administrator");
     }
-    if (input.role)
+    if (target)
       await ctx.db
         .insert(members)
-        .values({ projectId, userId: member.id, role: input.role })
+        .values({ projectId, userId: member.id, role: target.role, roleId: target.roleId })
         .onConflictDoUpdate({
           target: [members.projectId, members.userId],
-          set: { role: input.role },
+          set: { role: target.role, roleId: target.roleId },
         });
     else
       await ctx.db
         .delete(members)
         .where(and(eq(members.projectId, projectId), eq(members.userId, member.id)));
-    await publish(ctx, "membership.updated", null, { userId: member.id, role: input.role });
+    await publish(ctx, "membership.updated", null, {
+      userId: member.id,
+      role: target?.role ?? null,
+      roleId: input.role,
+    });
     return { ok: true };
   },
   async list_views(ctx) {

@@ -5,10 +5,13 @@ import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
 import {
+  capabilitiesOf,
   infoSchema,
   memberName,
+  permissions,
   type ChangeEvent,
   type Operation,
+  type Permission,
   type Workspace,
 } from "@kanvil/contracts";
 import type { Query } from "@tanstack/react-query";
@@ -77,8 +80,11 @@ export function useProject(projectId: string) {
 }
 // Project-wide reads that only change on these event families; ticket traffic leaves them alone.
 const settledBy: Record<string, string[]> = {
-  list_members: ["membership.", "project."],
-  list_workspace_members: ["membership.", "project."],
+  // A role edit rewrites the stand-in role of everyone holding it.
+  list_members: ["membership.", "role.", "project."],
+  list_workspace_members: ["membership.", "role.", "project."],
+  list_workspace_roles: ["role.", "membership.", "project."],
+  list_project_roles: ["role.", "membership.", "project."],
   // An acceptance announces the new membership rather than an invitation change.
   list_invitations: ["invitation.", "membership."],
   list_project_labels: ["label.", "project."],
@@ -141,9 +147,10 @@ export function clearPrivateStorage(userId: string) {
 }
 export { formatTimestamp as date } from "@kanvil/contracts";
 
-// Reads the server's effective role from the shared list_projects cache, so checking many
-// projects costs one request. An archived project is read only: `canManage` keeps the
-// administrator's lifecycle, details, and access controls, which the server still accepts.
+// Reads the actions the server reports for the caller's role from the shared list_projects cache,
+// so checking many projects costs one request. An archived project is read only: `canManage`,
+// `canManageMembers`, and `canShare` keep its details, lifecycle, access, and sharing controls,
+// which the server still accepts.
 export function useProjectAccess(projectId: string, enabled = true) {
   const identity = useIdentity(),
     projects = useQuery({
@@ -152,13 +159,19 @@ export function useProjectAccess(projectId: string, enabled = true) {
       select: (rows) => rows.find((project) => project.id === projectId),
     });
   const role = identity.admin ? "admin" : projects.data?.role,
-    archived = !!projects.data?.archivedAt;
+    archived = !!projects.data?.archivedAt,
+    granted = identity.admin ? permissions : capabilitiesOf({ ...projects.data, role }),
+    holds = (permission: Permission) => granted.includes(permission);
   return {
     role,
     archived,
-    canWrite: !archived && (role === "writer" || role === "admin"),
-    canAdmin: !archived && role === "admin",
-    canManage: role === "admin",
+    capabilities: granted,
+    canWrite: !archived && holds("ticket.write"),
+    canDelete: !archived && holds("ticket.delete"),
+    canAdmin: !archived && holds("project.manage"),
+    canManage: holds("project.manage"),
+    canManageMembers: holds("member.manage"),
+    canShare: holds("sharing.manage"),
   };
 }
 // The name and photo for an account ID in a project: you, a member, a deleted account, or someone

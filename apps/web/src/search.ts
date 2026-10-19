@@ -124,7 +124,7 @@ export const adminSearchSchema = z.object({
   section: z.enum(adminSections).catch("general").default("general"),
 });
 
-export const workspaceSections = ["general", "members", "labels"] as const;
+export const workspaceSections = ["general", "members", "roles", "labels"] as const;
 export const projectSections = [
   "general",
   "members",

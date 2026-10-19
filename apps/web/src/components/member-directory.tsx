@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { z } from "zod";
 import { Plus, Trash2, RotateCcw } from "lucide-react";
-import { roles, roleLabels, memberSchema } from "@kanvil/contracts";
+import {
+  roles,
+  roleLabels,
+  seededPermissions,
+  type memberSchema,
+  type Permission,
+  type WorkspaceRole,
+} from "@kanvil/contracts";
 import { toast } from "sonner";
 import {
   Confirm,
@@ -20,6 +27,12 @@ import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item"
 import { Badge } from "@/components/ui/badge";
 import { UserIdentity } from "./user-avatar.tsx";
 import { UserPicker } from "./user-picker.tsx";
+// Before the role catalog loads, and from servers without custom roles, the seeded roles.
+const seededRoles = roles.map((id) => ({
+  id,
+  name: roleLabels[id],
+  permissions: seededPermissions[id],
+}));
 export function MemberDirectory({
   people,
   candidates = people,
@@ -29,6 +42,8 @@ export function MemberDirectory({
   canAdmin,
   ownerId,
   scope,
+  roles: catalog,
+  authority,
   onChange,
 }: {
   people: z.output<typeof memberSchema>[];
@@ -40,16 +55,38 @@ export function MemberDirectory({
   // The workspace owner keeps the Admin role until ownership is transferred.
   ownerId?: string | null | undefined;
   scope: "project" | "workspace";
-  onChange: (email: string, role: (typeof roles)[number] | null) => Promise<unknown>;
+  // The seeded and custom roles a membership here can hold.
+  roles?: WorkspaceRole[] | undefined;
+  // The viewer's own role here: no one grants, changes, or removes a role beyond it, and only an
+  // administrator grants Admin. The server enforces the same rule.
+  authority: { admin: boolean; capabilities: readonly Permission[] };
+  onChange: (email: string, role: string | null) => Promise<unknown>;
 }) {
   const [query, setQuery] = useState(""),
     [adding, setAdding] = useState(false),
     [email, setEmail] = useState(""),
     [failure, setFailure] = useState<unknown>();
+  const options: { id: string; name: string; permissions: readonly Permission[] }[] =
+    catalog?.length ? catalog : seededRoles;
+  const nameOf = (id: string | null | undefined) =>
+    options.find((option) => option.id === id)?.name ?? (id ? "Custom role" : "");
+  const grantable = (id: string) => {
+    const option = options.find((candidate) => candidate.id === id);
+    return (
+      !!option &&
+      (id !== "admin" || authority.admin) &&
+      option.permissions.every((permission) => authority.capabilities.includes(permission))
+    );
+  };
   const matches = people.filter((person) =>
     `${person.name} ${person.email}`.toLowerCase().includes(query.toLowerCase()),
   );
-  async function change(memberEmail: string, role: (typeof roles)[number] | null) {
+  const choices = options.map((option) => (
+    <SelectItem key={option.id} value={option.id} disabled={!grantable(option.id)}>
+      {option.name}
+    </SelectItem>
+  ));
+  async function change(memberEmail: string, role: string | null) {
     setFailure(undefined);
     try {
       await onChange(memberEmail, role);
@@ -92,7 +129,9 @@ export function MemberDirectory({
       ) : matches.length ? (
         <ItemGroup className="gap-0">
           {matches.map((person) => {
-            const owner = scope === "workspace" && person.userId === ownerId,
+            const held = person.roleId ?? person.role,
+              inherited = person.inheritedRoleId ?? person.inheritedRole,
+              owner = scope === "workspace" && person.userId === ownerId,
               badge =
                 scope === "project" && person.source === "workspace"
                   ? "Workspace access"
@@ -117,43 +156,44 @@ export function MemberDirectory({
                     label={`Role for ${person.name}`}
                     labelHidden
                     className="mb-0 w-36"
-                    value={person.role}
+                    value={held}
                     disabled={
                       !canAdmin ||
                       pending ||
                       owner ||
-                      (scope === "project" &&
-                        person.source === "workspace" &&
-                        person.role === "admin")
+                      !grantable(held) ||
+                      (scope === "project" && person.source === "workspace" && held === "admin")
                     }
                     onValueChange={(role) => {
-                      void change(person.email, z.enum(roles).parse(role)).catch(() => {});
+                      void change(person.email, z.string().parse(role)).catch(() => {});
                     }}
                   >
-                    {roles.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {roleLabels[role]}
-                      </SelectItem>
-                    ))}
+                    {options.some((option) => option.id === held)
+                      ? choices
+                      : [
+                          ...choices,
+                          <SelectItem key={held} value={held} disabled>
+                            {nameOf(held)}
+                          </SelectItem>,
+                        ]}
                   </Select>
                   {canAdmin &&
                     !owner &&
+                    grantable(held) &&
                     (scope === "workspace" || person.source !== "workspace") && (
                       <Confirm
                         label={
-                          scope === "project" && person.inheritedRole
+                          scope === "project" && inherited
                             ? "Use workspace access"
                             : "Remove member"
                         }
-                        icon={
-                          scope === "project" && person.inheritedRole ? <RotateCcw /> : <Trash2 />
-                        }
-                        danger={!(scope === "project" && person.inheritedRole)}
+                        icon={scope === "project" && inherited ? <RotateCcw /> : <Trash2 />}
+                        danger={!(scope === "project" && inherited)}
                         description={
                           scope === "workspace"
                             ? `Remove ${person.name} from this workspace and all of its projects?`
-                            : person.inheritedRole
-                              ? `Restore ${roleLabels[person.inheritedRole]} workspace access for ${person.name}?`
+                            : inherited
+                              ? `Restore ${nameOf(inherited)} workspace access for ${person.name}?`
                               : `Remove ${person.name}'s project access?`
                         }
                         onConfirm={() => change(person.email, null)}
@@ -172,7 +212,7 @@ export function MemberDirectory({
           onSubmit={(event) => {
             event.preventDefault();
             const values = new FormData(event.currentTarget);
-            void change(email, z.enum(roles).parse(values.get("role")))
+            void change(email, z.string().parse(values.get("role")))
               .then(() => {
                 setAdding(false);
                 toast.success("Member added");
@@ -184,13 +224,9 @@ export function MemberDirectory({
           <Select
             label={scope === "project" ? "Project role" : "Workspace role"}
             name="role"
-            defaultValue="writer"
+            defaultValue={grantable("writer") ? "writer" : "reader"}
           >
-            {roles.map((role) => (
-              <SelectItem key={role} value={role}>
-                {roleLabels[role]}
-              </SelectItem>
-            ))}
+            {choices}
           </Select>
           <FormActions
             error={failure}

@@ -19,6 +19,11 @@ import {
   projectSchema,
   ticketSchema,
   hasAdminRole,
+  operationPermission,
+  permissionLabels,
+  permissionScope,
+  type Permission,
+  type Role,
   type NotificationCategory,
   channelRouteAllows,
   destinationEventKeys,
@@ -50,8 +55,8 @@ import {
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
-import { projectRole, readsProject } from "./project-access.ts";
-import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
+import { projectAccess, readsProject } from "./project-access.ts";
+import { workspaceHandlers, requireWorkspace, roleHandlers } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { lifecycleHandlers } from "./project-lifecycle.ts";
 import { labelHandlers } from "./label-operations.ts";
@@ -95,7 +100,10 @@ export interface Context {
   actor: Actor;
   project: Project | null;
   workspace: Workspace | null;
-  role: "reader" | "writer" | "admin";
+  // The seeded stand-in of the caller's role here, and the actions that role grants, uncapped by
+  // the credential: operations gate on both their scope and their action.
+  role: Role;
+  permissions: readonly Permission[];
   // The public origin for links in outgoing messages.
   publicUrl: string;
   // Queues an email to send after the write commits; absent without an SMTP relay.
@@ -176,6 +184,54 @@ export const hasScope = (actor: Actor, scope: (typeof scopes)[number]) =>
   actor.scopes.includes("admin") ||
   actor.scopes.includes(scope) ||
   (scope === "read" && actor.scopes.length > 0);
+// The actions a role grants that the credential's scopes also allow: what clients are told the
+// caller can do, and the most the caller can grant to anyone else.
+export const capabilities = (actor: Actor, granted: readonly Permission[]) =>
+  granted.filter((permission) => hasScope(actor, permissionScope(permission)));
+// What a handler may do beyond the operation's own action: the role's grant within the credential.
+export const can = (ctx: Context, permission: Permission) =>
+  capabilities(ctx.actor, ctx.permissions).includes(permission);
+// The stable codes and messages predate custom roles; the writer's and administrator's actions
+// keep them.
+export function requirePermission(
+  granted: readonly Permission[],
+  permission: Permission | null,
+  where: "project" | "workspace",
+) {
+  if (!permission || granted.includes(permission)) return;
+  if (permission === "ticket.write")
+    fail(
+      403,
+      "forbidden",
+      `${where === "project" ? "Project" : "Workspace"} write permission is required`,
+    );
+  if (where === "workspace")
+    fail(
+      403,
+      "workspace_access_required",
+      `${permissionLabels[permission].label} permission is required in this workspace`,
+    );
+  fail(
+    403,
+    "forbidden",
+    permission === "project.manage"
+      ? "Project administration permission is required"
+      : `${permissionLabels[permission].label} permission is required`,
+  );
+}
+// No one grants an action they do not hold themselves, through a role definition or an assignment.
+// The seeded Admin role also reaches private projects and ownership, which only an administrator
+// holds, so only an administrator assigns it.
+export function assertGrantable(ctx: Context, granted: readonly Permission[], role?: string) {
+  if (role === "admin" && ctx.role !== "admin")
+    fail(403, "forbidden", "Only an administrator can grant or change the Admin role");
+  const held = capabilities(ctx.actor, ctx.permissions);
+  const beyond = granted.filter((permission) => !held.includes(permission));
+  if (beyond.length)
+    fail(403, "forbidden", "You can only grant actions your own role allows", {
+      permissions: beyond,
+    });
+}
 
 const noSecrets: Sealer = {
   seal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
@@ -191,6 +247,7 @@ const baseContext = (db: Context["db"], actor: Actor): Context => ({
   project: null,
   workspace: null,
   role: "reader",
+  permissions: [],
   blobs: { put: writeLocalBlob },
   search: builtinSearch,
   secrets: noSecrets,
@@ -231,20 +288,28 @@ export function ticketMatch(identifier: string) {
       : undefined,
   );
 }
+// Every operation resolves the caller's current role here, in the workspace or project it names,
+// and needs both the operation's scope from the credential and its action from the role.
 export async function context(
   db: Context["db"],
   actor: Actor,
   scope: (typeof scopes)[number],
   projectId?: string,
   workspaceId?: string,
+  permission: Permission | null = scope === "read"
+    ? null
+    : scope === "admin"
+      ? "project.manage"
+      : "ticket.write",
 ): Promise<Context> {
   if (!hasScope(actor, scope))
     fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
   const ctx = baseContext(db, actor);
   if (workspaceId) {
-    ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
-    if ((scope === "write" || scope === "claim") && ctx.workspace.role === "reader")
-      fail(403, "forbidden", "Workspace write access is required");
+    const access = await requireWorkspace(ctx, workspaceId, permission);
+    ctx.workspace = access.workspace;
+    ctx.role = access.role;
+    ctx.permissions = access.permissions;
   }
   if (!projectId) return ctx;
   const row = one(
@@ -256,15 +321,10 @@ export async function context(
   );
   if (actor.projectIds && !actor.projectIds.includes(row.id))
     fail(404, "not_found", "Project was not found");
-  const role = await projectRole(db, actor, row);
-  if (!role) fail(404, "not_found", "Project was not found");
-  if (role !== "reader" && role !== "writer" && role !== "admin")
-    fail(403, "forbidden", "Project access is unavailable");
-  if (scope === "admin" && role !== "admin")
-    fail(403, "forbidden", "Project administration permission is required");
-  if ((scope === "write" || scope === "claim") && role === "reader")
-    fail(403, "forbidden", "Project write permission is required");
-  return { ...ctx, project: toProject(row), role };
+  const access = await projectAccess(db, actor, row);
+  if (!access) fail(404, "not_found", "Project was not found");
+  requirePermission(access.permissions, permission, "project");
+  return { ...ctx, project: toProject(row), role: access.role, permissions: access.permissions };
 }
 export async function getTicket(ctx: Context, identifier: string) {
   return one(
@@ -572,7 +632,7 @@ export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
     claim.ownerId === ctx.actor.ownerId &&
     claim.expiresAt > new Date() &&
     hasScope(ctx.actor, "claim") &&
-    ctx.role !== "reader"
+    ctx.permissions.includes("ticket.write")
   );
 }
 export async function assertWorkerClaim(
@@ -603,6 +663,7 @@ export function createDomain(
 ) {
   const handlers: Handlers = {
     ...workspaceHandlers,
+    ...roleHandlers,
     ...projectHandlers,
     ...lifecycleHandlers,
     ...labelHandlers,
@@ -719,8 +780,11 @@ export function createDomain(
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
     };
+    const permission = operationPermission(name);
     if (spec.method === "GET" || remoteReads.has(name))
-      return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
+      return invoke(
+        await context(database.db, actor, spec.scope, projectId, workspaceId, permission),
+      );
     const requestId = "requestId" in input ? input.requestId : undefined;
     // A write that reads another tracker reads it first, outside the lock, unless a receipt
     // already answers the request; it then commits like any other write.
@@ -745,7 +809,9 @@ export function createDomain(
       )
     )
       read = await reader.read(
-        withServices(await context(database.db, actor, spec.scope, projectId, workspaceId)),
+        withServices(
+          await context(database.db, actor, spec.scope, projectId, workspaceId, permission),
+        ),
         input,
       );
     const committed = await locked(async (tx) => {
@@ -767,14 +833,14 @@ export function createDomain(
       // author's receipt.
       if (receipt && (name === "delete_project" || name === "delete_workspace"))
         return parseOutput(name, receipt.result);
-      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
+      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission);
       if (receipt) {
         const prior = parseOutput(name, receipt.result);
         // Creation has no input subject ID, so its stored result must also be authorized on replay.
         if (name === "create_project")
           await context(tx, actor, "read", projectSchema.parse(prior).id);
         if (name === "create_workspace")
-          await requireWorkspace(ctx, workspaceSchema.parse(prior).id);
+          await requireWorkspace(ctx, workspaceSchema.parse(prior).id, null);
         // A move answered from the destination; the caller must still be able to write there.
         if (name === "relocate_ticket")
           await context(tx, actor, "write", ticketSchema.parse(prior).projectId);

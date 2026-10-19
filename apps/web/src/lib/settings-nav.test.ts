@@ -22,6 +22,7 @@ it("keeps the existing settings URLs", () => {
     "/settings?section=notifications",
     "/workspaces/w1/settings?section=general",
     "/workspaces/w1/settings?section=members",
+    "/workspaces/w1/settings?section=roles",
     "/workspaces/w1/settings?section=labels",
     "/projects/p1/settings?section=general",
     "/projects/p2/settings?section=general",

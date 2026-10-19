@@ -2,6 +2,7 @@ import { SidebarGroupAction } from "@/components/ui/sidebar";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Plus, Users, Lock } from "lucide-react";
+import { capabilitiesOf } from "@kanvil/contracts";
 import { formText } from "../forms.ts";
 import { useOperation, useWorkspace } from "../data.tsx";
 import { Input, Modal, Textarea, fieldClass, FormActions, IconButton } from "../ui.tsx";
@@ -96,7 +97,7 @@ export function ProjectAccessField({
 }
 export function CreateProject({ sidebarAction = false }: { sidebarAction?: boolean }) {
   const { active: workspace } = useWorkspace();
-  const canCreate = !!workspace && (workspace.role === "writer" || workspace.role === "admin");
+  const canCreate = !!workspace && capabilitiesOf(workspace).includes("ticket.write");
   const [open, setOpen] = useState(false),
     [name, setName] = useState(""),
     [key, setKey] = useState(""),

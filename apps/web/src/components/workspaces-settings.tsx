@@ -2,6 +2,7 @@ import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { MoreHorizontal } from "lucide-react";
+import { permissions } from "@kanvil/contracts";
 import { adminWorkspacesSchema, type AdminWorkspace } from "@kanvil/contracts/users";
 import { api, useOperation } from "../data.tsx";
 import {
@@ -170,6 +171,10 @@ function WorkspaceDetails({
       ...api.query("list_projects", { workspaceId, archived: "include" }),
       enabled: !!workspace,
     }),
+    roles = useQuery({
+      ...api.query("list_workspace_roles", { workspaceId }),
+      enabled: !!workspace,
+    }),
     member = useOperation("set_workspace_member");
   return (
     <Sheet
@@ -192,6 +197,8 @@ function WorkspaceDetails({
             canAdmin
             ownerId={workspace?.ownerId}
             scope="workspace"
+            roles={roles.data}
+            authority={{ admin: true, capabilities: permissions }}
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
           {workspace && <InvitationList workspaceId={workspace.id} />}

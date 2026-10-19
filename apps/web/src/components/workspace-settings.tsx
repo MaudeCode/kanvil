@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import type { memberSchema, Workspace } from "@kanvil/contracts";
+import { capabilitiesOf, type memberSchema, type Workspace } from "@kanvil/contracts";
 import type { z } from "zod";
 import { api, useAllProjects, useIdentity, useOperation, useWorkspaces } from "../data.tsx";
 import {
@@ -19,6 +19,7 @@ import { DeleteWorkspaceRow } from "./project-lifecycle.tsx";
 import { Badge } from "@/components/ui/badge";
 import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
+import { RoleSettings } from "./role-settings.tsx";
 import { InvitationList } from "./invitations.tsx";
 import { LabelSettings } from "./label-settings.tsx";
 import { ImportProjects } from "./project-import.tsx";
@@ -139,9 +140,13 @@ export function WorkspaceSettings({
     projects = useAllProjects(),
     workspace = spaces.data?.find((space) => space.id === workspaceId);
   const people = useQuery({
-    ...api.query("list_workspace_members", { workspaceId }),
-    enabled: !!workspace?.role,
-  });
+      ...api.query("list_workspace_members", { workspaceId }),
+      enabled: !!workspace?.role,
+    }),
+    roles = useQuery({
+      ...api.query("list_workspace_roles", { workspaceId }),
+      enabled: !!workspace?.role,
+    });
   const update = useOperation("update_workspace"),
     member = useOperation("set_workspace_member");
   if (spaces.isPending) return <Loading />;
@@ -152,7 +157,10 @@ export function WorkspaceSettings({
         <Button render={<Link to="/" />}>Back to projects</Button>
       </EmptyState>
     );
-  const canAdmin = workspace.role === "admin",
+  // What the caller's role allows here, as the server reports it.
+  const granted = capabilitiesOf(workspace),
+    authority = { admin: workspace.role === "admin", capabilities: granted },
+    canAdmin = granted.includes("workspace.manage"),
     isOwner = workspace.ownerId === identity.id || identity.admin,
     count = projects.data?.filter((project) => project.workspaceId === workspace.id).length ?? 0;
   return (
@@ -217,7 +225,7 @@ export function WorkspaceSettings({
                 Manage members
               </Button>
             </SettingRow>
-            {workspace.role !== "reader" && <ImportProjects workspaceId={workspaceId} />}
+            {granted.includes("ticket.write") && <ImportProjects workspaceId={workspaceId} />}
             {isOwner && <DeleteWorkspaceRow workspace={workspace} />}
           </section>
         </SettingsPanel>
@@ -227,12 +235,17 @@ export function WorkspaceSettings({
             pending={member.isPending}
             loading={people.isPending}
             error={people.error}
-            canAdmin={canAdmin}
+            canAdmin={granted.includes("member.manage")}
             ownerId={workspace.ownerId}
             scope="workspace"
+            roles={roles.data}
+            authority={authority}
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
-          {canAdmin && <InvitationList workspaceId={workspaceId} />}
+          {granted.includes("invitation.manage") && <InvitationList workspaceId={workspaceId} />}
+        </SettingsPanel>
+        <SettingsPanel value="roles">
+          <RoleSettings workspaceId={workspaceId} canEdit={canAdmin} authority={authority} />
         </SettingsPanel>
         <SettingsPanel value="labels">
           <LabelSettings owner={{ workspaceId }} canAdmin={canAdmin} />
