@@ -74,14 +74,9 @@ export function createAuth(database: Database, config: Config) {
   // ponytail: per-process memory; a multi-replica deployment shares Better Auth's per-IP limit only.
   const codeSends = createWriteLimiter(3, 15 * 60_000);
   // Runs after the response, so neither the lookup nor SMTP latency tells a caller whether the
-  // address has an account. Throttled, disabled, and deleted accounts get nothing.
+  // address has an account. Disabled and deleted accounts get nothing.
   async function sendCode(email: string, otp: string, type: string) {
     if (!mail || (type !== "sign-in" && type !== "forget-password")) return;
-    try {
-      codeSends.consume(email);
-    } catch {
-      return;
-    }
     const active = await database.pool.query(
       `SELECT 1 FROM "user" WHERE email = $1 AND deleted_at IS NULL
         AND NOT (coalesce(banned, false) AND (ban_expires IS NULL OR ban_expires > now()))`,
@@ -184,6 +179,20 @@ export function createAuth(database: Database, config: Config) {
             code: "email_codes_unavailable",
             message: "Email codes are not available on this instance",
           });
+        // A throttled request ends before the plugin makes a code, so the last code mailed to the
+        // address stays valid. It answers like any other request.
+        if (
+          ctx.path === "/email-otp/send-verification-otp" ||
+          ctx.path === "/email-otp/request-password-reset"
+        ) {
+          const email = z.object({ email: z.string() }).safeParse(ctx.body).data?.email;
+          try {
+            if (email) codeSends.consume(email.toLowerCase());
+          } catch {
+            return ctx.json({ success: true });
+          }
+        }
+        return undefined;
       }),
     },
     user: {

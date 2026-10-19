@@ -231,12 +231,16 @@ describe("email codes", () => {
     expect((await signInWithCode("expiring@sign-in.test", second.code)).ok).toBe(false);
   });
 
-  it("sends at most three codes per address in fifteen minutes", async () => {
+  it("sends at most three codes per address in fifteen minutes and keeps the last one valid", async () => {
     await createPerson("busy@sign-in.test");
-    for (let attempt = 0; attempt < 4; attempt++)
+    for (let attempt = 0; attempt < 3; attempt++) {
       expect((await send("busy@sign-in.test")).status).toBe(200);
-    await vi.waitFor(() => expect(mailbox.messages).toHaveLength(3), { timeout: 5000 });
+      await nextCode("busy@sign-in.test", attempt);
+    }
+    const { code } = await nextCode("busy@sign-in.test", 2);
+    expect((await send("busy@sign-in.test")).status).toBe(200);
     await noMail(3);
+    expect((await signInWithCode("busy@sign-in.test", code)).status).toBe(200);
   });
 
   it("resets a password with a code and signs out every session", async () => {
