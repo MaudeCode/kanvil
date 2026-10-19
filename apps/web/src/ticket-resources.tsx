@@ -53,6 +53,7 @@ import {
   SectionHeading,
   FormActions,
   IconButton,
+  fileSize,
 } from "./ui.tsx";
 import { cn } from "@/lib/utils";
 import type { InlineUpload } from "./components/markdown-field.tsx";
@@ -126,11 +127,6 @@ function ResourceRow({
     </Item>
   );
 }
-const sizeFormat = new Intl.NumberFormat(undefined, {
-  style: "unit",
-  unit: "kilobyte",
-  maximumFractionDigits: 1,
-});
 function checkFileSize(file: File) {
   if (file.size > attachmentLimit) throw new Error("Choose files no larger than 10 MB each.");
 }
@@ -237,7 +233,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
             icon={<FileText className="size-4 text-muted-foreground" />}
             href={attachmentPath(ticket.projectId, item.id)}
             label={item.name}
-            meta={sizeFormat.format(item.size / 1000)}
+            meta={fileSize(item.size)}
             metaId={`attachment-size-${item.id}`}
             actions={
               access.canWrite && (

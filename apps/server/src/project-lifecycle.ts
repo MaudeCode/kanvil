@@ -101,15 +101,15 @@ async function assertTransferable(ctx: Context, workspaceId: string) {
 async function transferImpact(ctx: Context, workspaceId: string) {
   const current = project(ctx),
     // Qualified, since a single-table select renders bare "id", which the subquery binds to p.
-    userId = sql`${user}."id"`;
+    qualifiedUser = sql`${user}."id"`;
   const people = await ctx.db
     .select({
       userId: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
-      before: projectRoleSQL(userId, current.id),
-      after: projectRoleSQL(userId, current.id, workspaceId),
+      before: projectRoleSQL(qualifiedUser, current.id),
+      after: projectRoleSQL(qualifiedUser, current.id, workspaceId),
     })
     .from(user)
     .where(

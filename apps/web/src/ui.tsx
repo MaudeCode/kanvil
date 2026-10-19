@@ -610,10 +610,12 @@ export function FormActions({
   onCancel,
   cancelLabel = "Cancel",
   submitDisabled = false,
+  danger = false,
   children,
 }: {
   error?: unknown;
   layout?: "dialog" | "inline";
+  danger?: boolean;
   pending?: boolean;
   submitLabel: ReactNode;
   pendingLabel?: ReactNode;
@@ -634,7 +636,11 @@ export function FormActions({
             {cancelLabel}
           </Button>
         )}
-        <Button type="submit" variant="default" disabled={pending || submitDisabled}>
+        <Button
+          type="submit"
+          variant={danger ? "destructive" : "default"}
+          disabled={pending || submitDisabled}
+        >
           {pending && <Spinner />}
           {pending && pendingLabel ? pendingLabel : submitLabel}
         </Button>
@@ -715,6 +721,12 @@ export function Confirm({
   );
 }
 
+const sizeFormat = new Intl.NumberFormat(undefined, {
+  style: "unit",
+  unit: "kilobyte",
+  maximumFractionDigits: 1,
+});
+export const fileSize = (bytes: number) => sizeFormat.format(bytes / 1000);
 export function RelativeTime({ value, className }: { value: string; className?: string }) {
   const parsed = new Date(value);
   return (

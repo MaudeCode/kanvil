@@ -41,9 +41,11 @@ describe("project lifecycle", () => {
         }),
       ),
     );
-    [owner, member, guest, deputy] = await Promise.all(
-      people.map((person) => domain.actor(person.user.id)),
-    );
+    const actors = await Promise.all(people.map((person) => domain.actor(person.user.id)));
+    owner = requireRow(actors[0]);
+    member = requireRow(actors[1]);
+    guest = requireRow(actors[2]);
+    deputy = requireRow(actors[3]);
   });
   afterAll(async () => {
     await fixture?.close();

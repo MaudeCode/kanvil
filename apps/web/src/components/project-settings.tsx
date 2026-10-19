@@ -24,6 +24,7 @@ import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
 import { CustomFieldSettings } from "./custom-field-settings.tsx";
 import { ProjectDestinations } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
+import { ArchiveProjectRow, DeleteProjectRow, MoveProject } from "./project-lifecycle.tsx";
 import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
@@ -37,7 +38,11 @@ export function ProjectSettings({
   const update = useOperation("update_project"),
     member = useOperation("set_member"),
     access = useProjectAccess(project.id),
-    workspace = useWorkspace();
+    workspace = useWorkspace(),
+    // Workspaces the project can move to: the administrator must also administer the destination.
+    destinations = workspace.workspaces.filter(
+      (space) => space.role === "admin" && space.id !== project.workspaceId,
+    );
   const members = useQuery(api.query("list_members", { projectId: project.id }));
   const candidates = useQuery({
     ...api.query("list_workspace_members", { workspaceId: project.workspaceId }),
@@ -51,12 +56,12 @@ export function ProjectSettings({
             <EditableHeading
               name={project.name}
               description={project.description}
-              canEdit={access.canAdmin}
+              canEdit={access.canManage}
               version={project.version}
               pending={update.isPending}
               error={update.error}
               editLabel="Edit project"
-              media={<ProjectIconPicker project={project} disabled={!access.canAdmin} />}
+              media={<ProjectIconPicker project={project} disabled={!access.canManage} />}
               badges={
                 <>
                   <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
@@ -108,7 +113,7 @@ export function ProjectSettings({
                 labelHidden
                 className="mb-0 w-56"
                 value={project.visibility}
-                disabled={!access.canAdmin || update.isPending}
+                disabled={!access.canManage || update.isPending}
                 onValueChange={(value) => {
                   const visibility = value === "private" ? "private" : "workspace";
                   if (visibility === project.visibility) return;
@@ -128,9 +133,14 @@ export function ProjectSettings({
                 <SelectItem value="private">Only project members</SelectItem>
               </Select>
             </SettingRow>
-            <PublicLink project={project} canAdmin={access.canAdmin} />
-            <ProjectBackground project={project} canAdmin={access.canAdmin} />
+            <PublicLink project={project} canAdmin={access.canManage} />
+            <ProjectBackground project={project} canAdmin={access.canManage} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
+              {access.canManage &&
+                workspace.active?.role === "admin" &&
+                destinations.length > 0 && (
+                  <MoveProject project={project} destinations={destinations} />
+                )}
               {workspace.active?.role && (
                 <Button
                   render={
@@ -144,6 +154,12 @@ export function ProjectSettings({
                 </Button>
               )}
             </SettingRow>
+            {access.canManage && (
+              <>
+                <ArchiveProjectRow project={project} />
+                <DeleteProjectRow project={project} />
+              </>
+            )}
           </section>
         </SettingsPanel>
         <SettingsPanel value="members">
@@ -153,7 +169,7 @@ export function ProjectSettings({
             pending={member.isPending}
             loading={members.isPending}
             error={members.error}
-            canAdmin={access.canAdmin}
+            canAdmin={access.canManage}
             scope="project"
             onChange={(email, role) => member.mutateAsync({ projectId: project.id, email, role })}
           />

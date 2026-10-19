@@ -26,7 +26,7 @@ import {
 import { toast } from "sonner";
 import { type Ticket, type Project, type Output } from "@kanvil/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, useOperation, useProjectAccess, useProjects } from "../data.tsx";
+import { api, projectsQuery, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { Confirm, Modal, Loading, reportError } from "../ui.tsx";
 import {
   PropertyValue,
@@ -162,7 +162,7 @@ export function useProjectMove() {
     place: (project: Project, anchor: string, below: boolean) => {
       if (move.isPending) return;
       cache.setQueryData<Output<"list_projects">>(
-        api.query("list_projects", {}).queryKey,
+        projectsQuery().queryKey,
         (rows) => rows && placeNear(rows, project.id, anchor, below),
       );
       void move
@@ -445,7 +445,7 @@ export function ProjectContextMenu({
             New ticket
           </ContextMenuItem>
           <ContextMenuItem
-            disabled={!access.canAdmin}
+            disabled={!access.canManage}
             render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
           >
             <Settings />

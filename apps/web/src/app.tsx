@@ -19,7 +19,7 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { Settings, FolderOpen, ChevronRight } from "lucide-react";
-import { hasAdminRole, formatEvent } from "@kanvil/contracts";
+import { hasAdminRole, formatEvent, type Output } from "@kanvil/contracts";
 import {
   groupSettingsSearchSchema,
   projectSettingsSearchSchema,
@@ -41,6 +41,8 @@ import {
   auth,
   Identity,
   useLive,
+  useAllProjects,
+  useProject,
   useProjects,
   useWorkspace,
   useIdentity,
@@ -418,14 +420,19 @@ function WorkOverview({ workspaceId }: { workspaceId: string }) {
 }
 function ProjectDirectory() {
   const projects = useProjects(),
+    all = useAllProjects(),
     workspace = useWorkspace(),
     [query, setQuery] = useState("");
-  const matches =
-    projects.data?.filter((project) =>
-      `${project.name} ${project.key} ${project.description}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-    ) ?? [];
+  const matching = (project: Output<"list_projects">[number]) =>
+    `${project.name} ${project.key} ${project.description}`
+      .toLowerCase()
+      .includes(query.toLowerCase());
+  const matches = projects.data?.filter(matching) ?? [],
+    archived =
+      all.data?.filter(
+        (project) =>
+          project.archivedAt && project.workspaceId === workspace.active?.id && matching(project),
+      ) ?? [];
   return (
     <section aria-label="Projects">
       <SectionHeading
@@ -451,74 +458,7 @@ function ProjectDirectory() {
       ) : (
         <ItemGroup className="project-list gap-0 border-t">
           {matches.map((project) => (
-            <ProjectContextMenu key={project.id} project={project}>
-              <Item
-                role="listitem"
-                className="group/project flex-nowrap gap-3 rounded-none border-x-0 border-t-0 border-b-border py-3 transition-colors hover:bg-muted/40"
-              >
-                <Link
-                  to="/projects/$projectId"
-                  params={{ projectId: project.id }}
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <ItemMedia>
-                    <ProjectIcon
-                      project={project}
-                      className="size-10 rounded-lg bg-muted/50 p-1 transition-transform group-hover/project:scale-105"
-                    />
-                  </ItemMedia>
-                  <ItemContent className="min-w-0 gap-0.5">
-                    <ItemTitle className="line-clamp-none flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="min-w-0 wrap-anywhere text-sm font-medium">
-                        {project.name}
-                      </span>
-                      <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                        {project.key}
-                      </Badge>
-                    </ItemTitle>
-                    <p className="m-0 text-xs text-muted-foreground tabular-nums">
-                      {project.openTickets === 0
-                        ? "No open tickets"
-                        : `${project.openTickets} open`}
-                      {project.overdueTickets > 0 && (
-                        <span className="text-(--warning)">
-                          {" "}
-                          · {project.overdueTickets} overdue
-                        </span>
-                      )}
-                      {project.closedTickets + project.openTickets > 0 &&
-                        ` · ${Math.round(
-                          (100 * project.closedTickets) /
-                            (project.closedTickets + project.openTickets),
-                        )}% done`}
-                      {project.nextDueAt && (
-                        <>
-                          {" · next due "}
-                          <RelativeTime value={project.nextDueAt} />
-                        </>
-                      )}
-                    </p>
-                    {project.description && (
-                      <ItemDescription className="m-0 line-clamp-2 text-xs leading-5">
-                        {project.description}
-                      </ItemDescription>
-                    )}
-                  </ItemContent>
-                </Link>
-                <ItemActions>
-                  <IconButton
-                    label={`Project settings for ${project.name}`}
-                    className="text-muted-foreground opacity-0 transition-opacity group-hover/project:opacity-100 focus-visible:opacity-100 hover:text-foreground max-md:opacity-100"
-                    render={
-                      <Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />
-                    }
-                  >
-                    <Settings />
-                  </IconButton>
-                  <ChevronRight className="size-4 text-muted-foreground/60" aria-hidden="true" />
-                </ItemActions>
-              </Item>
-            </ProjectContextMenu>
+            <ProjectRow key={project.id} project={project} />
           ))}
           {projects.data?.length !== 0 && matches.length === 0 && (
             <EmptyState title="No matching projects">
@@ -527,11 +467,86 @@ function ProjectDirectory() {
           )}
           {!workspace.active && !workspace.pending && <EmptyState title="No workspaces yet" />}
           {workspace.active && projects.data?.length === 0 && (
-            <EmptyState title="No projects yet" icon={FolderOpen} />
+            <EmptyState
+              title={archived.length ? "No active projects" : "No projects yet"}
+              icon={FolderOpen}
+            />
           )}
         </ItemGroup>
       )}
+      {archived.length > 0 && (
+        <section aria-label="Archived projects" className="mt-8">
+          <SectionHeading compact title="Archived" />
+          <ItemGroup className="project-list gap-0 border-t opacity-80">
+            {archived.map((project) => (
+              <ProjectRow key={project.id} project={project} />
+            ))}
+          </ItemGroup>
+        </section>
+      )}
     </section>
+  );
+}
+function ProjectRow({ project }: { project: Output<"list_projects">[number] }) {
+  return (
+    <ProjectContextMenu project={project}>
+      <Item
+        role="listitem"
+        className="group/project flex-nowrap gap-3 rounded-none border-x-0 border-t-0 border-b-border py-3 transition-colors hover:bg-muted/40"
+      >
+        <Link
+          to="/projects/$projectId"
+          params={{ projectId: project.id }}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ItemMedia>
+            <ProjectIcon
+              project={project}
+              className="size-10 rounded-lg bg-muted/50 p-1 transition-transform group-hover/project:scale-105"
+            />
+          </ItemMedia>
+          <ItemContent className="min-w-0 gap-0.5">
+            <ItemTitle className="line-clamp-none flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="min-w-0 wrap-anywhere text-sm font-medium">{project.name}</span>
+              <Badge variant="secondary" className="font-mono text-[10px] font-normal">
+                {project.key}
+              </Badge>
+            </ItemTitle>
+            <p className="m-0 text-xs text-muted-foreground tabular-nums">
+              {project.openTickets === 0 ? "No open tickets" : `${project.openTickets} open`}
+              {project.overdueTickets > 0 && (
+                <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
+              )}
+              {project.closedTickets + project.openTickets > 0 &&
+                ` · ${Math.round(
+                  (100 * project.closedTickets) / (project.closedTickets + project.openTickets),
+                )}% done`}
+              {project.nextDueAt && (
+                <>
+                  {" · next due "}
+                  <RelativeTime value={project.nextDueAt} />
+                </>
+              )}
+            </p>
+            {project.description && (
+              <ItemDescription className="m-0 line-clamp-2 text-xs leading-5">
+                {project.description}
+              </ItemDescription>
+            )}
+          </ItemContent>
+        </Link>
+        <ItemActions>
+          <IconButton
+            label={`Project settings for ${project.name}`}
+            className="text-muted-foreground opacity-0 transition-opacity group-hover/project:opacity-100 focus-visible:opacity-100 hover:text-foreground max-md:opacity-100"
+            render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
+          >
+            <Settings />
+          </IconButton>
+          <ChevronRight className="size-4 text-muted-foreground/60" aria-hidden="true" />
+        </ItemActions>
+      </Item>
+    </ProjectContextMenu>
   );
 }
 function NotFoundPage() {
@@ -660,8 +675,8 @@ function ProjectPage({ planning = false }: { planning?: boolean }) {
   const { projectId } = route.useParams(),
     search = route.useSearch(),
     navigate = route.useNavigate(),
-    projects = useProjects(),
-    project = projects.data?.find((item) => item.id === projectId);
+    projects = useProject(projectId),
+    project = projects.data;
   return project ? (
     <TicketList
       key={`${project.id}:${planning}`}
@@ -754,8 +769,8 @@ const projectSettings = createRoute({
 function ProjectSettingsPage() {
   const { projectId } = projectSettings.useParams(),
     search = projectSettings.useSearch(),
-    projects = useProjects(),
-    project = projects.data?.find((item) => item.id === projectId);
+    projects = useProject(projectId),
+    project = projects.data;
   return project ? (
     <ProjectSettings project={project} section={search.section} />
   ) : projects.isPending ? (

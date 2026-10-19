@@ -29,11 +29,15 @@ export async function signOut(identity: { clearPrivateData: () => void }, next =
   identity.clearPrivateData();
   window.location.assign(next);
 }
-export function useOperation<K extends Operation>(name: K) {
+// `before` runs ahead of the refetch, such as leaving a page whose subject the write removed.
+export function useOperation<K extends Operation>(name: K, before?: () => Promise<unknown>) {
   const cache = useQueryClient();
   return useMutation({
     ...api.action(name),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
+    onSuccess: async () => {
+      await before?.();
+      return cache.invalidateQueries({ queryKey: ["kanvil"] });
+    },
   });
 }
 export const WorkspaceSelection = createContext<{
@@ -45,13 +49,24 @@ export const WorkspaceSelection = createContext<{
 }>({ active: undefined, workspaces: [], pending: true, error: undefined, select: () => {} });
 export const useWorkspace = () => useContext(WorkspaceSelection);
 export const useWorkspaces = () => useQuery(api.query("list_workspaces", {}));
-export const useAllProjects = () => useQuery(api.query("list_projects", {}));
+// One cached project list, archived projects included: they still open, read only, by link.
+export const projectsQuery = () => api.query("list_projects", { archived: "include" });
+export const useAllProjects = () => useQuery(projectsQuery());
+// The active workspace's projects for navigation and pickers; archived ones are left out.
 export function useProjects() {
   const { active } = useWorkspace();
   return useQuery({
-    ...api.query("list_projects", {}),
+    ...projectsQuery(),
     select: (projects) =>
-      active ? projects.filter((project) => project.workspaceId === active.id) : [],
+      active
+        ? projects.filter((project) => project.workspaceId === active.id && !project.archivedAt)
+        : [],
+  });
+}
+export function useProject(projectId: string) {
+  return useQuery({
+    ...projectsQuery(),
+    select: (projects) => projects.find((project) => project.id === projectId),
   });
 }
 // Project-wide reads that only change on these event families; ticket traffic leaves them alone.
@@ -116,16 +131,24 @@ export function clearPrivateStorage(userId: string) {
 export { formatTimestamp as date } from "@kanvil/contracts";
 
 // Reads the server's effective role from the shared list_projects cache, so checking many
-// projects costs one request.
+// projects costs one request. An archived project is read only: `canManage` keeps the
+// administrator's lifecycle, details, and access controls, which the server still accepts.
 export function useProjectAccess(projectId: string, enabled = true) {
   const identity = useIdentity(),
     projects = useQuery({
-      ...api.query("list_projects", {}),
-      enabled: enabled && !identity.admin,
-      select: (rows) => rows.find((project) => project.id === projectId)?.role,
+      ...projectsQuery(),
+      enabled,
+      select: (rows) => rows.find((project) => project.id === projectId),
     });
-  const role = identity.admin ? "admin" : projects.data;
-  return { role, canWrite: role === "writer" || role === "admin", canAdmin: role === "admin" };
+  const role = identity.admin ? "admin" : projects.data?.role,
+    archived = !!projects.data?.archivedAt;
+  return {
+    role,
+    archived,
+    canWrite: !archived && (role === "writer" || role === "admin"),
+    canAdmin: !archived && role === "admin",
+    canManage: role === "admin",
+  };
 }
 export function ActorName({
   projectId,

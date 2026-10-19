@@ -72,6 +72,13 @@ describe("HTTP, realtime, and MCP", () => {
       headers: sessionHeaders,
       fetch: async (input, init) => application.app.fetch(new Request(input, init)),
     });
+  const listedProjects = async (query = "") =>
+    z
+      .array(z.object({ id: z.string() }))
+      .parse(
+        await (await request(`/api/v1/projects${query}`, { headers: sessionHeaders() })).json(),
+      )
+      .map((row) => row.id);
   const newProject = () =>
     client().call("create_project", {
       key: `H${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
@@ -647,28 +654,22 @@ describe("HTTP, realtime, and MCP", () => {
         headers: sessionHeaders(),
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
-    const listed = async (query = "") =>
-      z
-        .array(z.object({ id: z.string() }))
-        .parse(
-          await (await request(`/api/v1/projects${query}`, { headers: sessionHeaders() })).json(),
-        )
-        .map((row) => row.id);
+
     const archived = await send("POST", "/archive", {
       expectedVersion: project.version,
       archived: true,
     });
     expect(archived.status).toBe(200);
     const { version } = z.object({ version: z.number() }).parse(await archived.json());
-    expect(await listed()).not.toContain(project.id);
-    expect(await listed("?archived=only")).toContain(project.id);
+    expect(await listedProjects()).not.toContain(project.id);
+    expect(await listedProjects("?archived=only")).toContain(project.id);
     const blocked = await send("POST", "/tickets", { title: "Not while archived" });
     expect(blocked.status).toBe(409);
     expect(await blocked.json()).toMatchObject({ error: { code: "project_archived" } });
     expect(
       (await send("POST", "/archive", { expectedVersion: version, archived: false })).status,
     ).toBe(200);
-    expect(await listed()).toContain(project.id);
+    expect(await listedProjects()).toContain(project.id);
     const impact = await send("GET", "/impact");
     expect(impact.status).toBe(200);
     expect(await impact.json()).toMatchObject({ tickets: 0, blockers: [], transfer: null });
