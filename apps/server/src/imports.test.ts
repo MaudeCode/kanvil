@@ -282,6 +282,29 @@ describe("ticket export and import runs", () => {
         expect.objectContaining({ severity: "warning", code: "unassigned" }),
       ]),
     );
+    // An empty value of a required field is no value, whatever form it takes.
+    const required = await preview(prefix("Q"), owner, {
+      customFields: [
+        ...bundle.customFields,
+        {
+          ref: "owner-field",
+          name: "Owner team",
+          type: "text",
+          options: [],
+          required: true,
+          defaultValue: null,
+        },
+      ],
+      tickets: bundle.tickets.map((ticket) => ({
+        ...ticket,
+        customFields: { ...ticket.customFields, "owner-field": "" },
+      })),
+    });
+    expect(required.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: "error", code: "missing_required_field" }),
+      ]),
+    );
     // A comment at the length limit loses its end to the attribution line, and the preview says so.
     const long = await preview(prefix("L"), owner, {
       comments: bundle.comments.map((comment) => ({ ...comment, body: "x".repeat(50_000) })),

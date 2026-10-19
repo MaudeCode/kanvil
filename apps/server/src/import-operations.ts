@@ -295,6 +295,9 @@ function findings() {
 const attribution = (author: string | undefined, at: string) =>
   `Originally by ${author ?? "an unknown author"} on ${at.slice(0, 10)}.\n\n`;
 
+// Whether a field fills new tickets itself; an empty default is none, as on the server.
+const defaulted = (field: TicketExport["customFields"][number]) =>
+  (customFieldValueSchema(field).safeParse(field.defaultValue).data ?? null) !== null;
 // The default state a source state of the same name lands on.
 const defaults = (state: { name: string }) =>
   defaultWorkflow.find((item) => item.name.toLowerCase() === state.name.toLowerCase());
@@ -415,23 +418,23 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       warn("unassigned", "Tickets lose an assignee who cannot open the new project", ticket.key);
     if (ticket.parentRef && !byRef.has(ticket.parentRef))
       warn("missing_parent", "Tickets lose a parent the file does not include", ticket.key);
+    // Values are judged as normalized: an empty text or choice list is no value.
+    const filled = new Set<string>();
     for (const [ref, value] of Object.entries(ticket.customFields)) {
-      const field = fields.get(ref);
+      const field = fields.get(ref),
+        parsed = field && customFieldValueSchema(field).safeParse(value);
       if (!field)
         error(
           "unknown_field",
           "Tickets hold values of a field the file does not define",
           ticket.key,
         );
-      else if (!customFieldValueSchema(field).safeParse(value).success)
+      else if (!parsed?.success)
         error("invalid_field_value", `Values that do not fit ${field.name}`, ticket.key);
+      else if (parsed.data !== null) filled.add(ref);
     }
     for (const field of bundle.customFields)
-      if (
-        field.required &&
-        field.defaultValue === null &&
-        !Object.hasOwn(ticket.customFields, field.ref)
-      )
+      if (field.required && !defaulted(field) && !filled.has(field.ref))
         error(
           "missing_required_field",
           `Tickets without a value for required ${field.name}`,

@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import {
   importStatusLabels,
   ticketExportSchema,
+  ticketImportSchema,
   type ImportRun,
   type TicketExport,
 } from "@kanvil/contracts";
@@ -118,13 +119,19 @@ function ImportForm({
     [visibility, setVisibility] = useState<"workspace" | "private">("workspace"),
     [run, setRun] = useState<ImportRun>();
   const preview = useOperation("preview_import"),
-    start = useOperation("start_import");
+    start = useOperation("start_import"),
+    // Counts edits, so a preview answered after one is dropped rather than shown for new values.
+    edits = useRef(0);
+  const discard = () => {
+    edits.current += 1;
+    setRun(undefined);
+    preview.reset();
+  };
   const changed =
     <T,>(set: (value: T) => void) =>
     (value: T) => {
       set(value);
-      setRun(undefined);
-      preview.reset();
+      discard();
     };
   const ready = !!run && !blocked(run);
   return (
@@ -137,11 +144,15 @@ function ImportForm({
             .mutateAsync({ workspaceId, importId: run.id, expectedVersion: run.version })
             .then((started) => onStarted(started.id))
             .catch(() => {});
-        else
+        else {
+          const asked = edits.current;
           void preview
             .mutateAsync({ workspaceId, key, name, visibility, bundle })
-            .then(setRun)
+            .then((staged) => {
+              if (edits.current === asked) setRun(staged);
+            })
             .catch(() => {});
+        }
       }}
     >
       <Input
@@ -152,7 +163,7 @@ function ImportForm({
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];
           setBundle(undefined);
-          setRun(undefined);
+          discard();
           setFileError(undefined);
           if (!file) return;
           void file
@@ -161,7 +172,7 @@ function ImportForm({
               const data: unknown = JSON.parse(text);
               if (!ticketExportSchema.pick({ format: true }).safeParse(data).success)
                 throw new Error(notExport);
-              const parsed = ticketExportSchema.parse(data);
+              const parsed = ticketImportSchema.parse(data);
               setBundle(parsed);
               setName(parsed.project.name);
               setKey(

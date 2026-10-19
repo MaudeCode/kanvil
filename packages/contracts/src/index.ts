@@ -1245,115 +1245,123 @@ export const importLimits = {
   resources: 10_000,
 } as const;
 const sourceRef = z.string().min(1).max(200);
-const exported = <T extends z.ZodType>(item: T, max: number) => z.array(item).max(max).default([]);
-export const ticketExportSchema = z.object({
-  format: z.literal(ticketExportFormat),
-  version: z.literal(1),
-  exportedAt: timestamp,
-  project: z.object({
-    ref: sourceRef,
-    key: z.string().max(20),
-    name: text.max(120),
-    description: z.string().max(5000).default(""),
-  }),
-  completeness: z
-    .object({
-      omitted: z
-        .array(
-          z.object({
-            content: z.string().max(80),
-            // Null when the source did not count it.
-            count: count.nullable(),
-            reason: z.string().max(500),
-          }),
-        )
-        .max(50),
-    })
-    .default({ omitted: [] }),
-  // The people records name: assignees, ticket creators, and authors. Imports match them by email.
-  members: exported(
-    z.object({ ref: sourceRef, name: z.string().max(200), email: z.string().max(320) }),
-    importLimits.members,
-  ),
-  workflow: z
-    .array(
+// Exports carry projects of any size; `capped` applies `importLimits` to what an import accepts.
+const bundleSchema = (capped: boolean) => {
+  const exported = <T extends z.ZodType>(item: T, max: number) => {
+    const items = z.array(item);
+    return (capped ? items.max(max) : items).default([]);
+  };
+  return z.object({
+    format: z.literal(ticketExportFormat),
+    version: z.literal(1),
+    exportedAt: timestamp,
+    project: z.object({
+      ref: sourceRef,
+      key: z.string().max(20),
+      name: text.max(120),
+      description: z.string().max(5000).default(""),
+    }),
+    completeness: z
+      .object({
+        omitted: z
+          .array(
+            z.object({
+              content: z.string().max(80),
+              // Null when the source did not count it.
+              count: count.nullable(),
+              reason: z.string().max(500),
+            }),
+          )
+          .max(50),
+      })
+      .default({ omitted: [] }),
+    // The people records name: assignees, ticket creators, and authors. Imports match them by email.
+    members: exported(
+      z.object({ ref: sourceRef, name: z.string().max(200), email: z.string().max(320) }),
+      importLimits.members,
+    ),
+    workflow: z
+      .array(
+        z.object({
+          ref: sourceRef,
+          name: text.max(40),
+          category: z.enum(states),
+          color: labelColor.default("default"),
+        }),
+      )
+      .min(1)
+      .max(50),
+    customFields: exported(
+      customFieldSchema
+        .pick({ name: true, type: true, options: true, required: true, defaultValue: true })
+        .extend({ ref: sourceRef }),
+      customFieldLimit,
+    ),
+    labels: exported(
+      z.object({ name: text.max(40), color: labelColor.default("gray") }),
+      importLimits.labels,
+    ),
+    tickets: exported(
+      z.object({
+        ...ticketFields.pick({
+          title: true,
+          description: true,
+          acceptanceCriteria: true,
+          priority: true,
+          kind: true,
+          difficulty: true,
+          labels: true,
+          scopes: true,
+          automationReady: true,
+          holdReason: true,
+          startAt: true,
+          dueAt: true,
+          archived: true,
+        }).shape,
+        ref: sourceRef,
+        // The key in the source; an import issues new keys.
+        key: z.string().max(40),
+        stateRef: sourceRef,
+        assigneeRef: sourceRef.nullable().default(null),
+        parentRef: sourceRef.nullable().default(null),
+        // Values by field `ref`.
+        customFields: z.record(sourceRef, customFieldValue).default({}),
+        createdByRef: sourceRef.nullable().default(null),
+        createdAt: timestamp.nullable().default(null),
+      }),
+      importLimits.tickets,
+    ),
+    relations: exported(
+      z.object({ sourceRef, targetRef: sourceRef, type: relationSchema.shape.type }),
+      importLimits.relations,
+    ),
+    comments: exported(
       z.object({
         ref: sourceRef,
-        name: text.max(40),
-        category: z.enum(states),
-        color: labelColor.default("default"),
+        ticketRef: sourceRef,
+        authorRef: sourceRef.nullable(),
+        body: text.max(50_000),
+        createdAt: timestamp,
       }),
-    )
-    .min(1)
-    .max(50),
-  customFields: exported(
-    customFieldSchema
-      .pick({ name: true, type: true, options: true, required: true, defaultValue: true })
-      .extend({ ref: sourceRef }),
-    customFieldLimit,
-  ),
-  labels: exported(
-    z.object({ name: text.max(40), color: labelColor.default("gray") }),
-    importLimits.labels,
-  ),
-  tickets: exported(
-    z.object({
-      ...ticketFields.pick({
-        title: true,
-        description: true,
-        acceptanceCriteria: true,
-        priority: true,
-        kind: true,
-        difficulty: true,
-        labels: true,
-        scopes: true,
-        automationReady: true,
-        holdReason: true,
-        startAt: true,
-        dueAt: true,
-        archived: true,
-      }).shape,
-      ref: sourceRef,
-      // The key in the source; an import issues new keys.
-      key: z.string().max(40),
-      stateRef: sourceRef,
-      assigneeRef: sourceRef.nullable().default(null),
-      parentRef: sourceRef.nullable().default(null),
-      // Values by field `ref`.
-      customFields: z.record(sourceRef, customFieldValue).default({}),
-      createdByRef: sourceRef.nullable().default(null),
-      createdAt: timestamp.nullable().default(null),
-    }),
-    importLimits.tickets,
-  ),
-  relations: exported(
-    z.object({ sourceRef, targetRef: sourceRef, type: relationSchema.shape.type }),
-    importLimits.relations,
-  ),
-  comments: exported(
-    z.object({
-      ref: sourceRef,
-      ticketRef: sourceRef,
-      authorRef: sourceRef.nullable(),
-      body: text.max(50_000),
-      createdAt: timestamp,
-    }),
-    importLimits.comments,
-  ),
-  evidence: exported(
-    evidenceFields.extend({
-      ref: sourceRef,
-      ticketRef: sourceRef,
-      authorRef: sourceRef.nullable(),
-      createdAt: timestamp,
-    }),
-    importLimits.evidence,
-  ),
-  resources: exported(
-    resourceFields.extend({ ref: sourceRef, ticketRef: sourceRef, createdAt: timestamp }),
-    importLimits.resources,
-  ),
-});
+      importLimits.comments,
+    ),
+    evidence: exported(
+      evidenceFields.extend({
+        ref: sourceRef,
+        ticketRef: sourceRef,
+        authorRef: sourceRef.nullable(),
+        createdAt: timestamp,
+      }),
+      importLimits.evidence,
+    ),
+    resources: exported(
+      resourceFields.extend({ ref: sourceRef, ticketRef: sourceRef, createdAt: timestamp }),
+      importLimits.resources,
+    ),
+  });
+};
+export const ticketExportSchema = bundleSchema(false);
+export const ticketImportSchema = bundleSchema(true);
 export type TicketExport = z.output<typeof ticketExportSchema>;
 // A staged import into a new project: previewed, then started, then written in the background.
 export const importStatuses = ["previewed", "running", "completed", "failed", "cancelled"] as const;
@@ -1837,7 +1845,7 @@ export const operations = {
         key: projectKey,
         name: text.max(120),
         visibility: z.enum(["workspace", "private"]).default("private"),
-        bundle: ticketExportSchema,
+        bundle: ticketImportSchema,
       })
       .strict(),
     importRunSchema,
