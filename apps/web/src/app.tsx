@@ -1,7 +1,7 @@
 import { ProjectIcon } from "./components/project-icon.tsx";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -32,6 +32,7 @@ import {
   workSearchSchema,
   resultsSearchSchema,
   inboxSearchSchema,
+  previewSearchSchema,
 } from "./search.ts";
 import { SearchResults } from "./search-results.tsx";
 import { Inbox } from "./inbox.tsx";
@@ -65,6 +66,7 @@ import {
 } from "./ui.tsx";
 import { TicketLink } from "./components/ticket-link.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
+import { TicketPreviewController } from "./components/ticket-preview.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateWorkspace } from "./components/workspace-switcher.tsx";
 import { CreateProject } from "./components/create-project.tsx";
@@ -260,42 +262,52 @@ function Shell() {
 
   return (
     <WorkspaceProvider>
-      <SidebarProvider
-        defaultOpen={
-          sidebar === "last"
-            ? !document.cookie.split("; ").includes("sidebar_state=false")
-            : sidebar === "expanded"
-        }
-      >
-        <a
-          className="fixed top-3 left-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0"
-          href="#main"
+      <TicketPreviewController content={MemberPreview}>
+        <SidebarProvider
+          defaultOpen={
+            sidebar === "last"
+              ? !document.cookie.split("; ").includes("sidebar_state=false")
+              : sidebar === "expanded"
+          }
         >
-          {t("shell.app.skipToContent")}
-        </a>
-        <AppSidebar />
-        <SidebarInset className="min-w-0 has-[.ticket-list-controls]:max-h-svh md:has-[.ticket-list-controls]:max-h-[calc(100svh-1rem)]">
-          <WorkspaceHeader />
-          <div
-            id="main"
-            className="content @container w-full min-w-0 has-[.project-background]:relative has-[.project-background]:isolate px-5 pt-4 pb-12 has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col has-[.ticket-list-controls]:pt-2 has-[.ticket-list-controls]:pb-0 max-[650px]:px-4 max-[650px]:pt-6 max-[650px]:pb-10 md:px-8"
-            tabIndex={-1}
+          <a
+            className="fixed top-3 left-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0"
+            href="#main"
           >
-            <ProjectLabelProvider projectId={projectId}>
-              <div
-                key={pathname}
-                className="mx-auto max-w-[1440px] animate-in fade-in-0 duration-200 has-[.ticket-detail]:max-w-none has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:w-full has-[.ticket-list-controls]:max-w-none has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col"
-              >
-                {/* Lazy route chunks suspend here, so the shell and sidebar never flash or lose focus. */}
-                <Suspense fallback={<Loading />}>
-                  <Outlet />
-                </Suspense>
-              </div>
-            </ProjectLabelProvider>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+            {t("shell.app.skipToContent")}
+          </a>
+          <AppSidebar />
+          <SidebarInset className="min-w-0 has-[.ticket-list-controls]:max-h-svh md:has-[.ticket-list-controls]:max-h-[calc(100svh-1rem)]">
+            <WorkspaceHeader />
+            <div
+              id="main"
+              className="content @container w-full min-w-0 has-[.project-background]:relative has-[.project-background]:isolate px-5 pt-4 pb-12 has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col has-[.ticket-list-controls]:pt-2 has-[.ticket-list-controls]:pb-0 max-[650px]:px-4 max-[650px]:pt-6 max-[650px]:pb-10 md:px-8"
+              tabIndex={-1}
+            >
+              <ProjectLabelProvider projectId={projectId}>
+                <div
+                  key={pathname}
+                  className="mx-auto max-w-[1440px] animate-in fade-in-0 duration-200 has-[.ticket-detail]:max-w-none has-[.ticket-list-controls]:flex has-[.ticket-list-controls]:min-h-0 has-[.ticket-list-controls]:w-full has-[.ticket-list-controls]:max-w-none has-[.ticket-list-controls]:flex-1 has-[.ticket-list-controls]:flex-col"
+                >
+                  {/* Lazy route chunks suspend here, so the shell and sidebar never flash or lose focus. */}
+                  <Suspense fallback={<Loading />}>
+                    <Outlet />
+                  </Suspense>
+                </div>
+              </ProjectLabelProvider>
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </TicketPreviewController>
     </WorkspaceProvider>
+  );
+}
+// The previewed ticket reads its own project's labels, not those of the page below.
+function MemberPreview(props: ComponentProps<typeof TicketDetail>) {
+  return (
+    <ProjectLabelProvider projectId={props.projectId}>
+      <TicketDetail {...props} />
+    </ProjectLabelProvider>
   );
 }
 // Bounded previews; My work and the project directory below hold the complete lists.
@@ -597,6 +609,7 @@ function RouteError({ error, reset }: ErrorComponentProps) {
   );
 }
 const root = createRootRoute({
+  validateSearch: previewSearchSchema,
   component: Root,
   notFoundComponent: NotFoundPage,
   errorComponent: RouteError,
@@ -629,15 +642,28 @@ const invitation = createRoute({
     return <AcceptInvitation token={invitation.useParams().token} />;
   },
 });
-const publicProject = createRoute({
+// Shared projects preview their tickets in a sheet of their own, which reads only the public
+// projection.
+const publicLayout = createRoute({
   getParentRoute: () => root,
+  id: "public",
+  component: function PublicLayout() {
+    return (
+      <TicketPreviewController shared content={PublicTicket}>
+        <Outlet />
+      </TicketPreviewController>
+    );
+  },
+});
+const publicProject = createRoute({
+  getParentRoute: () => publicLayout,
   path: "/public/projects/$projectId",
   component: function PublicProjectPage() {
     return <PublicProject projectId={publicProject.useParams().projectId} />;
   },
 });
 const publicTicket = createRoute({
-  getParentRoute: () => root,
+  getParentRoute: () => publicLayout,
   path: "/public/projects/$projectId/tickets/$ticketId",
   component: function PublicTicketPage() {
     const params = publicTicket.useParams();
@@ -656,8 +682,8 @@ function InboxPage() {
   return (
     <Inbox
       search={search}
-      onSearch={(next, push) => {
-        void navigate({ search: next, replace: !push });
+      onSearch={(next) => {
+        void navigate({ search: next, replace: true });
       }}
     />
   );
@@ -712,8 +738,8 @@ function ProjectPage({ planning = false }: { planning?: boolean }) {
       key={`${project.id}:${planning}`}
       scope={{ project, planning }}
       search={search}
-      onSearch={(next, push) => {
-        void navigate({ search: next, replace: !push });
+      onSearch={(next) => {
+        void navigate({ search: next, replace: true });
       }}
     />
   ) : projects.isPending ? (
@@ -737,8 +763,8 @@ function MyWorkPage() {
       key={workspace.active.id}
       scope={{ workspaceId: workspace.active.id }}
       search={search}
-      onSearch={(next, push) => {
-        void navigate({ search: next, replace: !push });
+      onSearch={(next) => {
+        void navigate({ search: next, replace: true });
       }}
     />
   ) : workspace.pending ? (
@@ -827,8 +853,7 @@ const router = createRouter({
     login,
     consent,
     invitation,
-    publicProject,
-    publicTicket,
+    publicLayout.addChildren([publicProject, publicTicket]),
   ]),
   defaultPreload: "intent",
 });

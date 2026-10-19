@@ -4,6 +4,7 @@ import {
   addAcceptanceCriteria,
   choose,
   openSearch,
+  setProperty,
   settingsLink,
   toggleDisplay,
 } from "./controls.ts";
@@ -1048,4 +1049,115 @@ test("ticket links are added, edited, and removed beside attachments, with remot
     .click();
   await expect(links.getByText("No links", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("ticket references anywhere open one preview sheet over the page they were found on", async ({
+  page,
+  context,
+}) => {
+  await signIn(page);
+  const session = await (await page.request.get("/api/auth/get-session")).json();
+  const create = async (key: string, name: string) =>
+    (await page.request.post("/api/v1/projects", { data: { key, name } })).json();
+  const ticket = async (projectId: string, data: Record<string, unknown>) =>
+    (await page.request.post(`/api/v1/projects/${projectId}/tickets`, { data })).json();
+  const source = await create("PEEKHOME", "Preview source"),
+    other = await create("PEEKOTHER", "Preview other");
+  const parent = await ticket(source.id, {
+    title: "Previewed parent work",
+    assigneeId: session.user.id,
+  });
+  const child = await ticket(source.id, { title: "Previewed child work", parentId: parent.id });
+  const elsewhere = await ticket(other.id, { title: "Work in another project" });
+
+  await page.goto("/");
+  const home = page.getByRole("heading", { name: "Home", exact: true });
+  const assigned = page.getByRole("region", { name: "Assigned to you" });
+  const link = assigned.getByRole("link", { name: new RegExp(parent.title) });
+  // The project directory's search is local state the preview must not reset.
+  await page.getByRole("button", { name: "Search projects", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Search projects" }).fill("Preview");
+  await link.click();
+  const sheet = page.getByRole("dialog", { name: parent.title, exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/\\?.*peek=${parent.id}.*peekProject=${source.id}`));
+  // The page below stays mounted; the modal sheet hides it from assistive technology.
+  await expect(page.locator("#main h1", { hasText: "Home" })).toHaveCount(1);
+  await expect(page.locator("#main input[type=search]")).toHaveValue("Preview");
+
+  // An edit in the sheet settles the page below it.
+  await setProperty(sheet, "Status", "In progress");
+  await expect(
+    page.locator(`#main section[aria-label="Assigned to you"] li`, { hasText: parent.title }),
+  ).toContainText("In progress");
+
+  // A reference inside the sheet replaces its ticket; one sheet stays open.
+  await sheet.getByRole("link", { name: new RegExp(child.title) }).click();
+  const childSheet = page.getByRole("dialog", { name: child.title, exact: true });
+  await expect(childSheet).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  // A ticket from another project brings that project's data and permissions along.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox").fill("another project");
+  await page.getByRole("option", { name: new RegExp(elsewhere.title) }).click();
+  const otherSheet = page.getByRole("dialog", { name: elsewhere.title, exact: true });
+  await expect(otherSheet).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page).toHaveURL(new RegExp(`peek=${elsewhere.id}.*peekProject=${other.id}`));
+  await expect(otherSheet.getByText(elsewhere.key, { exact: true })).toBeVisible();
+  await expect(otherSheet.getByRole("button", { name: "Edit ticket", exact: true })).toBeEnabled();
+
+  // Escape closes it, returns focus to the reference that opened it, and keeps Home's state.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/peek=/);
+  await expect(link).toBeFocused();
+  await expect(home).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Search projects" })).toHaveValue("Preview");
+
+  // Back and Forward close and reopen it; a refresh or a copied link resolves from the URL.
+  await link.click();
+  await expect(sheet).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goForward();
+  await expect(sheet).toBeVisible();
+  await page.reload();
+  await expect(sheet).toBeVisible();
+  await expect(page.locator("#main h1", { hasText: "Home" })).toHaveCount(1);
+  await sheet.getByRole("button", { name: "Close preview", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+
+  // A modified click keeps the full-page link and opens it in a new tab.
+  const opened = context.waitForEvent("page");
+  await link.click({ modifiers: ["ControlOrMeta"] });
+  const tab = await opened;
+  await tab.waitForLoadState();
+  expect(new URL(tab.url()).pathname).toBe(`/projects/${source.id}/tickets/${parent.id}`);
+  await tab.close();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // A ticket moved to another project is followed; one deleted settles as unavailable.
+  const relocated = await page.request.post(
+    `/api/v1/projects/${other.id}/tickets/${elsewhere.id}/relocate`,
+    { data: { expectedVersion: elsewhere.version, destinationProjectId: source.id } },
+  );
+  expect(relocated.ok()).toBe(true);
+  await page.goto(`/?peek=${elsewhere.id}&peekProject=${other.id}`);
+  await expect(page.getByRole("dialog", { name: elsewhere.title, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`peek=${elsewhere.id}.*peekProject=${source.id}`));
+  const deleted = await page.request.delete(
+    `/api/v1/projects/${source.id}/tickets/${elsewhere.id}`,
+    { data: { expectedVersion: (await relocated.json()).version } },
+  );
+  expect(deleted.ok()).toBe(true);
+  const gone = page.getByRole("dialog", { name: "Ticket preview", exact: true });
+  await expect(
+    gone.getByText("This ticket was deleted or you no longer have access."),
+  ).toBeVisible();
+  await expect(gone.getByText(elsewhere.title)).toHaveCount(0);
+  await gone.getByRole("button", { name: "Close preview", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(home).toBeVisible();
 });

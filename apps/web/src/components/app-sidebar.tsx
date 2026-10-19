@@ -31,7 +31,8 @@ import {
 } from "../data.tsx";
 import { Brand, ErrorNotice, IconButton, Loading, Modal } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
-import { SearchResultContent, searchResultLink } from "./search-result.tsx";
+import { SearchResultContent, searchResultAnchor, searchResultLink } from "./search-result.tsx";
+import { useTicketPreview } from "./ticket-preview.tsx";
 import { useTheme } from "./theme-provider.tsx";
 import { useShortcut } from "../hooks/use-shortcut.ts";
 import { useReorderDrag } from "../hooks/use-reorder-drag.ts";
@@ -286,6 +287,7 @@ function CommandPalette() {
     [creating, setCreating] = useState(false),
     projects = useProjects(),
     navigate = useNavigate(),
+    preview = useTicketPreview(),
     identity = useIdentity(),
     { setMode } = useTheme(),
     pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -410,7 +412,18 @@ function CommandPalette() {
                       value={`${result.type}:${result.id}`}
                       // The server already matched these; keep them through the palette's own filter.
                       keywords={[trimmed]}
-                      onSelect={() => run(() => void navigate(searchResultLink(result)))}
+                      onSelect={() =>
+                        run(() => {
+                          // Tickets and comments open in the preview sheet over the page.
+                          if (preview && result.ticket)
+                            preview.open({
+                              projectId: result.project.id,
+                              ticketId: result.ticket.id,
+                              hash: searchResultAnchor(result),
+                            });
+                          else void navigate(searchResultLink(result));
+                        })
+                      }
                     >
                       <SearchResultContent result={result} compact />
                     </CommandItem>

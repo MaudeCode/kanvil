@@ -9,8 +9,10 @@ import { PropertyValue, statusValue } from "./ticket-property.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
+import { usePreviewClick } from "./ticket-preview.tsx";
 
-// Every cross-reference to a ticket shares this link and its hover preview.
+// Every cross-reference to a ticket shares this link and its hover summary. A click opens the
+// layout's preview sheet over the page; a modified click or a new tab follows the full-page href.
 export function TicketLink({
   projectId,
   ticketId,
@@ -41,6 +43,7 @@ export function TicketLink({
   });
   const preview = shared ? published : member,
     detail = preview.data?.ticket;
+  const openPreview = usePreviewClick(shared);
   return (
     <HoverCard open={open} onOpenChange={setOpen}>
       <HoverCardTrigger
@@ -54,6 +57,10 @@ export function TicketLink({
             }
             params={{ projectId, ticketId }}
             {...(hash ? { hash } : {})}
+            onClick={(event) => {
+              setOpen(false);
+              openPreview(event, { projectId, ticketId, hash });
+            }}
             className={cn("ticket-link text-foreground hover:text-primary", className)}
           />
         }

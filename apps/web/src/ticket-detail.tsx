@@ -10,16 +10,14 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
-  Maximize2,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { SheetTitle } from "@/components/ui/sheet";
 import { Trans } from "react-i18next";
 import { type Ticket, ApiError, readinessReasonText } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
@@ -58,65 +56,12 @@ import { ScheduleDates } from "./components/date-picker.tsx";
 import { copyText } from "./lib/browser.ts";
 import { readListOrder } from "./lib/list-order.ts";
 import { copyLink } from "./lib/actions.ts";
+import {
+  PreviewActions,
+  type PreviewTarget,
+  type TicketPreview,
+} from "./components/ticket-preview.tsx";
 
-// The detail as a sheet over a ticket list: the list supplies the order and owns the URL.
-export interface TicketPreview {
-  order: string[];
-  open: (ticketId: string) => void;
-  close: () => void;
-}
-// The preview sheet over a list that stays mounted. `ticket` is the last one shown, so it stays
-// rendered while the sheet closes; `returnFocus` names the list row focus goes back to.
-export function TicketPreviewSheet({
-  open,
-  ticket,
-  order,
-  onOpen,
-  onClose,
-  returnFocus,
-}: {
-  open: boolean;
-  ticket: { id: string; projectId?: string | undefined } | undefined;
-  order: string[];
-  onOpen: (ticketId: string) => void;
-  onClose: () => void;
-  returnFocus: () => HTMLElement | null;
-}) {
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <SheetContent
-        aria-label={t("detail.page.preview")}
-        showCloseButton={false}
-        // The list stays readable beside the preview, so the backdrop only dims it.
-        overlayClassName="supports-backdrop-filter:backdrop-blur-none"
-        className="w-full! gap-0 outline-none sm:max-w-[960px]!"
-        finalFocus={() => returnFocus() ?? true}
-      >
-        <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-8 max-[650px]:px-4">
-          {ticket &&
-            (ticket.projectId ? (
-              <TicketDetail
-                key={ticket.id}
-                projectId={ticket.projectId}
-                ticketId={ticket.id}
-                preview={{ order, open: onOpen, close: onClose }}
-              />
-            ) : (
-              <EmptyState title={t("detail.page.unavailable")}>
-                <p>{t("detail.page.noProject")}</p>
-                <Button onClick={onClose}>{t("detail.page.closePreview")}</Button>
-              </EmptyState>
-            ))}
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
 export function TicketDetail({
   projectId,
   ticketId,
@@ -164,12 +109,21 @@ export function TicketDetail({
   // A link from before a move follows the ticket when the reader can still reach it.
   const moved = useQuery({
     ...api.query("resolve_ticket", { ticketId }),
-    enabled: gone && !preview,
+    enabled: gone,
     retry: false,
+  });
+  // While a preview is open, the URL's anchor belongs to the previewed ticket.
+  const anchor = useRouterState({
+    select: (state) => (preview || !state.location.search.peek ? state.location.hash : ""),
   });
   if (result.isPending || (gone && moved.isFetching)) return <Loading />;
   if (gone && moved.data && moved.data.project.id !== projectId)
-    return (
+    return preview ? (
+      <Follow
+        preview={preview}
+        target={{ projectId: moved.data.project.id, ticketId: moved.data.ticket.id }}
+      />
+    ) : (
       <Navigate
         to="/projects/$projectId/tickets/$ticketId"
         params={{ projectId: moved.data.project.id, ticketId: moved.data.ticket.id }}
@@ -299,26 +253,7 @@ export function TicketDetail({
                 </Button>
               </TicketContextMenu>
               {preview && (
-                <>
-                  <IconButton
-                    label={t("detail.page.openFullPage")}
-                    render={
-                      <Link
-                        to="/projects/$projectId/tickets/$ticketId"
-                        params={{ projectId, ticketId: ticket.id }}
-                      />
-                    }
-                  >
-                    <Maximize2 />
-                  </IconButton>
-                  <IconButton
-                    label={t("detail.page.closePreview")}
-                    shortcut="Esc"
-                    onClick={preview.close}
-                  >
-                    <X />
-                  </IconButton>
-                </>
+                <PreviewActions projectId={projectId} ticketId={ticket.id} preview={preview} />
               )}
             </div>
           </PageHeader>
@@ -392,7 +327,7 @@ export function TicketDetail({
               <TabsTrigger value="activity">{t("detail.section.activity")}</TabsTrigger>
             </TabsList>
             <TabsContent value="discussion" className="animate-in fade-in-0 duration-150">
-              <Discussion ticket={ticket} />
+              <Discussion ticket={ticket} anchor={anchor} />
             </TabsContent>
             <TabsContent value="evidence" className="animate-in fade-in-0 duration-150">
               <Evidence ticket={ticket} />
@@ -542,6 +477,11 @@ export function TicketDetail({
       </Modal>
     </>
   );
+}
+// A preview follows a moved ticket in place, as the full page redirects to it.
+function Follow({ preview, target }: { preview: TicketPreview; target: PreviewTarget }) {
+  useEffect(() => preview.follow(target), [preview, target]);
+  return <Loading />;
 }
 // Reasons the server names by code read in the interface language. A hold is the ticket's own
 // text, and a dependency's message names its blocker, so those keep the server's wording.

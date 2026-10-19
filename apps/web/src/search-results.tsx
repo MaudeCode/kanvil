@@ -9,7 +9,11 @@ import { api, useWorkspace } from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading, PageHeader, SearchField } from "./ui.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { TicketLink } from "./components/ticket-link.tsx";
-import { SearchResultContent, searchResultLink } from "./components/search-result.tsx";
+import {
+  SearchResultContent,
+  searchResultAnchor,
+  searchResultLink,
+} from "./components/search-result.tsx";
 import type { resultsSearchSchema } from "./search.ts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -135,7 +139,7 @@ export function SearchResults({
                       projectId={result.project.id}
                       ticketId={result.ticket.id}
                       ticket={result.ticket}
-                      hash={result.type === "comment" ? `comment-${result.id}` : undefined}
+                      hash={searchResultAnchor(result)}
                       className={rowClass}
                     >
                       <SearchResultContent result={result} />

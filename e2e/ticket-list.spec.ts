@@ -746,8 +746,8 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
   await expect(alpha).toBeVisible();
   await alpha.getByRole("link", { name: "Open in full page", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/tickets/${created[0]!.id}$`));
-  await expect(page.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
   // My work keeps showing a preview whose edit removes its row from the list.
   const me = (await (await page.request.get("/api/auth/get-session")).json()).user;
   await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
