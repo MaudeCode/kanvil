@@ -1,5 +1,5 @@
 import { capabilitiesOf } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { i18n, t } from "@kanvil/contracts/i18n";
 import { ProjectIcon } from "./project-icon.tsx";
 import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu, useProjectMove } from "./object-context-menu.tsx";
@@ -84,6 +84,10 @@ import { actions, shortcutGroups, ticketCopyActions } from "../lib/actions.ts";
 import { settingsLocation } from "../lib/settings-nav.ts";
 import { useSettingsGroups } from "./settings-layout.tsx";
 import { copyTicket } from "./object-context-menu.tsx";
+// Palette entries match the words of the interface language and the English ones, so people find
+// them either way.
+const english = i18n.getFixedT("en-US");
+const paletteWords = (words: (translate: typeof t) => string) => `${words(t)} ${words(english)}`;
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -376,7 +380,9 @@ function CommandPalette() {
             {keyProject && keyMatch && (
               <CommandGroup heading={t("shell.palette.jumpTo")}>
                 <CommandItem
-                  value={t("shell.palette.keywords.jump", { query: trimmed })}
+                  value={paletteWords((tr) =>
+                    tr("shell.palette.keywords.jump", { query: trimmed }),
+                  )}
                   onSelect={() => go(`/projects/${keyProject.id}/tickets/${trimmed.toUpperCase()}`)}
                 >
                   <ProjectIcon project={keyProject} className="size-4" />
@@ -411,7 +417,9 @@ function CommandPalette() {
                   ))}
                 {results.data && results.data.total > 0 && (
                   <CommandItem
-                    value={t("shell.palette.keywords.allResults", { query: trimmed })}
+                    value={paletteWords((tr) =>
+                      tr("shell.palette.keywords.allResults", { query: trimmed }),
+                    )}
                     keywords={[trimmed]}
                     onSelect={() =>
                       run(() => void navigate({ to: "/search", search: { q: trimmed } }))
@@ -426,7 +434,7 @@ function CommandPalette() {
             <CommandGroup heading={t("shell.palette.actions")}>
               {project && access.canWrite && (
                 <CommandItem
-                  value={t("shell.palette.keywords.newTicket")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.newTicket"))}
                   onSelect={() => run(() => setCreating(true))}
                 >
                   <Plus />
@@ -436,7 +444,7 @@ function CommandPalette() {
               )}
               {project && (
                 <CommandItem
-                  value={t("shell.palette.keywords.myTickets")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.myTickets"))}
                   onSelect={() =>
                     run(() => {
                       void navigate({
@@ -455,8 +463,8 @@ function CommandPalette() {
                 <CommandItem
                   value={
                     resolved === "dark"
-                      ? t("shell.palette.keywords.lightMode")
-                      : t("shell.palette.keywords.darkMode")
+                      ? paletteWords((tr) => tr("shell.palette.keywords.lightMode"))
+                      : paletteWords((tr) => tr("shell.palette.keywords.darkMode"))
                   }
                   onSelect={() => run(() => setMode(resolved === "dark" ? "light" : "dark"))}
                 >
@@ -466,7 +474,7 @@ function CommandPalette() {
               }
               {
                 <CommandItem
-                  value={t("shell.palette.keywords.help")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.help"))}
                   onSelect={() => run(() => setHelp(true))}
                 >
                   <Keyboard />
@@ -491,14 +499,17 @@ function CommandPalette() {
             )}
             <CommandGroup heading={t("shell.palette.pages")}>
               {
-                <CommandItem value={t("shell.palette.keywords.home")} onSelect={() => go("/")}>
+                <CommandItem
+                  value={paletteWords((tr) => tr("shell.palette.keywords.home"))}
+                  onSelect={() => go("/")}
+                >
                   <House />
                   {t("shell.page.home")}
                 </CommandItem>
               }
               {
                 <CommandItem
-                  value={t("shell.palette.keywords.myWork")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.myWork"))}
                   onSelect={() => go("/my-work")}
                 >
                   <UserCheck />
@@ -507,7 +518,7 @@ function CommandPalette() {
               }
               {
                 <CommandItem
-                  value={t("shell.palette.keywords.search")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.search"))}
                   onSelect={() => go("/search")}
                 >
                   <Search />
@@ -516,7 +527,7 @@ function CommandPalette() {
               }
               {
                 <CommandItem
-                  value={t("shell.palette.keywords.inbox")}
+                  value={paletteWords((tr) => tr("shell.palette.keywords.inbox"))}
                   onSelect={() => go("/inbox")}
                 >
                   <Bell />
@@ -528,10 +539,12 @@ function CommandPalette() {
               {settings.map((entry) => (
                 <CommandItem
                   key={`${entry.to}:${entry.section}`}
-                  value={t("shell.palette.keywords.settings", {
-                    scope: entry.scope,
-                    label: entry.label,
-                  })}
+                  value={paletteWords((tr) =>
+                    tr("shell.palette.keywords.settings", {
+                      scope: entry.scope,
+                      label: entry.label,
+                    }),
+                  )}
                   onSelect={() =>
                     run(() => {
                       void navigate({ to: entry.to, search: { section: entry.section } });
