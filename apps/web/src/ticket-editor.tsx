@@ -8,6 +8,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError, type Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
 import { api, useIdentity, useOperation } from "./data.tsx";
 import { Button, ErrorNotice, Input, Textarea, reportError, useModalBusy } from "./ui.tsx";
@@ -123,9 +124,7 @@ export function TicketEditor({
       setStorageError(undefined);
       setSavedLocally(true);
     } catch {
-      setStorageError(
-        new Error("This browser cannot save your draft. Keep the editor open until you save."),
-      );
+      setStorageError(new Error(t("detail.editor.storageUnavailable")));
       setSavedLocally(false);
     }
   }
@@ -227,7 +226,11 @@ export function TicketEditor({
         /* A completed write must not be repeated because local storage is unavailable. */
       }
       if (ticket || !createMore) {
-        toast.success(ticket ? `${result.key} saved` : `${result.key} created`);
+        toast.success(
+          ticket
+            ? t("detail.editor.saved", { key: result.key })
+            : t("detail.editor.created", { key: result.key }),
+        );
         return onSaved(result);
       }
       // Keep the project and reusable properties; the next ticket starts with a clean text. Text
@@ -279,7 +282,10 @@ export function TicketEditor({
   // Staged files belong to the target project, so it stays while the draft has any.
   const projectLocked = pending || draft.uploads.length > 0;
   const pills = (
-    <div className="-mt-3 flex flex-wrap items-center gap-1" aria-label="Ticket properties">
+    <div
+      className="-mt-3 flex flex-wrap items-center gap-1"
+      aria-label={t("detail.editor.properties")}
+    >
       {!ticket && (
         <ProjectProperty
           value={target}
@@ -328,8 +334,8 @@ export function TicketEditor({
       />
       <TicketPicker
         variant="pill"
-        label="Parent ticket"
-        placeholder="Parent"
+        label={t("detail.field.parentTicket")}
+        placeholder={t("detail.field.parent")}
         projectId={target}
         value={fields.parentId}
         onChange={(value) => set("parentId", value)}
@@ -340,11 +346,11 @@ export function TicketEditor({
         className={cn(pill, "gap-1.5")}
         pressed={fields.automationReady}
         onPressedChange={(pressed) => set("automationReady", pressed)}
-        aria-label="Ready for agents"
-        title="Agents may claim this ticket once requirements, blockers, and ownership allow it"
+        aria-label={t("detail.editor.readyForAgents")}
+        title={t("detail.editor.readyForAgentsHelp")}
       >
         <Bot className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        {fields.automationReady ? "Ready for agents" : "Agents"}
+        {fields.automationReady ? t("detail.editor.readyForAgents") : t("detail.editor.agents")}
       </Toggle>
       <Popover>
         <PopoverTrigger
@@ -356,7 +362,7 @@ export function TicketEditor({
                 "size-7 border border-transparent hover:border-border",
                 automation && "text-primary",
               )}
-              aria-label="More properties"
+              aria-label={t("detail.editor.moreProperties")}
             />
           }
         >
@@ -364,21 +370,19 @@ export function TicketEditor({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-4">
           <TagInput
-            label="Scopes"
+            label={t("detail.field.scopes")}
             kind="scope"
             value={fields.scopes}
             onChange={(value) => set("scopes", value)}
           />
           <Input
-            label="Hold reason"
+            label={t("detail.field.holdReason")}
             value={fields.holdReason ?? ""}
             maxLength={2000}
-            placeholder="Why should work wait?"
+            placeholder={t("detail.editor.holdPlaceholder")}
             onChange={(event) => set("holdReason", event.target.value || null)}
           />
-          <p className="mb-0 text-xs text-muted-foreground">
-            Claims still depend on requirements, blockers, and current ownership.
-          </p>
+          <p className="mb-0 text-xs text-muted-foreground">{t("detail.editor.claimsNote")}</p>
         </PopoverContent>
       </Popover>
     </div>
@@ -397,7 +401,7 @@ export function TicketEditor({
         variant="ghost"
         size="icon-sm"
         className="absolute top-2 right-11 hidden sm:inline-flex"
-        aria-label={expanded ? "Restore composer size" : "Expand composer"}
+        aria-label={expanded ? t("detail.editor.restoreSize") : t("detail.editor.expand")}
         aria-pressed={expanded}
         disabled={pending}
         onClick={toggleExpanded}
@@ -414,16 +418,15 @@ export function TicketEditor({
           {stale && (
             <Alert className="w-auto">
               <AlertTriangle />
-              <AlertTitle>This ticket changed.</AlertTitle>
+              <AlertTitle>{t("detail.editor.staleTitle")}</AlertTitle>
               <AlertDescription>
-                Your draft still uses version {draft.version}; saving will require the current
-                version.
+                {t("detail.editor.staleDescription", { version: draft.version })}
                 <Button
                   size="sm"
                   className="mt-2"
                   onClick={() => changeDraft(createTicketDraft(ticket))}
                 >
-                  Discard draft and reload
+                  {t("detail.editor.discardAndReload")}
                 </Button>
               </AlertDescription>
             </Alert>
@@ -431,7 +434,7 @@ export function TicketEditor({
           <ErrorNotice error={validationError ?? create.error ?? update.error ?? storageError} />
           <div className="[&_[data-slot=field-label]]:sr-only">
             <Textarea
-              label="Title"
+              label={t("detail.field.title")}
               rows={1}
               value={fields.title}
               onChange={(event) => set("title", event.target.value)}
@@ -439,30 +442,30 @@ export function TicketEditor({
               maxLength={500}
               autoFocus
               ref={titleField}
-              placeholder="Ticket title"
+              placeholder={t("detail.editor.titlePlaceholder")}
               className="field-sizing-content min-h-10 resize-none border-0 bg-transparent px-0 py-1 text-xl! font-semibold leading-snug shadow-none caret-primary focus-visible:ring-0 dark:bg-transparent"
             />
           </div>
           {!expanded && pills}
           <MarkdownField
-            label="Description"
+            label={t("detail.field.description")}
             value={fields.description}
             onChange={(value) => set("description", value)}
             rows={8}
             variant="document"
-            placeholder="Add context, requirements, or a reproduction…"
+            placeholder={t("detail.editor.descriptionPlaceholder")}
             onUpload={inlineUpload}
           />
           {criteriaOpen ? (
             <div className="relative">
               <MarkdownField
-                label="Acceptance criteria"
+                label={t("detail.field.acceptanceCriteria")}
                 value={fields.acceptanceCriteria}
                 onChange={(value) => set("acceptanceCriteria", value)}
                 rows={4}
                 variant="document"
                 maxLength={50000}
-                placeholder="- [ ] What will show that this is complete?"
+                placeholder={t("detail.editor.criteriaPlaceholder")}
                 onUpload={inlineUpload}
               />
               {!fields.acceptanceCriteria && (
@@ -470,7 +473,7 @@ export function TicketEditor({
                   variant="ghost"
                   size="icon-xs"
                   className="absolute top-5 right-24 text-muted-foreground"
-                  aria-label="Remove acceptance criteria"
+                  aria-label={t("detail.editor.removeCriteria")}
                   onClick={() => setCriteriaOpen(false)}
                 >
                   <X />
@@ -485,14 +488,14 @@ export function TicketEditor({
               onClick={() => setCriteriaOpen(true)}
             >
               <ListChecks />
-              Add acceptance criteria
+              {t("detail.editor.addCriteria")}
             </Button>
           )}
         </div>
         {expanded && (
           <aside
             className="border-t bg-muted/20 p-5 lg:sticky lg:top-0 lg:min-h-full lg:border-t-0 lg:border-l"
-            aria-label="Ticket properties"
+            aria-label={t("detail.editor.properties")}
           >
             <div className="space-y-1">
               {!ticket && (
@@ -547,43 +550,45 @@ export function TicketEditor({
                 onChange={setCustomField}
               />
               <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
-                <span className="text-xs text-muted-foreground">Agents</span>
+                <span className="text-xs text-muted-foreground">{t("detail.editor.agents")}</span>
                 <Toggle
                   size="sm"
                   className={cn(pill, "h-7 justify-start gap-1.5")}
                   pressed={fields.automationReady}
                   onPressedChange={(pressed) => set("automationReady", pressed)}
-                  aria-label="Ready for agents"
+                  aria-label={t("detail.editor.readyForAgents")}
                 >
                   <Bot className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                  {fields.automationReady ? "Ready for agents" : "Not ready"}
+                  {fields.automationReady
+                    ? t("detail.editor.readyForAgents")
+                    : t("detail.editor.notReady")}
                 </Toggle>
               </div>
             </div>
             <div className="mt-6 border-t pt-5">
               <TagInput
-                label="Labels"
+                label={t("detail.field.labels")}
                 value={fields.labels}
                 onChange={(value) => set("labels", value)}
               />
               <TicketPicker
-                label="Parent ticket"
+                label={t("detail.field.parentTicket")}
                 projectId={target}
                 value={fields.parentId}
                 onChange={(value) => set("parentId", value)}
                 exclude={ticket ? [ticket.id] : []}
               />
               <TagInput
-                label="Scopes"
+                label={t("detail.field.scopes")}
                 kind="scope"
                 value={fields.scopes}
                 onChange={(value) => set("scopes", value)}
               />
               <Input
-                label="Hold reason"
+                label={t("detail.field.holdReason")}
                 value={fields.holdReason ?? ""}
                 maxLength={2000}
-                placeholder="Why should work wait?"
+                placeholder={t("detail.editor.holdPlaceholder")}
                 onChange={(event) => set("holdReason", event.target.value || null)}
               />
             </div>
@@ -593,16 +598,16 @@ export function TicketEditor({
       <footer className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
         <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
           {created
-            ? `${created} created`
+            ? t("detail.editor.created", { key: created })
             : savedLocally
-              ? "Draft saved on this device"
+              ? t("detail.editor.savedLocally")
               : storageError
-                ? "Draft could not be saved"
+                ? t("detail.editor.notSavedLocally")
                 : ""}
           {dirty && !stale && (
             <Button variant="ghost" size="xs" disabled={pending} onClick={discardDraft}>
               <RotateCcw />
-              Discard draft
+              {t("detail.editor.discardDraft")}
             </Button>
           )}
         </span>
@@ -615,13 +620,19 @@ export function TicketEditor({
                 disabled={pending}
                 onCheckedChange={setCreateMore}
               />
-              Create more
+              {t("detail.editor.createMore")}
             </label>
           )}
-          <DialogClose render={<Button disabled={pending} />}>Cancel</DialogClose>
+          <DialogClose render={<Button disabled={pending} />}>
+            {t("common.action.cancel")}
+          </DialogClose>
           <Button type="submit" variant="default" disabled={blocked}>
             {pending ? <Spinner /> : null}
-            {pending ? "Saving…" : ticket ? "Save ticket" : "Create ticket"}
+            {pending
+              ? t("common.state.saving")
+              : ticket
+                ? t("detail.editor.save")
+                : t("detail.editor.create")}
             {!pending && (
               <Kbd
                 aria-hidden="true"

@@ -2,6 +2,7 @@
 // demand, and Mermaid only once a diagram appears.
 import { use, useSyncExternalStore, type ReactNode } from "react";
 import { errorMessage } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { highlight, type HighlightNode } from "../lib/highlight.ts";
 
 const spans = (nodes: HighlightNode[]): ReactNode[] =>
@@ -76,18 +77,18 @@ function MermaidDiagram({ source }: { source: string }) {
       {"svg" in diagram ? (
         <div
           role="img"
-          aria-label="Diagram"
+          aria-label={t("detail.markdown.diagram")}
           className="overflow-x-auto [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
           // Mermaid's strict security level returns sanitized SVG.
           dangerouslySetInnerHTML={{ __html: diagram.svg }}
         />
       ) : (
         <p role="alert" className="m-0 text-xs text-destructive">
-          This diagram could not be drawn: {diagram.error}
+          {t("detail.markdown.diagramFailed", { error: diagram.error })}
         </p>
       )}
       <details className="mt-1 text-xs text-muted-foreground" open={"error" in diagram}>
-        <summary className="cursor-pointer">Diagram source</summary>
+        <summary className="cursor-pointer">{t("detail.markdown.diagramSource")}</summary>
         <CodeBlock language="plaintext" code={source} />
       </details>
     </figure>

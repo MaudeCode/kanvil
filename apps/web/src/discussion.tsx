@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
@@ -49,7 +50,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     <section>
       <ErrorNotice error={comments.error ?? add.error} />
       {comments.data?.total === 0 && (
-        <EmptyState title="No comments yet" icon={MessageSquare} className="py-8" />
+        <EmptyState title={t("detail.discussion.empty")} icon={MessageSquare} className="py-8" />
       )}
       <div className="divide-y">
         {comments.data?.items.map((comment) => (
@@ -59,14 +60,14 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
       {((comments.data?.total ?? 0) > 50 || offset > 0) && (
         <ButtonGroup className="mt-5 justify-end">
           <Button size="sm" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
-            Previous comments
+            {t("detail.discussion.previous")}
           </Button>
           <Button
             size="sm"
             disabled={offset + 50 >= (comments.data?.total ?? 0)}
             onClick={() => setOffset(offset + 50)}
           >
-            Next comments
+            {t("detail.discussion.next")}
           </Button>
         </ButtonGroup>
       )}
@@ -83,7 +84,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
           }}
         >
           <MarkdownField
-            label="Comment"
+            label={t("detail.discussion.comment")}
             value={body}
             onChange={setBody}
             rows={3}
@@ -91,11 +92,11 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
             maxLength={50000}
             mentions={ticket.projectId}
             onUpload={inlineUpload}
-            placeholder="Write a comment…"
+            placeholder={t("detail.discussion.placeholder")}
             footer={
               <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
                 {add.isPending ? <Spinner /> : <Send />}
-                {add.isPending ? "Posting…" : "Comment"}
+                {add.isPending ? t("detail.discussion.posting") : t("detail.discussion.comment")}
                 <Kbd
                   aria-hidden="true"
                   className="ml-1 hidden border-transparent bg-primary-foreground/20 text-primary-foreground shadow-none sm:inline-flex"
@@ -143,7 +144,7 @@ function Comment({
           <ActorName projectId={comment.projectId} actorId={comment.actorId} avatar />
         </strong>
         <RelativeTime value={comment.createdAt} />
-        {comment.updatedAt !== comment.createdAt && <span>Edited</span>}
+        {comment.updatedAt !== comment.createdAt && <span>{t("detail.discussion.edited")}</span>}
       </div>
       {editing ? (
         <form
@@ -162,7 +163,7 @@ function Comment({
           }}
         >
           <MarkdownField
-            label="Edit comment"
+            label={t("detail.discussion.edit")}
             value={body}
             onChange={setBody}
             rows={4}
@@ -173,7 +174,7 @@ function Comment({
             footer={
               <>
                 <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>
-                  Cancel
+                  {t("common.action.cancel")}
                 </Button>
                 <Button
                   type="submit"
@@ -182,7 +183,7 @@ function Comment({
                   disabled={update.isPending || !body.trim()}
                 >
                   {update.isPending ? <Spinner /> : null}
-                  Save
+                  {t("common.action.save")}
                 </Button>
               </>
             }
@@ -194,7 +195,7 @@ function Comment({
       {!editing && access.canWrite && (own || identity.admin) && (
         <div className="absolute top-3 right-0 flex items-center gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-md:opacity-100">
           <IconButton
-            label="Edit comment"
+            label={t("detail.discussion.edit")}
             size="icon-sm"
             onClick={() => {
               setBody(comment.body);
@@ -205,10 +206,10 @@ function Comment({
             <Pencil />
           </IconButton>
           <Confirm
-            label="Delete comment"
+            label={t("detail.discussion.delete")}
             icon={<Trash2 />}
             danger
-            description="Permanently delete this comment?"
+            description={t("detail.discussion.deleteConfirm")}
             onConfirm={() =>
               remove.mutateAsync({
                 projectId: comment.projectId,
