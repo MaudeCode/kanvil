@@ -26,7 +26,7 @@
     "@better-auth/mcp": "1.7.10",
     "@hono/node-server": "2.1.5",
     "@hono/zod-openapi": "1.6.3",
-    "@iconify-json/lucide": "1.2.145",
+    "@iconify-json/lucide": "1.2.146",
     "@inquirer/password": "5.2.3",
     "@kanvil/contracts": "workspace:*",
     "@modelcontextprotocol/server": "2.3.1",
@@ -38,7 +38,7 @@
     "i18next": "26.5.2",
     "jose": "6.2.12",
     "mdast-util-from-markdown": "2.1.0",
-    "nodemailer": "10.1.2",
+    "nodemailer": "10.1.6",
     "pg": "8.23.1",
     "turndown": "7.2.4",
     "zod": "4.6.7"
