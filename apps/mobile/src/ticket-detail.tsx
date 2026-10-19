@@ -3,7 +3,6 @@ import {
   formatCustomFieldValue,
   formatTimestamp,
   kindLabels,
-  priorityLabels,
   readinessReasonText,
 } from "@kanvil/contracts";
 import { formatDate, t } from "@kanvil/contracts/i18n";
@@ -25,6 +24,7 @@ import {
   Status,
   styles,
   usePalette,
+  priorityText,
 } from "./ui.tsx";
 import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
@@ -78,7 +78,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       <View style={styles.actions}>
         <Status ticket={ticket} />
         <Body muted small>
-          {t("native.ticket.priority", { priority: priorityLabels[ticket.priority] })}
+          {priorityText(ticket.priority)}
         </Body>
         <Body muted small>
           {kindLabels[ticket.kind]}

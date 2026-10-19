@@ -28,12 +28,18 @@ import { useConnection } from "./data.tsx";
 import {
   errorMessage,
   mentionScheme,
+  priorityLabels,
   stateLabels,
   stateTones,
   type Ticket,
   presentWorkflow,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
+// "High priority"; no priority reads as itself rather than "No priority priority".
+export const priorityText = (priority: Ticket["priority"]) =>
+  priority === "none"
+    ? priorityLabels.none
+    : t("native.ticket.priority", { priority: priorityLabels[priority] });
 
 export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
 export function Brand() {

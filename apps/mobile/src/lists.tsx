@@ -4,13 +4,7 @@ import { View, Text } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import {
-  states,
-  stateLabels,
-  priorityLabels,
-  difficultyLabels,
-  type Ticket,
-} from "@kanvil/contracts";
+import { states, stateLabels, difficultyLabels, type Ticket } from "@kanvil/contracts";
 import { formatNumber, t } from "@kanvil/contracts/i18n";
 import { useConnection, useProjects, useOperation } from "./data.tsx";
 import {
@@ -26,6 +20,7 @@ import {
   Screen,
   Status,
   usePalette,
+  priorityText,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -181,7 +176,7 @@ function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: () => void })
         <>
           <Status ticket={ticket} />
           <Body muted small>
-            {t("native.ticket.priority", { priority: priorityLabels[ticket.priority] })}
+            {priorityText(ticket.priority)}
           </Body>
           <Body muted small>
             {ticket.difficulty
