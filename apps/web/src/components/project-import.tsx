@@ -5,9 +5,10 @@ import { Upload } from "lucide-react";
 import {
   importProviderDefinitions,
   importProviders,
+  importSourceSchema,
   importStatusLabels,
   jiraEditionLabels,
-  jiraEditions,
+  plankaSignInLabels,
   ticketExportSchema,
   ticketImportSchema,
   type ImportProvider,
@@ -68,7 +69,7 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
     <>
       <SettingRow
         title="Import"
-        description="Creates a project from a Kanvil ticket export, a Linear team, or a Jira project."
+        description="Creates a project from a Kanvil ticket export or another tracker: Linear, Jira, Trello, Plane, PLANKA, or Kaneo."
       >
         <Button onClick={() => show(null)}>
           <Upload />
@@ -116,18 +117,75 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
 }
 
 type SourceKind = "file" | ImportProvider;
-const sourceKindLabels: Record<SourceKind, string> = {
-  file: "Kanvil export file",
-  linear: importProviderDefinitions.linear.label,
-  jira: importProviderDefinitions.jira.label,
+const sourceKinds = ["file", ...importProviders] as const;
+const sourceKindLabels = (kind: SourceKind) =>
+  kind === "file" ? "Kanvil export file" : importProviderDefinitions[kind].label;
+// Everything a connection form can ask for; each source sends the fields it shows.
+const noCredentials = {
+  edition: "cloud",
+  signIn: "password",
+  baseUrl: "",
+  workspace: "",
+  email: "",
+  username: "",
+  password: "",
+  apiKey: "",
+  token: "",
 };
-type Credentials = {
-  token: string;
-  edition: (typeof jiraEditions)[number];
-  baseUrl: string;
-  email: string;
+type Credentials = typeof noCredentials;
+type SourceField = {
+  name: keyof Credentials;
+  label: string;
+  type?: "url" | "email" | "password";
+  placeholder?: string;
+  // A choice between these values instead of text.
+  choices?: Record<string, string>;
 };
-const noCredentials: Credentials = { token: "", edition: "cloud", baseUrl: "", email: "" };
+const site = (placeholder: string): SourceField => ({
+  name: "baseUrl",
+  label: "Site URL",
+  type: "url",
+  placeholder,
+});
+// The connection fields each source asks for, in order; some depend on an earlier choice.
+const sourceFields: Record<ImportProvider, (credentials: Credentials) => SourceField[]> = {
+  linear: () => [{ name: "token", label: "API key", type: "password" }],
+  jira: ({ edition }) => [
+    { name: "edition", label: "Jira edition", choices: jiraEditionLabels },
+    site(edition === "cloud" ? "https://example.atlassian.net" : "https://jira.example.com"),
+    ...(edition === "cloud"
+      ? [
+          { name: "email", label: "Account email", type: "email" } satisfies SourceField,
+          { name: "token", label: "API token", type: "password" } satisfies SourceField,
+        ]
+      : [
+          { name: "token", label: "Personal access token", type: "password" } satisfies SourceField,
+        ]),
+  ],
+  trello: () => [
+    { name: "apiKey", label: "API key", type: "password" },
+    { name: "token", label: "Token", type: "password" },
+  ],
+  plane: () => [
+    { ...site("https://api.plane.so"), label: "API URL" },
+    { name: "workspace", label: "Workspace slug", placeholder: "my-team" },
+    { name: "token", label: "API token", type: "password" },
+  ],
+  planka: ({ signIn }) => [
+    site("https://planka.example.com"),
+    { name: "signIn", label: "Sign in with", choices: plankaSignInLabels },
+    ...(signIn === "password"
+      ? [
+          { name: "username", label: "Username or email" } satisfies SourceField,
+          { name: "password", label: "Password", type: "password" } satisfies SourceField,
+        ]
+      : [{ name: "token", label: "API key", type: "password" } satisfies SourceField]),
+  ],
+  kaneo: () => [
+    site("https://kaneo.example.com"),
+    { name: "token", label: "API key", type: "password" },
+  ],
+};
 // A source prefix when it is a valid one, otherwise a prefix suggested from the name.
 const keyFrom = (key: string, name: string) =>
   /^[A-Z][A-Z0-9]{1,9}$/.test(key) ? key : suggestKey(name);
@@ -151,6 +209,7 @@ function ImportForm({
     [includeComments, setIncludeComments] = useState(true),
     [bundle, setBundle] = useState<TicketExport>(),
     [fileError, setFileError] = useState<unknown>(),
+    [invalid, setInvalid] = useState<Error>(),
     [name, setName] = useState(""),
     [key, setKey] = useState(""),
     [visibility, setVisibility] = useState<"workspace" | "private">("workspace"),
@@ -190,17 +249,22 @@ function ImportForm({
   };
   const credential = (field: keyof Credentials) => (value: string) => {
     setCredentials((current) => ({ ...current, [field]: value }));
+    setInvalid(undefined);
     disconnect();
   };
-  const source: ImportSource | undefined =
-    kind === "linear"
-      ? { provider: "linear", token: credentials.token }
-      : kind === "jira"
-        ? { provider: "jira", ...credentials }
-        : undefined;
+  const fields = kind === "file" ? [] : sourceFields[kind](credentials);
+  // The source sends only the fields it shows.
+  const checked =
+    kind === "file"
+      ? undefined
+      : importSourceSchema.safeParse({
+          provider: kind,
+          ...Object.fromEntries(fields.map((field) => [field.name, credentials[field.name]])),
+        });
+  const source: ImportSource | undefined = checked?.success ? checked.data : undefined;
   const chosen = kind === "file" ? !!bundle : !!sourceProject,
     ready = !!run && !blocked(run),
-    connecting = !!source && !projects;
+    connecting = kind !== "file" && !projects;
   // An answer counts only if nothing changed since it was asked.
   const unchanged = (asked: number) => edits.current === asked;
   const preview = kind === "file" ? previewFile : previewSource;
@@ -215,6 +279,10 @@ function ImportForm({
             .mutateAsync({ workspaceId, importId: run.id, expectedVersion: run.version })
             .then((started) => onStarted(started.id))
             .catch(() => {});
+        else if (connecting && !source)
+          setInvalid(
+            new Error(checked?.error?.issues[0]?.message ?? "Check the connection details"),
+          );
         else if (source && connecting)
           void connect
             .mutateAsync({ workspaceId, source })
@@ -252,18 +320,19 @@ function ImportForm({
         label="Source"
         value={kind}
         onValueChange={(value) => {
-          const next = (["file", ...importProviders] as const).find((item) => item === value);
+          const next = sourceKinds.find((item) => item === value);
           if (!next) return;
           setKind(next);
           setBundle(undefined);
           setFileError(undefined);
           setCredentials(noCredentials);
+          setInvalid(undefined);
           disconnect();
         }}
       >
-        {(["file", ...importProviders] as const).map((item) => (
+        {sourceKinds.map((item) => (
           <SelectItem key={item} value={item}>
-            {sourceKindLabels[item]}
+            {sourceKindLabels(item)}
           </SelectItem>
         ))}
       </Select>
@@ -301,62 +370,37 @@ function ImportForm({
         />
       ) : (
         <>
-          {kind === "jira" && (
-            <>
+          {fields.map((field) =>
+            field.choices ? (
               <Select
-                label="Jira edition"
-                value={credentials.edition}
+                key={field.name}
+                label={field.label}
+                value={credentials[field.name]}
                 onValueChange={(value) => {
-                  const next = jiraEditions.find((item) => item === value);
-                  if (next) credential("edition")(next);
+                  if (value !== null) credential(field.name)(value);
                 }}
               >
-                {jiraEditions.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {jiraEditionLabels[item]}
+                {Object.entries(field.choices).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
                   </SelectItem>
                 ))}
               </Select>
+            ) : (
               <Input
-                label="Site URL"
-                type="url"
+                key={field.name}
+                label={field.label}
+                type={field.type ?? "text"}
                 required
-                placeholder={
-                  credentials.edition === "cloud"
-                    ? "https://example.atlassian.net"
-                    : "https://jira.example.com"
-                }
-                value={credentials.baseUrl}
-                onChange={(event) => credential("baseUrl")(event.target.value)}
+                autoComplete="off"
+                placeholder={field.placeholder}
+                value={credentials[field.name]}
+                onChange={(event) => credential(field.name)(event.target.value)}
               />
-              {credentials.edition === "cloud" && (
-                <Input
-                  label="Account email"
-                  type="email"
-                  required
-                  autoComplete="off"
-                  value={credentials.email}
-                  onChange={(event) => credential("email")(event.target.value)}
-                />
-              )}
-            </>
+            ),
           )}
-          <Input
-            label={
-              kind === "linear"
-                ? "API key"
-                : credentials.edition === "cloud"
-                  ? "API token"
-                  : "Personal access token"
-            }
-            type="password"
-            required
-            autoComplete="off"
-            value={credentials.token}
-            onChange={(event) => credential("token")(event.target.value)}
-          />
           <p className="-mt-2 mb-4 text-xs text-muted-foreground">{definition?.setup}</p>
-          <ErrorNotice error={connect.error} />
+          <ErrorNotice error={invalid ?? connect.error} />
           {projects && definition && (
             <>
               <Select
@@ -366,6 +410,7 @@ function ImportForm({
               >
                 {projects.map((item) => (
                   <SelectItem key={item.ref} value={item.ref}>
+                    {item.group && <span className="text-muted-foreground">{item.group} /</span>}{" "}
                     {item.name}{" "}
                     <span className="font-mono text-xs text-muted-foreground">{item.key}</span>
                   </SelectItem>

@@ -51,7 +51,7 @@ const envSchema = z
     SMTP_URL: optionalEnv(z.url({ protocol: /^smtps?$/ })),
     SMTP_FROM: optionalEnv(z.string().min(3)),
     // Lets channels, destinations, and import sources reach loopback and private networks, such as
-    // a LAN ntfy or a Jira Data Center site.
+    // a LAN ntfy or a self-hosted Jira, Plane, PLANKA, or Kaneo.
     KANVIL_DELIVERY_ALLOW_PRIVATE: z
       .enum(["true", "false"])
       .default("false")
@@ -62,6 +62,11 @@ const envSchema = z
     KANVIL_LINEAR_API_URL: z
       .url({ protocol: /^https?$/ })
       .default("https://api.linear.app/graphql"),
+    // The Trello REST API that imports read, without its `/1` version path.
+    KANVIL_TRELLO_API_URL: z
+      .url({ protocol: /^https?$/ })
+      .default("https://api.trello.com")
+      .transform((value) => value.replace(/\/+$/, "")),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {

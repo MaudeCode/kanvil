@@ -23,6 +23,7 @@ services:
       KANVIL_DELIVERY_ALLOW_PRIVATE: ${KANVIL_DELIVERY_ALLOW_PRIVATE:-false}
       KANVIL_GITHUB_API_URL: ${KANVIL_GITHUB_API_URL:-https://api.github.com}
       KANVIL_LINEAR_API_URL: ${KANVIL_LINEAR_API_URL:-https://api.linear.app/graphql}
+      KANVIL_TRELLO_API_URL: ${KANVIL_TRELLO_API_URL:-https://api.trello.com}
       KANVIL_STORAGE_PROVIDER: ${KANVIL_STORAGE_PROVIDER:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-us-east-1}

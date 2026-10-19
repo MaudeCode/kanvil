@@ -3,7 +3,7 @@
 // writes each record through `domain.execute` as the person who started it. A record's request ID
 // derives from the run and its place, so the mutation receipt answers a retry after a restart and
 // nothing is written twice. Every write carries the run as provenance, so it notifies no one and
-// reaches no destination. Linear and Jira are read into the same bundle (adapters/import-sources.ts).
+// reaches no destination. Other trackers are read into the same bundle (adapters/import-sources.ts).
 import { createHash } from "node:crypto";
 import {
   and,
@@ -24,6 +24,7 @@ import {
   customFieldValue,
   customFieldValueSchema,
   defaultWorkflow,
+  importSecretFields,
   stagedUploadLifetime,
   ticketExportFormat,
   ticketImportSchema,
@@ -806,9 +807,10 @@ export const importHandlers: Pick<
   },
 };
 
+const secretFields: ReadonlySet<string> = new Set(importSecretFields);
 // Writes that read another tracker first. `read` runs outside the write lock with the request's
 // credentials, so a slow source holds up no one; the handler then stages what it read under the
-// lock, with the request's receipt. Receipts compare the request without its token.
+// lock, with the request's receipt. Receipts compare the request without its credentials.
 export const sourceReads: {
   [K in Operation]?: {
     read: (ctx: Context, input: ParsedInput<K>) => Promise<unknown>;
@@ -818,7 +820,12 @@ export const sourceReads: {
   preview_source_import: {
     read: (ctx, { source, sourceProject, includeComments }) =>
       ctx.sources.bundle(source, sourceProject, { includeComments }),
-    receipt: ({ source: { token: _token, ...source }, ...input }) => ({ ...input, source }),
+    receipt: ({ source, ...input }) => ({
+      ...input,
+      source: Object.fromEntries(
+        Object.entries(source).filter(([name]) => !secretFields.has(name)),
+      ),
+    }),
   },
 };
 

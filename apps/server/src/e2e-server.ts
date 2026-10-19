@@ -10,7 +10,7 @@ import { startImportSources } from "./import-source-fixture.ts";
 import { z } from "zod";
 
 const fixture = await createFixture();
-// Imports read a fake Linear and Jira on loopback; no real account is involved.
+// Imports read fake trackers on loopback; no real account is involved.
 const sources = await startImportSources();
 const port = Number(process.env.KANVIL_TEST_PORT ?? 5190);
 const tls =
@@ -63,7 +63,7 @@ const application = await createApplication(
   },
   {
     importSources: () =>
-      createImportSources(createHttpSender({ allowPrivate: true }), sources.linearUrl),
+      createImportSources(createHttpSender({ allowPrivate: true }), sources.urls),
   },
 );
 const server = serve(
