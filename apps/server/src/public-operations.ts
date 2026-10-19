@@ -49,6 +49,19 @@ async function published(ctx: Context, ids: string[]) {
     );
   return new Set(rows.map((row) => row.id));
 }
+// A parent reference survives only while the parent itself is published.
+async function withPublishedParents<T extends { parentId: string | null }>(
+  ctx: Context,
+  rows: T[],
+) {
+  const visible = await published(
+    ctx,
+    rows.flatMap((row) => (row.parentId ? [row.parentId] : [])),
+  );
+  return rows.map((row) =>
+    row.parentId && !visible.has(row.parentId) ? { ...row, parentId: null } : row,
+  );
+}
 export const publicHandlers: PublicHandlers = {
   async get_public_project(ctx) {
     const projectId = project(ctx).id;
@@ -69,18 +82,29 @@ export const publicHandlers: PublicHandlers = {
     };
   },
   async list_public_tickets(ctx, input) {
-    return listTickets(ctx, {
+    const page = await listTickets(ctx, {
       sort: "status",
       order: "asc",
       limit: input.limit,
       offset: input.offset,
     });
+    return { ...page, items: await withPublishedParents(ctx, page.items) };
   },
   async get_public_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
     if (ticket.archived) fail(404, "not_found", "The requested record was not found");
-    // ponytail: the first 100 children by number; page them if public trees grow past that.
-    const children = await listTickets(ctx, { parentId: ticket.id, sort: "number", limit: 100 });
+    // Every unarchived child, read in bounded pages.
+    const children = [];
+    for (let total = Infinity; children.length < total;) {
+      const page = await listTickets(ctx, {
+        parentId: ticket.id,
+        sort: "number",
+        limit: 100,
+        offset: children.length,
+      });
+      children.push(...page.items);
+      total = page.items.length ? page.total : children.length;
+    }
     const relations = parseOutput(
       "list_relations",
       json(
@@ -101,9 +125,9 @@ export const publicHandlers: PublicHandlers = {
         ? one(await ctx.db.select().from(tickets).where(eq(tickets.id, ticket.parentId)))
         : null;
     return {
-      ticket,
+      ticket: parent ? ticket : { ...ticket, parentId: null },
       parent,
-      children: children.items,
+      children,
       relations: relations.filter((relation) =>
         visible.has(relation.sourceId === ticket.id ? relation.targetId : relation.sourceId),
       ),

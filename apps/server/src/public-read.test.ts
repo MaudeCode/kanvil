@@ -239,6 +239,19 @@ describe("public read-only project views", () => {
     expect(
       await (await anonymous(`/projects/${project.id}/tickets/${ticket.id}`)).json(),
     ).toMatchObject({ relations: [] });
+    // An archived parent leaves no trace, not even its ID on the children.
+    const parentNow = await api.call("get_ticket", { projectId: project.id, ticketId: parent.id });
+    await api.call("update_ticket", {
+      projectId: project.id,
+      ticketId: parent.id,
+      expectedVersion: parentNow.ticket.version,
+      changes: { archived: true },
+    });
+    const orphaned = await (await anonymous(`/projects/${project.id}/tickets`)).text();
+    expect(orphaned).not.toContain(parent.id);
+    expect(
+      await (await anonymous(`/projects/${project.id}/tickets/${ticket.id}`)).json(),
+    ).toMatchObject({ ticket: { parentId: null }, parent: null });
 
     // A ticket of another, unshared project is not reachable through the shared project's path.
     const hidden = await api.call("create_ticket", { projectId: other.id, title: "Hidden" });
@@ -260,6 +273,8 @@ describe("public read-only project views", () => {
     for (const path of missing) {
       const response = await anonymous(path);
       expect(response.status, path).toBe(404);
+      // A cache must not keep answering "not found" once sharing is turned on.
+      expect(response.headers.get("Cache-Control"), path).toBe("no-store");
       expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
     }
     // A project key is not a public address.
@@ -373,6 +388,27 @@ describe("public read-only project views", () => {
     const text = await detail.text();
     expect(text).not.toContain(editor.user.id);
     expect(text).not.toContain("editor@example.test");
+  });
+
+  it("lists every child of a public ticket beyond one page", async () => {
+    const project = await newProject(),
+      api = client();
+    const parent = await api.call("create_ticket", { projectId: project.id, title: "Epic" });
+    // The domain skips the session write budget that HTTP writes from one browser share.
+    const owner = await application.domain.actor(
+      (await api.call("list_members", { projectId: project.id }))[0]!.userId,
+    );
+    for (let index = 0; index < 101; index += 1)
+      await application.domain.execute(
+        "create_ticket",
+        { projectId: project.id, title: `Child ${index}`, parentId: parent.id },
+        owner,
+      );
+    expect((await share(project, true)).status).toBe(200);
+    const detail = z
+      .object({ children: z.array(z.object({ id: z.string() })) })
+      .parse(await (await anonymous(`/projects/${project.id}/tickets/${parent.id}`)).json());
+    expect(new Set(detail.children.map((child) => child.id)).size).toBe(101);
   });
 
   it("serializes concurrent visibility changes so each read sees one committed policy", async () => {

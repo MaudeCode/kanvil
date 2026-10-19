@@ -768,13 +768,16 @@ export async function createApplication(
     register(name, operations[name], "/api/v1", true, async (values, actor) =>
       Response.json(await domain.execute(name, values, actor())),
     );
-  // Shared projects answer without a session; responses are never cached, so revoking takes effect
-  // on the next request.
+  // Shared projects answer without a session. No public response is cached, errors included, so
+  // revoking or enabling sharing takes effect on the next request.
+  app.use("/api/public/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+  });
   for (const name of Object.keys(publicOperations).filter(isPublicOperation))
     register(name, publicOperations[name], "/api/public", false, async (values) =>
-      Response.json(await domain.readPublic(name, values), {
-        headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
-      }),
+      Response.json(await domain.readPublic(name, values)),
     );
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",
