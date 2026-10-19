@@ -13,14 +13,16 @@ function Swatch({
   selected,
   disabled,
   onSelect,
+  tint,
 }: {
   value: LabelColor;
   label: string;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  tint?: string | undefined;
 }) {
-  const tone = accentColor(value);
+  const tone = tint ? { className: tint } : accentColor(value);
   return (
     <Button
       disabled={disabled}
@@ -45,12 +47,15 @@ export function AccentColorPicker<T extends LabelColor>({
   onChange,
   disabled = false,
   custom = false,
+  defaultTint,
 }: {
   label: string;
   value: T;
   onChange: (value: T) => void;
   disabled?: boolean;
   custom?: boolean;
+  // The class the "default" swatch shows when default means another tint, such as a status's.
+  defaultTint?: string;
 }) {
   // Site-wide and rarely changed: refetch each time a picker opens so removals elsewhere show.
   const palette = useQuery({
@@ -74,6 +79,7 @@ export function AccentColorPicker<T extends LabelColor>({
           selected={value === tone}
           disabled={disabled}
           onSelect={() => pick(tone)}
+          tint={tone === "default" ? defaultTint : undefined}
         />
       ))}
       {custom && (

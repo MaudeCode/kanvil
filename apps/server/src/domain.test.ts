@@ -741,7 +741,9 @@ describe("ticket operations on PostgreSQL", () => {
     const events = (
       await domain.execute("list_activity", { projectId: project.id, ticketId: moved.id }, owner)
     ).items.filter((event) => event.type === "ticket.updated");
-    expect(events.map((event) => event.data.changedFields)).toEqual([["status", "position"]]);
+    expect(events.map((event) => event.data.changedFields)).toEqual([
+      ["status", "stateId", "position"],
+    ]);
     // Computed sorts ignore the manual order.
     expect(
       (

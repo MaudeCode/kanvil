@@ -169,7 +169,7 @@ function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: () => void })
       overline={ticket.key}
       metadata={
         <>
-          <Status value={ticket.status} />
+          <Status ticket={ticket} />
           <Body muted small>
             {priorityLabels[ticket.priority]} priority
           </Body>

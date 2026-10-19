@@ -10,10 +10,14 @@ import {
   priorityLabels,
   stateLabels,
   states,
-  ticketFields,
   type Ticket,
 } from "@kanvil/contracts";
-import { createTicketDraft, splitTags, ticketDraftSchema } from "@kanvil/contracts/drafts";
+import {
+  createTicketDraft,
+  draftFields,
+  splitTags,
+  ticketDraftSchema,
+} from "@kanvil/contracts/drafts";
 import { useConnection, useIdentity, useOperation } from "./data.tsx";
 import {
   Body,
@@ -72,6 +76,8 @@ function Editor({
   const create = useOperation("create_ticket"),
     update = useOperation("update_ticket");
   const members = useQuery(api.query("list_members", { projectId }));
+  // Older servers have no workflow; the editor then offers the canonical statuses.
+  const workflow = useQuery(api.query("list_workflow_states", { projectId }));
   useEffect(() => {
     let mounted = true;
     void AsyncStorage.getItem(key)
@@ -105,7 +111,7 @@ function Editor({
     change({ ...draft, fields: { ...draft.fields, [field]: value } });
   async function save() {
     try {
-      const fields = ticketFields.parse({
+      const fields = draftFields({
         ...draft.fields,
         labels: splitTags(labels),
         scopes: splitTags(scopesText),
@@ -153,9 +159,28 @@ function Editor({
       />
       <Choice
         label="Status"
-        value={fields.status}
-        options={states.map((value) => ({ value, label: stateLabels[value] }))}
-        onChange={(value) => set("status", z.enum(states).parse(value))}
+        value={
+          fields.stateId ??
+          workflow.data?.find((state) => state.category === fields.status)?.id ??
+          fields.status
+        }
+        options={
+          workflow.data?.length
+            ? workflow.data.map((state) => ({ value: state.id, label: state.name }))
+            : states.map((value) => ({ value, label: stateLabels[value] }))
+        }
+        onChange={(value) => {
+          const state = workflow.data?.find((item) => item.id === value);
+          change({
+            ...draft,
+            fields: {
+              ...draft.fields,
+              ...(state
+                ? { status: state.category, stateId: state.id }
+                : { status: z.enum(states).parse(value), stateId: null }),
+            },
+          });
+        }}
       />
       <Choice
         label="Priority"

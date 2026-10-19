@@ -169,6 +169,13 @@
       "when": 1792394280647,
       "tag": "0023_workspace_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792394755000,
+      "tag": "0024_workflow_states",
+      "breakpoints": true
     }
   ]
 }

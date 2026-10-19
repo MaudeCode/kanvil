@@ -58,7 +58,6 @@ import {
   SearchField,
   SectionHeading,
   DueDate,
-  TicketIndicator,
 } from "./ui.tsx";
 import { TicketLink } from "./components/ticket-link.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
@@ -79,6 +78,7 @@ import {
 } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
+import { PropertyValue, statusValue } from "./components/ticket-property.tsx";
 import { preferences, usePreference } from "./hooks/use-preference.ts";
 
 const TicketList = lazy(() =>
@@ -326,7 +326,11 @@ function WorkOverview({ workspaceId }: { workspaceId: string }) {
                   key={ticket.id}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b py-2.5 text-[13px] leading-5"
                 >
-                  <TicketIndicator property="status" value={ticket.status} />
+                  <PropertyValue
+                    property="status"
+                    value={statusValue(ticket)}
+                    projectId={ticket.projectId}
+                  />
                   <TicketLink
                     projectId={ticket.projectId}
                     ticketId={ticket.id}

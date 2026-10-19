@@ -61,6 +61,8 @@ const settledBy: Record<string, string[]> = {
   // An acceptance announces the new membership rather than an invitation change.
   list_invitations: ["invitation.", "membership."],
   list_project_labels: ["label.", "project."],
+  // Its ticket counts move with ticket traffic.
+  list_workflow_states: ["workflow.", "project.", "ticket."],
   list_calendar_feeds: ["calendar_feed.", "label.", "membership.", "project."],
   list_label_colors: ["label."],
   list_views: ["label.", "project."],

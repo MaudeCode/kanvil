@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { setLayout, toggleDisplay } from "./controls.ts";
+import { choose, setLayout, toggleDisplay } from "./controls.ts";
 
 const lane = (page: Page, name: string) =>
   page.getByRole("region", { name: `${name} tickets`, exact: true });
@@ -120,6 +120,69 @@ test("the board keeps filters and selection and moves tickets by drag or keyboar
   } finally {
     await context.close();
   }
+});
+
+test("project workflow states drive the status picker, list sections, and board lanes", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "FLOW", name: "Workflow states" },
+    })
+  ).json();
+  const ticketUrl = (id: string) => `/api/v1/projects/${project.id}/tickets/${id}`;
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Needs a quality check" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/settings?section=workflow`);
+  await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
+  // Every category keeps a state, so a lone state cannot be deleted.
+  await expect(
+    page.getByRole("button", { name: "Backlog is the only Backlog state", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "New state", exact: true }).click();
+  await page.getByRole("textbox", { name: "State name", exact: true }).fill("QA");
+  await choose(page, "Category", "In review");
+  await page.getByRole("button", { name: "Save state", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Move QA up", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Move QA up", exact: true })).toBeDisabled();
+
+  await page.goto(`/projects/${project.id}`);
+  const row = page.getByRole("row").filter({ hasText: "Needs a quality check" });
+  await row.getByRole("combobox", { name: "Status", exact: true }).click();
+  await page.getByRole("option", { name: "QA", exact: true }).click();
+  await expect(
+    page.getByRole("rowgroup", { name: "QA tickets", exact: true }).locator(".ticket-row"),
+  ).toContainText("Needs a quality check");
+  const read = async () => (await (await page.request.get(ticketUrl(ticket.id))).json()).ticket;
+  await expect.poll(async () => (await read()).status).toBe("in_review");
+  const workflow = await (await page.request.get(`/api/v1/projects/${project.id}/workflow`)).json();
+  const id = (name: string) => workflow.find((state: { name: string }) => state.name === name).id;
+  expect((await read()).stateId).toBe(id("QA"));
+
+  await setLayout(page, "Board");
+  await expect(lane(page, "QA").locator("li.ticket-row")).toContainText("Needs a quality check");
+  await card(page, "Needs a quality check").dragTo(lane(page, "In review"));
+  await expect(lane(page, "In review").locator("li.ticket-row")).toContainText(
+    "Needs a quality check",
+  );
+  await expect.poll(async () => (await read()).stateId).toBe(id("In review"));
+  await card(page, "Needs a quality check").dragTo(lane(page, "QA"));
+  await expect.poll(async () => (await read()).stateId).toBe(id("QA"));
+  await setLayout(page, "List");
+
+  // Deleting a state asks where its tickets go.
+  await page.goto(`/projects/${project.id}/settings?section=workflow`);
+  await page.getByRole("button", { name: "Delete state QA", exact: true }).click();
+  await choose(page, "Move 1 ticket to", "Done");
+  await page.getByRole("button", { name: "Delete state", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit state QA", exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await read()).status).toBe("done");
 });
 
 test("project backgrounds upload, hide per person, and remove", async ({ page }) => {

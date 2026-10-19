@@ -1,6 +1,11 @@
 import { TicketPicker } from "./components/ticket-picker.tsx";
 import { TicketLink } from "./components/ticket-link.tsx";
-import { PropertyValue, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
+import {
+  PropertyValue,
+  TicketProperty,
+  statusValue,
+  useTicketChange,
+} from "./components/ticket-property.tsx";
 import { Unlink, Plus, GitBranchPlus, CornerLeftUp } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -19,7 +24,6 @@ import {
   Modal,
   Select,
   SelectItem,
-  TicketIndicator,
   SectionHeading,
   FormActions,
 } from "./ui.tsx";
@@ -299,7 +303,7 @@ function ReferenceRow({
       {editable ? (
         <TicketProperty
           property="status"
-          value={current.status}
+          value={statusValue(current)}
           onChange={(status) => void change({ status })}
           projectId={projectId}
           disabled={pending}
@@ -309,7 +313,14 @@ function ReferenceRow({
           className="mx-0"
         />
       ) : (
-        current && <TicketIndicator property="status" value={current.status} iconOnly />
+        current && (
+          <PropertyValue
+            property="status"
+            value={statusValue(current)}
+            projectId={projectId}
+            iconOnly
+          />
+        )
       )}
       <ItemContent className="min-w-0 gap-0">
         {label && <span className="text-xs text-muted-foreground">{label}</span>}

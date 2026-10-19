@@ -2,6 +2,8 @@ import { authenticationPolicySchema } from "./instance.ts";
 import type { palettes } from "./theme.ts";
 import { z } from "zod";
 
+// The canonical statuses. A project's workflow states each map to one of them, and every rule that
+// reads a ticket's `status` (open, closed, readiness, claims, filters) reads this category.
 export const states = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
 // Statuses that end work; "open" everywhere means not one of these.
 export const closedStates = ["done", "cancelled"] as const;
@@ -78,12 +80,12 @@ export const stateTones: Record<(typeof states)[number], keyof typeof palettes.l
 
 const id = z.string().min(1).max(80);
 const timestamp = z.iso.datetime();
+const version = z.number().int().positive();
+const text = z.string().trim().min(1);
 // PostgreSQL rejects year 0, which the ISO grammar allows. Start and due dates share it.
 export const dueDate = z.iso
   .datetime()
   .refine((value) => new Date(value).getUTCFullYear() >= 1, "Use a date in year 1 or later");
-const version = z.number().int().positive();
-const text = z.string().trim().min(1);
 const tags = z
   .array(text.max(40))
   .max(30)
@@ -96,6 +98,34 @@ export const projectLabelSchema = z.object({
   version,
 });
 export type ProjectLabel = z.output<typeof projectLabelSchema>;
+// One named state of a project's workflow. Every category keeps at least one state, so a client
+// that writes only `status` always lands on one: the first state of that category.
+export const workflowStateSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  // Derived from the first name and never changed, so automation can name a state stably.
+  slug: z.string(),
+  name: text.max(40),
+  category: z.enum(states),
+  // "default" uses the category's own tint.
+  color: labelColor,
+  // The state's place within its category.
+  position: z.number().int().nonnegative(),
+  version,
+});
+export type WorkflowState = z.output<typeof workflowStateSchema>;
+// The states a new project starts with. Clients show them for servers that predate workflows.
+export const defaultWorkflow = states.map((category) => ({
+  slug: category,
+  name: stateLabels[category],
+  category,
+}));
+// Workflow states list by category in canonical order, then by position.
+const categoryRank = (category: string) => states.findIndex((state) => state === category);
+export const workflowOrder = (
+  a: { category: string; position: number },
+  b: { category: string; position: number },
+) => categoryRank(a.category) - categoryRank(b.category) || a.position - b.position;
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -266,7 +296,11 @@ export const ticketFields = z
     title: text.max(500).overwrite((value) => value.replace(/\s+/gu, " ")),
     description: z.string().max(100_000),
     acceptanceCriteria: z.string().max(50_000),
+    // The category of the ticket's workflow state. Writing it alone moves the ticket to that
+    // category's first state, or keeps its state when the category is unchanged.
     status: z.enum(states),
+    // The ticket's workflow state; its category must match `status` when both are written.
+    stateId: z.uuid(),
     priority: z.enum(priorities),
     kind: z.enum(kinds),
     difficulty: z.enum(difficulties).nullable(),
@@ -345,12 +379,13 @@ export const projectSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
-// Not strict like the editable fields: storage-only columns, such as the manual order's position,
-// stay on the server.
+// Not strict like the editable fields: unknown fields, and storage-only columns such as the manual
+// order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
   ...ticketFields.shape,
-  // Servers that predate start dates omit the field.
+  // Servers that predate start dates or workflows omit these fields.
   startAt: dueDate.nullable().default(null),
+  stateId: z.uuid().nullable().default(null),
   claimRequired: z.boolean(),
   id: z.uuid(),
   projectId: z.uuid(),
@@ -838,6 +873,9 @@ export const eventLabels: Record<string, string> = {
   "label.created": "Label created",
   "label.updated": "Label updated",
   "label.deleted": "Label deleted",
+  "workflow.created": "Workflow state added",
+  "workflow.updated": "Workflow state changed",
+  "workflow.deleted": "Workflow state removed",
   "ticket.created": "Ticket created",
   "ticket.updated": "Ticket updated",
   "ticket.deleted": "Ticket deleted",
@@ -1197,6 +1235,8 @@ export const operations = {
         ...pagination,
         // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
         relatedTo: id.optional(),
+        // Only tickets in this workflow state.
+        stateId: z.uuid().optional(),
         // Only tickets whose span, from the start (or due) date to the due (or start) date,
         // overlaps [scheduledFrom, scheduledTo). Either bound alone also excludes undated tickets.
         scheduledFrom: timestamp.optional(),
@@ -1279,6 +1319,66 @@ export const operations = {
     "write",
     "Remove a custom color from the site-wide palette; instance administrators and the person who added it may do so. Labels already using it keep their color.",
   ),
+  list_workflow_states: op(
+    projectInput,
+    z.array(workflowStateSchema.extend({ count: z.number().int().nonnegative() })),
+    "GET",
+    "/projects/{projectId}/workflow",
+    "read",
+    "List the project's workflow states in display order: by category (backlog, todo, in_progress, in_review, done, cancelled), then position. Counts include archived tickets. A ticket's status is its state's category, which open, closed, readiness, and claim rules read.",
+  ),
+  create_workflow_state: op(
+    projectInput
+      .extend({
+        ...mutation,
+        name: text.max(40),
+        category: z.enum(states),
+        color: labelColor.default("default"),
+      })
+      .strict(),
+    workflowStateSchema,
+    "POST",
+    "/projects/{projectId}/workflow",
+    "admin",
+    "Add a workflow state at the end of its category. Its slug is derived from the name once and never changes. Reuse requestId when retrying this write.",
+  ),
+  update_workflow_state: op(
+    projectInput
+      .extend({
+        ...mutation,
+        stateId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(40).optional(),
+        color: labelColor.optional(),
+        category: z.enum(states).optional(),
+        // The state's new place within its category; a category change without one appends it.
+        position: z.number().int().min(0).max(1000).optional(),
+      })
+      .strict()
+      .refine(
+        (input) =>
+          input.name !== undefined ||
+          input.color !== undefined ||
+          input.category !== undefined ||
+          input.position !== undefined,
+        { message: "Change the name, color, category, or position" },
+      ),
+    workflowStateSchema,
+    "PATCH",
+    "/projects/{projectId}/workflow/{stateId}",
+    "admin",
+    "Rename, recolor, recategorize, or reorder a workflow state. A category change moves the status of every ticket in the state and publishes their updates. The last state of a category cannot leave it.",
+  ),
+  delete_workflow_state: op(
+    projectInput
+      .extend({ ...mutation, stateId: z.uuid(), expectedVersion: version, reassignTo: z.uuid() })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/workflow/{stateId}",
+    "admin",
+    "Delete a workflow state after moving its tickets, archived ones included, to another state of the project, publishing their updates. The last state of a category cannot be deleted.",
+  ),
   get_ticket: op(
     ticketInput,
     z.object({
@@ -1300,7 +1400,9 @@ export const operations = {
         title: ticketFields.shape.title,
         description: z.string().max(100_000).default(""),
         acceptanceCriteria: z.string().max(50_000).default(""),
-        status: z.enum(states).default("todo"),
+        // Without either, the ticket starts in the first To do state.
+        status: z.enum(states).optional(),
+        stateId: z.uuid().optional(),
         priority: z.enum(priorities).default("medium"),
         kind: z.enum(kinds).default("feature"),
         difficulty: z.enum(difficulties).nullable().default(null),
@@ -1351,20 +1453,22 @@ export const operations = {
         ...mutation,
         expectedVersion: version,
         ...placement,
+        // Written like a ticket update's: a state, a status, or both when they agree.
         status: z.enum(states).optional(),
+        stateId: z.uuid().optional(),
         claimId: z.uuid().optional(),
       })
       .strict()
       .refine(oneNeighbor, "Name one neighbor: before or after")
       .refine(
-        (input) => input.before ?? input.after ?? input.status,
-        "Name a neighbor, a status, or both",
+        (input) => input.before ?? input.after ?? input.status ?? input.stateId,
+        "Name a neighbor, a status or state, or both",
       ),
     ticketSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/move",
     "write",
-    "Place a ticket directly before or after another ticket of the project in the manual order (`sort: manual`), optionally changing its status in the same versioned write. Only the moved ticket changes place; reorders alone notify no one.",
+    "Place a ticket directly before or after another ticket of the project in the manual order (`sort: manual`), optionally changing its status or workflow state in the same versioned write. Only the moved ticket changes place; reorders alone notify no one.",
   ),
   bulk_update_tickets: op(
     projectInput

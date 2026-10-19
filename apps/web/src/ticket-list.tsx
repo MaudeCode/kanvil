@@ -74,9 +74,15 @@ import {
   PropertyValue,
   TicketProperty,
   pair,
+  parseStatus,
+  propertyChange,
+  stateValue,
+  statusValue,
   useTicketChange,
+  useWorkflow,
   type PropertyName,
   type PropertyValues,
+  type StatusValue,
 } from "./components/ticket-property.tsx";
 import {
   DropdownMenu,
@@ -267,7 +273,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     size: 115,
     minSize: 105,
     cell: ({ row }) => (
-      <PropertyCell ticket={row.original} property="status" value={row.original.status} />
+      <PropertyCell ticket={row.original} property="status" value={statusValue(row.original)} />
     ),
   },
   {
@@ -355,16 +361,20 @@ const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
   createdAt: "created",
   updatedAt: "updated",
 };
-// Where a move puts a ticket: next to a neighbor as displayed, into a status, or both.
+// Where a move puts a ticket: next to a neighbor as displayed, into a status or state, or both.
 interface Placement {
   anchor?: string;
   below?: boolean;
-  status?: Ticket["status"];
+  status?: StatusValue;
 }
-// One server query series: a status section, a planning group, or the whole list. `status` and
-// `archived` override the page's filters for that series.
+// A bare category leaves a ticket already in that category where it is, like a status-only write.
+const sameStatus = (ticket: Ticket, value: StatusValue) =>
+  value === (value.includes(":") ? statusValue(ticket) : ticket.status);
+// One server query series: a status section, a planning group, or the whole list. `status`,
+// `stateId`, and `archived` override the page's filters for that series.
 interface Fetch extends Omit<Section, "total"> {
   status?: Ticket["status"];
+  stateId?: string;
   archived?: TicketSearch["archived"];
 }
 const allTickets: Fetch = { id: "all", label: "All", heading: null, has: () => true };
@@ -464,6 +474,13 @@ export function TicketList({
   // A move in flight shows at once: the ticket in its new status, next to its new neighbor.
   const [placing, setPlacing] = useState<Placement & { id: string }>();
   const pages = paging.filterKey === filterKey ? paging.pages : {};
+  // A project's status sections and board lanes follow its workflow states; My work, which spans
+  // projects, groups by category.
+  // Status steps walk the same states, so a project list always reads its workflow.
+  const workflowQuery = useWorkflow(project?.id ?? ""),
+    workflow = workflowQuery.data ?? [],
+    // Sections wait for the workflow rather than fetching by category first.
+    workflowPending = !!project && grouping === "status" && workflowQuery.isPending;
   // Status sections and planning groups fetch one series of pages each; other lists fetch one
   // series and group it here.
   const fetches: Fetch[] =
@@ -471,17 +488,36 @@ export function TicketList({
       ? planningGroups.filter(
           (entry) => !entry.status || matchesFilter(search, "status", entry.status),
         )
-      : grouping === "status"
-        ? states
-            .filter((status) => matchesFilter(search, "status", status))
-            .map((status) => ({
-              id: status,
-              label: stateLabels[status],
-              heading: <TicketIndicator property="status" value={status} />,
-              status,
-              has: (ticket: Ticket) => ticket.status === status,
-            }))
-        : [allTickets];
+      : workflowPending
+        ? []
+        : grouping === "status" && project && workflow.length
+          ? workflow
+              .filter((state) => matchesFilter(search, "status", state.category))
+              .map((state) => ({
+                id: state.id,
+                label: state.name,
+                heading: (
+                  <PropertyValue
+                    property="status"
+                    value={stateValue(state)}
+                    projectId={project.id}
+                  />
+                ),
+                status: state.category,
+                stateId: state.id,
+                has: (ticket: Ticket) => ticket.stateId === state.id,
+              }))
+          : grouping === "status"
+            ? states
+                .filter((status) => matchesFilter(search, "status", status))
+                .map((status) => ({
+                  id: status,
+                  label: stateLabels[status],
+                  heading: <TicketIndicator property="status" value={status} />,
+                  status,
+                  has: (ticket: Ticket) => ticket.status === status,
+                }))
+            : [allTickets];
   const pageQueries = fetches.flatMap((entry) =>
     Array.from({ length: pages[entry.id] ?? 1 }, (_, page) => ({
       entry,
@@ -495,6 +531,7 @@ export function TicketList({
             projectId: project.id,
             ...search,
             ...(entry.status ? { status: entry.status, statusNot: undefined } : {}),
+            ...(entry.stateId ? { stateId: entry.stateId } : {}),
             ...(range
               ? {
                   scheduledFrom: range.from.toISOString(),
@@ -542,9 +579,10 @@ export function TicketList({
       if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
     }
   const placed = placing && latest.get(placing.id);
-  if (placing?.status && placed) latest.set(placed.id, { ...placed, status: placing.status });
+  if (placing?.status && placed)
+    latest.set(placed.id, { ...placed, ...propertyChange("status", placing.status) });
   // Rows that arrive through realtime after the first load get a short highlight.
-  const loading = missingPages || queries.some((query) => query.isPending);
+  const loading = workflowPending || missingPages || queries.some((query) => query.isPending);
   const currentIds = [...latest.keys()].join("\n");
   const [seen, setSeen] = useState<{ filterKey: string; ids: string | null; fresh: Set<string> }>({
     filterKey,
@@ -829,8 +867,12 @@ export function TicketList({
   // so quick repeated keys are neither dropped nor rejected as stale.
   const queue = useRef(Promise.resolve()),
     savedVersions = useRef(new Map<string, number>());
+  const statusName = (value: StatusValue) => {
+    const { status, stateId } = parseStatus(value);
+    return workflow.find((state) => state.id === stateId)?.name ?? stateLabels[status];
+  };
   const place = (ticket: Ticket, { anchor: neighborId, below = false, status }: Placement) => {
-    const changed = status && status !== ticket.status ? status : undefined,
+    const changed = status && !sameStatus(ticket, status) ? status : undefined,
       neighbor = neighborId ? latest.get(neighborId) : undefined;
     if (!neighbor && !changed) return;
     const shown = {
@@ -841,7 +883,7 @@ export function TicketList({
     };
     setPlacing(shown);
     setAnnouncement(
-      `${ticket.key} moved${changed ? ` to ${stateLabels[changed]}` : ""}${neighbor ? ` ${below ? "below" : "above"} ${neighbor.key}` : ""}`,
+      `${ticket.key} moved${changed ? ` to ${statusName(changed)}` : ""}${neighbor ? ` ${below ? "below" : "above"} ${neighbor.key}` : ""}`,
     );
     // A descending list shows the manual order reversed.
     const after = below !== descending;
@@ -852,7 +894,7 @@ export function TicketList({
           ticketId: ticket.id,
           expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
           ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
-          ...(changed ? { status: changed } : {}),
+          ...(changed ? propertyChange("status", changed) : {}),
         });
         savedVersions.current.set(saved.id, saved.version);
       })
@@ -867,9 +909,12 @@ export function TicketList({
   // section. Top, up, down, and bottom need the manual order.
   const targetFor = (ticket: Ticket, command: MoveCommand): Placement | undefined => {
     if (command === "previous" || command === "next") {
-      const status = states[states.indexOf(ticket.status) + (command === "next" ? 1 : -1)];
+      // A project steps through its workflow states; My work, across projects, through categories.
+      const steps: StatusValue[] = workflow.length ? workflow.map(stateValue) : [...states],
+        at = steps.indexOf(workflow.length ? statusValue(ticket) : ticket.status),
+        status = steps[at + (command === "next" ? 1 : -1)];
       if (!status) return undefined;
-      const lane = sectionOf({ ...ticket, status }),
+      const lane = sectionOf({ ...ticket, ...propertyChange("status", status) }),
         first =
           manual && lane ? sectionRows(lane).find((row) => row.id !== ticket.id)?.id : undefined;
       return { status, ...(first ? { anchor: first } : {}) };
@@ -930,7 +975,7 @@ export function TicketList({
       place(ticket, {
         anchor: neighborId,
         below,
-        ...(grouping === "status" && { status: neighbor.status }),
+        ...(grouping === "status" && { status: statusValue(neighbor) }),
       });
   });
   // Rows take drops in the manual order, except across planning groups.
@@ -943,7 +988,8 @@ export function TicketList({
   const [dropLane, setDropLane] = useState<string | null>(null);
   const dropOn = (section: Section) => {
     const ticket = drag.dragging ? latest.get(drag.dragging) : undefined,
-      status = states.find((state) => state === section.id);
+      state = workflow.find((item) => item.id === section.id),
+      status = state ? stateValue(state) : states.find((category) => category === section.id);
     drag.end();
     setDropLane(null);
     const last = manual
@@ -1274,7 +1320,7 @@ export function TicketList({
                                 <PropertyCell
                                   ticket={row.original}
                                   property="status"
-                                  value={row.original.status}
+                                  value={statusValue(row.original)}
                                   iconOnly
                                 />
                               </span>

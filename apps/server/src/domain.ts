@@ -50,6 +50,7 @@ import { collaborationHandlers } from "./collaboration-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
 import { calendarHandlers } from "./calendar-operations.ts";
 import { invitationHandlers } from "./invitation-operations.ts";
+import { workflowHandlers } from "./workflow-operations.ts";
 
 export interface Actor {
   id: string;
@@ -522,6 +523,7 @@ export function createDomain(
     ...deliveryHandlers,
     ...calendarHandlers,
     ...invitationHandlers,
+    ...workflowHandlers,
   };
   // Operations that act for the person signed in, never for a credential.
   const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);

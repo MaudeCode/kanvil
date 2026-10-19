@@ -16,7 +16,7 @@ import {
   ticketFields,
   ticketSchema,
 } from "./index.ts";
-import { ticketDraftSchema } from "./drafts.ts";
+import { createTicketDraft, ticketDraftSchema } from "./drafts.ts";
 
 describe("agent write contracts", () => {
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
@@ -142,7 +142,7 @@ describe("agent write contracts", () => {
   });
 });
 
-it("reads tickets and drafts from before start dates and keeps edits partial", () => {
+it("reads tickets and drafts from before start dates and workflows and keeps edits partial", () => {
   const legacy = ticketSchema.parse({
     title: "Older server",
     description: "",
@@ -169,12 +169,23 @@ it("reads tickets and drafts from before start dates and keeps edits partial", (
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   });
-  expect(legacy.startAt).toBeNull();
-  // A draft saved before start dates existed still opens.
+  expect(legacy).toMatchObject({ startAt: null, stateId: null });
+  // A draft saved before start dates and workflows existed still opens; its status decides.
   const draft = ticketDraftSchema.parse({
-    fields: ticketFields.strip().omit({ startAt: true }).parse(legacy),
+    fields: ticketFields.strip().omit({ startAt: true, stateId: true }).parse(legacy),
   });
-  expect(draft.fields.startAt).toBeNull();
+  expect(draft.fields).toMatchObject({ startAt: null, stateId: null, status: "todo" });
+  expect(createTicketDraft(legacy).fields.stateId).toBeNull();
+  // A newer server's extra ticket fields are ignored rather than failing the whole read.
+  expect(ticketSchema.parse({ ...legacy, futureField: true })).not.toHaveProperty("futureField");
+  // Creation leaves the status open so a chosen state decides it.
+  expect(
+    operations.create_ticket.input.parse({
+      projectId: "p",
+      title: "Stateful",
+      stateId: "8f9619ff-8b86-4011-b42d-00c04fc964ff",
+    }),
+  ).not.toHaveProperty("status");
   // A change that names only the due date never clears the start date.
   const update = operations.update_ticket.input.parse({
     projectId: "p",

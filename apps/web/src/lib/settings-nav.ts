@@ -13,6 +13,7 @@ import {
   UserRound,
   Users,
   Webhook,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { accountSections, adminSections, projectSections, workspaceSections } from "../search.ts";
@@ -37,6 +38,7 @@ const workspace: Sections<typeof workspaceSections> = {
 };
 const project: Sections<typeof projectSections> = {
   ...workspace,
+  workflow: { label: "Workflow", icon: Workflow },
   labels: { label: "Labels", icon: Tags },
   integrations: { label: "Integrations", icon: Webhook },
   calendar: { label: "Calendar feeds", icon: CalendarSync },

@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
 import { api } from "../data.tsx";
 import { TicketIndicator } from "../ui.tsx";
+import { PropertyValue, statusValue } from "./ticket-property.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
@@ -60,7 +61,11 @@ export function TicketLink({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="font-mono">{detail.key}</span>
-              <TicketIndicator property="status" value={detail.status} />
+              <PropertyValue
+                property="status"
+                value={statusValue(detail)}
+                projectId={detail.projectId}
+              />
               <TicketIndicator property="priority" value={detail.priority} iconOnly />
             </div>
             <p className="m-0 text-[13px] leading-5 font-medium wrap-anywhere">{detail.title}</p>

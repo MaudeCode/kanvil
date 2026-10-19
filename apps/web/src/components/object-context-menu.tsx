@@ -39,6 +39,7 @@ import {
   usePropertyOptions,
   useTicketChange,
   type PropertyName,
+  type TicketChange,
 } from "./ticket-property.tsx";
 import { DateCalendar, endOfDay } from "./date-picker.tsx";
 const TicketEditor = lazy(() =>
@@ -86,7 +87,7 @@ function PropertyMenu({
   ticket: Ticket;
   enabled: boolean;
   disabled: boolean;
-  onChange: (changes: Partial<Ticket>) => void;
+  onChange: (changes: TicketChange) => void;
 }) {
   const options = usePropertyOptions(property, ticket.projectId, enabled),
     current = propertyOf(ticket, property);
@@ -214,7 +215,7 @@ export function TicketContextMenu({
     Trigger = variant === "dropdown" ? DropdownMenuTrigger : ContextMenuTrigger,
     Content = variant === "dropdown" ? DropdownMenuContent : ContextMenuContent;
   const href = `/projects/${ticket.projectId}/tickets/${ticket.id}`;
-  const change = (changes: Partial<Ticket>) => void update.change(changes);
+  const change = (changes: TicketChange) => void update.change(changes);
   return (
     <>
       <Root open={open} onOpenChange={setOpen}>

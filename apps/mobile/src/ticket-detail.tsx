@@ -66,7 +66,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
   return (
     <Screen>
       <View style={styles.actions}>
-        <Status value={ticket.status} />
+        <Status ticket={ticket} />
         <Body muted small>
           {priorityLabels[ticket.priority]} priority
         </Body>

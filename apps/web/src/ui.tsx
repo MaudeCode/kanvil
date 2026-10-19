@@ -49,9 +49,11 @@ import {
   mentionScheme,
   stateLabels,
   priorityLabels,
+  type LabelColor,
   type Ticket,
 } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
+import { accentColor } from "./lib/accent-colors.ts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -387,20 +389,29 @@ const priorityPresentation = {
   low: { icon: ArrowDown, color: "text-primary" },
   none: { icon: Minus, color: "text-muted-foreground" },
 };
+// A status shows its category's icon; a workflow state can rename it and tint it.
 export function TicketIndicator({
   property,
   value,
   iconOnly = false,
+  label: name,
+  color: tint,
 }: (
   | { property: "status"; value: Ticket["status"] }
   | { property: "priority"; value: Ticket["priority"] }
-) & { iconOnly?: boolean }) {
+) & { iconOnly?: boolean; label?: string | undefined; color?: LabelColor | undefined }) {
+  const custom =
+    property === "status" && tint && tint !== "default" ? accentColor(tint) : undefined;
   const {
     icon: Icon,
     color,
     label,
   } = property === "status"
-    ? { ...statusPresentation[value], label: stateLabels[value] }
+    ? {
+        ...statusPresentation[value],
+        color: custom ? custom.className : statusPresentation[value].color,
+        label: name ?? stateLabels[value],
+      }
     : { ...priorityPresentation[value], label: priorityLabels[value] };
   const accessibleLabel = property === "priority" && value !== "none" ? `${label} priority` : label;
   return (
@@ -413,6 +424,7 @@ export function TicketIndicator({
         "gap-1.5 border-transparent font-normal",
         color,
       )}
+      style={custom?.style}
       data-priority={property === "priority" ? value : undefined}
       role={iconOnly ? "img" : undefined}
       aria-label={iconOnly ? accessibleLabel : undefined}
