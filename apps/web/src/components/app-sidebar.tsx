@@ -69,6 +69,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { formats, markdownFormats } from "@/lib/markdown";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -257,6 +258,12 @@ const shortcuts: [string, string][] = [
   ["⌘ B", "Toggle sidebar"],
   ["⌘ ↵", "Save a ticket or comment"],
   ["?", "This list"],
+  ...markdownFormats.flatMap((format): [string, string][] => {
+    const spec = formats[format];
+    return "shortcut" in spec
+      ? [[spec.shortcut, `${"help" in spec ? spec.help : spec.label} in a Markdown field`]]
+      : [];
+  }),
 ];
 function CommandPalette() {
   const [open, setOpen] = useState(false),
@@ -474,7 +481,7 @@ function CommandPalette() {
       <Modal title="Keyboard shortcuts" open={help} onOpenChange={setHelp}>
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-2.5 text-sm">
           {shortcuts.map(([keys, label]) => (
-            <div key={keys} className="contents">
+            <div key={label} className="contents">
               <dt>
                 <KbdGroup>
                   {keys.split(" ").map((key) => (

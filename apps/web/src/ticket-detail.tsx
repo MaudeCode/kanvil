@@ -224,11 +224,23 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
           <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
             <section>
               <h2>Description</h2>
-              <Markdown>{ticket.description || "_No description_"}</Markdown>
+              <Markdown
+                {...(editable
+                  ? { onChange: (description: string) => change({ description }) }
+                  : {})}
+              >
+                {ticket.description || "_No description_"}
+              </Markdown>
             </section>
             <section>
               <h2>Acceptance criteria</h2>
-              <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
+              <Markdown
+                {...(editable
+                  ? { onChange: (acceptanceCriteria: string) => change({ acceptanceCriteria }) }
+                  : {})}
+              >
+                {ticket.acceptanceCriteria || "_No acceptance criteria_"}
+              </Markdown>
             </section>
           </div>
           <Tabs

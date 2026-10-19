@@ -127,7 +127,10 @@ test("readers see readable ticket content without mutation controls", async ({ p
     ).json(),
     ticket = await (
       await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
-        data: { title: "Readable without editing permissions" },
+        data: {
+          title: "Readable without editing permissions",
+          description: "- [ ] Reviewed by a writer",
+        },
       })
     ).json();
   const email = `reader-${crypto.randomUUID()}@example.test`,
@@ -161,6 +164,9 @@ test("readers see readable ticket content without mutation controls", async ({ p
     await expect(reader.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
     await expect(reader.getByRole("button", { name: "Edit ticket", exact: true })).toBeDisabled();
     await expect(reader.getByRole("combobox", { name: "Status", exact: true })).toBeDisabled();
+    await expect(
+      reader.getByRole("checkbox", { name: "Reviewed by a writer", exact: true }),
+    ).toBeDisabled();
     await expect(reader.getByRole("button", { name: "Attach file", exact: true })).toHaveCount(0);
     await expect(reader.getByRole("button", { name: "Add relationship", exact: true })).toHaveCount(
       0,
@@ -360,4 +366,83 @@ test("long ticket drafts have growing document fields, an expanded view, and rea
   expect(tickets.items).toHaveLength(1);
   expect(tickets.items[0].description).toBe(body);
   expect(tickets.items[0].acceptanceCriteria).toContain("Drafts survive closing and reopening.");
+});
+
+test("writable checklists toggle in place and Markdown fields share formatting controls", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+      await page.request.post("/api/v1/projects", {
+        data: { key: "CHECK", name: "Checklist editing" },
+      })
+    ).json(),
+    ticket = await (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: {
+          title: "Toggle checklist items without opening the editor",
+          description: "- [ ] Ship it\n  - [ ] Ship it\n- [x] Done",
+          acceptanceCriteria: "1. [ ] Accepted",
+        },
+      })
+    ).json();
+  const read = async () =>
+    (await (await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)).json())
+      .ticket;
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const nested = page.getByRole("checkbox", { name: "Ship it", exact: true }).nth(1);
+  await expect(nested).toBeEnabled();
+  await nested.click();
+  await expect(nested).toBeChecked();
+  await expect
+    .poll(async () => (await read()).description)
+    .toBe("- [ ] Ship it\n  - [x] Ship it\n- [x] Done");
+  await expect(
+    page.getByRole("checkbox", { name: "Ship it", exact: true }).first(),
+  ).not.toBeChecked();
+  await page.getByRole("checkbox", { name: "Accepted", exact: true }).click();
+  await expect.poll(async () => (await read()).acceptanceCriteria).toBe("1. [x] Accepted");
+
+  // A rejected write settles back to the server's text.
+  await page.route(`**/api/v1/projects/${project.id}/tickets/${ticket.id}`, (route) =>
+    route.request().method() === "PATCH"
+      ? route.fulfill({
+          status: 409,
+          json: { error: { code: "version_conflict", message: "Ticket changed" } },
+        })
+      : route.fallback(),
+  );
+  const done = page.getByRole("checkbox", { name: "Done", exact: true });
+  await done.click();
+  await expect(page.getByText("Ticket changed", { exact: true })).toBeVisible();
+  await expect(done).toBeChecked();
+  await page.unrouteAll();
+  expect((await read()).description).toBe("- [ ] Ship it\n  - [x] Ship it\n- [x] Done");
+
+  const comment = page.getByRole("textbox", { name: "Comment", exact: true });
+  const toolbar = page.getByRole("toolbar", { name: "Comment formatting", exact: true });
+  await comment.fill("word");
+  await comment.selectText();
+  await toolbar.getByRole("button", { name: "Bold", exact: true }).click();
+  await expect(comment).toHaveValue("**word**");
+  expect(
+    await comment.evaluate((field: HTMLTextAreaElement) => [
+      field.selectionStart,
+      field.selectionEnd,
+    ]),
+  ).toEqual([2, 6]);
+  await comment.press("ControlOrMeta+z");
+  await expect(comment).toHaveValue("word");
+  await comment.selectText();
+  await comment.press("ControlOrMeta+i");
+  await expect(comment).toHaveValue("_word_");
+  await toolbar.getByRole("button", { name: "Checklist", exact: true }).click();
+  await expect(comment).toHaveValue("- [ ] _word_");
+  await comment.press("End");
+  await toolbar.getByRole("button", { name: "Code block", exact: true }).click();
+  await expect(comment).toHaveValue("```\n- [ ] _word_\n```");
+  await page.getByRole("button", { name: "Edit ticket", exact: true }).click();
+  await expect(
+    page.getByRole("toolbar", { name: "Description formatting", exact: true }),
+  ).toBeVisible();
 });
