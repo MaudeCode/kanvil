@@ -52,6 +52,7 @@ async function load(database: Database, id: string) {
         event: events,
         project: { id: projects.id, key: projects.key, name: projects.name },
         workspaceId: projects.workspaceId,
+        projectArchivedAt: projects.archivedAt,
         account: user,
         preference: notificationPreferences,
         projectRole: projectRoleSQL(user.id, notifications.projectId),
@@ -102,11 +103,13 @@ function notificationSkip(row: Row, ownerId: string | undefined): string | null 
   )
     return "access_revoked";
   if (row.preference?.categories[notification.category] === false) return "category_disabled";
-  // A reminder is stale once its ticket closes, is archived or deleted, or moves its due date.
+  // A reminder is stale once its ticket closes, it or its project is archived, it is deleted, or
+  // its due date moves.
   if (
     (event.type === "ticket.due_soon" || event.type === "ticket.overdue") &&
     (!ticket ||
       ticket.archived ||
+      row.projectArchivedAt ||
       closedStates.some((state) => state === ticket.status) ||
       ticket.dueAt?.getTime() !== new Date(String(event.data.dueAt)).getTime())
   )

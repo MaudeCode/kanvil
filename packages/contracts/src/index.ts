@@ -1464,7 +1464,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/archive",
     "admin",
-    "Archive a project, or restore it with `archived: false`. An archived project keeps its tickets and history but leaves default project lists, search, My work, calendar feeds, reminders, and agent queues, and its tickets and settings are read only. Fails with `claim_conflict` while any ticket is claimed.",
+    "Archive a project, or restore it with `archived: false`. An archived project keeps its tickets and history but leaves default project lists, search, My work, calendar feeds, public links, reminders, and agent queues, and its tickets and settings are read only. Fails with `claim_conflict` while any ticket is claimed.",
   ),
   get_project_impact: op(
     projectInput.extend({ workspaceId: z.uuid().optional() }),

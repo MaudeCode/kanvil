@@ -109,7 +109,7 @@ async function transferImpact(ctx: Context, workspaceId: string) {
       email: user.email,
       role: user.role,
       before: projectRoleSQL(qualifiedUser, current.id),
-      after: projectRoleSQL(qualifiedUser, current.id, workspaceId),
+      after: projectRoleSQL(qualifiedUser, current.id, { workspaceId }),
     })
     .from(user)
     .where(
@@ -342,6 +342,7 @@ export const lifecycleHandlers: Pick<
     await dropProjectFromInvitations(ctx, current);
     await changed(ctx, {
       deletedAt: new Date(),
+      publicReadEnabled: false,
       image: null,
       iconObjectId: null,
       background: null,

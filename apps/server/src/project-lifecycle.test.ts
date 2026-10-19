@@ -6,6 +6,7 @@ import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import {
   attachments,
+  eventClock,
   events,
   invitations,
   projectLabels,
@@ -65,6 +66,13 @@ describe("project lifecycle", () => {
     );
   const join = (workspace: Workspace, email: string, role: "reader" | "writer" | "admin" | null) =>
     domain.execute("set_workspace_member", { workspaceId: workspace.id, email, role }, owner);
+  const clock = async () =>
+    requireRow((await fixture.database.db.select().from(eventClock))[0]).value;
+  const received = async (actor: Actor, after: bigint) =>
+    (await domain.readEvents(actor, after)).items.map(({ type, projectId }) => ({
+      type,
+      projectId,
+    }));
   const current = (project: Project) =>
     domain.execute("get_project", { projectId: project.id }, owner);
   const readyTicket = (project: Project, title = "Agent work") =>
@@ -136,11 +144,25 @@ describe("project lifecycle", () => {
         owner,
       ),
     ).rejects.toMatchObject({ code: "version_conflict" });
-    const archived = await domain.execute(
-      "archive_project",
-      { projectId: project.id, expectedVersion: project.version, archived: true },
+    const shared = await domain.execute(
+      "update_project",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: "",
+        publicReadEnabled: true,
+      },
       owner,
     );
+    const archived = await domain.execute(
+      "archive_project",
+      { projectId: project.id, expectedVersion: shared.version, archived: true },
+      owner,
+    );
+    await expect(
+      domain.readPublic("get_public_project", { projectId: project.id }),
+    ).rejects.toMatchObject({ status: 404 });
     expect(archived.archivedAt).not.toBeNull();
     expect(await listed()).toEqual([]);
     expect(await listed("include")).toEqual([project.id]);
@@ -190,6 +212,9 @@ describe("project lifecycle", () => {
       owner,
     );
     expect(restored.archivedAt).toBeNull();
+    expect((await domain.readPublic("get_public_project", { projectId: project.id })).id).toBe(
+      project.id,
+    );
     expect(await listed()).toEqual([project.id]);
     expect(
       (await domain.execute("list_my_work", { workspaceId: workspace.id }, member)).items.map(
@@ -310,13 +335,36 @@ describe("project lifecycle", () => {
         owner,
       ),
     ).rejects.toMatchObject({ code: "version_conflict" });
+    const published = await domain.execute(
+      "update_project",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: "",
+        publicReadEnabled: true,
+      },
+      owner,
+    );
+    expect((await domain.readPublic("get_public_project", { projectId: project.id })).id).toBe(
+      project.id,
+    );
+    const before = await clock();
     const input = {
       projectId: project.id,
-      expectedVersion: project.version,
+      expectedVersion: published.version,
       confirmKey: project.key.toLowerCase(),
       requestId: crypto.randomUUID(),
     };
     expect(await domain.execute("delete_project", input, owner)).toEqual({ ok: true });
+    // Former readers still hear about it so their clients drop the project; others never do.
+    expect(
+      (await received(member, before)).filter((event) => event.projectId === project.id),
+    ).toEqual([{ type: "project.deleted", projectId: project.id }]);
+    expect(await received(guest, before)).toEqual([]);
+    await expect(
+      domain.readPublic("get_public_project", { projectId: project.id }),
+    ).rejects.toMatchObject({ status: 404 });
     // A lost response retries safely even though the project no longer authorizes anyone.
     expect(await domain.execute("delete_project", input, owner)).toEqual({ ok: true });
     await expect(current(project)).rejects.toMatchObject({ status: 404 });
@@ -454,7 +502,12 @@ describe("project lifecycle", () => {
       workspaceId: destination.id,
       requestId: crypto.randomUUID(),
     };
+    const before = await clock();
     const moved = await domain.execute("transfer_project", input, owner);
+    expect(await received(member, before)).toContainEqual({
+      type: "project.transferred",
+      projectId: project.id,
+    });
     expect(await domain.execute("transfer_project", input, owner)).toEqual(moved);
     expect(moved).toMatchObject({ id: project.id, key: project.key, workspaceId: destination.id });
     // Ticket identity and links are unchanged.

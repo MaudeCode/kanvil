@@ -1,7 +1,19 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { and, asc, eq, gt, inArray, isNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
 import {
   closedStates,
   eventCategories,
@@ -46,7 +58,7 @@ import {
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
-import { projectRole, readsProject } from "./project-access.ts";
+import { projectRole, projectRoleSQL, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { lifecycleHandlers } from "./project-lifecycle.ts";
@@ -684,14 +696,36 @@ export function createDomain(
       fail(410, "snapshot_required", "Fetch a fresh snapshot before reconnecting", {
         cursor: clock.value.toString(),
       });
-    const rows = ids.length
-      ? await database.db
-          .select()
-          .from(events)
-          .where(and(inArray(events.projectId, ids), gt(events.id, cursor)))
-          .orderBy(asc(events.id))
-          .limit(200)
-      : [];
+    // People who could read a project before it was deleted or moved away still receive the event
+    // that ended their access, so their clients drop what they cached.
+    const farewell = projectId
+      ? undefined
+      : and(
+          inArray(events.type, ["project.deleted", "project.transferred"]),
+          identity.projectIds ? inArray(events.projectId, [...identity.projectIds]) : undefined,
+          identity.admin
+            ? undefined
+            : isNotNull(
+                projectRoleSQL(identity.id, events.projectId, {
+                  workspaceId: sql`(${events.data}->>'fromWorkspaceId')::uuid`,
+                  deleted: true,
+                }),
+              ),
+        );
+    const rows =
+      ids.length || farewell
+        ? await database.db
+            .select()
+            .from(events)
+            .where(
+              and(
+                or(ids.length ? inArray(events.projectId, ids) : undefined, farewell),
+                gt(events.id, cursor),
+              ),
+            )
+            .orderBy(asc(events.id))
+            .limit(200)
+        : [];
     const last = rows.at(-1)?.id ?? cursor;
     return { items: rows, cursor: rows.length === 200 || last > clock.value ? last : clock.value };
   }
@@ -726,7 +760,15 @@ export function createDomain(
           await tx
             .select()
             .from(projects)
-            .where(and(eq(projects.id, input.projectId), eq(projects.publicReadEnabled, true)))
+            .where(
+              and(
+                eq(projects.id, input.projectId),
+                eq(projects.publicReadEnabled, true),
+                // Archiving pauses a public link like a calendar feed; deletion ends it.
+                isNull(projects.archivedAt),
+                isNull(projects.deletedAt),
+              ),
+            )
         )[0];
         if (!row) fail(404, "not_found", "Project was not found");
         const ctx: Context = { ...baseContext(tx, publicActor), project: toProject(row) };

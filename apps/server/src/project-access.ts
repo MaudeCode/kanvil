@@ -5,20 +5,22 @@ import { projects } from "./schema.ts";
 import { user } from "./auth-schema.ts";
 import type { Actor, Context } from "./domain.ts";
 // One effective-role rule serves requests, discovery, notifications, and delivery revalidation.
-// A deleted project grants no role. `workspaceId` evaluates the role as if the project lived there,
-// which is how a workspace move previews who loses or gains access.
+// A deleted project grants no role. `as` evaluates the role the project had or would have: in
+// another workspace (null keeps its own), as a move previews, or before its deletion.
 export function projectRoleSQL(
   userId: string | SQLWrapper,
   projectId: string | SQLWrapper,
-  workspaceId?: string,
+  as: { workspaceId?: string | SQLWrapper; deleted?: boolean } = {},
 ) {
+  const workspaceId =
+    typeof as.workspaceId === "string" ? sql`${as.workspaceId}::uuid` : as.workspaceId;
   return sql<string | null>`(SELECT CASE WHEN wm.role = 'admin' THEN 'admin'
     WHEN pm.role IS NOT NULL THEN pm.role
     WHEN p.visibility = 'workspace' THEN wm.role ELSE NULL END
     FROM projects p
     LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ${userId}
-    LEFT JOIN workspace_members wm ON wm.workspace_id = ${workspaceId ? sql`${workspaceId}::uuid` : sql`p.workspace_id`} AND wm.user_id = ${userId}
-    WHERE p.id = ${projectId} AND p.deleted_at IS NULL)`;
+    LEFT JOIN workspace_members wm ON wm.workspace_id = ${workspaceId ? sql`coalesce(${workspaceId}, p.workspace_id)` : sql`p.workspace_id`} AND wm.user_id = ${userId}
+    WHERE p.id = ${projectId}${as.deleted ? sql`` : sql` AND p.deleted_at IS NULL`})`;
 }
 // A joined user who is active and can read the project, directly or as an instance administrator.
 export const readsProject = (projectId: SQLWrapper) =>
