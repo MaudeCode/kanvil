@@ -16,9 +16,14 @@ import {
   type ChangeEvent,
   operations,
   parseOutput,
+  publicOperations,
+  parsePublicOutput,
   type Input,
   type Operation,
   type Output,
+  type PublicInput,
+  type PublicOperation,
+  type PublicOutput,
 } from "@kanvil/contracts";
 export { ApiError } from "@kanvil/contracts";
 
@@ -66,13 +71,55 @@ export function createClient(options: {
       throw new ApiError(400, "invalid_path", "Credentials cannot be sent to another origin");
     return url;
   };
-  const send = async (url: URL, init: RequestInit) => {
+  const retry = async (url: URL, init: RequestInit) => {
     try {
       return await request(url, init);
     } catch (error) {
       if (init.signal?.aborted) throw error;
       return request(url, init);
     }
+  };
+  // Sends one registry operation: path parameters fill the path, the rest is the query or body.
+  const send = async (
+    spec: {
+      input: { parse(value: unknown): object; shape: object };
+      method: "GET" | "POST" | "PATCH" | "DELETE";
+      path: string;
+    },
+    input: unknown,
+    base: string,
+  ) => {
+    const values: Record<string, unknown> = { ...spec.input.parse(input) };
+    const path = spec.path.replace(/\{(\w+)\}/g, (_, key: string) => {
+      const value = values[key];
+      delete values[key];
+      if (typeof value !== "string")
+        throw new ApiError(400, "invalid_path", `Missing path parameter ${key}`);
+      return encodeURIComponent(value);
+    });
+    const url = new URL(`${options.baseUrl.replace(/\/$/, "")}${base}${path}`);
+    const headers = new Headers(await options.headers?.());
+    const init: RequestInit = {
+      method: spec.method,
+      credentials: options.credentials ?? "include",
+      headers,
+    };
+    if (spec.method === "GET") {
+      for (const [key, value] of Object.entries(values))
+        for (const item of Array.isArray(value) ? value : [value])
+          if (typeof item === "string" || typeof item === "number" || typeof item === "boolean")
+            url.searchParams.append(key, String(item));
+    } else {
+      headers.set("Content-Type", "application/json");
+      // Writes that return a one-time secret take no requestId, so no receipt stores it.
+      if ("requestId" in spec.input.shape)
+        values.requestId ??= (options.requestId ?? randomRequestId)();
+      init.body = JSON.stringify(values);
+    }
+    // A lost response is retried only when the server can recognize the repeat; otherwise a
+    // retry could create a second record, such as another calendar feed.
+    const replayable = spec.method === "GET" || "requestId" in values;
+    return decode(await (replayable ? retry(url, init) : request(url, init)));
   };
   const api = {
     async request<T>(
@@ -93,39 +140,14 @@ export function createClient(options: {
       );
     },
     async call<K extends Operation>(name: K, input: Input<K>): Promise<Output<K>> {
-      const spec = operations[name];
-      const values: Record<string, unknown> = { ...spec.input.parse(input) };
-      const path = spec.path.replace(/\{(\w+)\}/g, (_, key: string) => {
-        const value = values[key];
-        delete values[key];
-        if (typeof value !== "string")
-          throw new ApiError(400, "invalid_path", `Missing path parameter ${key}`);
-        return encodeURIComponent(value);
-      });
-      const url = new URL(`${options.baseUrl.replace(/\/$/, "")}/api/v1${path}`);
-      const headers = new Headers(await options.headers?.());
-      const init: RequestInit = {
-        method: spec.method,
-        credentials: options.credentials ?? "include",
-        headers,
-      };
-      if (spec.method === "GET") {
-        for (const [key, value] of Object.entries(values))
-          for (const item of Array.isArray(value) ? value : [value])
-            if (typeof item === "string" || typeof item === "number" || typeof item === "boolean")
-              url.searchParams.append(key, String(item));
-      } else {
-        headers.set("Content-Type", "application/json");
-        // Writes that return a one-time secret take no requestId, so no receipt stores it.
-        if ("requestId" in spec.input.shape)
-          values.requestId ??= (options.requestId ?? randomRequestId)();
-        init.body = JSON.stringify(values);
-      }
-      // A lost response is retried only when the server can recognize the repeat; otherwise a
-      // retry could create a second record, such as another calendar feed.
-      const replayable = spec.method === "GET" || "requestId" in values;
-      const data = await decode(await (replayable ? send(url, init) : request(url, init)));
-      return parseOutput(name, data);
+      return parseOutput(name, await send(operations[name], input, "/api/v1"));
+    },
+    // Reads a shared project's public projection; the server ignores any session or credential.
+    async callPublic<K extends PublicOperation>(
+      name: K,
+      input: PublicInput<K>,
+    ): Promise<PublicOutput<K>> {
+      return parsePublicOutput(name, await send(publicOperations[name], input, "/api/public"));
     },
     async subscribe(subscription: {
       projectId?: string;
@@ -293,6 +315,14 @@ export function createClient(options: {
       return {
         queryKey: ["kanvil", options.baseUrl, name, input] as const,
         queryFn: () => api.call(name, input),
+      };
+    },
+    // Public reads live outside the account's "kanvil" namespace: never persisted, and realtime
+    // events never refresh them.
+    publicQuery<K extends PublicOperation>(name: K, input: PublicInput<K>) {
+      return {
+        queryKey: ["kanvil-public", options.baseUrl, name, input] as const,
+        queryFn: () => api.callPublic(name, input),
       };
     },
     action<K extends Operation>(name: K) {

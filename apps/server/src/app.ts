@@ -20,6 +20,8 @@ import {
   errorSchema,
   operations,
   isOperation,
+  publicOperations,
+  isPublicOperation,
   credentialInput,
   notificationIdsInput,
   notificationPreferencesSchema,
@@ -680,9 +682,22 @@ export async function createApplication(
     });
   });
 
-  for (const name of Object.keys(operations).filter(isOperation)) {
-    const spec = operations[name],
-      params: Record<string, z.ZodType> = {},
+  // Every registry operation becomes one documented route; `run` executes it with the parsed request.
+  const register = (
+    name: string,
+    spec: {
+      input: z.ZodObject;
+      output: z.ZodType;
+      method: "GET" | "POST" | "PATCH" | "DELETE";
+      path: string;
+      description: string;
+    },
+    base: string,
+    secured: boolean,
+    // `actor` reads the authenticated identity; only /api/v1 routes have one.
+    run: (values: Record<string, unknown>, actor: () => Actor) => Promise<Response>,
+  ) => {
+    const params: Record<string, z.ZodType> = {},
       rest: Record<string, z.ZodType> = {};
     const keys = [...spec.path.matchAll(/\{(\w+)\}/g)].map((match) => match[1]);
     for (const [key, value] of Object.entries(spec.input.shape)) {
@@ -699,10 +714,10 @@ export async function createApplication(
             : "delete";
     const route = createRoute({
       method,
-      path: `/api/v1${spec.path}`,
+      path: `${base}${spec.path}`,
       operationId: name,
       description: spec.description,
-      security: [{ bearerAuth: [] }],
+      security: secured ? [{ bearerAuth: [] }] : [],
       request: {
         params: z.object(params),
         ...(method === "get"
@@ -720,11 +735,19 @@ export async function createApplication(
           description: "Invalid input",
           content: { "application/json": { schema: errorSchema } },
         },
-        401: { description: "Authentication required" },
-        403: { description: "Insufficient permissions" },
+        ...(secured
+          ? {
+              401: { description: "Authentication required" },
+              403: { description: "Insufficient permissions" },
+            }
+          : {}),
         404: { description: "Not found" },
-        409: { description: "Version, ownership, or dependency conflict" },
-        429: { description: "Too many writes from this session; see Retry-After" },
+        ...(secured
+          ? {
+              409: { description: "Version, ownership, or dependency conflict" },
+              429: { description: "Too many writes from this session; see Retry-After" },
+            }
+          : {}),
       },
     });
     app.openapi(route, async (c) => {
@@ -738,11 +761,21 @@ export async function createApplication(
               ]),
             )
           : z.record(z.string(), z.unknown()).parse(await c.req.json());
-      return Response.json(
-        await domain.execute(name, { ...values, ...c.req.param() }, c.get("actor")),
-      );
+      return run({ ...values, ...c.req.param() }, () => c.get("actor"));
     });
-  }
+  };
+  for (const name of Object.keys(operations).filter(isOperation))
+    register(name, operations[name], "/api/v1", true, async (values, actor) =>
+      Response.json(await domain.execute(name, values, actor())),
+    );
+  // Shared projects answer without a session; responses are never cached, so revoking takes effect
+  // on the next request.
+  for (const name of Object.keys(publicOperations).filter(isPublicOperation))
+    register(name, publicOperations[name], "/api/public", false, async (values) =>
+      Response.json(await domain.readPublic(name, values), {
+        headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
+      }),
+    );
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",
     scheme: "bearer",

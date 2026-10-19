@@ -183,6 +183,13 @@
       "when": 1792396046396,
       "tag": "0025_workspace_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792397204020,
+      "tag": "0026_public_read",
+      "breakpoints": true
     }
   ]
 }

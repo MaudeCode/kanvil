@@ -74,6 +74,20 @@ Project administrators share a project's schedule as an iCalendar subscription. 
 
 `GET {path}` needs no session, so calendar apps can subscribe. **Anyone with the link can read the keys, titles, statuses, priorities, and dates of the tickets it shares**; revoke a link that leaked. It serves open, unarchived tickets of the project with a start or due date that match the feed's labels, at most 2,000, as all-day events from the start (or due) day through the due (or start) day in the feed's time zone, with links back to each ticket. Done, cancelled, and archived tickets leave the feed, and date changes appear on the next fetch. Unknown, malformed, and revoked tokens and feeds whose creator lost access all return `404`. Renaming a label updates feed filters; deleting one leaves it in the filter, where it matches nothing, so a deletion never widens what a feed shares.
 
+### Public project links
+
+Project administrators share a project read-only with anyone who has its link by sending `publicReadEnabled: true` to `update_project`, and stop sharing with `false`. Projects start, and existing projects stay, private; the flag is separate from `visibility` and membership. The change publishes `project.updated` with the new `publicReadEnabled`. The web link is `/public/projects/{projectId}`.
+
+Three operations answer under `/api/public` without a session or credential, and ignore any that is sent:
+
+| Operation             | Route                                                     | Returns                                                                                                        |
+| --------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `get_public_project`  | `GET /api/public/projects/{projectId}`                    | Name, key, description, icon, workflow states, and label colors                                                |
+| `list_public_tickets` | `GET /api/public/projects/{projectId}/tickets`            | A page (`limit` up to 100, `offset`) of unarchived tickets, ordered by status, then number                     |
+| `get_public_ticket`   | `GET /api/public/projects/{projectId}/tickets/{ticketId}` | One unarchived ticket by ID or key, with its unarchived parent, children, and relationships within the project |
+
+**Anyone with the link can read every unarchived ticket's key, title, description, acceptance criteria, status, priority, kind, difficulty, labels, scopes, start and due dates, and relationships within the project.** Each response is the public projection of the member read it reuses: people (assignees, authors, members, emails), comments, activity, attachments, evidence, claims, readiness, hold reasons, and versions are never included, and archived tickets do not exist publicly. The project ID must be its UUID. An unknown, unshared, or revoked project and an unknown or archived ticket all return `404 not_found`. Each request reads the sharing flag and the rows in one snapshot, with `Cache-Control: no-store`, so turning sharing off takes effect on the next request. Sharing grants nothing elsewhere: the `/api/v1` operations, search, realtime, attachment and image routes, and MCP still require their own access, and the public routes accept only `GET`.
+
 ## Realtime
 
 `GET /api/v1/snapshot?projectId=<id>` returns a consistent project snapshot and event cursor. Connect to `/api/v1/events?projectId=<id>&cursor=<cursor>` to replay committed changes and continue receiving new ones.

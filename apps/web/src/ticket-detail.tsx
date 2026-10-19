@@ -37,6 +37,7 @@ import {
   Textarea,
   FormActions,
   reportError,
+  ticketTitleClass,
 } from "./ui.tsx";
 import { TicketEditor } from "./ticket-editor.tsx";
 import { Relations } from "./relations.tsx";
@@ -322,11 +323,11 @@ export function TicketDetail({
                 {pending && <Spinner className="size-3.5 text-muted-foreground" />}
               </div>
               {preview ? (
-                <SheetTitle render={<h1 />} className={titleClass}>
+                <SheetTitle render={<h1 />} className={ticketTitleClass}>
                   {ticket.title}
                 </SheetTitle>
               ) : (
-                <h1 className={titleClass}>{ticket.title}</h1>
+                <h1 className={ticketTitleClass}>{ticket.title}</h1>
               )}
             </header>
           </TicketContextMenu>
@@ -493,7 +494,6 @@ export function TicketDetail({
     </>
   );
 }
-const titleClass = "mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight";
 function ClaimActions({
   ticket,
   claim,

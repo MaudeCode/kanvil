@@ -216,6 +216,9 @@ export const projectHandlers: Pick<
         .set({
           name: input.name,
           ...(input.visibility ? { visibility: input.visibility } : {}),
+          ...(input.publicReadEnabled === undefined
+            ? {}
+            : { publicReadEnabled: input.publicReadEnabled }),
           description: input.description,
           version: current.version + 1,
           updatedAt: new Date(),
@@ -223,7 +226,12 @@ export const projectHandlers: Pick<
         .where(eq(projects.id, current.id))
         .returning(),
     );
-    await publish(ctx, "project.updated", null, { version: row.version });
+    await publish(ctx, "project.updated", null, {
+      version: row.version,
+      ...(row.publicReadEnabled === current.publicReadEnabled
+        ? {}
+        : { publicReadEnabled: row.publicReadEnabled }),
+    });
     return row;
   },
   async move_project(ctx, input) {

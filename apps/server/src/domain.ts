@@ -21,6 +21,10 @@ import {
   type NotificationCategory,
   channelRouteAllows,
   destinationEventKeys,
+  publicOperations,
+  parsePublicOutput,
+  type PublicOperation,
+  type PublicOutput,
 } from "@kanvil/contracts";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
@@ -52,6 +56,7 @@ import { deliveryHandlers } from "./delivery-operations.ts";
 import { calendarHandlers } from "./calendar-operations.ts";
 import { invitationHandlers } from "./invitation-operations.ts";
 import { workflowHandlers } from "./workflow-operations.ts";
+import { publicHandlers } from "./public-operations.ts";
 
 export interface Actor {
   id: string;
@@ -145,6 +150,26 @@ const noSecrets: Sealer = {
   seal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
   unseal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
 };
+const baseContext = (db: Context["db"], actor: Actor): Context => ({
+  db,
+  actor,
+  project: null,
+  workspace: null,
+  role: "reader",
+  blobs: { put: writeLocalBlob },
+  search: builtinSearch,
+  secrets: noSecrets,
+  publicUrl: "http://localhost",
+});
+// Public reads hold no identity, scope, or project grant: nothing they reach can authorize by actor.
+const publicActor: Actor = {
+  id: "",
+  admin: false,
+  machine: false,
+  ownerId: "",
+  scopes: [],
+  projectIds: [],
+};
 async function context(
   db: Context["db"],
   actor: Actor,
@@ -154,17 +179,7 @@ async function context(
 ): Promise<Context> {
   if (!hasScope(actor, scope))
     fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
-  const ctx: Context = {
-    db,
-    actor,
-    project: null,
-    workspace: null,
-    role: "reader",
-    blobs: { put: writeLocalBlob },
-    search: builtinSearch,
-    secrets: noSecrets,
-    publicUrl: "http://localhost",
-  };
+  const ctx = baseContext(db, actor);
   if (workspaceId) {
     ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
     if ((scope === "write" || scope === "claim") && ctx.workspace.role === "reader")
@@ -670,6 +685,42 @@ export function createDomain(
       { isolationLevel: "repeatable read", accessMode: "read only" },
     );
   }
-  return { execute, actor: resolveActor, accessibleProjects, readEvents, snapshot, database };
+  // Anonymous reads of a shared project. The sharing policy and every row come from one read-only
+  // snapshot, so a concurrent revocation is seen entirely or not at all; an unknown, unshared, or
+  // revoked project reads as not found.
+  async function readPublic<K extends PublicOperation>(
+    name: K,
+    value: unknown,
+  ): Promise<PublicOutput<K>> {
+    const input = publicOperations[name].input.parse(value);
+    return database.db.transaction(
+      async (tx) => {
+        const row = (
+          await tx
+            .select()
+            .from(projects)
+            .where(and(eq(projects.id, input.projectId), eq(projects.publicReadEnabled, true)))
+        )[0];
+        if (!row) fail(404, "not_found", "Project was not found");
+        const ctx: Context = { ...baseContext(tx, publicActor), project: toProject(row) };
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The public registry and mapped handler type enforce the same key/input pairing.
+        const handler = publicHandlers[name] as (
+          ctx: Context,
+          payload: typeof input,
+        ) => Promise<unknown>;
+        return parsePublicOutput(name, json(await handler(ctx, input)));
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  }
+  return {
+    execute,
+    readPublic,
+    actor: resolveActor,
+    accessibleProjects,
+    readEvents,
+    snapshot,
+    database,
+  };
 }
 export type Domain = ReturnType<typeof createDomain>;

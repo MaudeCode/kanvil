@@ -297,7 +297,7 @@ const triggerClass = {
   row: "max-w-full min-w-0 justify-start font-normal h-7 w-full px-2",
   cell: "max-w-full min-w-0 justify-start font-normal -mx-1.5 h-6 px-1.5",
 };
-function PropertyRow({ label, children }: { label: string; children: ReactNode }) {
+export function PropertyRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
       <span className="text-xs text-muted-foreground">{label}</span>

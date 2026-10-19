@@ -1,12 +1,21 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageUp } from "lucide-react";
+import { ExternalLink, ImageUp } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type { Output, Project } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
-import { Button, CopyButton, RelativeTime, Select, SelectItem, reportError } from "../ui.tsx";
+import {
+  Button,
+  Confirm,
+  CopyButton,
+  IconButton,
+  RelativeTime,
+  Select,
+  SelectItem,
+  reportError,
+} from "../ui.tsx";
 import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
@@ -118,6 +127,7 @@ export function ProjectSettings({
                 <SelectItem value="private">Only project members</SelectItem>
               </Select>
             </SettingRow>
+            <PublicLink project={project} canAdmin={access.canAdmin} />
             <ProjectBackground project={project} canAdmin={access.canAdmin} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {workspace.active?.role && (
@@ -161,6 +171,65 @@ export function ProjectSettings({
         </SettingsPanel>
       </SettingsLayout>
     </>
+  );
+}
+
+// What a public link discloses; the public operations' projection is the source of this list.
+const disclosure =
+  "Anyone with the link can read every unarchived ticket's title, description, acceptance criteria, status, priority, kind, difficulty, labels, scopes, dates, and links to other tickets in this project. People, comments, activity, attachments, evidence, and claims stay private.";
+// Shares the project read-only with anyone who has its link, or stops sharing at once.
+function PublicLink({ project, canAdmin }: { project: Project; canAdmin: boolean }) {
+  const update = useOperation("update_project"),
+    url = new URL(`/public/projects/${project.id}`, window.location.origin).href;
+  const save = (publicReadEnabled: boolean) =>
+    update
+      .mutateAsync({
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: project.description,
+        publicReadEnabled,
+      })
+      .then(() => toast.success(publicReadEnabled ? "Public link on" : "Public link off"));
+  return (
+    <SettingRow
+      title="Public link"
+      description={
+        project.publicReadEnabled ? (
+          <>
+            <code className="block text-xs break-all text-foreground">{url}</code>
+            <span className="mt-1 block">{disclosure}</span>
+          </>
+        ) : (
+          "Off"
+        )
+      }
+    >
+      {project.publicReadEnabled && (
+        <>
+          <CopyButton label="Copy public link" value={url} />
+          <IconButton
+            label="Open public view"
+            render={<a href={url} target="_blank" rel="noreferrer" />}
+          >
+            <ExternalLink />
+          </IconButton>
+        </>
+      )}
+      {canAdmin &&
+        (project.publicReadEnabled ? (
+          <Button disabled={update.isPending} onClick={() => void save(false).catch(reportError)}>
+            Stop sharing
+          </Button>
+        ) : (
+          <Confirm
+            label="Share publicly"
+            description={disclosure}
+            disabled={update.isPending}
+            onConfirm={() => save(true)}
+          />
+        ))}
+    </SettingRow>
   );
 }
 

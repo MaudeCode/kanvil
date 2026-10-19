@@ -15,6 +15,7 @@ export function TicketLink({
   ticketId,
   ticket,
   hash,
+  shared = false,
   className,
   children,
 }: {
@@ -23,22 +24,33 @@ export function TicketLink({
   ticket?: Pick<Ticket, "key" | "title"> | undefined;
   // An anchor within the ticket page, such as a comment.
   hash?: string | undefined;
+  // Links within a shared project's public view, previewing its public projection.
+  shared?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const preview = useQuery({
+  const member = useQuery({
     ...api.query("get_ticket", { projectId, ticketId }),
-    enabled: open,
+    enabled: open && !shared,
   });
-  const detail = preview.data?.ticket;
+  const published = useQuery({
+    ...api.publicQuery("get_public_ticket", { projectId, ticketId }),
+    enabled: open && shared,
+  });
+  const preview = shared ? published : member,
+    detail = preview.data?.ticket;
   return (
     <HoverCard open={open} onOpenChange={setOpen}>
       <HoverCardTrigger
         delay={400}
         render={
           <Link
-            to="/projects/$projectId/tickets/$ticketId"
+            to={
+              shared
+                ? "/public/projects/$projectId/tickets/$ticketId"
+                : "/projects/$projectId/tickets/$ticketId"
+            }
             params={{ projectId, ticketId }}
             {...(hash ? { hash } : {})}
             className={cn("ticket-link text-foreground hover:text-primary", className)}
@@ -63,7 +75,7 @@ export function TicketLink({
               <span className="font-mono">{detail.key}</span>
               <PropertyValue
                 property="status"
-                value={statusValue(detail)}
+                value={shared ? detail.status : statusValue(detail)}
                 projectId={detail.projectId}
               />
               <TicketIndicator property="priority" value={detail.priority} iconOnly />
