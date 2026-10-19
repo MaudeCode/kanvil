@@ -71,19 +71,24 @@ export function createAuth(database: Database, config: Config) {
     config.SMTP_URL && config.SMTP_FROM
       ? createMailSender(config.SMTP_URL, config.SMTP_FROM)
       : undefined;
+  // Whether an address belongs to an account that may sign in now: not deleted, and not under a
+  // ban in force. Expired bans keep `banned` set, so the expiry decides.
+  const isActive = async (email: string) =>
+    !!(
+      await database.pool.query(
+        `SELECT 1 FROM "user" WHERE email = $1 AND deleted_at IS NULL
+          AND NOT (coalesce(banned, false) AND (ban_expires IS NULL OR ban_expires > now()))`,
+        [email.toLowerCase()],
+      )
+    ).rowCount;
   // ponytail: per-process memory; a multi-replica deployment shares Better Auth's per-IP limit only.
   const codeSends = createWriteLimiter(3, 15 * 60_000);
   // Runs after the response, so neither the lookup nor SMTP latency tells a caller whether the
   // address has an account. Disabled and deleted accounts get nothing. A failed send gives its
   // throttle slot back; the code it carried is the one already mailed, if any, so that one stays.
   async function sendCode(email: string, otp: string, type: string, page: string) {
-    if (!mail || (type !== "sign-in" && type !== "forget-password")) return;
-    const active = await database.pool.query(
-      `SELECT 1 FROM "user" WHERE email = $1 AND deleted_at IS NULL
-        AND NOT (coalesce(banned, false) AND (ban_expires IS NULL OR ban_expires > now()))`,
-      [email],
-    );
-    if (!active.rowCount) return;
+    if (!mail || (type !== "sign-in" && type !== "forget-password") || !(await isActive(email)))
+      return;
     const link = new URL(page, config.KANVIL_URL);
     link.search = new URLSearchParams({
       email,
@@ -183,6 +188,13 @@ export function createAuth(database: Database, config: Config) {
             code: "email_codes_unavailable",
             message: "Email codes are not available on this instance",
           });
+        // A reset makes no session, so the ban check on sessions never sees it; refuse a disabled
+        // account here, whenever its code was issued, with the answer a wrong code gets.
+        if (ctx.path === "/email-otp/reset-password") {
+          const email = z.object({ email: z.string() }).safeParse(ctx.body).data?.email;
+          if (!email || !(await isActive(email)))
+            throw new APIError("BAD_REQUEST", { code: "INVALID_OTP", message: "Invalid OTP" });
+        }
         // A throttled request ends before the plugin makes a code, so the last code mailed to the
         // address stays valid. It answers like any other request.
         if (

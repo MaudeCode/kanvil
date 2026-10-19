@@ -249,6 +249,33 @@ describe("email codes", () => {
     expect(reset.ok).toBe(false);
   });
 
+  it("refuses a reset while a renewed ban is in force", async () => {
+    const id = await createPerson("rebanned@sign-in.test");
+    // An expired ban leaves `banned` set; the account is active and may ask for a code.
+    await fixture.database.pool.query(
+      `UPDATE "user" SET banned = true, ban_expires = now() - interval '1 minute' WHERE id = $1`,
+      [id],
+    );
+    await request(
+      "/api/auth/email-otp/request-password-reset",
+      "POST",
+      { email: "rebanned@sign-in.test" },
+      "",
+    );
+    const { code } = await nextCode("rebanned@sign-in.test", 0);
+    await fixture.database.pool.query(
+      `UPDATE "user" SET ban_expires = now() + interval '1 day' WHERE id = $1`,
+      [id],
+    );
+    const reset = await request(
+      "/api/auth/email-otp/reset-password",
+      "POST",
+      { email: "rebanned@sign-in.test", otp: code, password: "Isolated-rebanned-password-89" },
+      "",
+    );
+    expect(reset.ok).toBe(false);
+  });
+
   it("links back to the page the request started on, and only within Kanvil", async () => {
     await createPerson("returning@sign-in.test");
     const ask = (path: string) =>
