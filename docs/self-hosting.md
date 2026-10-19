@@ -125,7 +125,7 @@ Native devices must also trust that authority. Never mount the authority's priva
 
 ## Instance administration
 
-Administrators can edit the instance name and description, manage accounts, and configure local/S3 file storage, PostgreSQL/Elasticsearch search, and PostgreSQL/RabbitMQ event delivery in Administration. See [optional infrastructure](infrastructure.md) for deployment variables, adapter interfaces, recovery behavior, and S3 backup requirements. OIDC, public URL, and push credentials remain deployment settings.
+Administrators can edit the instance name and description, manage accounts, review every workspace with its administrators and member/project counts (Administration → Workspaces) and manage its members without joining it, and configure local/S3 file storage, PostgreSQL/Elasticsearch search, and PostgreSQL/RabbitMQ event delivery in Administration. See [optional infrastructure](infrastructure.md) for deployment variables, adapter interfaces, recovery behavior, and S3 backup requirements. OIDC, public URL, and push credentials remain deployment settings.
 
 ## Optional mobile push
 

@@ -94,6 +94,7 @@ export const adminSections = [
   "search",
   "events",
   "users",
+  "workspaces",
   "authentication",
 ] as const;
 export const authSearchSchema = z.object({

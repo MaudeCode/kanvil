@@ -1,13 +1,15 @@
 import type { Config } from "./config.ts";
 import { matchesOIDCBinding } from "./adapters/oidc.ts";
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, count, eq, gt, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hasAdminRole, okSchema } from "@kanvil/contracts";
 import {
   accountQuerySchema,
   accountsSchema,
   accountDetailsSchema,
+  adminWorkspaceQuerySchema,
+  adminWorkspacesSchema,
   localPasswordSchema,
 } from "@kanvil/contracts/users";
 import { account, session, user } from "./auth-schema.ts";
@@ -31,6 +33,7 @@ const mutationBody = z
     data: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
+const pattern = (q: string) => `%${q.replace(/[\\%_]/g, "\\$&")}%`;
 function authPath(request: Request) {
   try {
     return decodeURIComponent(new URL(request.url).pathname)
@@ -198,6 +201,18 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
         },
       });
       app.openAPIRegistry.registerPath({
+        method: "get",
+        path: "/api/v1/admin/workspaces",
+        security: [{ sessionCookie: [] }],
+        request: { query: adminWorkspaceQuerySchema },
+        responses: {
+          200: {
+            description: "Every workspace with member and project counts and its administrators",
+            content: { "application/json": { schema: adminWorkspacesSchema } },
+          },
+        },
+      });
+      app.openAPIRegistry.registerPath({
         method: "post",
         path: "/api/v1/admin/users/{id}/password",
         security: [{ sessionCookie: [] }],
@@ -217,7 +232,7 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
       });
       app.get("/api/v1/admin/users", async (c) => {
         const input = accountQuerySchema.parse(c.req.query()),
-          needle = `%${input.q.replace(/[\\%_]/g, "\\$&")}%`;
+          needle = pattern(input.q);
         const administrator = sql`'admin' = ANY(string_to_array(${user.role}, ','))`;
         const filter = and(
           input.q ? or(ilike(user.name, needle), ilike(user.email, needle)) : undefined,
@@ -276,6 +291,64 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
             projects: direct,
             providers: [...new Set(providers.map((provider) => provider.provider))],
             sessionCount: sessions[0]?.value ?? 0,
+          }),
+        );
+      });
+      app.get("/api/v1/admin/workspaces", async (c) => {
+        const input = adminWorkspaceQuerySchema.parse(c.req.query()),
+          needle = pattern(input.q);
+        const filter = input.q
+          ? or(ilike(workspaces.name, needle), ilike(workspaces.slug, needle))
+          : undefined;
+        const [rows, total] = await Promise.all([
+          database.db
+            .select({
+              id: workspaces.id,
+              name: workspaces.name,
+              slug: workspaces.slug,
+              createdAt: workspaces.createdAt,
+              // Drizzle leaves columns unqualified in single-table selects; qualify the correlation.
+              memberCount: sql<number>`(SELECT count(*)::int FROM workspace_members m WHERE m.workspace_id = workspaces.id)`,
+              projectCount: sql<number>`(SELECT count(*)::int FROM projects p WHERE p.workspace_id = workspaces.id)`,
+            })
+            .from(workspaces)
+            .where(filter)
+            .orderBy(asc(workspaces.name), asc(workspaces.id))
+            .limit(input.limit)
+            .offset(input.offset),
+          database.db.select({ value: count() }).from(workspaces).where(filter),
+        ]);
+        const administrators = rows.length
+          ? await database.db
+              .select({
+                workspaceId: workspaceMembers.workspaceId,
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                image: user.image,
+              })
+              .from(workspaceMembers)
+              .innerJoin(user, eq(user.id, workspaceMembers.userId))
+              .where(
+                and(
+                  eq(workspaceMembers.role, "admin"),
+                  inArray(
+                    workspaceMembers.workspaceId,
+                    rows.map((row) => row.id),
+                  ),
+                ),
+              )
+              .orderBy(asc(user.name), asc(user.id))
+          : [];
+        return Response.json(
+          json({
+            workspaces: rows.map((row) => ({
+              ...row,
+              administrators: administrators
+                .filter((admin) => admin.workspaceId === row.id)
+                .map(({ id, name, email, image }) => ({ id, name, email, image })),
+            })),
+            total: total[0]?.value ?? 0,
           }),
         );
       });

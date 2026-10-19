@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Pencil, KeyRound, Plus } from "lucide-react";
@@ -30,6 +30,15 @@ import { SettingRow } from "./settings-layout.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { formText } from "../forms.ts";
 import { roleLabels } from "./member-directory.tsx";
+// One workspace or project grant: a link to its member settings and the role or access it carries.
+export function AccessRow({ children, badge }: { children: ReactNode; badge: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b py-3">
+      {children}
+      <Badge variant="outline">{badge}</Badge>
+    </div>
+  );
+}
 export function AccountDetails({
   userId,
   onClose,
@@ -224,10 +233,7 @@ export function AccountDetails({
                     </div>
                     {person.workspaces.length ? (
                       person.workspaces.map((workspace) => (
-                        <div
-                          key={workspace.id}
-                          className="flex items-center justify-between gap-4 border-b py-3"
-                        >
+                        <AccessRow key={workspace.id} badge={roleLabels[workspace.role]}>
                           <Link
                             to="/workspaces/$workspaceId/settings"
                             params={{ workspaceId: workspace.id }}
@@ -237,8 +243,7 @@ export function AccountDetails({
                           >
                             {workspace.name}
                           </Link>
-                          <Badge variant="outline">{roleLabels[workspace.role]}</Badge>
-                        </div>
+                        </AccessRow>
                       ))
                     ) : (
                       <EmptyState title="No workspace membership" className="py-5" />
@@ -248,10 +253,7 @@ export function AccountDetails({
                     <section className="pt-7">
                       <h3>Direct project access</h3>
                       {person.projects.map((project) => (
-                        <div
-                          key={project.id}
-                          className="flex items-center justify-between gap-4 border-b py-3"
-                        >
+                        <AccessRow key={project.id} badge={roleLabels[project.role]}>
                           <Link
                             to="/projects/$projectId/settings"
                             params={{ projectId: project.id }}
@@ -261,8 +263,7 @@ export function AccountDetails({
                           >
                             {project.name}
                           </Link>
-                          <Badge variant="outline">{roleLabels[project.role]}</Badge>
-                        </div>
+                        </AccessRow>
                       ))}
                     </section>
                   )}

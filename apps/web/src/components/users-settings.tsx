@@ -18,6 +18,7 @@ import {
   SearchField,
   FormActions,
   IconButton,
+  Pager,
 } from "../ui.tsx";
 import { formText } from "../forms.ts";
 import { UserIdentity } from "./user-avatar.tsx";
@@ -249,22 +250,13 @@ export function UsersSettings() {
           </Table>
         </div>
       )}
-      {((users.data?.total ?? 0) > 25 || offset > 0) && (
-        <footer className="mt-5 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground [&>span]:mr-auto">
-          <Button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 25))}>
-            Previous users
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {offset + 1}–{Math.min(offset + 25, users.data?.total ?? 0)} of {users.data?.total}
-          </span>
-          <Button
-            disabled={offset + 25 >= (users.data?.total ?? 0)}
-            onClick={() => setOffset(offset + 25)}
-          >
-            Next users
-          </Button>
-        </footer>
-      )}
+      <Pager
+        noun="users"
+        offset={offset}
+        total={users.data?.total ?? 0}
+        size={25}
+        onChange={setOffset}
+      />
       <Modal title="Create account" open={creating} onOpenChange={setCreating} busy={pending}>
         <AccountAdministration
           pending={pending}

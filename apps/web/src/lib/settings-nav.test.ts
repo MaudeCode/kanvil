@@ -29,6 +29,7 @@ it("keeps the existing settings URLs", () => {
     "/admin?section=search",
     "/admin?section=events",
     "/admin?section=users",
+    "/admin?section=workspaces",
     "/admin?section=authentication",
   ]);
 });

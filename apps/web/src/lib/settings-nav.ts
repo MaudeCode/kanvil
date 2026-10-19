@@ -1,5 +1,6 @@
 import {
   Bell,
+  Building2,
   HardDrive,
   KeyRound,
   Network,
@@ -42,6 +43,7 @@ const admin: Sections<typeof adminSections> = {
   search: { label: "Search", icon: Search },
   events: { label: "Event delivery", icon: Network },
   users: { label: "Users", icon: Users },
+  workspaces: { label: "Workspaces", icon: Building2 },
   authentication: { label: "Authentication", icon: ShieldCheck },
 };
 export type SettingsEntry<P = never> = {
