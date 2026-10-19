@@ -508,6 +508,88 @@ test("relationships can be created from either direction with readable inverse l
   await page.goto(`/projects/${project.id}/tickets/${prerequisite.id}`);
   await expect(page.getByText("Blocks", { exact: true })).toBeVisible();
 });
+test("a preview sheet opens the highlighted ticket over the list and returns to its row", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "PEEK", name: "Peek" } })
+  ).json();
+  const created: { id: string }[] = [];
+  for (const title of ["Alpha", "Bravo", "Charlie"])
+    created.push(
+      await (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets`, { data: { title } })
+      ).json(),
+    );
+  await page.goto(`/projects/${project.id}?sort=number&order=asc`);
+  await expect(ticketRows(page)).toHaveCount(3);
+  await page.keyboard.press("j");
+  await page.keyboard.press("x");
+  await page.keyboard.press("j");
+  await page.keyboard.press(" ");
+  const bravo = page.getByRole("dialog", { name: "Bravo", exact: true });
+  await expect(bravo).toBeVisible();
+  await expect(page).toHaveURL(/sort=number/);
+  await expect(page).toHaveURL(new RegExp(`peek=${created[1]!.id}`));
+  // The list behind keeps its rows, highlight, and selection; the modal sheet hides it from
+  // assistive technology, so these checks use the DOM.
+  await expect(page.locator("tr.ticket-row")).toHaveCount(3);
+  await expect(page.locator("tr[data-selected=true]")).toContainText("Alpha");
+  await expect(page.locator("tr[data-active=true]")).toContainText("Bravo");
+  // The preview is the ticket detail: its property edits reach the list row.
+  await setProperty(bravo, "Priority", "High");
+  await expect(page.locator("tr[data-active=true] [data-priority=high]")).toHaveCount(1);
+  await expect(page.locator("[data-slot=popover-content]")).toHaveCount(0);
+  await page.keyboard.press("j");
+  await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toBeVisible();
+  await expect(page.locator("tr[data-active=true]")).toContainText("Charlie");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/peek=/);
+  await expect(page.locator("tr[data-active=true] .ticket-title")).toBeFocused();
+  // Space on a control inside the highlighted row keeps the control's own behavior.
+  await page.locator("tr[data-active=true] td[data-column=status] [role=combobox]").focus();
+  await page.keyboard.press(" ");
+  await expect(page.getByRole("option", { name: /In progress/ })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-slot=popover-content]")).toHaveCount(0);
+  await page.locator("tr[data-active=true] .ticket-title").focus();
+  // Back closes a preview opened from the list.
+  await page.keyboard.press(" ");
+  await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}\\?`));
+  // The context menu opens a preview without the keyboard.
+  await ticketRows(page).filter({ hasText: "Alpha" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Preview", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Alpha", exact: true })).toBeVisible();
+  // A refreshed preview resolves from the URL and hands over to the full page.
+  await page.reload();
+  const alpha = page.getByRole("dialog", { name: "Alpha", exact: true });
+  await expect(alpha).toBeVisible();
+  await alpha.getByRole("link", { name: "Open in full page", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/tickets/${created[0]!.id}$`));
+  await expect(page.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // My work keeps showing a preview whose edit removes its row from the list.
+  const me = (await (await page.request.get("/api/auth/get-session")).json()).user;
+  await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+    data: { title: "Delta", assigneeId: me.id },
+  });
+  await page.goto("/my-work");
+  await page.locator("tr.ticket-row", { hasText: "Delta" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Preview", exact: true }).click();
+  const delta = page.getByRole("dialog", { name: "Delta", exact: true });
+  await setProperty(delta, "Status", "Done");
+  await expect(page.locator("tr.ticket-row", { hasText: "Delta" })).toHaveCount(0);
+  await expect(delta).toBeVisible();
+  await expect(delta.getByRole("combobox", { name: "Status", exact: true })).toContainText("Done");
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "Delta", exact: true })).toBeVisible();
+});
 test("keyboard highlight walks the list, opens tickets, and the detail steps through the same order", async ({
   page,
 }) => {

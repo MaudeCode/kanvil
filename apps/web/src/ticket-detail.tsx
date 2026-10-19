@@ -10,6 +10,8 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
+  Maximize2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -17,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
+import { SheetTitle } from "@/components/ui/sheet";
 import { type Ticket, ApiError } from "@kanvil/contracts";
 import { api, date, ActorName, useProjectAccess, useOperation } from "./data.tsx";
 import {
@@ -47,7 +50,21 @@ import { copyText } from "./lib/browser.ts";
 import { readListOrder } from "./lib/list-order.ts";
 import { copyLink } from "./lib/actions.ts";
 
-export function TicketDetail({ projectId, ticketId }: { projectId: string; ticketId: string }) {
+// The detail as a sheet over a ticket list: the list supplies the order and owns the URL.
+export interface TicketPreview {
+  order: string[];
+  open: (ticketId: string) => void;
+  close: () => void;
+}
+export function TicketDetail({
+  projectId,
+  ticketId,
+  preview,
+}: {
+  projectId: string;
+  ticketId: string;
+  preview?: TicketPreview;
+}) {
   const access = useProjectAccess(projectId);
   const result = useQuery(api.query("get_ticket", { projectId, ticketId }));
   const subscribe = useOperation("set_subscription");
@@ -55,18 +72,23 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
   // The list the reader came from, so previous and next walk it in the order they saw.
-  const [order] = useState(() => readListOrder(projectId));
+  const [storedOrder] = useState(() => (preview ? [] : readListOrder(projectId)));
+  const order = preview?.order ?? storedOrder;
   const position = order.indexOf(ticketId);
   const step = (delta: number) => {
     const target = position < 0 ? undefined : order[position + delta];
-    if (target)
+    if (!target) return;
+    if (preview) preview.open(target);
+    else
       void navigate({
         to: "/projects/$projectId/tickets/$ticketId",
         params: { projectId, ticketId: target },
       });
   };
-  useShortcut("j", () => step(1), { enabled: !editing });
-  useShortcut("k", () => step(-1), { enabled: !editing });
+  // A preview's shortcuts fire inside the sheet that hosts it.
+  const scope = preview ? '[data-slot="sheet-content"]' : undefined;
+  useShortcut("j", () => step(1), { enabled: !editing, scope });
+  useShortcut("k", () => step(-1), { enabled: !editing, scope });
   const ticket = result.data?.ticket;
   const { change, pending } = useTicketChange(ticket ?? { id: ticketId, projectId, version: 1 });
   useShortcut(
@@ -74,16 +96,20 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
     () => {
       if (access.canWrite) setEditing(true);
     },
-    { enabled: !!ticket && !editing },
+    { enabled: !!ticket && !editing, scope },
   );
   if (result.isPending) return <Loading />;
   if (!result.data || !ticket)
     return result.error instanceof ApiError && result.error.status === 404 ? (
       <EmptyState title="Ticket unavailable">
         <p>This ticket was deleted or you no longer have access.</p>
-        <Button render={<Link to="/projects/$projectId" params={{ projectId }} />}>
-          Back to tickets
-        </Button>
+        {preview ? (
+          <Button onClick={preview.close}>Close preview</Button>
+        ) : (
+          <Button render={<Link to="/projects/$projectId" params={{ projectId }} />}>
+            Back to tickets
+          </Button>
+        )}
       </EmptyState>
     ) : (
       <>
@@ -105,18 +131,20 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
         <div className="min-w-0">
           <PageHeader
             title={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="-ml-2 text-muted-foreground"
-                render={<Link to="/projects/$projectId" params={{ projectId }} />}
-              >
-                <ArrowLeft />
-                Tickets
-              </Button>
+              !preview && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 text-muted-foreground"
+                  render={<Link to="/projects/$projectId" params={{ projectId }} />}
+                >
+                  <ArrowLeft />
+                  Tickets
+                </Button>
+              )
             }
           >
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {position >= 0 && (
                 <div className="mr-1 flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums">
                   <IconButton
@@ -185,6 +213,24 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
                   <MoreHorizontal />
                 </Button>
               </TicketContextMenu>
+              {preview && (
+                <>
+                  <IconButton
+                    label="Open in full page"
+                    render={
+                      <Link
+                        to="/projects/$projectId/tickets/$ticketId"
+                        params={{ projectId, ticketId: ticket.id }}
+                      />
+                    }
+                  >
+                    <Maximize2 />
+                  </IconButton>
+                  <IconButton label="Close preview" shortcut="Esc" onClick={preview.close}>
+                    <X />
+                  </IconButton>
+                </>
+              )}
             </div>
           </PageHeader>
           <TicketContextMenu ticket={ticket} onEdit={() => setEditing(true)}>
@@ -212,9 +258,13 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
                 {ticket.archived && <strong>Archived</strong>}
                 {pending && <Spinner className="size-3.5 text-muted-foreground" />}
               </div>
-              <h1 className="mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight">
-                {ticket.title}
-              </h1>
+              {preview ? (
+                <SheetTitle render={<h1 />} className={titleClass}>
+                  {ticket.title}
+                </SheetTitle>
+              ) : (
+                <h1 className={titleClass}>{ticket.title}</h1>
+              )}
             </header>
           </TicketContextMenu>
           <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
@@ -381,6 +431,7 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
     </>
   );
 }
+const titleClass = "mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight";
 function ClaimActions({
   ticket,
   claim,

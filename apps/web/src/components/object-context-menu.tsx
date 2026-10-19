@@ -10,6 +10,7 @@ import {
   CopyPlus,
   ExternalLink,
   FolderOpen,
+  PanelRight,
   Link2,
   Pencil,
   Plus,
@@ -112,11 +113,14 @@ export function TicketContextMenu({
   ticket,
   children,
   onEdit,
+  onPreview,
   variant = "context",
 }: {
   ticket: Ticket;
   children: ReactElement;
   onEdit?: () => void;
+  // Lists open the ticket in their preview sheet.
+  onPreview?: () => void;
   variant?: "context" | "dropdown";
 }) {
   const [open, setOpen] = useState(false),
@@ -158,6 +162,12 @@ export function TicketContextMenu({
               <FolderOpen />
               Open ticket
             </ContextMenuItem>
+            {onPreview && (
+              <ContextMenuItem onClick={onPreview}>
+                <PanelRight />
+                Preview
+              </ContextMenuItem>
+            )}
             <ContextMenuItem render={<a href={href} target="_blank" rel="noreferrer" />}>
               <ExternalLink />
               Open in new tab

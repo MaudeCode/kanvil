@@ -2,11 +2,15 @@ import { z } from "zod";
 import { ticketFilter } from "@kanvil/contracts";
 export const searchSchema = ticketFilter.extend({
   offset: z.coerce.number().int().min(0).catch(0).default(0),
+  // The ticket open in the list's preview sheet, and its project on lists that span projects.
+  peek: z.string().min(1).max(80).optional().catch(undefined),
+  peekProject: z.string().min(1).max(80).optional().catch(undefined),
 });
 export type TicketSearch = z.output<typeof searchSchema>;
 // My work spans projects, so only search and ordering apply; project filters are dropped.
-export const workSearchSchema = searchSchema.transform(({ q, sort, order }): TicketSearch =>
-  searchSchema.parse({ q, sort, order }),
+export const workSearchSchema = searchSchema.transform(
+  ({ q, sort, order, peek, peekProject }): TicketSearch =>
+    searchSchema.parse({ q, sort, order, peek, peekProject }),
 );
 export const ticketDensitySchema = z.enum(["compact", "comfortable"]);
 export type TicketDensity = z.output<typeof ticketDensitySchema>;
