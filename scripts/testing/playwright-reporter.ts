@@ -4,9 +4,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
 import type { FullConfig, FullResult, Reporter, Suite, TestCase } from "@playwright/test/reporter";
 import {
-  activitySchema,
-  countsSchema,
   environment,
+  parseActivity,
+  parseCounts,
   root,
   serverAccountingFile,
   writeReport,
@@ -38,13 +38,11 @@ export default class AccountingReporter implements Reporter {
             ? last.status
             : "failed",
         durationMs: last?.duration ?? 0,
-        boundaries: boundaries?.description
-          ? countsSchema.parse(JSON.parse(boundaries.description))
-          : {},
+        boundaries: boundaries?.description ? parseCounts(JSON.parse(boundaries.description)) : {},
       };
     });
     const server = existsSync(serverAccountingFile)
-      ? activitySchema.parse(JSON.parse(readFileSync(serverAccountingFile, "utf8")))
+      ? parseActivity(JSON.parse(readFileSync(serverAccountingFile, "utf8")))
       : undefined;
     writeReport({
       layer: this.layer,

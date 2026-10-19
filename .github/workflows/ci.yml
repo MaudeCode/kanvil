@@ -49,10 +49,20 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U kanvil -d kanvil"
           --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      KANVIL_TEST_LAYER: unit
     steps:
       - *checkout
       - uses: ./.github/actions/setup
-      - run: pnpm exec vp test run --exclude '**/*.integration.test.ts'
+      - run: pnpm test
+      - &accounting
+        name: Keep the accounting report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: accounting-${{ github.job }}-${{ strategy.job-index }}
+          path: test-accounting/
+          if-no-files-found: error
+          retention-days: 5
 
   broker:
     name: RabbitMQ integration
@@ -72,10 +82,12 @@ jobs:
           --health-interval 2s --health-timeout 5s --health-retries 60
     env:
       TEST_RABBITMQ_URL: amqp://kanvil-test:isolated-test-password@127.0.0.1:5672/kanvil-test
+      KANVIL_TEST_LAYER: broker
     steps:
       - *checkout
       - uses: ./.github/actions/setup
-      - run: pnpm exec vp test run apps/server/src/broker.integration.test.ts
+      - run: pnpm test
+      - *accounting
 
   search:
     name: Elasticsearch integration
@@ -96,10 +108,12 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 60
     env:
       TEST_ELASTICSEARCH_URL: http://127.0.0.1:9200
+      KANVIL_TEST_LAYER: search
     steps:
       - *checkout
       - uses: ./.github/actions/setup
-      - run: pnpm exec vp test run apps/server/src/search.integration.test.ts
+      - run: pnpm test
+      - *accounting
 
   build:
     name: Build web and npm artifacts
@@ -137,6 +151,7 @@ jobs:
           name: npm-release
           path: dist
       - run: node scripts/package-smoke.ts
+      - *accounting
 
   browser:
     name: Browser (${{ matrix.shard }}/4)
@@ -149,6 +164,8 @@ jobs:
         shard: [1, 2, 3, 4]
     services:
       postgres: *postgres
+    env:
+      KANVIL_TEST_LAYER: browser
     steps:
       - *checkout
       - uses: ./.github/actions/setup
@@ -160,6 +177,7 @@ jobs:
           name: web-dist
           path: apps/web/dist
       - run: pnpm exec playwright test --shard=${{ matrix.shard }}/4
+      - *accounting
       - name: Preserve browser failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -191,6 +209,7 @@ jobs:
           --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       KANVIL_TEST_POCKET_ID: "1"
+      KANVIL_TEST_LAYER: oidc
     steps:
       - *checkout
       - uses: ./.github/actions/setup
@@ -198,6 +217,7 @@ jobs:
           browser: "true"
       - *download-web
       - run: pnpm exec playwright test e2e/pocket-id.pocket.ts
+      - *accounting
       - name: Preserve OIDC failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -252,6 +272,7 @@ jobs:
             --cache-to "type=gha,scope=docker-$ARCH,mode=max" .
       - name: Verify image, MCP, and database restoration
         run: node scripts/docker-smoke.ts
+      - *accounting
       - name: Save tested release image
         if: startsWith(github.ref, 'refs/tags/v')
         run: docker save kanvil:local | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
@@ -274,3 +295,16 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
+      - *checkout
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: accounting-*
+          path: test-accounting
+          merge-multiple: true
+      - name: Reconcile every required case exactly once
+        run: |
+          node scripts/testing/policy.ts summary test-accounting
+          node scripts/testing/policy.ts reconcile test-accounting

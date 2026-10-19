@@ -9,8 +9,13 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { arch, availableParallelism, platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
-import { boundaries, countNames, type Boundary } from "./boundaries.ts";
+import {
+  boundaries,
+  countNames,
+  type Boundary,
+  type Counts,
+  type Violation,
+} from "./boundaries.ts";
 
 export const root = fileURLToPath(new URL("../..", import.meta.url));
 export const accountingDirectory = join(root, "test-accounting");
@@ -20,44 +25,100 @@ export const serverAccountingFile = join(
   `kanvil-e2e-${process.env.KANVIL_TEST_PORT ?? "5190"}.accounting.json`,
 );
 
-export const countsSchema = z.partialRecord(z.enum(countNames), z.number());
-export const violationSchema = z.object({ boundary: z.enum(boundaries), target: z.string() });
-export const activitySchema = z.object({
-  counts: countsSchema,
-  violations: z.array(violationSchema),
-});
-const caseSchema = z.object({
-  id: z.string(),
-  file: z.string(),
+export interface CaseRecord {
+  id: string;
+  file: string;
   // notRun: selected but never started or finished, as in a cancelled run.
-  status: z.enum(["passed", "failed", "skipped", "notRun"]),
-  durationMs: z.number(),
-  boundaries: countsSchema,
-});
-const reportSchema = z.object({
-  layer: z.string(),
-  runner: z.enum(["vitest", "playwright", "script"]),
-  environment: z.object({
-    node: z.string(),
-    platform: z.string(),
-    arch: z.string(),
-    cpus: z.number(),
-    ci: z.boolean(),
-    command: z.string(),
-    workers: z.number().optional(),
-  }),
-  startedAt: z.string(),
-  endedAt: z.string(),
+  status: (typeof statuses)[number];
+  durationMs: number;
+  boundaries: Counts;
+}
+export interface Environment {
+  node: string;
+  platform: string;
+  arch: string;
+  cpus: number;
+  ci: boolean;
+  command: string;
+  workers?: number;
+}
+export interface LayerReport {
+  layer: string;
+  runner: (typeof runners)[number];
+  environment: Environment;
+  startedAt: string;
+  endedAt: string;
   // The runner reached its normal end and every selected case finished.
-  complete: z.boolean(),
-  cases: z.array(caseSchema),
+  complete: boolean;
+  cases: CaseRecord[];
   // Activity outside any one case: module setup, the browser test server.
-  setup: z.array(z.object({ file: z.string(), boundaries: countsSchema })),
+  setup: { file: string; boundaries: Counts }[];
   // Refused attempts outside any case.
-  violations: z.array(violationSchema).optional(),
+  violations?: Violation[];
+}
+const statuses = ["passed", "failed", "skipped", "notRun"] as const;
+const runners = ["vitest", "playwright", "script"] as const;
+
+// Reports are read without dependencies, so the CI Checks job needs only Node. A report that
+// does not have this shape is partial and cannot pass.
+function invalid(): never {
+  throw new Error("An accounting report is incomplete or malformed.");
+}
+const record = (value: unknown) =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? value : invalid();
+const field = (value: unknown, name: string): unknown => Reflect.get(record(value), name);
+const text = (value: unknown) => (typeof value === "string" ? value : invalid());
+const amount = (value: unknown) => (typeof value === "number" ? value : invalid());
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : invalid());
+const choice = <T extends string>(options: readonly T[], value: unknown) =>
+  options.find((option) => option === value) ?? invalid();
+export function parseCounts(value: unknown): Counts {
+  const counts: Counts = {};
+  for (const name of Object.keys(record(value)))
+    counts[choice(countNames, name)] = amount(field(value, name));
+  return counts;
+}
+const parseViolation = (value: unknown): Violation => ({
+  boundary: choice(boundaries, field(value, "boundary")),
+  target: text(field(value, "target")),
 });
-export type CaseRecord = z.infer<typeof caseSchema>;
-export type LayerReport = z.infer<typeof reportSchema>;
+export const parseActivity = (value: unknown) => ({
+  counts: parseCounts(field(value, "counts")),
+  violations: list(field(value, "violations")).map(parseViolation),
+});
+function parseReport(value: unknown): LayerReport {
+  const setting = (name: string) => field(field(value, "environment"), name);
+  const workers = setting("workers"),
+    violations = field(value, "violations");
+  return {
+    layer: text(field(value, "layer")),
+    runner: choice(runners, field(value, "runner")),
+    environment: {
+      node: text(setting("node")),
+      platform: text(setting("platform")),
+      arch: text(setting("arch")),
+      cpus: amount(setting("cpus")),
+      ci: setting("ci") === true,
+      command: text(setting("command")),
+      ...(workers === undefined ? {} : { workers: amount(workers) }),
+    },
+    startedAt: text(field(value, "startedAt")),
+    endedAt: text(field(value, "endedAt")),
+    complete: field(value, "complete") === true,
+    cases: list(field(value, "cases")).map((entry) => ({
+      id: text(field(entry, "id")),
+      file: text(field(entry, "file")),
+      status: choice(statuses, field(entry, "status")),
+      durationMs: amount(field(entry, "durationMs")),
+      boundaries: parseCounts(field(entry, "boundaries")),
+    })),
+    setup: list(field(value, "setup")).map((entry) => ({
+      file: text(field(entry, "file")),
+      boundaries: parseCounts(field(entry, "boundaries")),
+    })),
+    ...(violations === undefined ? {} : { violations: list(violations).map(parseViolation) }),
+  };
+}
 
 const layers = ["unit", "broker", "search", "browser", "oidc", "package", "docker"] as const;
 type Layer = (typeof layers)[number];
@@ -346,7 +407,7 @@ export function vitestSelection(layer = process.env.KANVIL_TEST_LAYER) {
   };
 }
 
-export function environment() {
+export function environment(): Environment {
   return {
     node: process.version,
     platform: platform(),
@@ -386,7 +447,9 @@ export function readReports(directory = accountingDirectory) {
   return readdirSync(directory, { recursive: true })
     .map(String)
     .filter((name) => name.endsWith(".json"))
-    .map((name) => reportSchema.parse(JSON.parse(readFileSync(join(directory, name), "utf8"))));
+    .map((name): LayerReport =>
+      parseReport(JSON.parse(readFileSync(join(directory, name), "utf8"))),
+    );
 }
 
 // The family layers a report answers for. Local runs cover several CI layers at once and skip
