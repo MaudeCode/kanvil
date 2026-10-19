@@ -12,6 +12,7 @@ import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
 import { ProjectDestinations } from "./delivery-settings.tsx";
+import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
 import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
@@ -150,6 +151,9 @@ export function ProjectSettings({
         </SettingsPanel>
         <SettingsPanel value="integrations">
           <ProjectDestinations projectId={project.id} canAdmin={access.canAdmin} />
+        </SettingsPanel>
+        <SettingsPanel value="calendar">
+          <CalendarFeedSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
       </SettingsLayout>
     </>

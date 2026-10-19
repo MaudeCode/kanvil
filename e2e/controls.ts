@@ -73,3 +73,9 @@ export async function openSearch(page: Page, label: string) {
 export async function toggleDisplay(page: Page, option: string) {
   await page.getByRole("button", { name: option, exact: true }).click();
 }
+// The project list layout lives in the Display popover.
+export async function setLayout(page: Page, layout: "List" | "Board" | "Calendar" | "Timeline") {
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await toggleDisplay(page, layout);
+  await page.keyboard.press("Escape");
+}

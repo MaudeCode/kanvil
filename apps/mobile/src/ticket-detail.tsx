@@ -22,6 +22,17 @@ import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
+// Start and due dates are whole days; editing them stays on the web for now.
+const day = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
+function scheduleText(ticket: { startAt: string | null; dueAt: string | null }) {
+  return [
+    ticket.startAt && `Starts ${day(ticket.startAt)}`,
+    ticket.dueAt && `Due ${day(ticket.dueAt)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 export function TicketDetail(props: ScreenProps<"Ticket">) {
   return (
     <TicketScreen
@@ -68,6 +79,11 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
         <Body muted small>
           v{ticket.version}
         </Body>
+        {(ticket.startAt || ticket.dueAt) && (
+          <Body muted small>
+            {scheduleText(ticket)}
+          </Body>
+        )}
       </View>
       <Text
         accessibilityRole="header"

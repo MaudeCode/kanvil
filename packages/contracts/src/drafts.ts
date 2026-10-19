@@ -10,6 +10,7 @@ export const ticketDraftSchema = z.object({
   fields: ticketFields.extend({
     title: z.string().max(500),
     parentId: z.string().nullable(),
+    startAt: dueDate.nullable().default(null),
     dueAt: dueDate.nullable().default(null),
   }),
   version: z.number().int().positive().optional(),

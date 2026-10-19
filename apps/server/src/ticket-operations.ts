@@ -73,9 +73,29 @@ export const labelOrder = (column: AnyColumn | SQL | SQL.Aliased) => [
   asc(sql`lower(${column}) COLLATE "C"`),
   asc(sql`${column} COLLATE "C"`),
 ];
-// Contracts carry ISO strings; the column stores a timestamp.
-const dueColumn = (dueAt: string | null | undefined) =>
-  dueAt === undefined ? {} : { dueAt: dueAt ? new Date(dueAt) : null };
+// Contracts carry ISO strings; the columns store timestamps.
+const toDate = (value: string | null) => (value ? new Date(value) : null);
+function dateColumns(dates: {
+  startAt?: string | null | undefined;
+  dueAt?: string | null | undefined;
+}) {
+  return {
+    ...(dates.startAt === undefined ? {} : { startAt: toDate(dates.startAt) }),
+    ...(dates.dueAt === undefined ? {} : { dueAt: toDate(dates.dueAt) }),
+  };
+}
+// A ticket's schedule, from its start (or due) date to its due (or start) date.
+export const scheduleStart = sql`coalesce(${tickets.startAt}, ${tickets.dueAt})`;
+export const scheduleEnd = sql`coalesce(${tickets.dueAt}, ${tickets.startAt})`;
+// Checks the dates a write leaves on the ticket, so moving either side keeps the order. A bulk
+// edit names the ticket that would break.
+function assertSchedule(startAt: Date | null, dueAt: Date | null, key?: string) {
+  if (!startAt || !dueAt || startAt <= dueAt) return;
+  const message = key
+    ? `${key} would start after its due date`
+    : "The start date must be on or before the due date";
+  fail(400, "validation_error", message, [{ path: "startAt", message }]);
+}
 
 async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelect)[]) {
   const ids = selected.map((ticket) => ticket.id);
@@ -196,13 +216,19 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   assertVersion(current, input.expectedVersion, "ticket");
   await assertWorkerClaim(ctx, current, input.claimId);
   await validateReferences(ctx, current.id, input.changes);
-  const { dueAt, ...changes } = input.changes;
+  const { startAt, dueAt, ...changes } = input.changes,
+    dates = dateColumns({ startAt, dueAt });
+  assertSchedule(
+    dates.startAt === undefined ? current.startAt : dates.startAt,
+    dates.dueAt === undefined ? current.dueAt : dates.dueAt,
+    current.key,
+  );
   const row = one(
     await ctx.db
       .update(tickets)
       .set({
         ...changes,
-        ...dueColumn(dueAt),
+        ...dates,
         version: current.version + 1,
         updatedAt: new Date(),
       })
@@ -297,6 +323,7 @@ function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">)
     title: by(sql`lower(${tickets.title})`),
     labels: by(sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label)`),
     due: by(tickets.dueAt),
+    start: by(scheduleStart),
     number: by(tickets.number),
     status: by(rank(tickets.status, states)),
     difficulty: by(rank(tickets.difficulty, difficulties)),
@@ -338,13 +365,15 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
       .where(eq(projects.id, project(ctx).id))
       .returning(),
   );
-  const { projectId: _projectId, requestId: _requestId, dueAt, ...fields } = input;
+  const { projectId: _projectId, requestId: _requestId, startAt, dueAt, ...fields } = input,
+    dates = dateColumns({ startAt, dueAt });
+  assertSchedule(dates.startAt ?? null, dates.dueAt ?? null);
   const row = one(
     await ctx.db
       .insert(tickets)
       .values({
         ...fields,
-        ...dueColumn(dueAt),
+        ...dates,
         id,
         projectId: counter.id,
         number: counter.nextNumber - 1,
@@ -484,6 +513,8 @@ export const ticketHandlers: Pick<
       predicateWhere(input),
       input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
       dueWhere(input.due),
+      input.scheduledFrom ? sql`${scheduleEnd} >= ${input.scheduledFrom}::timestamptz` : undefined,
+      input.scheduledTo ? sql`${scheduleStart} < ${input.scheduledTo}::timestamptz` : undefined,
       search?.where,
     );
     return pageOf(ctx, where, ticketOrder(input), input);
@@ -547,6 +578,7 @@ export const ticketHandlers: Pick<
       priority: source.priority,
       kind: source.kind,
       difficulty: source.difficulty,
+      startAt: source.startAt?.toISOString() ?? null,
       dueAt: source.dueAt?.toISOString() ?? null,
       labels: source.labels,
       scopes: source.scopes,

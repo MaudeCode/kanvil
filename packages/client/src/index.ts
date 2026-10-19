@@ -116,7 +116,9 @@ export function createClient(options: {
               url.searchParams.append(key, String(item));
       } else {
         headers.set("Content-Type", "application/json");
-        values.requestId ??= (options.requestId ?? randomRequestId)();
+        // Writes that return a one-time secret take no requestId, so no receipt stores it.
+        if ("requestId" in spec.input.shape)
+          values.requestId ??= (options.requestId ?? randomRequestId)();
         init.body = JSON.stringify(values);
       }
       const data = await decode(await send(url, init));

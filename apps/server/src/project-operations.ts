@@ -1,5 +1,6 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
+import { renameFeedLabel } from "./calendar-operations.ts";
 import { and, asc, count, desc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { filterList, isHexColor, roles, ticketFilter } from "@kanvil/contracts";
@@ -188,7 +189,10 @@ export const projectHandlers: Pick<
         .where(eq(projectLabels.id, current.id))
         .returning(),
     );
-    if (current.name !== label.name) await changeLabelUsage(ctx, current.name, label.name);
+    if (current.name !== label.name) {
+      await changeLabelUsage(ctx, current.name, label.name);
+      await renameFeedLabel(ctx, current.name, label.name);
+    }
     await publish(ctx, "label.updated", null, {
       labelId: label.id,
       name: label.name,

@@ -12,9 +12,19 @@ const previewFields = {
   peek: z.string().min(1).max(80).optional().catch(undefined),
   peekProject: z.string().min(1).max(80).optional().catch(undefined),
 };
+// The day a calendar or timeline shows, as yyyy-MM-dd. Like the preview, it never changes which
+// tickets a saved view matches.
+const periodFields = {
+  period: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .catch(undefined),
+};
 export const searchSchema = ticketFilter.extend({
   offset: z.coerce.number().int().min(0).catch(0).default(0),
   ...previewFields,
+  ...periodFields,
 });
 export type TicketSearch = z.output<typeof searchSchema>;
 // Two filters mean the same thing when their normalized predicates and options match, so a view
@@ -61,8 +71,9 @@ export type TicketDensity = z.output<typeof ticketDensitySchema>;
 export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
 export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 export const ticketGroupingSchema = z.enum(["status", "none"]);
-// Project lists render as a table or as a board of status lanes.
-export const ticketLayoutSchema = z.enum(["list", "board"]);
+// Project lists render as a table, a board of status lanes, a month calendar, or a timeline.
+export const ticketLayoutSchema = z.enum(["list", "board", "calendar", "timeline"]);
+export type TicketLayout = z.output<typeof ticketLayoutSchema>;
 // My work spans projects, so it groups by due date or project instead of status.
 export const workGroupingSchema = z.enum(["due", "project", "none"]);
 export type TicketGrouping =
@@ -78,6 +89,7 @@ export const ticketColumnLabels = {
   difficulty: "Difficulty",
   kind: "Kind",
   assigneeId: "Assignee",
+  startAt: "Start",
   dueAt: "Due",
   createdAt: "Created",
   updatedAt: "Updated",
@@ -110,7 +122,13 @@ export const adminSearchSchema = z.object({
 });
 
 export const workspaceSections = ["general", "members"] as const;
-export const projectSections = ["general", "members", "labels", "integrations"] as const;
+export const projectSections = [
+  "general",
+  "members",
+  "labels",
+  "integrations",
+  "calendar",
+] as const;
 export const groupSettingsSearchSchema = z.object({
   section: z.enum(workspaceSections).catch("general").default("general"),
 });

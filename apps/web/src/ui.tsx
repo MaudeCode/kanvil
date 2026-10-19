@@ -376,6 +376,8 @@ const statusPresentation = {
   done: { icon: CircleCheck, color: "text-[var(--success)]" },
   cancelled: { icon: XCircle, color: "text-muted-foreground" },
 };
+// The tint a status uses on pills, calendar entries, and timeline bars.
+export const statusColor = (status: Ticket["status"]) => statusPresentation[status].color;
 const priorityPresentation = {
   urgent: { icon: OctagonAlert, color: "text-destructive" },
   high: { icon: ArrowUp, color: "text-[var(--warning)]" },

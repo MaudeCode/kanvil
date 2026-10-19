@@ -39,6 +39,7 @@ import { createMcp } from "./mcp.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
 import { deliverBatch } from "./outbox.ts";
+import { readCalendarFeed } from "./calendar-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -258,6 +259,30 @@ export async function createApplication(
   const writes = createWriteLimiter(config.KANVIL_SESSION_WRITE_LIMIT);
   const mcpHandler = createMcp(auth, domain, access, config, (key) => writes.consume(key));
   app.all("/mcp", (c) => mcpHandler(c.req.raw));
+  // Calendar feeds authenticate by their secret path, so calendar apps can subscribe without a
+  // session. Unknown, malformed, and revoked tokens all read as not found.
+  app.openAPIRegistry.registerPath({
+    method: "get",
+    path: "/api/calendar/{token}.ics",
+    request: { params: z.object({ token: z.string() }) },
+    responses: {
+      200: { description: "iCalendar feed", content: { "text/calendar": { schema: z.string() } } },
+      404: { description: "Feed unavailable" },
+    },
+  });
+  app.get("/api/calendar/:file", async (c) => {
+    const token = /^(.+)\.ics$/.exec(c.req.param("file"))?.[1],
+      body = token ? await readCalendarFeed(database.db, token, config.KANVIL_URL) : null;
+    if (body === null) fail(404, "not_found", "This calendar feed does not exist or was revoked");
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": 'inline; filename="kanvil.ics"',
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  });
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);
     const actor = await access.authenticate(c.req.raw);

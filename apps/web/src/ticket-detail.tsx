@@ -45,7 +45,7 @@ import { Discussion } from "./discussion.tsx";
 import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import { TagsProperty, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
-import { DatePicker, endOfDay } from "./components/date-picker.tsx";
+import { ScheduleDates } from "./components/date-picker.tsx";
 import { copyText } from "./lib/browser.ts";
 import { readListOrder } from "./lib/list-order.ts";
 import { copyLink } from "./lib/actions.ts";
@@ -409,13 +409,11 @@ export function TicketDetail({
               disabled={!editable}
               onChange={(difficulty) => void change({ difficulty })}
             />
-            <DatePicker
+            <ScheduleDates
               variant="row"
-              label="Due date"
-              placeholder="No due date"
-              value={ticket.dueAt ? new Date(ticket.dueAt) : null}
+              value={ticket}
               disabled={!editable}
-              onChange={(chosen) => void change({ dueAt: chosen ? endOfDay(chosen) : null })}
+              onChange={(dates) => void change(dates)}
             />
             <TagsProperty
               variant="row"

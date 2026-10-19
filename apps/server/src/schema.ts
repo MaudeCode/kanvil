@@ -128,6 +128,7 @@ export const tickets = pgTable(
     automationReady: boolean("automation_ready").notNull().default(false),
     claimRequired: boolean("claim_required").notNull().default(false),
     holdReason: text("hold_reason"),
+    startAt: timestamp("start_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
     archived: boolean("archived").notNull().default(false),
     createdBy: text("created_by")
@@ -352,6 +353,25 @@ export const resources = pgTable(
     updatedAt: time("updated_at"),
   },
   (table) => [index("resource_ticket").on(table.ticketId)],
+);
+// A project's shared iCalendar link. Only the token's SHA-256 hash is kept; revoking deletes the row.
+export const calendarFeeds = pgTable(
+  "calendar_feeds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    labels: text("labels").array().notNull().default([]),
+    timeZone: text("time_zone").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: time("created_at"),
+  },
+  (table) => [index("calendar_feed_project").on(table.projectId)],
 );
 export const subscriptions = pgTable(
   "subscriptions",

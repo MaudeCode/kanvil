@@ -1,16 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { toggleDisplay } from "./controls.ts";
+import { setLayout, toggleDisplay } from "./controls.ts";
 
 const lane = (page: Page, name: string) =>
   page.getByRole("region", { name: `${name} tickets`, exact: true });
 const card = (page: Page, title: string) => page.locator("li.ticket-row", { hasText: title });
-
-async function setLayout(page: Page, layout: "List" | "Board") {
-  await page.getByRole("button", { name: "Display", exact: true }).click();
-  await toggleDisplay(page, layout);
-  await page.keyboard.press("Escape");
-}
 
 test("the board keeps filters and selection and moves tickets by drag or keyboard", async ({
   page,
