@@ -350,6 +350,37 @@ describe("custom workspace roles", () => {
     expect(await workspaceAs(member)).toMatchObject({ roleId: "writer" });
   });
 
+  it("invites only to projects the sender can share", async () => {
+    const hidden = await project("private");
+    const inviter = await role("Inviter", ["ticket.write", "invitation.manage"]);
+    await join("member", inviter.id);
+    await expect(
+      domain.execute(
+        "create_invitation",
+        {
+          workspaceId: workspace.id,
+          email: "outside@roles.test",
+          role: "reader",
+          projectIds: [hidden.id],
+        },
+        member,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    // An administrator's invitation to the private project does not reveal it to the inviter.
+    await domain.execute(
+      "create_invitation",
+      {
+        workspaceId: workspace.id,
+        email: "guest@roles.test",
+        role: "reader",
+        projectIds: [hidden.id],
+      },
+      owner,
+    );
+    const listed = await domain.execute("list_invitations", { workspaceId: workspace.id }, member);
+    expect(listed.find((row) => row.email === "guest@roles.test")?.projects).toEqual([]);
+  });
+
   it("revokes a removed action at once and rewrites the seeded stand-in", async () => {
     const shared = await project();
     const editor = await role("Editor", ["ticket.write"]);

@@ -5,12 +5,13 @@ import {
   invitationStatuses,
   roleLabels,
   roles,
+  scopes,
   seededPermissions,
   type Invitation,
 } from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { invitations, members, projects, workspaceMembers, workspaces } from "./schema.ts";
-import { permissionsOf, projectAccess } from "./project-access.ts";
+import { accessibleProjectRows, permissionsOf, projectAccess } from "./project-access.ts";
 import { publishWorkspace } from "./workspace-operations.ts";
 import {
   assertGrantable,
@@ -19,6 +20,7 @@ import {
   one,
   publishMany,
   workspace,
+  type Actor,
   type Context,
   type Handlers,
 } from "./domain.ts";
@@ -179,10 +181,10 @@ async function byToken(ctx: Context, token: string) {
   );
   return { ...row, matches: account.email.toLowerCase() === row.invitation.email };
 }
-// The sender must still manage invitations and hold every action the role grants, so a demoted or
-// disabled sender's links stop granting anything.
-async function senderCanGrant(ctx: Context, row: Row) {
-  if (!row.invitedBy) return false;
+// The sender, when they still manage invitations and hold every action the role grants, so a
+// demoted or disabled sender's links stop granting anything.
+async function grantingSender(ctx: Context, row: Row): Promise<Actor | undefined> {
+  if (!row.invitedBy) return undefined;
   const sender = (
     await ctx.db
       .select({
@@ -202,14 +204,53 @@ async function senderCanGrant(ctx: Context, row: Row) {
       )
       .where(eq(user.id, row.invitedBy))
   )[0];
-  if (!sender || sender.banned) return false;
-  if (hasAdminRole(sender.role)) return true;
+  if (!sender || sender.banned) return undefined;
+  const actor: Actor = {
+    id: row.invitedBy,
+    admin: hasAdminRole(sender.role),
+    machine: false,
+    ownerId: row.invitedBy,
+    scopes,
+  };
+  if (actor.admin) return actor;
   const held = (await permissionsOf(ctx.db, [sender.membership]))(sender.membership);
-  return (
-    held.includes("invitation.manage") &&
+  return held.includes("invitation.manage") &&
     (roleOf(row) !== "admin" || sender.membership === "admin") &&
     seededPermissions[roleOf(row)].every((permission) => held.includes(permission))
-  );
+    ? actor
+    : undefined;
+}
+// The live projects of the workspace among `ids`, and those `actor` can grant `role` on: they read
+// the project and their role there holds every action the invited role grants, Admin only as an
+// administrator. A private project the sender cannot open is never theirs to share.
+async function grantableProjects(
+  ctx: Context,
+  actor: Actor,
+  workspaceId: string,
+  ids: readonly string[],
+  role: Role,
+) {
+  const live = await ctx.db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        inArray(projects.id, [...ids]),
+        isNull(projects.deletedAt),
+      ),
+    );
+  const allowed: typeof live = [];
+  for (const row of live) {
+    const access = await projectAccess(ctx.db, actor, row);
+    if (
+      access &&
+      (role !== "admin" || access.role === "admin") &&
+      seededPermissions[role].every((permission) => access.permissions.includes(permission))
+    )
+      allowed.push(row);
+  }
+  return { live, allowed };
 }
 export const invitationHandlers: Pick<
   Handlers,
@@ -220,31 +261,29 @@ export const invitationHandlers: Pick<
   | "get_invitation"
   | "accept_invitation"
 > = {
+  // Projects the caller cannot read stay out of the listing, names and IDs alike.
   async list_invitations(ctx) {
     const rows = await ctx.db
       .select()
       .from(invitations)
       .where(and(eq(invitations.workspaceId, workspace(ctx).id), eq(invitations.status, "pending")))
       .orderBy(desc(invitations.sentAt));
-    return present(ctx, rows);
+    const readable = new Set(
+      (await accessibleProjectRows(ctx.db, ctx.actor, workspace(ctx).id)).map((row) => row.id),
+    );
+    return (await present(ctx, rows)).map((invitation) => ({
+      ...invitation,
+      projects: invitation.projects?.filter((item) => readable.has(item.id)) ?? null,
+    }));
   },
   async create_invitation(ctx, input) {
     const space = workspace(ctx);
     assertGrantable(ctx, seededPermissions[input.role], input.role);
     if (input.projectIds) {
       const wanted = [...new Set(input.projectIds)];
-      const found = await ctx.db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(
-          and(
-            eq(projects.workspaceId, space.id),
-            inArray(projects.id, wanted),
-            isNull(projects.deletedAt),
-          ),
-        );
-      if (found.length !== wanted.length)
-        fail(404, "not_found", "A selected project is not in this workspace");
+      const { allowed } = await grantableProjects(ctx, ctx.actor, space.id, wanted, input.role);
+      if (allowed.length !== wanted.length)
+        fail(404, "not_found", "A selected project is not in this workspace or not yours to share");
     }
     await assertNoLiveInvitation(ctx, input.email);
     return send(ctx, (tokenHash) =>
@@ -265,6 +304,17 @@ export const invitationHandlers: Pick<
   async resend_invitation(ctx, input) {
     const row = await pendingRow(ctx, input.invitationId, input.expectedVersion);
     assertGrantable(ctx, seededPermissions[roleOf(row)], roleOf(row));
+    if (row.projectIds) {
+      const { live, allowed } = await grantableProjects(
+        ctx,
+        ctx.actor,
+        row.workspaceId,
+        row.projectIds,
+        roleOf(row),
+      );
+      if (allowed.length !== live.length)
+        fail(404, "not_found", "A project in this invitation is not yours to share");
+    }
     await assertNoLiveInvitation(ctx, row.email, row.id);
     // The new link replaces the old one, and the resending administrator becomes its sender.
     return send(ctx, (tokenHash) =>
@@ -314,7 +364,8 @@ export const invitationHandlers: Pick<
         "invitation_email_mismatch",
         "This invitation is for another email address. Sign in with that account to accept it.",
       );
-    if (!(await senderCanGrant(ctx, row)))
+    const sender = await grantingSender(ctx, row);
+    if (!sender)
       fail(
         403,
         "invitation_unauthorized",
@@ -348,17 +399,25 @@ export const invitationHandlers: Pick<
     } else {
       // Projects deleted or moved since the invitation was sent are skipped. A direct role
       // overrides an inherited one, so compare with the effective role before writing one.
-      const targets = await ctx.db
-        .select()
-        .from(projects)
-        .where(
-          and(eq(projects.workspaceId, row.workspaceId), inArray(projects.id, row.projectIds)),
-        );
+      // The sender must still be able to share each project; ones they no longer can are skipped.
+      const { live, allowed: targets } = await grantableProjects(
+        ctx,
+        sender,
+        row.workspaceId,
+        row.projectIds,
+        role,
+      );
       granted = targets.map((target) => target.id);
-      if (!targets.length)
+      if (!live.length)
         fail(410, "invitation_unavailable", "The invited projects no longer exist", {
           reason: "projects_removed",
         });
+      if (!targets.length)
+        fail(
+          403,
+          "invitation_unauthorized",
+          "The sender can no longer grant this access. Ask a workspace administrator for a new invitation.",
+        );
       for (const target of targets)
         if (await raises(ctx, (await projectAccess(ctx.db, ctx.actor, target))?.roleId, role))
           await ctx.db
