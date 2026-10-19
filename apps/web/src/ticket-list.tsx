@@ -31,6 +31,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import {
+  capabilitiesOf,
   ticketFilter,
   closedStates,
   defaultOrder,
@@ -981,9 +982,9 @@ export function TicketList({
   const writable = (ticket: Ticket) =>
     project
       ? canWrite
-      : ["writer", "admin"].includes(
-          projects.data?.find((item) => item.id === ticket.projectId)?.role ?? "",
-        );
+      : capabilitiesOf(
+          projects.data?.find((item) => item.id === ticket.projectId) ?? { role: null },
+        ).includes("ticket.write");
   const moveActive = (command: MoveCommand) => {
     const ticket = active ? latest.get(active) : undefined,
       placement = ticket && writable(ticket) && targetFor(ticket, command);

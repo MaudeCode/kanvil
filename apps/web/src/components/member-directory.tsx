@@ -69,7 +69,7 @@ export function MemberDirectory({
   const options: { id: string; name: string; permissions: readonly Permission[] }[] =
     catalog?.length ? catalog : seededRoles;
   const nameOf = (id: string | null | undefined) =>
-    options.find((option) => option.id === id)?.name ?? (id ? "Removed role" : "");
+    options.find((option) => option.id === id)?.name ?? (id ? "Custom role" : "");
   const grantable = (id: string) => {
     const option = options.find((candidate) => candidate.id === id);
     return (

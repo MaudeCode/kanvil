@@ -1,3 +1,4 @@
+import { capabilitiesOf } from "@kanvil/contracts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu, useProjectMove } from "./object-context-menu.tsx";
@@ -181,7 +182,9 @@ export function AppSidebar() {
                   <SidebarMenuItem
                     key={project.id}
                     className="data-[dragging=true]:opacity-50 data-[drop=after]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:shadow-[inset_0_2px_0_var(--primary)]"
-                    {...drag.item(project.id, { draggable: project.role === "admin" })}
+                    {...drag.item(project.id, {
+                      draggable: capabilitiesOf(project).includes("project.manage"),
+                    })}
                   >
                     <ProjectContextMenu project={project}>
                       <SidebarMenuButton

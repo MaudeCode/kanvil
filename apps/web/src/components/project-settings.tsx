@@ -148,7 +148,7 @@ export function ProjectSettings({
             <ProjectBackground project={project} canAdmin={access.canManage} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {access.canManage &&
-                workspace.active?.role === "admin" &&
+                capabilitiesOf(workspace.active ?? { role: null }).includes("project.manage") &&
                 destinations.length > 0 && (
                   <MoveProject project={project} destinations={destinations} />
                 )}
