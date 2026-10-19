@@ -33,7 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatDistanceToNowStrict, isPast } from "date-fns";
+import { isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { toggleTask } from "./lib/markdown.ts";
@@ -53,6 +53,7 @@ import {
   type Ticket,
 } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
+import { formatNumber, formatRelativeTime, t } from "@kanvil/contracts/i18n";
 import { accentColor } from "./lib/accent-colors.ts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -166,8 +167,8 @@ export function Input({
           <InputGroupAddon align="inline-end">
             <InputGroupButton
               size="icon-sm"
-              aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
-              title={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+              aria-label={t(visible ? "shell.ui.hideValue" : "shell.ui.showValue", { label })}
+              title={t(visible ? "shell.ui.hideValue" : "shell.ui.showValue", { label })}
               disabled={props.disabled}
               onClick={() => setVisible((current) => !current)}
             >
@@ -317,13 +318,17 @@ export function Pager({
   return (
     <footer className="mt-5 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground [&>span]:mr-auto">
       <Button disabled={!offset} onClick={() => onChange(Math.max(0, offset - size))}>
-        Previous {noun}
+        {t("shell.ui.previousPage", { noun })}
       </Button>
       <span>
-        {offset + 1}–{Math.min(offset + size, total)} of {total}
+        {t("shell.ui.pageRange", {
+          from: formatNumber(offset + 1),
+          to: formatNumber(Math.min(offset + size, total)),
+          total: formatNumber(total),
+        })}
       </span>
       <Button disabled={offset + size >= total} onClick={() => onChange(offset + size)}>
-        Next {noun}
+        {t("shell.ui.nextPage", { noun })}
       </Button>
     </footer>
   );
@@ -331,7 +336,7 @@ export function Pager({
 export function Loading() {
   return (
     <div role="status" className="space-y-4 py-5">
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{t("common.state.loading")}</span>
       <Skeleton className="h-6 w-40" />
       <Skeleton className="h-12 w-full" />
       <Skeleton className="h-12 w-full" />
@@ -413,7 +418,8 @@ export function TicketIndicator({
         label: name ?? stateLabels[value],
       }
     : { ...priorityPresentation[value], label: priorityLabels[value] };
-  const accessibleLabel = property === "priority" && value !== "none" ? `${label} priority` : label;
+  const accessibleLabel =
+    property === "priority" && value !== "none" ? t("shell.ui.priority", { label }) : label;
   return (
     <Badge
       variant="outline"
@@ -608,7 +614,7 @@ export function FormActions({
   submitLabel,
   pendingLabel,
   onCancel,
-  cancelLabel = "Cancel",
+  cancelLabel = t("common.action.cancel"),
   submitDisabled = false,
   danger = false,
   children,
@@ -700,7 +706,7 @@ export function Confirm({
         </AlertDialogHeader>
         <ErrorNotice error={error} />
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{t("common.action.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             variant={danger ? "destructive" : "default"}
             disabled={pending}
@@ -713,7 +719,7 @@ export function Confirm({
                 .finally(() => setPending(false));
             }}
           >
-            {pending ? "Working…" : label}
+            {pending ? t("shell.ui.working") : label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -721,17 +727,13 @@ export function Confirm({
   );
 }
 
-const sizeFormat = new Intl.NumberFormat(undefined, {
-  style: "unit",
-  unit: "kilobyte",
-  maximumFractionDigits: 1,
-});
-export const fileSize = (bytes: number) => sizeFormat.format(bytes / 1000);
+export const fileSize = (bytes: number) =>
+  formatNumber(bytes / 1000, { style: "unit", unit: "kilobyte", maximumFractionDigits: 1 });
 export function RelativeTime({ value, className }: { value: string; className?: string }) {
   const parsed = new Date(value);
   return (
     <time dateTime={value} title={formatTimestamp(value)} className={className}>
-      {formatDistanceToNowStrict(parsed, { addSuffix: true })}
+      {formatRelativeTime(parsed)}
     </time>
   );
 }
@@ -763,7 +765,7 @@ export function DueDate({
 }
 // A ticket page's title, shared by the member and public views.
 export const ticketTitleClass =
-  "mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight";
+  "mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight [unicode-bidi:plaintext]";
 export function PageHeader({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <header className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3">
@@ -815,7 +817,7 @@ export function SearchField({
   label,
   value,
   onChange,
-  placeholder = "Search…",
+  placeholder = t("shell.ui.searchPlaceholder"),
   shortcut,
   defaultOpen = false,
   wide = false,
@@ -890,7 +892,7 @@ export function SearchField({
           className="h-8 min-w-0 flex-1 border-0 border-b border-border bg-transparent px-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus:border-foreground [&::-webkit-search-cancel-button]:hidden"
         />
         {value && (
-          <IconButton label={`Clear ${label.toLowerCase()}`} size="icon-xs" onClick={close}>
+          <IconButton label={t("shell.ui.clearValue", { label })} size="icon-xs" onClick={close}>
             <X />
           </IconButton>
         )}
@@ -921,7 +923,7 @@ export function CopyButton({
           .then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
-            toast.success(`${value} copied`);
+            toast.success(t("shell.ui.copied", { value }));
           })
           .catch(reportError);
       }}
@@ -950,7 +952,7 @@ export function CopyValue({
     >
       <code className="min-w-0 text-xs break-all">{value}</code>
       <CopyButton
-        label={`Copy ${label.toLowerCase()}`}
+        label={t("shell.ui.copyValue", { label })}
         value={value}
         size={inline ? "icon-sm" : "icon"}
       />

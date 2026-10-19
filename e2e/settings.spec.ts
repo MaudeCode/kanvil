@@ -327,7 +327,7 @@ test("personal preferences agree with Display, set the week start, and reset or 
   await settingsLink(page, "Preferences").click();
   await page.getByRole("button", { name: "Reset preferences", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Week starts on", exact: true })).toContainText(
-    "Sunday",
+    "Language default",
   );
   await expect(page.getByRole("checkbox", { name: "Kind", exact: true })).not.toBeChecked();
   await choose(page, "Sidebar on launch", "Collapsed");

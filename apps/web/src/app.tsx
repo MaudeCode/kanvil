@@ -20,6 +20,8 @@ import {
 } from "@tanstack/react-router";
 import { Settings, FolderOpen, ChevronRight } from "lucide-react";
 import { hasAdminRole, formatEvent, type Output } from "@kanvil/contracts";
+import { formatNumber, t } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 import {
   groupSettingsSearchSchema,
   projectSettingsSearchSchema,
@@ -199,7 +201,7 @@ function useConnectionToast(connection: string) {
       current.timer = 0;
       if (current.shown) {
         current.shown = false;
-        toast.success("Connection restored", {
+        toast.success(t("shell.connection.restored"), {
           id: "connection",
           description: undefined,
           duration: 2500,
@@ -219,12 +221,15 @@ function useConnectionToast(connection: string) {
           toast.error(connection, {
             id: "connection",
             duration: Infinity,
-            action: { label: "Reload", onClick: () => window.location.reload() },
+            action: {
+              label: t("shell.connection.reload"),
+              onClick: () => window.location.reload(),
+            },
           });
         else
-          toast.warning("Connection lost", {
+          toast.warning(t("shell.connection.lost"), {
             id: "connection",
-            description: "Reconnecting…",
+            description: t("shell.connection.reconnecting"),
             duration: Infinity,
           });
       },
@@ -248,7 +253,9 @@ function Shell() {
   const info = useInfo();
   useEffect(() => {
     document.title =
-      info.data?.name && info.data.name !== "Kanvil" ? `${info.data.name} · Kanvil` : "Kanvil";
+      info.data?.name && info.data.name !== "Kanvil"
+        ? t("shell.documentTitle", { name: info.data.name })
+        : "Kanvil";
   }, [info.data?.name]);
 
   return (
@@ -264,7 +271,7 @@ function Shell() {
           className="fixed top-3 left-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0"
           href="#main"
         >
-          Skip to content
+          {t("shell.app.skipToContent")}
         </a>
         <AppSidebar />
         <SidebarInset className="min-w-0 has-[.ticket-list-controls]:max-h-svh md:has-[.ticket-list-controls]:max-h-[calc(100svh-1rem)]">
@@ -298,7 +305,7 @@ function Home() {
   const workspace = useWorkspace();
   return (
     <>
-      <PageHeader title="Home" />
+      <PageHeader title={t("shell.page.home")} />
       {workspace.active && <WorkOverview workspaceId={workspace.active.id} />}
       <ProjectDirectory />
     </>
@@ -318,13 +325,15 @@ function WorkOverview({ workspaceId }: { workspaceId: string }) {
   const total = work.data?.total ?? 0;
   return (
     <div className="mb-10 grid gap-x-10 gap-y-8 @min-[900px]:grid-cols-2">
-      <section aria-label="Assigned to you">
+      <section aria-label={t("shell.app.assigned")}>
         <SectionHeading
           compact
-          title="Assigned to you"
+          title={t("shell.app.assigned")}
           action={
             work.data && (
-              <span className="text-xs text-muted-foreground tabular-nums">{total} open</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {t("shell.app.openCount", { count: total })}
+              </span>
             )
           }
         />
@@ -358,20 +367,22 @@ function WorkOverview({ workspaceId }: { workspaceId: string }) {
               ))}
             </ul>
             {total === 0 ? (
-              <p className="my-3 text-xs text-muted-foreground">No open tickets assigned to you</p>
+              <p className="my-3 text-xs text-muted-foreground">{t("shell.app.noAssigned")}</p>
             ) : (
               <Link
                 to="/my-work"
                 className="mt-3 inline-block text-xs text-muted-foreground hover:text-primary"
               >
-                {total > homeTickets ? `All ${total} in My work` : "Open My work"}
+                {total > homeTickets
+                  ? t("shell.app.allInMyWork", { count: total })
+                  : t("shell.app.openMyWork")}
               </Link>
             )}
           </>
         )}
       </section>
-      <section aria-label="Recent activity">
-        <SectionHeading compact title="Recent activity" />
+      <section aria-label={t("shell.app.recentActivity")}>
+        <SectionHeading compact title={t("shell.app.recentActivity")} />
         {!work.isPending && (
           <ol className="m-0 list-none border-t p-0">
             {work.data?.activity.map((event) => {
@@ -412,7 +423,7 @@ function WorkOverview({ workspaceId }: { workspaceId: string }) {
           </ol>
         )}
         {work.data?.activity.length === 0 && (
-          <p className="my-3 text-xs text-muted-foreground">No activity yet</p>
+          <p className="my-3 text-xs text-muted-foreground">{t("shell.app.noActivity")}</p>
         )}
       </section>
     </div>
@@ -434,14 +445,18 @@ function ProjectDirectory() {
           project.archivedAt && project.workspaceId === workspace.active?.id && matching(project),
       ) ?? [];
   return (
-    <section aria-label="Projects">
+    <section aria-label={t("shell.page.projects")}>
       <SectionHeading
         compact
-        title="Projects"
+        title={t("shell.page.projects")}
         action={
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             {!!projects.data?.length && (
-              <SearchField label="Search projects" value={query} onChange={setQuery} />
+              <SearchField
+                label={t("shell.app.searchProjects")}
+                value={query}
+                onChange={setQuery}
+              />
             )}
             {workspace.active ? <CreateProject /> : <CreateWorkspace />}
           </div>
@@ -449,7 +464,7 @@ function ProjectDirectory() {
       />
       {query && (
         <p className="mb-3 text-xs text-muted-foreground">
-          {matches.length} {matches.length === 1 ? "project" : "projects"}
+          {t("shell.app.projectCount", { count: matches.length })}
         </p>
       )}
       <ErrorNotice error={projects.error ?? workspace.error} />
@@ -461,22 +476,24 @@ function ProjectDirectory() {
             <ProjectRow key={project.id} project={project} />
           ))}
           {projects.data?.length !== 0 && matches.length === 0 && (
-            <EmptyState title="No matching projects">
-              <Button onClick={() => setQuery("")}>Clear search</Button>
+            <EmptyState title={t("shell.app.noMatchingProjects")}>
+              <Button onClick={() => setQuery("")}>{t("shell.app.clearSearch")}</Button>
             </EmptyState>
           )}
-          {!workspace.active && !workspace.pending && <EmptyState title="No workspaces yet" />}
+          {!workspace.active && !workspace.pending && (
+            <EmptyState title={t("shell.app.noWorkspaces")} />
+          )}
           {workspace.active && projects.data?.length === 0 && (
             <EmptyState
-              title={archived.length ? "No active projects" : "No projects yet"}
+              title={archived.length ? t("shell.app.noActiveProjects") : t("shell.app.noProjects")}
               icon={FolderOpen}
             />
           )}
         </ItemGroup>
       )}
       {archived.length > 0 && (
-        <section aria-label="Archived projects" className="mt-8">
-          <SectionHeading compact title="Archived" />
+        <section aria-label={t("shell.app.archivedProjects")} className="mt-8">
+          <SectionHeading compact title={t("shell.app.archived")} />
           <ItemGroup className="project-list gap-0 border-t opacity-80">
             {archived.map((project) => (
               <ProjectRow key={project.id} project={project} />
@@ -507,24 +524,37 @@ function ProjectRow({ project }: { project: Output<"list_projects">[number] }) {
           </ItemMedia>
           <ItemContent className="min-w-0 gap-0.5">
             <ItemTitle className="line-clamp-none flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="min-w-0 wrap-anywhere text-sm font-medium">{project.name}</span>
+              <span dir="auto" className="min-w-0 wrap-anywhere text-sm font-medium">
+                {project.name}
+              </span>
               <Badge variant="secondary" className="font-mono text-[10px] font-normal">
                 {project.key}
               </Badge>
             </ItemTitle>
             <p className="m-0 text-xs text-muted-foreground tabular-nums">
-              {project.openTickets === 0 ? "No open tickets" : `${project.openTickets} open`}
+              {project.openTickets === 0
+                ? t("shell.app.noOpenTickets")
+                : t("shell.app.openCount", { count: project.openTickets })}
               {project.overdueTickets > 0 && (
-                <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
+                <span className="text-(--warning)">
+                  {" · "}
+                  {t("shell.app.overdueCount", { count: project.overdueTickets })}
+                </span>
               )}
               {project.closedTickets + project.openTickets > 0 &&
-                ` · ${Math.round(
-                  (100 * project.closedTickets) / (project.closedTickets + project.openTickets),
-                )}% done`}
+                ` · ${t("shell.app.percentDone", {
+                  percent: formatNumber(
+                    project.closedTickets / (project.closedTickets + project.openTickets),
+                    { style: "percent" },
+                  ),
+                })}`}
               {project.nextDueAt && (
                 <>
-                  {" · next due "}
-                  <RelativeTime value={project.nextDueAt} />
+                  {" · "}
+                  <Trans
+                    i18nKey="shell.app.nextDue"
+                    components={{ time: <RelativeTime value={project.nextDueAt} /> }}
+                  />
                 </>
               )}
             </p>
@@ -537,7 +567,7 @@ function ProjectRow({ project }: { project: Output<"list_projects">[number] }) {
         </Link>
         <ItemActions>
           <IconButton
-            label={`Project settings for ${project.name}`}
+            label={t("shell.app.projectSettingsFor", { name: project.name })}
             className="text-muted-foreground opacity-0 transition-opacity group-hover/project:opacity-100 focus-visible:opacity-100 hover:text-foreground max-md:opacity-100"
             render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
           >
@@ -552,8 +582,8 @@ function ProjectRow({ project }: { project: Output<"list_projects">[number] }) {
 function NotFoundPage() {
   return (
     <main className="mx-auto max-w-lg p-6">
-      <EmptyState title="Page not found">
-        <Button render={<Link to="/" />}>Open home</Button>
+      <EmptyState title={t("shell.app.pageNotFound")}>
+        <Button render={<Link to="/" />}>{t("shell.app.openHome")}</Button>
       </EmptyState>
     </main>
   );
@@ -562,7 +592,7 @@ function RouteError({ error, reset }: ErrorComponentProps) {
   return (
     <main className="mx-auto max-w-lg p-6">
       <ErrorNotice error={error} />
-      <Button onClick={reset}>Try again</Button>
+      <Button onClick={reset}>{t("shell.app.tryAgain")}</Button>
     </main>
   );
 }
@@ -653,7 +683,7 @@ function AdminSettingsPage() {
   return identity.admin ? (
     <AdminSettings section={search.section} />
   ) : (
-    <ErrorNotice error={new Error("Instance administrator access is required")} />
+    <ErrorNotice error={new Error(t("shell.app.adminRequired"))} />
   );
 }
 
@@ -689,7 +719,7 @@ function ProjectPage({ planning = false }: { planning?: boolean }) {
   ) : projects.isPending ? (
     <Loading />
   ) : (
-    <ErrorNotice error={projects.error ?? new Error("Project not found")} />
+    <ErrorNotice error={projects.error ?? new Error(t("shell.app.projectNotFound"))} />
   );
 }
 const myWork = createRoute({
@@ -714,7 +744,7 @@ function MyWorkPage() {
   ) : workspace.pending ? (
     <Loading />
   ) : (
-    <ErrorNotice error={workspace.error ?? new Error("No workspace selected")} />
+    <ErrorNotice error={workspace.error ?? new Error(t("shell.app.noWorkspaceSelected"))} />
   );
 }
 const searchRoute = createRoute({
@@ -776,7 +806,7 @@ function ProjectSettingsPage() {
   ) : projects.isPending ? (
     <Loading />
   ) : (
-    <ErrorNotice error={projects.error ?? new Error("Project not found")} />
+    <ErrorNotice error={projects.error ?? new Error(t("shell.app.projectNotFound"))} />
   );
 }
 const router = createRouter({

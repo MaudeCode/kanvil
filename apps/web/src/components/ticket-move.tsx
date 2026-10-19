@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api, useOperation } from "../data.tsx";
 import { FormActions, Loading } from "../ui.tsx";
 import {
@@ -55,11 +56,11 @@ export function TicketMoveForm({
           .catch(() => {});
       }}
     >
-      <div className="flex flex-wrap items-center gap-1" aria-label="Destination">
+      <div className="flex flex-wrap items-center gap-1" aria-label={t("ticket.move.destination")}>
         <ProjectProperty
           value={destination}
           exclude={ticket.projectId}
-          placeholder="Move to project…"
+          placeholder={t("ticket.move.projectPlaceholder")}
           disabled={move.isPending}
           onChange={(projectId) => {
             setDestination(projectId);
@@ -79,7 +80,7 @@ export function TicketMoveForm({
       {destination && check.isPending && <Loading />}
       {blockers.length > 0 && (
         <div className="mt-4 text-sm">
-          <p className="font-medium">Resolve before moving</p>
+          <p className="font-medium">{t("ticket.move.blockers")}</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
             {blockers.map((blocker) => (
               <li key={blocker.code}>{blocker.message}</li>
@@ -90,8 +91,8 @@ export function TicketMoveForm({
       <FormActions
         error={check.error ?? move.error}
         pending={move.isPending}
-        submitLabel="Move ticket"
-        pendingLabel="Moving…"
+        submitLabel={t("ticket.move.submit")}
+        pendingLabel={t("ticket.move.pending")}
         submitDisabled={!chosen || blockers.length > 0}
         onCancel={onCancel}
       />

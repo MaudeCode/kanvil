@@ -27,12 +27,18 @@ import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item"
 import { Badge } from "@/components/ui/badge";
 import { UserIdentity } from "./user-avatar.tsx";
 import { UserPicker } from "./user-picker.tsx";
+import { t } from "@kanvil/contracts/i18n";
 // Before the role catalog loads, and from servers without custom roles, the seeded roles.
 const seededRoles = roles.map((id) => ({
   id,
   name: roleLabels[id],
   permissions: seededPermissions[id],
 }));
+// A seeded role reads in the interface language; a custom role's name is the workspace's own.
+export function roleName(role: { id: string; name: string }) {
+  const seeded = roles.find((id) => id === role.id);
+  return seeded ? roleLabels[seeded] : role.name;
+}
 export function MemberDirectory({
   people,
   candidates = people,
@@ -68,8 +74,10 @@ export function MemberDirectory({
     [failure, setFailure] = useState<unknown>();
   const options: { id: string; name: string; permissions: readonly Permission[] }[] =
     catalog?.length ? catalog : seededRoles;
-  const nameOf = (id: string | null | undefined) =>
-    options.find((option) => option.id === id)?.name ?? (id ? "Custom role" : "");
+  const nameOf = (id: string | null | undefined) => {
+    const option = options.find((item) => item.id === id);
+    return option ? roleName(option) : id ? t("settings.members.customRole") : "";
+  };
   const grantable = (id: string) => {
     const option = options.find((candidate) => candidate.id === id);
     return (
@@ -83,7 +91,7 @@ export function MemberDirectory({
   );
   const choices = options.map((option) => (
     <SelectItem key={option.id} value={option.id} disabled={!grantable(option.id)}>
-      {option.name}
+      {roleName(option)}
     </SelectItem>
   ));
   async function change(memberEmail: string, role: string | null) {
@@ -98,18 +106,18 @@ export function MemberDirectory({
   return (
     <section>
       <SectionHeading
-        title="Members"
+        title={t("settings.members.title")}
         action={
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <SearchField
-              label="Search members"
-              placeholder="Name or email…"
+              label={t("settings.members.search")}
+              placeholder={t("settings.members.searchPlaceholder")}
               value={query}
               onChange={setQuery}
             />
             {canAdmin && (
               <IconButton
-                label="Add member"
+                label={t("settings.members.add")}
                 variant="default"
                 onClick={() => {
                   setFailure(undefined);
@@ -134,9 +142,9 @@ export function MemberDirectory({
               owner = scope === "workspace" && person.userId === ownerId,
               badge =
                 scope === "project" && person.source === "workspace"
-                  ? "Workspace access"
+                  ? t("settings.members.workspaceAccess")
                   : owner
-                    ? "Owner"
+                    ? t("settings.members.owner")
                     : null;
             return (
               <Item
@@ -153,7 +161,7 @@ export function MemberDirectory({
                 </ItemContent>
                 <ItemActions>
                   <Select
-                    label={`Role for ${person.name}`}
+                    label={t("settings.members.roleFor", { name: person.name })}
                     labelHidden
                     className="mb-0 w-36"
                     value={held}
@@ -184,17 +192,20 @@ export function MemberDirectory({
                       <Confirm
                         label={
                           scope === "project" && inherited
-                            ? "Use workspace access"
-                            : "Remove member"
+                            ? t("settings.members.useWorkspaceAccess")
+                            : t("settings.members.remove")
                         }
                         icon={scope === "project" && inherited ? <RotateCcw /> : <Trash2 />}
                         danger={!(scope === "project" && inherited)}
                         description={
                           scope === "workspace"
-                            ? `Remove ${person.name} from this workspace and all of its projects?`
+                            ? t("settings.members.removeFromWorkspace", { name: person.name })
                             : inherited
-                              ? `Restore ${nameOf(inherited)} workspace access for ${person.name}?`
-                              : `Remove ${person.name}'s project access?`
+                              ? t("settings.members.restoreAccess", {
+                                  role: nameOf(inherited),
+                                  name: person.name,
+                                })
+                              : t("settings.members.removeFromProject", { name: person.name })
                         }
                         onConfirm={() => change(person.email, null)}
                       />
@@ -205,9 +216,17 @@ export function MemberDirectory({
           })}
         </ItemGroup>
       ) : (
-        <EmptyState title={query ? "No matching members" : "No members"} className="py-10" />
+        <EmptyState
+          title={query ? t("settings.members.noMatches") : t("settings.members.empty")}
+          className="py-10"
+        />
       )}
-      <Modal title="Add member" open={adding} onOpenChange={setAdding} busy={pending}>
+      <Modal
+        title={t("settings.members.add")}
+        open={adding}
+        onOpenChange={setAdding}
+        busy={pending}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -215,14 +234,18 @@ export function MemberDirectory({
             void change(email, z.string().parse(values.get("role")))
               .then(() => {
                 setAdding(false);
-                toast.success("Member added");
+                toast.success(t("settings.members.added"));
               })
               .catch(() => {});
           }}
         >
           <UserPicker people={candidates} value={email} onChange={setEmail} disabled={pending} />
           <Select
-            label={scope === "project" ? "Project role" : "Workspace role"}
+            label={
+              scope === "project"
+                ? t("settings.members.projectRole")
+                : t("settings.members.workspaceRole")
+            }
             name="role"
             defaultValue={grantable("writer") ? "writer" : "reader"}
           >
@@ -231,7 +254,7 @@ export function MemberDirectory({
           <FormActions
             error={failure}
             pending={pending}
-            submitLabel="Add member"
+            submitLabel={t("settings.members.add")}
             submitDisabled={!email}
             onCancel={() => setAdding(false)}
           />

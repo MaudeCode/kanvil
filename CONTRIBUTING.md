@@ -76,7 +76,7 @@ Imports from other trackers read through `ImportSources` (`apps/server/src/adapt
 
 Project settings → Fields defines custom fields. Their values render and edit through `CustomFieldProperty` in `src/components/ticket-property.tsx` (pill, row, and cell, like `TicketProperty`, whose searchable `ChoiceList` it shares), read their definitions through `useCustomFields`, and format through `formatCustomFieldValue` in the contracts package, which native screens use too. List columns for fields start hidden and are named `field:<id>` in the column preference. Validation stays on the server in `custom-field-operations.ts`.
 
-Browser tests cover theme persistence, system appearance, sidebar collapse, keyboard navigation, the mobile sidebar, and the ticket workflows above; update them in the same change when accessible names change.
+Interface strings live in the shared catalogs under `packages/contracts/src/i18n`; add each new key to English and every other locale, as [languages](docs/localization.md) describes. Browser tests cover theme persistence, system appearance, sidebar collapse, keyboard navigation, the mobile sidebar, and the ticket workflows above; update them in the same change when accessible names change.
 
 Optional infrastructure adapters, configuration precedence, backup rules, and `pnpm test:services` are documented in [infrastructure](docs/infrastructure.md). Keep provider SDK calls in the adapters and durability/authorization in the application services.
 

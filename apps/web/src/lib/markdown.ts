@@ -1,16 +1,50 @@
 // Plain-text Markdown edits shared by the formatting toolbar, its shortcuts, and interactive
 // checklists. The text stays canonical Markdown; nothing here keeps a separate document model.
+import { t } from "@kanvil/contracts/i18n";
 
 // Any list marker, ordered or not, with its optional task box.
 const listMarker = /^(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?/;
 // Toolbar order. `key` matches a letter on any layout; `code` matches a digit row key under Shift.
+// Labels are getters, so they read the interface language when shown.
 export const formats = {
-  heading: { label: "Heading", prefix: "### ", pattern: /^#{1,6} /, replaces: /^#{1,6} / },
-  bold: { label: "Bold", shortcut: "⌘ B", key: "b", wrap: "**" },
-  italic: { label: "Italic", shortcut: "⌘ I", key: "i", wrap: "_" },
-  link: { label: "Link", help: "Link the selected text", shortcut: "⌘ K", key: "k" },
+  heading: {
+    get label() {
+      return t("detail.markdown.format.heading");
+    },
+    prefix: "### ",
+    pattern: /^#{1,6} /,
+    replaces: /^#{1,6} /,
+  },
+  bold: {
+    get label() {
+      return t("detail.markdown.format.bold");
+    },
+    shortcut: "⌘ B",
+    key: "b",
+    wrap: "**",
+  },
+  italic: {
+    get label() {
+      return t("detail.markdown.format.italic");
+    },
+    shortcut: "⌘ I",
+    key: "i",
+    wrap: "_",
+  },
+  link: {
+    get label() {
+      return t("detail.markdown.format.link");
+    },
+    get help() {
+      return t("detail.markdown.format.linkHelp");
+    },
+    shortcut: "⌘ K",
+    key: "k",
+  },
   bullets: {
-    label: "Bulleted list",
+    get label() {
+      return t("detail.markdown.format.bullets");
+    },
     shortcut: "⌘ ⇧ 8",
     code: "Digit8",
     prefix: "- ",
@@ -18,7 +52,9 @@ export const formats = {
     replaces: listMarker,
   },
   numbers: {
-    label: "Numbered list",
+    get label() {
+      return t("detail.markdown.format.numbers");
+    },
     shortcut: "⌘ ⇧ 7",
     code: "Digit7",
     prefix: "1. ",
@@ -26,14 +62,23 @@ export const formats = {
     replaces: listMarker,
   },
   tasks: {
-    label: "Checklist",
+    get label() {
+      return t("detail.markdown.format.tasks");
+    },
     shortcut: "⌘ ⇧ 9",
     code: "Digit9",
     prefix: "- [ ] ",
     pattern: /^(?:[-*+]|\d+[.)]) \[[ xX]\] /,
     replaces: listMarker,
   },
-  code: { label: "Code block", shortcut: "⌘ E", key: "e", fence: "```" },
+  code: {
+    get label() {
+      return t("detail.markdown.format.code");
+    },
+    shortcut: "⌘ E",
+    key: "e",
+    fence: "```",
+  },
 } as const;
 export type MarkdownFormat = keyof typeof formats;
 export const markdownFormats = Object.keys(formats).filter(

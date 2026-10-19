@@ -6,6 +6,7 @@ import * as SecureStore from "expo-secure-store";
 import { useQueryClient } from "@tanstack/react-query";
 import type { NavigationContainerRefWithCurrent } from "@react-navigation/native";
 import { okSchema } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
 import { type Connection, useConnection, useIdentity } from "./data.tsx";
 import type { Routes } from "./navigation.ts";
@@ -18,17 +19,15 @@ export const devicePushToken = (connection: Connection, userId: string) =>
 export const forgetDevicePush = (connection: Connection, userId: string) =>
   SecureStore.deleteItemAsync(tokenKey(connection, userId));
 export async function enableDevicePush(connection: Connection, userId: string) {
-  if (typeof pushProjectId !== "string")
-    throw new Error("This build needs an Expo project ID for push notifications.");
+  if (typeof pushProjectId !== "string") throw new Error(t("native.notifications.noProjectId"));
   if (Platform.OS === "android")
     await Notifications.setNotificationChannelAsync("tickets", {
-      name: "Ticket updates",
+      name: t("native.notifications.channel"),
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   let permission = await Notifications.getPermissionsAsync();
   if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
-  if (!permission.granted)
-    throw new Error("Allow notifications in device settings to enable push.");
+  if (!permission.granted) throw new Error(t("native.notifications.permissionDenied"));
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: pushProjectId });
   await connection.api.request("/api/v1/notifications/device", okSchema, {
     method: "POST",

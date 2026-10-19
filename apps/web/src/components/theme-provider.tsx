@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ThemeMode } from "@kanvil/contracts/theme";
 import { z } from "zod";
+import { labelTable, t } from "@kanvil/contracts/i18n";
 import {
   builtInThemes,
   themeVariables,
@@ -16,11 +17,10 @@ import {
   resolveThemeId,
   type ThemeDefinition,
 } from "../lib/themes.ts";
-export const modeNames: Record<ThemeMode, string> = {
-  light: "Light",
-  dark: "Dark",
-  system: "System",
-};
+export const modeNames: Record<ThemeMode, string> = labelTable(
+  ["light", "dark", "system"],
+  (mode) => t(`settings.theme.mode.${mode}`),
+);
 const storageKey = "kanvil:custom-themes:v1";
 const halvesKey = "kanvil:theme-halves:v1";
 export type ThemeAppearance = Exclude<ThemeMode, "system">;
@@ -105,7 +105,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const merged = [
       ...new Map([...customThemes, ...valid].map((theme) => [theme.id, theme])).values(),
     ];
-    if (merged.length > 50) throw new Error("Keep at most 50 custom themes.");
+    if (merged.length > 50) throw new Error(t("settings.theme.tooMany"));
     setCustomThemes(merged);
   }
   function selectTheme(id: string) {

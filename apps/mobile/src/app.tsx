@@ -20,6 +20,7 @@ import {
   DarkTheme,
   DefaultTheme,
   useNavigationContainerRef,
+  type NavigationState,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -31,6 +32,7 @@ import {
   ConnectionContext,
   Identity,
   useConnection,
+  useIdentity,
   useLive,
 } from "./data.tsx";
 import {
@@ -50,6 +52,8 @@ import { EditTicket } from "./editor.tsx";
 import { Inbox, Settings } from "./settings.tsx";
 import type { Routes } from "./navigation.ts";
 import { usePushNavigation } from "./push.tsx";
+import { LocaleRoot, startLocale } from "./locale.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
 const Stack = createNativeStackNavigator<Routes>();
 const Tabs = createBottomTabNavigator<{
@@ -58,14 +62,18 @@ const Tabs = createBottomTabNavigator<{
   Settings: undefined;
 }>();
 const publicCache = new QueryClient();
+// The language root remounts the app; the account's last navigation state brings it back to the
+// same screen instead of the first tab.
+const navigationStates = new Map<string, NavigationState>();
 export default function App() {
   const [connection, setConnection] = useState<Connection>(),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState<unknown>();
   useEffect(() => {
     let mounted = true;
-    void AsyncStorage.getItem("kanvil:server")
-      .then(async (url) => {
+    // The first screen already reads the chosen language.
+    void Promise.all([startLocale(), AsyncStorage.getItem("kanvil:server")])
+      .then(async ([, url]) => {
         if (url) {
           const next = await connect(url);
           if (mounted) setConnection(next);
@@ -102,15 +110,17 @@ export default function App() {
     <SafeAreaProvider>
       {/* oxlint-disable-next-line react/style-prop-object -- Expo StatusBar takes a color mode string, not a View style. */}
       <StatusBar style="auto" />
-      {!loaded ? (
-        <Loading />
-      ) : connection ? (
-        <ConnectionContext key={connection.baseUrl} value={connection}>
-          <Session onDisconnect={() => setServer()} />
-        </ConnectionContext>
-      ) : (
-        <ServerSetup onConnect={setServer} error={error} />
-      )}
+      <LocaleRoot>
+        {!loaded ? (
+          <Loading />
+        ) : connection ? (
+          <ConnectionContext key={connection.baseUrl} value={connection}>
+            <Session onDisconnect={() => setServer()} />
+          </ConnectionContext>
+        ) : (
+          <ServerSetup onConnect={setServer} error={error} />
+        )}
+      </LocaleRoot>
     </SafeAreaProvider>
   );
 }
@@ -129,7 +139,7 @@ function ServerSetup({
       <Screen>
         <Brand />
         <Field
-          label="Server URL"
+          label={t("native.server.url")}
           value={url}
           autoCapitalize="none"
           autoCorrect={false}
@@ -139,7 +149,7 @@ function ServerSetup({
         />
         <ErrorNotice error={failure ?? error} />
         <Button
-          title="Connect"
+          title={t("native.server.connect")}
           primary
           disabled={pending || !url.trim()}
           onPress={() => {
@@ -232,7 +242,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
       setSent(false);
       setCode("");
       setPassword("");
-      Alert.alert("Password reset", "Sign in with the new password.");
+      Alert.alert(t("common.signIn.resetDoneTitle"), t("common.signIn.resetDoneBody"));
     });
   if (info.isPending)
     return (
@@ -243,7 +253,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   const setup = info.data?.setupRequired,
     emailField = (
       <Field
-        label="Email"
+        label={t("native.login.email")}
         value={email}
         onChangeText={setEmail}
         editable={!sent}
@@ -259,17 +269,15 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
       <SafeAreaView style={{ flex: 1 }}>
         <Screen>
           <Brand />
-          <Heading>{flow === "reset" ? "Reset password" : "Sign in with a code"}</Heading>
-          {sent && (
-            <Body
-              muted
-            >{`If ${email} has an account, a code is on its way. It expires in 10 minutes.`}</Body>
-          )}
+          <Heading>
+            {flow === "reset" ? t("common.signIn.resetTitle") : t("common.signIn.codeTitle")}
+          </Heading>
+          {sent && <Body muted>{t("common.signIn.codeSent", { email })}</Body>}
           <ErrorNotice error={error} />
           {emailField}
           {sent && (
             <Field
-              label="Code"
+              label={t("common.signIn.code")}
               value={code}
               onChangeText={setCode}
               keyboardType="number-pad"
@@ -280,7 +288,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           )}
           {sent && flow === "reset" && (
             <Field
-              label="New password"
+              label={t("common.signIn.newPassword")}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -291,7 +299,13 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           )}
           <Button
-            title={!sent ? "Email me a code" : flow === "reset" ? "Reset password" : "Sign in"}
+            title={
+              !sent
+                ? t("common.signIn.sendCode")
+                : flow === "reset"
+                  ? t("common.signIn.resetTitle")
+                  : t("native.login.signIn")
+            }
             primary
             disabled={
               pending ||
@@ -305,7 +319,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           />
           {sent && (
             <Button
-              title="Resend code"
+              title={t("common.signIn.resend")}
               disabled={pending}
               onPress={() => {
                 void attempt(sendCode);
@@ -313,7 +327,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           )}
           <Button
-            title="Back to sign in"
+            title={t("common.signIn.back")}
             disabled={pending}
             onPress={() => {
               setError(undefined);
@@ -329,14 +343,19 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
         <Brand />
-        <Heading>{setup ? "Create your owner account" : "Sign in"}</Heading>
+        <Heading>{setup ? t("native.login.setupTitle") : t("native.login.signIn")}</Heading>
         <Body muted>{baseUrl}</Body>
         <ErrorNotice error={error ?? info.error} />
         {setup && (
           <>
-            <Field label="Name" value={name} onChangeText={setName} autoComplete="name" />
             <Field
-              label="Setup token"
+              label={t("native.login.name")}
+              value={name}
+              onChangeText={setName}
+              autoComplete="name"
+            />
+            <Field
+              label={t("native.login.setupToken")}
               autoComplete="off"
               textContentType="none"
               value={token}
@@ -351,7 +370,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           <>
             {emailField}
             <Field
-              label="Password"
+              label={t("native.login.password")}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -361,7 +380,13 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
               textContentType="password"
             />
             <Button
-              title={pending ? "Signing in…" : setup ? "Create account" : "Sign in"}
+              title={
+                pending
+                  ? t("native.login.signingIn")
+                  : setup
+                    ? t("native.login.createAccount")
+                    : t("native.login.signIn")
+              }
               primary
               disabled={pending || !email || password.length < 12}
               onPress={() => {
@@ -374,7 +399,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           info.data?.providers.map((provider) => (
             <Button
               key={provider.id}
-              title={`Sign in with ${provider.name}`}
+              title={t("native.login.signInWith", { provider: provider.name })}
               disabled={pending}
               onPress={() => {
                 void login(provider.id);
@@ -384,7 +409,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
         {!setup && info.data?.emailCodes && (
           <>
             <Button
-              title="Email me a sign-in code"
+              title={t("common.signIn.emailCode")}
               disabled={pending}
               onPress={() => {
                 setError(undefined);
@@ -392,7 +417,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
               }}
             />
             <Button
-              title="Forgot password?"
+              title={t("common.signIn.forgot")}
               disabled={pending}
               onPress={() => {
                 setError(undefined);
@@ -403,7 +428,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           </>
         )}
         <Button
-          title="Change server"
+          title={t("native.server.change")}
           onPress={() => {
             void onDisconnect().catch(setError);
           }}
@@ -458,7 +483,9 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   const connection = useLive(),
     color = usePalette(),
     dark = useColorScheme() === "dark",
-    { baseUrl } = useConnection();
+    { baseUrl } = useConnection(),
+    owner = `${baseUrl}:${useIdentity().id}`;
+  const [initialState] = useState(() => navigationStates.get(owner));
   const theme = {
     ...(dark ? DarkTheme : DefaultTheme),
     colors: {
@@ -474,6 +501,11 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     <NavigationContainer
       ref={navigationRef}
       onReady={onReady}
+      {...(initialState ? { initialState } : {})}
+      onStateChange={(state) => {
+        navigationStates.clear();
+        if (state) navigationStates.set(owner, state);
+      }}
       theme={theme}
       linking={{
         prefixes: ["kanvil://", baseUrl],
@@ -496,17 +528,26 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             headerBackButtonDisplayMode: "minimal",
           }}
         >
-          <Stack.Screen name="Home" options={{ headerShown: false, title: "Projects" }}>
+          <Stack.Screen
+            name="Home"
+            options={{ headerShown: false, title: t("native.screen.projects") }}
+          >
             {() => <Home onDisconnect={onDisconnect} />}
           </Stack.Screen>
           <Stack.Screen name="Tickets" component={Tickets} />
-          <Stack.Screen name="Ticket" component={TicketDetail} options={{ title: "Ticket" }} />
+          <Stack.Screen
+            name="Ticket"
+            component={TicketDetail}
+            options={{ title: t("native.screen.ticket") }}
+          />
           <Stack.Screen
             name="Edit"
             component={EditTicket}
             options={({ route, navigation }) => ({
-              headerLeft: createHeaderAction("Cancel", () => navigation.goBack()),
-              title: route.params.ticketId ? "Edit ticket" : "New ticket",
+              headerLeft: createHeaderAction(t("common.action.cancel"), () => navigation.goBack()),
+              title: route.params.ticketId
+                ? t("native.screen.editTicket")
+                : t("native.screen.newTicket"),
               presentation: "modal",
             })}
           />
@@ -523,11 +564,7 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           }}
         >
           <Body muted small>
-            {connection === "connected"
-              ? "● Live"
-              : connection === "offline"
-                ? "Offline · cached data"
-                : connection}
+            {t(`native.connection.${connection}`)}
           </Body>
         </View>
       </SafeAreaView>
@@ -559,9 +596,15 @@ function tabIcon({ route }: { route: { name: string } }) {
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   return (
     <Tabs.Navigator screenOptions={tabIcon} safeAreaInsets={{ bottom: 0 }}>
-      <Tabs.Screen name="Projects" component={Projects} />
-      <Tabs.Screen name="Inbox" component={Inbox} />
-      <Tabs.Screen name="Settings">{() => <Settings onDisconnect={onDisconnect} />}</Tabs.Screen>
+      <Tabs.Screen
+        name="Projects"
+        component={Projects}
+        options={{ title: t("native.screen.projects") }}
+      />
+      <Tabs.Screen name="Inbox" component={Inbox} options={{ title: t("native.screen.inbox") }} />
+      <Tabs.Screen name="Settings" options={{ title: t("native.screen.settings") }}>
+        {() => <Settings onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
     </Tabs.Navigator>
   );
 }

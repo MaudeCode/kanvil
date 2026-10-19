@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Ticket } from "@kanvil/contracts";
+import { dateFormat, t } from "@kanvil/contracts/i18n";
 import { Button, EmptyState, IconButton, statusColor } from "../ui.tsx";
 import { TicketLink } from "./ticket-link.tsx";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -47,20 +48,21 @@ export function ticketSpan(ticket: Pick<Ticket, "startAt" | "dueAt">) {
     ? { start: startOfDay(new Date(first)), end: startOfDay(new Date(last)) }
     : null;
 }
-const longDay = new Intl.DateTimeFormat(undefined, { dateStyle: "full" }),
-  mediumDay = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }),
-  monthTitle = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }),
-  weekdayLong = new Intl.DateTimeFormat(undefined, { weekday: "long" }),
-  weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: "short" }),
-  weekdayNarrow = new Intl.DateTimeFormat(undefined, { weekday: "narrow" }),
-  monthShort = new Intl.DateTimeFormat(undefined, { month: "short" });
+// Read at render, so month and weekday names follow the interface language.
+const longDay = () => dateFormat({ dateStyle: "full" }),
+  mediumDay = () => dateFormat({ dateStyle: "medium" }),
+  monthTitle = () => dateFormat({ month: "long", year: "numeric" }),
+  weekdayLong = () => dateFormat({ weekday: "long" }),
+  weekdayShort = () => dateFormat({ weekday: "short" }),
+  weekdayNarrow = () => dateFormat({ weekday: "narrow" }),
+  monthShort = () => dateFormat({ month: "short" });
 type Span = { ticket: Ticket; start: Date; end: Date };
 // The grid column of a day in the timeline; the ticket rail is column 1.
 const column = (day: number) => day + 2;
 const spanText = ({ start, end }: Span) =>
   start.getTime() === end.getTime()
-    ? mediumDay.format(start)
-    : `${mediumDay.format(start)} – ${mediumDay.format(end)}`;
+    ? mediumDay().format(start)
+    : t("ticket.schedule.range", { from: mediumDay().format(start), to: mediumDay().format(end) });
 
 // A read-only month calendar or timeline of the list's tickets. Dates change in the ticket.
 export function TicketSchedule({
@@ -88,12 +90,15 @@ export function TicketSchedule({
   const last = addDays(range.to, -1),
     title =
       layout === "calendar"
-        ? monthTitle.format(anchor)
-        : `${mediumDay.format(range.from)} – ${mediumDay.format(last)}`,
-    unit = layout === "calendar" ? "month" : "two weeks";
+        ? monthTitle().format(anchor)
+        : t("ticket.schedule.range", {
+            from: mediumDay().format(range.from),
+            to: mediumDay().format(last),
+          }),
+    calendar = layout === "calendar";
   return (
     <section
-      aria-label={layout === "calendar" ? "Calendar" : "Timeline"}
+      aria-label={calendar ? t("ticket.schedule.calendar") : t("ticket.schedule.timeline")}
       className="@container flex min-h-0 flex-1 flex-col animate-in fade-in-0"
     >
       <div className="flex min-h-11 items-center gap-1 py-1">
@@ -101,24 +106,27 @@ export function TicketSchedule({
           {title}
         </h2>
         <Button variant="ghost" size="sm" onClick={() => onAnchor(null)}>
-          Today
+          {t("ticket.schedule.today")}
         </Button>
         <IconButton
-          label={`Previous ${unit}`}
+          label={calendar ? t("ticket.schedule.previousMonth") : t("ticket.schedule.previousWeeks")}
           onClick={() => onAnchor(shiftAnchor(layout, anchor, -1))}
         >
           <ChevronLeft />
         </IconButton>
-        <IconButton label={`Next ${unit}`} onClick={() => onAnchor(shiftAnchor(layout, anchor, 1))}>
+        <IconButton
+          label={calendar ? t("ticket.schedule.nextMonth") : t("ticket.schedule.nextWeeks")}
+          onClick={() => onAnchor(shiftAnchor(layout, anchor, 1))}
+        >
           <ChevronRight />
         </IconButton>
       </div>
-      {layout === "calendar" ? (
+      {calendar ? (
         <MonthGrid spans={spans} anchor={anchor} range={range} title={title} today={today} />
       ) : spans.length ? (
         <Timeline spans={spans} range={range} today={today} />
       ) : (
-        <EmptyState title="Nothing scheduled in these weeks" />
+        <EmptyState title={t("ticket.schedule.emptyWeeks")} />
       )}
     </section>
   );
@@ -143,7 +151,9 @@ function Entry({ ticket, wrap = false }: { ticket: Ticket; wrap?: boolean }) {
         )}
       />
       <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{ticket.key}</span>
-      <span className={cn("min-w-0", wrap ? "wrap-anywhere" : "truncate")}>{ticket.title}</span>
+      <span dir="auto" className={cn("min-w-0", wrap ? "wrap-anywhere" : "truncate")}>
+        {ticket.title}
+      </span>
     </TicketLink>
   );
 }
@@ -169,7 +179,10 @@ function MonthGrid({
   );
   return (
     <div className="min-h-0 flex-1 overflow-auto overscroll-contain pb-4">
-      <table className="w-full table-fixed border-collapse" aria-label={`Tickets in ${title}`}>
+      <table
+        className="w-full table-fixed border-collapse"
+        aria-label={t("ticket.schedule.monthTickets", { title })}
+      >
         <thead className="sticky top-0 z-10 bg-background">
           <tr>
             {(weeks[0] ?? []).map((day) => (
@@ -178,9 +191,9 @@ function MonthGrid({
                 scope="col"
                 className="h-8 px-2 text-left text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase"
               >
-                <abbr title={weekdayLong.format(day)} className="no-underline">
-                  <span className="@max-[600px]:hidden">{weekdayShort.format(day)}</span>
-                  <span className="@min-[601px]:hidden">{weekdayNarrow.format(day)}</span>
+                <abbr title={weekdayLong().format(day)} className="no-underline">
+                  <span className="@max-[600px]:hidden">{weekdayShort().format(day)}</span>
+                  <span className="@min-[601px]:hidden">{weekdayNarrow().format(day)}</span>
                 </abbr>
               </th>
             ))}
@@ -218,7 +231,7 @@ function CalendarDay({
   spans: Span[];
 }) {
   const hidden = spans.length - visibleEntries,
-    label = longDay.format(day);
+    label = longDay().format(day);
   return (
     <td
       className={cn(
@@ -253,7 +266,7 @@ function CalendarDay({
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={`Show all ${spans.length} ${spans.length === 1 ? "ticket" : "tickets"} on ${label}`}
+                aria-label={t("ticket.schedule.showDay", { count: spans.length, day: label })}
                 className={cn(
                   "h-6 px-1 text-[11px] text-muted-foreground",
                   hidden <= 0 && "@min-[601px]:hidden",
@@ -261,7 +274,9 @@ function CalendarDay({
               />
             }
           >
-            <span className="@max-[600px]:hidden">{hidden} more</span>
+            <span className="@max-[600px]:hidden">
+              {t("ticket.schedule.more", { count: hidden })}
+            </span>
             <span className="@min-[601px]:hidden">{spans.length}</span>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] gap-2 p-3">
@@ -302,7 +317,7 @@ function Timeline({
         {/* The day scale repeats what each row's text says, so it stays out of the reading order. */}
         <div aria-hidden="true" className="sticky top-0 z-20 col-span-full grid grid-cols-subgrid">
           <div className="sticky left-0 z-10 flex items-end border-b bg-background px-3 pb-1 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-            Ticket
+            {t("ticket.schedule.ticketColumn")}
           </div>
           {days.map((day, index) => (
             <div
@@ -313,9 +328,9 @@ function Timeline({
               )}
             >
               <span className="h-4 font-medium text-foreground">
-                {index === 0 || day.getDate() === 1 ? monthShort.format(day) : ""}
+                {index === 0 || day.getDate() === 1 ? monthShort().format(day) : ""}
               </span>
-              <span>{weekdayNarrow.format(day)}</span>
+              <span>{weekdayNarrow().format(day)}</span>
               <span
                 className={cn(
                   "grid size-5 place-items-center rounded-full",
@@ -328,7 +343,7 @@ function Timeline({
           ))}
         </div>
         <ul
-          aria-label="Scheduled tickets"
+          aria-label={t("ticket.schedule.scheduledTickets")}
           className="col-span-full m-0 grid list-none grid-cols-subgrid p-0"
         >
           {spans.map((span) => {

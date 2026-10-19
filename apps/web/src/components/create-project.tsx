@@ -8,6 +8,7 @@ import { useOperation, useWorkspace } from "../data.tsx";
 import { Input, Modal, Textarea, fieldClass, FormActions, IconButton } from "../ui.tsx";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { t } from "@kanvil/contracts/i18n";
 
 // Suggests a ticket prefix from the name: initials of up to three words, or the first letters.
 export function suggestKey(name: string) {
@@ -33,7 +34,7 @@ export function PrefixInput({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
       <Input
-        label="Ticket prefix"
+        label={t("settings.project.prefix")}
         value={value}
         onChange={(event) => onChange(event.target.value.toUpperCase())}
         required
@@ -62,9 +63,9 @@ export function ProjectAccessField({
 }) {
   return (
     <Field className={fieldClass}>
-      <FieldLabel>Project access</FieldLabel>
+      <FieldLabel>{t("settings.project.access")}</FieldLabel>
       <ToggleGroup
-        aria-label="Project access"
+        aria-label={t("settings.project.access")}
         value={[value]}
         onValueChange={(next) => {
           const chosen = next[0];
@@ -76,21 +77,25 @@ export function ProjectAccessField({
       >
         <ToggleGroupItem
           value="workspace"
-          aria-label="Everyone in this workspace"
+          aria-label={t("settings.createProject.everyoneLabel")}
           className={wrapping}
         >
           <Users />
-          Everyone in the workspace
+          {t("settings.project.visibility.workspace")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="private" aria-label="Only project members" className={wrapping}>
+        <ToggleGroupItem
+          value="private"
+          aria-label={t("settings.project.visibility.private")}
+          className={wrapping}
+        >
           <Lock />
-          Only project members
+          {t("settings.project.visibility.private")}
         </ToggleGroupItem>
       </ToggleGroup>
       <FieldDescription>
         {value === "workspace"
-          ? "Workspace members inherit access from their workspace role."
-          : "Only members you add and workspace administrators can see this project."}
+          ? t("settings.project.accessWorkspace")
+          : t("settings.project.accessPrivate")}
       </FieldDescription>
     </Field>
   );
@@ -117,14 +122,14 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
       {sidebarAction ? (
         <SidebarGroupAction
           disabled={!canCreate}
-          aria-label="New project"
+          aria-label={t("settings.createProject.title")}
           onClick={() => setOpen(true)}
         >
           <Plus />
         </SidebarGroupAction>
       ) : (
         <IconButton
-          label="New project"
+          label={t("settings.createProject.title")}
           variant="default"
           disabled={!canCreate}
           onClick={() => setOpen(true)}
@@ -133,8 +138,10 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
         </IconButton>
       )}
       <Modal
-        title="New project"
-        description={workspace ? `In ${workspace.name}` : undefined}
+        title={t("settings.createProject.title")}
+        description={
+          workspace ? t("settings.createProject.inWorkspace", { name: workspace.name }) : undefined
+        }
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
@@ -163,7 +170,7 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
           }}
         >
           <Input
-            label="Project name"
+            label={t("settings.createProject.name")}
             value={name}
             onChange={(event) => {
               setName(event.target.value);
@@ -172,7 +179,7 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             required
             maxLength={120}
             autoFocus
-            placeholder="Mobile app"
+            placeholder={t("settings.createProject.namePlaceholder")}
           />
           <PrefixInput
             value={key}
@@ -181,12 +188,17 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
               setKey(next);
             }}
           />
-          <Textarea label="Description" name="description" maxLength={5000} rows={3} />
+          <Textarea
+            label={t("settings.layout.description")}
+            name="description"
+            maxLength={5000}
+            rows={3}
+          />
           <ProjectAccessField value={visibility} onChange={setVisibility} />
           <FormActions
             error={create.error}
             pending={create.isPending}
-            submitLabel="Create project"
+            submitLabel={t("settings.createProject.create")}
             onCancel={() => setOpen(false)}
           />
         </form>

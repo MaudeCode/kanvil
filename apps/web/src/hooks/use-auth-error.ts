@@ -1,34 +1,27 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { t } from "@kanvil/contracts/i18n";
 
 // Callback descriptions come from the provider and may contain private details.
 function callbackError(code: string | null) {
   if (code === null) return undefined;
   switch (code) {
     case "access_denied":
-      return new Error("Sign-in was cancelled. Try again when you are ready.");
+      return new Error(t("shell.auth.callback.cancelled"));
     case "account_already_linked_to_different_user":
     case "account_ownership_conflict":
-      return new Error(
-        "This identity is already linked to another Kanvil account. Use a different identity or contact your administrator.",
-      );
+      return new Error(t("shell.auth.callback.linkedElsewhere"));
     case "signup_disabled":
     case "account_not_linked":
-      return new Error(
-        "This identity is not linked to a Kanvil account. Sign in with your local account and link it in Settings.",
-      );
+      return new Error(t("shell.auth.callback.notLinked"));
     case "state_mismatch":
     case "state_not_found":
     case "state_expired":
-      return new Error(
-        "The sign-in request expired or could not be verified. Try again from this screen.",
-      );
+      return new Error(t("shell.auth.callback.expired"));
     case "email_does_not_match":
-      return new Error(
-        "The identity provider email could not be linked. Contact your administrator.",
-      );
+      return new Error(t("shell.auth.callback.emailMismatch"));
     default:
-      return new Error("Sign-in could not be completed. Try again or contact your administrator.");
+      return new Error(t("shell.auth.callback.failed"));
   }
 }
 

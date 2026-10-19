@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Archive, ArchiveRestore, Ellipsis, ListTodo, Rows3, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { type Ticket } from "@kanvil/contracts";
+import { Trans } from "react-i18next";
+import { stateLabels, type Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { useOperation, useProjectAccess } from "../data.tsx";
 import { IconButton, Confirm, reportError } from "../ui.tsx";
 import { Separator } from "@/components/ui/separator";
@@ -41,7 +43,6 @@ function shared<T>(selected: Ticket[], read: (ticket: Ticket) => T) {
 const wideText = "max-sm:hidden";
 // The server's per-request limit for bulk edits and deletion.
 const batchSize = 100;
-const ticketCount = (count: number) => `${count} ticket${count === 1 ? "" : "s"}`;
 
 // Floats above the list so selecting never shifts rows; every action applies immediately.
 export function TicketSelectionToolbar({
@@ -90,7 +91,8 @@ export function TicketSelectionToolbar({
         await bulk
           .mutateAsync({ projectId, tickets: tickets.slice(done, done + batchSize), changes })
           .catch((error: unknown) => {
-            if (done) toast.warning(`Applied to ${done} of ${ticketCount(tickets.length)}`);
+            if (done)
+              toast.warning(t("ticket.selection.partlyApplied", { done, count: tickets.length }));
             throw error;
           });
     });
@@ -98,7 +100,7 @@ export function TicketSelectionToolbar({
     if (busy) return;
     void write(changes)
       .then(() => {
-        toast.success(`${label} applied to ${ticketCount(selected.length)}`);
+        toast.success(t("ticket.selection.applied", { label, count: selected.length }));
         onClear();
       })
       .catch(reportError);
@@ -113,20 +115,27 @@ export function TicketSelectionToolbar({
       <div
         className="pointer-events-auto mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-200"
         role="region"
-        aria-label="Selected tickets"
+        aria-label={t("ticket.selection.region")}
       >
         <div className="flex items-center gap-1 pr-1">
-          <IconButton label="Clear selection" size="icon-sm" disabled={busy} onClick={onClear}>
+          <IconButton
+            label={t("ticket.selection.clear")}
+            size="icon-sm"
+            disabled={busy}
+            onClick={onClear}
+          >
             <X />
           </IconButton>
           <span className="text-xs font-medium whitespace-nowrap tabular-nums" role="status">
             {selected.length === total ? (
-              `${selected.length} selected`
+              t("ticket.selection.selected", { count: selected.length })
             ) : (
-              <>
-                {selected.length} of {total}
-                <span className={wideText}> selected</span>
-              </>
+              <Trans
+                i18nKey="ticket.selection.selectedOf"
+                count={selected.length}
+                values={{ total }}
+                components={{ wide: <span className={wideText} /> }}
+              />
             )}
           </span>
           {busy && <Spinner className="size-3.5" />}
@@ -157,26 +166,33 @@ export function TicketSelectionToolbar({
           mixed={labels.mixed}
           disabled={busy}
           textClassName={wideText}
-          onChange={(next) => apply({ labels: next }, "Labels")}
+          onChange={(next) => apply({ labels: next }, t("ticket.tags.labels"))}
         />
         <DatePicker
           variant="pill"
-          label="Due date"
-          placeholder={due.mixed ? "Mixed due dates" : "Due date"}
+          label={t("ticket.date.due")}
+          placeholder={due.mixed ? t("ticket.selection.mixedDue") : t("ticket.date.due")}
           value={!due.mixed && due.value ? new Date(due.value) : null}
           mixed={due.mixed}
           disabled={busy}
           textClassName={wideText}
-          onChange={(date) => apply({ dueAt: date ? endOfDay(date) : null }, "Due date")}
+          onChange={(date) => apply({ dueAt: date ? endOfDay(date) : null }, t("ticket.date.due"))}
         />
         {!!fields.data?.length && (
           <Popover>
             <PopoverTrigger
               disabled={busy}
-              render={<Button variant="ghost" size="sm" className="h-7 px-2" aria-label="Fields" />}
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  aria-label={t("ticket.selection.fields")}
+                />
+              }
             >
               <Rows3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-              <span className={wideText}>Fields</span>
+              <span className={wideText}>{t("ticket.selection.fields")}</span>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] gap-1 p-2">
               {fields.data.map((field) => {
@@ -203,25 +219,29 @@ export function TicketSelectionToolbar({
         <Separator orientation="vertical" className="hidden h-5! sm:block" />
         {/* One slot for collection actions keeps the dock at two rows on a phone. */}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<IconButton label="More actions" disabled={busy} />}>
+          <DropdownMenuTrigger
+            render={<IconButton label={t("ticket.selection.more")} disabled={busy} />}
+          >
             <Ellipsis />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
             {planned && (
-              <DropdownMenuItem onClick={() => apply({ status: "todo" }, "To do")}>
+              <DropdownMenuItem onClick={() => apply({ status: "todo" }, stateLabels.todo)}>
                 <ListTodo />
-                Move to To do
+                {t("ticket.selection.moveTo", { status: stateLabels.todo })}
               </DropdownMenuItem>
             )}
             {archived ? (
-              <DropdownMenuItem onClick={() => apply({ archived: false }, "Restore")}>
+              <DropdownMenuItem
+                onClick={() => apply({ archived: false }, t("ticket.selection.restoreChange"))}
+              >
                 <ArchiveRestore />
-                Restore selected
+                {t("ticket.selection.restore")}
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem onClick={() => setConfirming("archive")}>
                 <Archive />
-                Archive selected
+                {t("ticket.selection.archive")}
               </DropdownMenuItem>
             )}
             {access.canDelete && (
@@ -232,18 +252,21 @@ export function TicketSelectionToolbar({
               >
                 <Trash2 />
                 {selected.length > batchSize
-                  ? `Delete up to ${batchSize} at once`
-                  : "Delete selected"}
+                  ? t("ticket.selection.deleteLimit", { limit: batchSize })
+                  : t("ticket.selection.delete")}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
         <Confirm
-          label="Archive selected"
+          label={t("ticket.selection.archive")}
           trigger={false}
           open={confirming === "archive"}
           onOpenChange={(open) => setConfirming(open ? "archive" : null)}
-          description={`Archive ${ticketCount(selected.length)} from ${collection}?`}
+          description={t("ticket.selection.archiveConfirm", {
+            count: selected.length,
+            collection,
+          })}
           onConfirm={async () => {
             await write({ archived: true });
             onClear();
@@ -251,15 +274,18 @@ export function TicketSelectionToolbar({
         />
         <Confirm
           danger
-          label="Delete selected"
+          label={t("ticket.selection.delete")}
           trigger={false}
           open={confirming === "delete"}
           onOpenChange={(open) => setConfirming(open ? "delete" : null)}
-          description={`Permanently delete ${ticketCount(selected.length)} from ${collection}, with their comments, relationships, and attachments? Children outside the selection lose their parent.`}
+          description={t("ticket.selection.deleteConfirm", {
+            count: selected.length,
+            collection,
+          })}
           onConfirm={() =>
             run(async () => {
               await remove.mutateAsync({ projectId, tickets });
-              toast.success(`Deleted ${ticketCount(selected.length)}`);
+              toast.success(t("ticket.selection.deleted", { count: selected.length }));
               onClear();
             })
           }

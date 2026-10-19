@@ -1,4 +1,11 @@
-import { formatCustomFieldValue, formatTimestamp, priorityLabels } from "@kanvil/contracts";
+import {
+  difficultyLabels,
+  formatCustomFieldValue,
+  formatTimestamp,
+  kindLabels,
+  readinessReasonText,
+} from "@kanvil/contracts";
+import { formatDate, t } from "@kanvil/contracts/i18n";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useLayoutEffect, useState } from "react";
 import { Alert, Share, Text, View } from "react-native";
@@ -17,18 +24,18 @@ import {
   Status,
   styles,
   usePalette,
+  priorityText,
 } from "./ui.tsx";
 import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
 // Start and due dates are whole days; editing them stays on the web for now.
-const day = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
+const day = (value: string) => formatDate(value, { dateStyle: "medium" });
 function scheduleText(ticket: { startAt: string | null; dueAt: string | null }) {
   return [
-    ticket.startAt && `Starts ${day(ticket.startAt)}`,
-    ticket.dueAt && `Due ${day(ticket.dueAt)}`,
+    ticket.startAt && t("native.ticket.starts", { date: day(ticket.startAt) }),
+    ticket.dueAt && t("native.ticket.due", { date: day(ticket.dueAt) }),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -55,8 +62,8 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
     [reason, setReason] = useState("");
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: result.data?.ticket.key ?? "Ticket",
-      headerRight: createHeaderAction("Edit", () =>
+      title: result.data?.ticket.key ?? t("native.screen.ticket"),
+      headerRight: createHeaderAction(t("common.action.edit"), () =>
         navigation.navigate("Edit", { projectId, ticketId }),
       ),
     });
@@ -71,16 +78,18 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       <View style={styles.actions}>
         <Status ticket={ticket} />
         <Body muted small>
-          {priorityLabels[ticket.priority]} priority
+          {priorityText(ticket.priority)}
         </Body>
         <Body muted small>
-          {ticket.kind}
+          {kindLabels[ticket.kind]}
         </Body>
         <Body muted small>
-          {ticket.difficulty ?? "Unspecified difficulty"}
+          {ticket.difficulty
+            ? difficultyLabels[ticket.difficulty]
+            : t("native.ticket.noDifficulty")}
         </Body>
         <Body muted small>
-          v{ticket.version}
+          {t("native.ticket.version", { version: ticket.version })}
         </Body>
         {(ticket.startAt || ticket.dueAt) && (
           <Body muted small>
@@ -101,7 +110,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       >
         {ticket.title}
       </Text>
-      {ticket.archived && <Body muted>Archived</Body>}
+      {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
       {ticket.labels.length > 0 && (
         <Body muted small>
           {ticket.labels.map((label) => `#${label}`).join(" ")}
@@ -109,12 +118,12 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       )}
       <View style={styles.actions}>
         <Button
-          title={subscribed ? "Unsubscribe" : "Subscribe"}
+          title={subscribed ? t("native.detail.unsubscribe") : t("native.detail.subscribe")}
           disabled={subscribe.isPending}
           onPress={() => subscribe.mutate({ projectId, ticketId: ticket.id, enabled: !subscribed })}
         />
         <Button
-          title="Share"
+          title={t("native.detail.share")}
           onPress={() => {
             void Share.share({
               message: `${ticket.key}: ${ticket.title}\n${baseUrl}/projects/${ticket.projectId}/tickets/${ticket.id}\nkanvil://projects/${ticket.projectId}/tickets/${ticket.id}`,
@@ -123,62 +132,76 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
         />
       </View>
       <ErrorNotice error={result.error ?? subscribe.error ?? update.error ?? release.error} />
-      <Section title="Description">
-        <Markdown>{ticket.description || "_No description_"}</Markdown>
+      <Section title={t("native.detail.description")}>
+        <Markdown>{ticket.description || t("native.detail.noDescription")}</Markdown>
       </Section>
-      <Section title="Acceptance criteria">
-        <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
+      <Section title={t("native.detail.acceptanceCriteria")}>
+        <Markdown>{ticket.acceptanceCriteria || t("native.detail.noAcceptanceCriteria")}</Markdown>
       </Section>
       {valued.length > 0 && (
-        <Section title="Fields">
+        <Section title={t("native.detail.fields")}>
           {valued.map((field) => (
             <Body key={field.id} small>
-              {field.name}: {formatCustomFieldValue(field, ticket.customFields[field.id])}
+              {t("native.labelValue", {
+                label: field.name,
+                value: formatCustomFieldValue(field, ticket.customFields[field.id]),
+              })}
             </Body>
           ))}
         </Section>
       )}
-      <Section title="Agent readiness">
-        <Body>{readiness.ready ? "Ready to claim" : "Not ready to claim"}</Body>
+      <Section title={t("native.readiness.title")}>
+        <Body>
+          {readiness.ready ? t("native.readiness.ready") : t("native.readiness.notReady")}
+        </Body>
         {readiness.reasons.map((item, index) => (
           <Body key={`${item.code}:${index}`} muted>
-            • {item.message}
+            • {readinessReasonText(item, claim?.workerId)}
           </Body>
         ))}
-        {ticket.holdReason && <Body>Hold: {ticket.holdReason}</Body>}
+        {ticket.holdReason && (
+          <Body>{t("native.readiness.hold", { reason: ticket.holdReason })}</Body>
+        )}
         {claim && (
           <>
             <Body>
-              Claimed by {claim.workerId} until {formatTimestamp(claim.expiresAt)}.
+              {t("native.readiness.claimed", {
+                worker: claim.workerId,
+                time: formatTimestamp(claim.expiresAt),
+              })}
             </Body>
             {canReleaseClaim && (
               <Button
-                title="Release my claim"
+                title={t("native.readiness.release.action")}
                 disabled={release.isPending}
                 onPress={() =>
-                  Alert.alert("Release claim?", "Stop your worker before releasing ownership.", [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Release",
-                      onPress: () =>
-                        release.mutate({ projectId, ticketId: ticket.id, claimId: claim.id }),
-                    },
-                  ])
+                  Alert.alert(
+                    t("native.readiness.release.title"),
+                    t("native.readiness.release.message"),
+                    [
+                      { text: t("common.action.cancel"), style: "cancel" },
+                      {
+                        text: t("native.readiness.release.confirm"),
+                        onPress: () =>
+                          release.mutate({ projectId, ticketId: ticket.id, claimId: claim.id }),
+                      },
+                    ],
+                  )
                 }
               />
             )}
-            <Button title="Recover expired claim" onPress={() => setRecovering(true)} />
+            <Button
+              title={t("native.readiness.recover.action")}
+              onPress={() => setRecovering(true)}
+            />
             <Sheet
-              title="Recover expired claim"
+              title={t("native.readiness.recover.action")}
               open={recovering}
               onClose={() => setRecovering(false)}
             >
-              <Body>
-                Only a project administrator can recover an expired claim. Confirm the worker has
-                stopped first.
-              </Body>
+              <Body>{t("native.readiness.recover.explanation")}</Body>
               <Field
-                label="Recovery reason"
+                label={t("native.readiness.recover.reason")}
                 value={reason}
                 onChangeText={setReason}
                 multiline
@@ -186,7 +209,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
               />
               <ErrorNotice error={recover.error} />
               <Button
-                title="Worker stopped · recover"
+                title={t("native.readiness.recover.confirm")}
                 disabled={reason.trim().length < 10 || recover.isPending}
                 onPress={() => {
                   void recover
@@ -211,17 +234,19 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       <Evidence ticket={ticket} />
       <Activity ticket={ticket} />
       <Button
-        title={ticket.archived ? "Unarchive ticket" : "Archive ticket"}
+        title={
+          ticket.archived ? t("native.detail.unarchive.action") : t("native.detail.archive.action")
+        }
         onPress={() =>
           Alert.alert(
-            ticket.archived ? "Unarchive ticket?" : "Archive ticket?",
+            ticket.archived ? t("native.detail.unarchive.title") : t("native.detail.archive.title"),
             ticket.archived
-              ? "Restore this ticket to active lists?"
-              : "Remove this ticket from active lists and agent eligibility?",
+              ? t("native.detail.unarchive.message")
+              : t("native.detail.archive.message"),
             [
-              { text: "Cancel", style: "cancel" },
+              { text: t("common.action.cancel"), style: "cancel" },
               {
-                text: "Confirm",
+                text: t("common.action.confirm"),
                 onPress: () =>
                   update.mutate({
                     projectId,

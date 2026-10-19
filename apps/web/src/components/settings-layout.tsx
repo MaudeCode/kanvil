@@ -37,6 +37,7 @@ import {
   type SettingsEntry,
 } from "../lib/settings-nav.ts";
 import { ProjectIcon } from "./project-icon.tsx";
+import { t } from "@kanvil/contracts/i18n";
 export function useSettingsGroups() {
   const identity = useIdentity(),
     workspace = useWorkspace(),
@@ -94,10 +95,14 @@ export function SettingsLayout({
     <>
       <PageHeader title={title} />
       <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-9">
-        <nav ref={nav} aria-label="Settings" className="min-w-0 lg:sticky lg:top-14">
+        <nav
+          ref={nav}
+          aria-label={t("settings.layout.nav")}
+          className="min-w-0 lg:sticky lg:top-14"
+        >
           {mobile ? (
             <Select
-              label="Settings section"
+              label={t("settings.layout.section")}
               labelHidden
               className="mb-0"
               value={`${pathname}?section=${section}`}
@@ -120,7 +125,9 @@ export function SettingsLayout({
                         ) : (
                           item.icon && <item.icon className="size-4" />
                         )}
-                        {sections.length ? `${entry.label} · ${item.label}` : item.label}
+                        {sections.length
+                          ? t("settings.layout.nested", { parent: entry.label, child: item.label })
+                          : item.label}
                       </SelectItem>
                     ));
                   })}
@@ -231,14 +238,14 @@ export function SettingRow({
 export function EditableHeading({
   name,
   description,
-  nameLabel = "Name",
+  nameLabel = t("settings.layout.name"),
   withDescription = true,
   canEdit,
   version,
   onSave,
   pending = false,
   error,
-  editLabel = "Edit",
+  editLabel = t("common.action.edit"),
   media,
   badges,
   children,
@@ -292,7 +299,7 @@ export function EditableHeading({
           />
           {withDescription && (
             <Textarea
-              label="Description"
+              label={t("settings.layout.description")}
               value={draft.description}
               onChange={(event) => setDraft({ ...draft, description: event.target.value })}
               onKeyDown={(event) => {
@@ -300,21 +307,21 @@ export function EditableHeading({
               }}
               maxLength={5000}
               rows={3}
-              placeholder="Add a description"
+              placeholder={t("settings.layout.descriptionPlaceholder")}
               className="field-sizing-content"
             />
           )}
           {stale && (
             <p role="alert" className="mt-2 mb-0 text-xs">
-              This changed elsewhere. Cancel and start again.
+              {t("settings.layout.stale")}
             </p>
           )}
           <div className="mt-3 flex items-center gap-2">
             <Button type="submit" variant="default" size="sm" disabled={pending || stale}>
-              {pending ? "Saving…" : "Save"}
+              {pending ? t("common.state.saving") : t("common.action.save")}
             </Button>
             <Button size="sm" disabled={pending} onClick={close}>
-              Cancel
+              {t("common.action.cancel")}
             </Button>
           </div>
           <ErrorNotice error={error} />
@@ -327,7 +334,7 @@ export function EditableHeading({
           </h2>
           {withDescription && (
             <p className={cn("max-w-xl whitespace-pre-wrap", children ? "mb-2" : "mb-0")}>
-              {description || "No description"}
+              {description || t("settings.layout.noDescription")}
             </p>
           )}
           {children}

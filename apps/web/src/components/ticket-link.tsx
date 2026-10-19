@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api } from "../data.tsx";
 import { TicketIndicator } from "../ui.tsx";
 import { PropertyValue, statusValue } from "./ticket-property.tsx";
@@ -80,7 +81,9 @@ export function TicketLink({
               />
               <TicketIndicator property="priority" value={detail.priority} iconOnly />
             </div>
-            <p className="m-0 text-[13px] leading-5 font-medium wrap-anywhere">{detail.title}</p>
+            <p dir="auto" className="m-0 text-[13px] leading-5 font-medium wrap-anywhere">
+              {detail.title}
+            </p>
             {detail.labels.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {detail.labels.map((label) => (
@@ -91,7 +94,7 @@ export function TicketLink({
           </div>
         ) : (
           <p className="m-0 text-xs text-muted-foreground">
-            {preview.error ? "Preview unavailable" : "Loading…"}
+            {preview.error ? t("ticket.link.previewUnavailable") : t("common.state.loading")}
           </p>
         )}
       </HoverCardContent>

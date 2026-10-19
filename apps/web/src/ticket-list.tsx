@@ -43,6 +43,7 @@ import {
   type Project,
   type Output,
 } from "@kanvil/contracts";
+import { formatList, t } from "@kanvil/contracts/i18n";
 import { api, useIdentity, useProjectAccess, useProjects, useOperation } from "./data.tsx";
 import { ProjectIcon } from "./components/project-icon.tsx";
 import {
@@ -156,13 +157,21 @@ function TicketSectionHeader({
     <div className="flex items-center">
       {selection && (
         <div className="flex w-11 shrink-0 justify-center pl-3 @max-[850px]:w-8 @max-[850px]:justify-start @max-[850px]:pl-0">
-          <Check label={`Select ${section.label} tickets`} className="sr-checkbox" {...selection} />
+          <Check
+            label={t("ticket.list.selectSection", { section: section.label })}
+            className="sr-checkbox"
+            {...selection}
+          />
         </div>
       )}
       <Button
         variant="ghost"
         className="flex-1 justify-start gap-2 rounded-none px-3"
-        aria-label={`${collapsed ? "Expand" : "Collapse"} ${section.label} tickets`}
+        aria-label={
+          collapsed
+            ? t("ticket.list.expandSection", { section: section.label })
+            : t("ticket.list.collapseSection", { section: section.label })
+        }
         aria-expanded={!collapsed}
         onClick={onToggle}
       >
@@ -177,15 +186,17 @@ function TicketSectionHeader({
 }
 // Due-date windows for My work, measured from now like the server's due filters.
 const dueWindows = [
-  ["overdue", dueFilterLabels.overdue, 0],
-  ["today", dueFilterLabels.today, 86_400_000],
-  ["week", dueFilterLabels.week, 7 * 86_400_000],
-  ["later", "Later", Infinity],
+  ["overdue", 0],
+  ["today", 86_400_000],
+  ["week", 7 * 86_400_000],
+  ["later", Infinity],
 ] as const;
+const dueWindowLabel = (id: (typeof dueWindows)[number][0] | "none") =>
+  id === "later" ? t("ticket.list.later") : dueFilterLabels[id];
 function dueWindow(ticket: Ticket, now: number) {
   if (!ticket.dueAt) return "none";
   const left = new Date(ticket.dueAt).getTime() - now;
-  return dueWindows.find(([, , within]) => left < within)?.[0] ?? "later";
+  return dueWindows.find(([, within]) => left < within)?.[0] ?? "later";
 }
 // Inline property editing on a row; readers see the plain value.
 function PropertyCell<P extends PropertyName>({
@@ -217,7 +228,8 @@ function PropertyCell<P extends PropertyName>({
     />
   );
 }
-const columns: ColumnDef<typeof features, Ticket>[] = [
+// Built at render, so headers and accessible names follow the interface language.
+const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     id: "select",
     size: 44,
@@ -225,7 +237,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     enableHiding: false,
     header: ({ table }) => (
       <Check
-        label="Select all displayed tickets"
+        label={t("ticket.list.selectAll")}
         className="sr-checkbox"
         checked={table.getIsAllRowsSelected()}
         indeterminate={table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected()}
@@ -234,7 +246,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     ),
     cell: ({ row }) => (
       <Check
-        label={`Select ${row.original.key}`}
+        label={t("ticket.list.selectTicket", { key: row.original.key })}
         className="sr-checkbox"
         checked={row.getIsSelected()}
         onCheckedChange={(checked) => row.toggleSelected(checked)}
@@ -244,12 +256,13 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   { accessorKey: "key", header: ticketColumnLabels.key, size: 100, minSize: 90 },
   {
     accessorKey: "title",
-    header: "Title",
+    header: t("ticket.list.title"),
     size: 400,
     enableHiding: false,
     minSize: 200,
     cell: ({ row }) => (
       <Link
+        dir="auto"
         className="ticket-title block text-[13px] leading-5 font-normal whitespace-normal wrap-anywhere text-foreground hover:text-primary"
         to="/projects/$projectId/tickets/$ticketId"
         params={{ projectId: row.original.projectId, ticketId: row.original.id }}
@@ -263,12 +276,12 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       ({
         accessorKey: key,
         header: ticketColumnLabels[key],
-        size: 180,
+        size: 140,
         minSize: 120,
         cell: ({ row }) => (
           <TicketTags
             tags={row.original[key]}
-            label={key === "labels" ? "Labels" : "Scopes"}
+            label={key === "labels" ? t("ticket.tags.labels") : t("ticket.tags.scopes")}
             variant={key === "labels" ? "secondary" : "outline"}
           />
         ),
@@ -286,7 +299,8 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   {
     accessorKey: "priority",
     header: ticketColumnLabels.priority,
-    size: 72,
+    // Room for the heading and its sort arrow; longer names in other languages truncate.
+    size: 96,
     minSize: 64,
     cell: ({ row }) => (
       <PropertyCell
@@ -300,7 +314,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   {
     accessorKey: "difficulty",
     header: ticketColumnLabels.difficulty,
-    size: 90,
+    size: 106,
     minSize: 85,
     cell: ({ row }) => (
       <PropertyCell ticket={row.original} property="difficulty" value={row.original.difficulty} />
@@ -342,17 +356,18 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     ),
   },
 ];
-const timeColumns = (["createdAt", "updatedAt"] as const).map(
-  (key) =>
-    ({
-      accessorKey: key,
-      header: ticketColumnLabels[key],
-      size: 130,
-      cell: ({ row }) => (
-        <RelativeTime value={row.original[key]} className="text-muted-foreground" />
-      ),
-    }) satisfies ColumnDef<typeof features, Ticket>,
-);
+const timeColumns = () =>
+  (["createdAt", "updatedAt"] as const).map(
+    (key) =>
+      ({
+        accessorKey: key,
+        header: ticketColumnLabels[key],
+        size: 130,
+        cell: ({ row }) => (
+          <RelativeTime value={row.original[key]} className="text-muted-foreground" />
+        ),
+      }) satisfies ColumnDef<typeof features, Ticket>,
+  );
 // A project's custom field as a column; writers edit it inline like the built-in properties.
 function CustomFieldCell({ ticket, field }: { ticket: Ticket; field: CustomField }) {
   const access = useProjectAccess(ticket.projectId),
@@ -412,21 +427,26 @@ interface Fetch extends Omit<Section, "total"> {
   stateId?: string;
   archived?: TicketSearch["archived"];
 }
-const allTickets: Fetch = { id: "all", label: "All", heading: null, has: () => true };
+const allTickets = (): Fetch => ({
+  id: "all",
+  label: t("ticket.list.all"),
+  heading: null,
+  has: () => true,
+});
 // Planning splits a project into work not yet scheduled and work put away.
-const planningGroups: Fetch[] = [
+const planningGroups = (): Fetch[] => [
   {
     id: "planned",
-    label: "Planned",
-    heading: <span className="text-xs">Planned</span>,
+    label: t("ticket.list.planned"),
+    heading: <span className="text-xs">{t("ticket.list.planned")}</span>,
     status: "backlog",
     archived: "exclude",
     has: (ticket) => !ticket.archived && ticket.status === "backlog",
   },
   {
     id: "archived",
-    label: "Archived",
-    heading: <span className="text-xs">Archived</span>,
+    label: t("ticket.list.archived"),
+    heading: <span className="text-xs">{t("ticket.list.archived")}</span>,
     archived: "only",
     has: (ticket) => ticket.archived,
   },
@@ -520,7 +540,7 @@ export function TicketList({
   // series and group it here.
   const fetches: Fetch[] =
     grouping === "planning"
-      ? planningGroups.filter(
+      ? planningGroups().filter(
           (entry) => !entry.status || matchesFilter(search, "status", entry.status),
         )
       : workflowPending
@@ -552,7 +572,7 @@ export function TicketList({
                   status,
                   has: (ticket: Ticket) => ticket.status === status,
                 }))
-            : [allTickets];
+            : [allTickets()];
   const pageQueries = fetches.flatMap((entry) =>
     Array.from({ length: pages[entry.id] ?? 1 }, (_, page) => ({
       entry,
@@ -655,19 +675,22 @@ export function TicketList({
           .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
           .map(({ id, owner }) => ({
             id,
-            label: owner?.name ?? "Project",
+            label: owner?.name ?? t("ticket.project.label"),
             heading: (
               <span className="flex min-w-0 items-center gap-2 text-xs">
                 {owner && <ProjectIcon project={owner} className="size-4" />}
-                <span className="truncate">{owner?.name ?? "Project"}</span>
+                <span dir={owner ? "auto" : undefined} className="truncate">
+                  {owner?.name ?? t("ticket.project.label")}
+                </span>
               </span>
             ),
             total: all.filter((ticket) => ticket.projectId === id).length,
             has: (ticket: Ticket) => ticket.projectId === id,
           }))
       : grouping === "due"
-        ? [...dueWindows, ["none", dueFilterLabels.none] as const].flatMap(([id, label]) => {
-            const count = all.filter((ticket) => dueWindow(ticket, now) === id).length;
+        ? [...dueWindows.map(([id]) => id), "none" as const].flatMap((id) => {
+            const count = all.filter((ticket) => dueWindow(ticket, now) === id).length,
+              label = dueWindowLabel(id);
             return count
               ? [
                   {
@@ -709,11 +732,12 @@ export function TicketList({
   const currentFilters = filterIdentity(search),
     isDefault = currentFilters === filterIdentity({});
   const activeView = views.data?.find((view) => filterIdentity(view.filters) === currentFilters);
-  const viewLabel = activeView?.name ?? (isDefault ? "All tickets" : "Custom view");
+  const viewLabel =
+    activeView?.name ?? (isDefault ? t("ticket.list.allTickets") : t("ticket.list.customView"));
   const fields = useCustomFields(project?.id);
   const table = useTable({
     features,
-    columns: [...columns, ...(fields.data ?? []).map(fieldColumn), ...timeColumns],
+    columns: [...ticketColumns(), ...(fields.data ?? []).map(fieldColumn), ...timeColumns()],
     data: tickets.data?.items ?? [],
     getRowId: (row) => row.id,
     columnResizeMode: "onChange",
@@ -759,16 +783,20 @@ export function TicketList({
   };
   // Names the selection for confirmations: the project, then how many come from each section.
   const selectedFrom = grouped
-    ? sections
-        .flatMap((section) => {
+    ? formatList(
+        sections.flatMap((section) => {
           const count = selected.filter(section.has).length;
-          return count ? [`${count} ${section.label}`] : [];
-        })
-        .join(", ")
+          return count ? [t("ticket.list.sectionCount", { n: count, section: section.label })] : [];
+        }),
+      )
     : "";
-  const collection = project
-    ? `${project.name}${planning ? " planning" : ""}${selectedFrom ? ` (${selectedFrom})` : ""}`
-    : "";
+  const source =
+      project && (planning ? t("ticket.list.planning", { project: project.name }) : project.name),
+    collection = source
+      ? selectedFrom
+        ? t("ticket.list.collection", { source, sections: selectedFrom })
+        : source
+      : "";
   useEffect(() => {
     if (!loading && project) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
   }, [loading, project, orderKey]);
@@ -928,8 +956,23 @@ export function TicketList({
       ...(changed ? { status: changed } : {}),
     };
     setPlacing(shown);
+    const moved = {
+      key: ticket.key,
+      neighbor: neighbor?.key,
+      status: changed && statusName(changed),
+    };
     setAnnouncement(
-      `${ticket.key} moved${changed ? ` to ${statusName(changed)}` : ""}${neighbor ? ` ${below ? "below" : "above"} ${neighbor.key}` : ""}`,
+      neighbor
+        ? changed
+          ? below
+            ? t("ticket.list.movedToBelow", moved)
+            : t("ticket.list.movedToAbove", moved)
+          : below
+            ? t("ticket.list.movedBelow", moved)
+            : t("ticket.list.movedAbove", moved)
+        : changed
+          ? t("ticket.list.movedTo", moved)
+          : t("ticket.list.moved", moved),
     );
     // A descending list shows the manual order reversed.
     const after = below !== descending;
@@ -1058,21 +1101,23 @@ export function TicketList({
     <EmptyState
       title={
         !isDefault || search.q
-          ? "No matching tickets"
+          ? t("ticket.list.emptyFiltered")
           : planning
-            ? "Nothing planned or archived"
+            ? t("ticket.list.emptyPlanning")
             : project
-              ? "No tickets yet"
-              : "No open tickets assigned to you"
+              ? t("ticket.list.emptyProject")
+              : t("ticket.list.emptyWork")
       }
     >
       {!isDefault ? (
-        <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
+        <Button onClick={() => changeSearch(searchSchema.parse({}))}>
+          {t("ticket.filter.clear")}
+        </Button>
       ) : (
         canWrite && (
           <Button variant="default" onClick={() => setCreating(true)}>
             <Plus />
-            Create the first ticket
+            {t("ticket.list.createFirst")}
           </Button>
         )
       )}
@@ -1103,7 +1148,7 @@ export function TicketList({
               render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
             >
               <ArrowLeft />
-              Active work
+              {t("ticket.list.activeWork")}
             </Button>
           ) : (
             <DropdownMenu>
@@ -1111,7 +1156,7 @@ export function TicketList({
                 render={
                   <Button
                     variant="ghost"
-                    aria-label="Ticket views"
+                    aria-label={t("ticket.list.views")}
                     title={viewLabel}
                     className="max-w-full min-w-0 justify-start"
                   />
@@ -1130,11 +1175,13 @@ export function TicketList({
                       else if (chosen) changeSearch({ ...chosen.filters, offset: 0 });
                     }}
                   >
-                    {[{ id: "all", name: "All tickets" }, ...(views.data ?? [])].map((view) => (
-                      <DropdownMenuRadioItem key={view.id} value={view.id} closeOnClick>
-                        {view.name}
-                      </DropdownMenuRadioItem>
-                    ))}
+                    {[{ id: "all", name: t("ticket.list.allTickets") }, ...(views.data ?? [])].map(
+                      (view) => (
+                        <DropdownMenuRadioItem key={view.id} value={view.id} closeOnClick>
+                          {view.name}
+                        </DropdownMenuRadioItem>
+                      ),
+                    )}
                   </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
@@ -1144,18 +1191,18 @@ export function TicketList({
                       onClick={() => table.toggleAllRowsSelected(!table.getIsAllRowsSelected())}
                     >
                       {table.getIsAllRowsSelected()
-                        ? "Clear selection"
-                        : "Select all displayed tickets"}
+                        ? t("ticket.selection.clear")
+                        : t("ticket.list.selectAll")}
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem onClick={() => setSavingView(true)}>
                     <BookmarkPlus />
-                    Save current view
+                    {t("ticket.list.saveCurrentView")}
                   </DropdownMenuItem>
                   {activeView && (
                     <DropdownMenuItem onClick={() => setDeletingView(activeView)}>
                       <Trash2 />
-                      Delete view {activeView.name}
+                      {t("ticket.list.deleteView", { name: activeView.name })}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuGroup>
@@ -1168,7 +1215,7 @@ export function TicketList({
             <>
               {!planning && (
                 <IconButton
-                  label="Planning"
+                  label={t("ticket.list.planningLink")}
                   render={
                     <Link to="/projects/$projectId/planning" params={{ projectId: project.id }} />
                   }
@@ -1177,8 +1224,8 @@ export function TicketList({
                 </IconButton>
               )}
               <IconButton
-                label="New ticket"
-                title="New ticket (C)"
+                label={t("ticket.menu.newTicket")}
+                title={t("ticket.list.newTicketShortcut", { shortcut: "C" })}
                 variant="default"
                 disabled={!canWrite}
                 onClick={() => setCreating(true)}
@@ -1194,7 +1241,7 @@ export function TicketList({
         }}
       />
       <Modal
-        title="Save view"
+        title={t("ticket.list.saveView")}
         open={savingView}
         onOpenChange={setSavingView}
         busy={saveView.isPending}
@@ -1214,13 +1261,13 @@ export function TicketList({
                 .then(() => {
                   setSavingView(false);
                   setViewName("");
-                  toast.success("View saved");
+                  toast.success(t("ticket.list.viewSaved"));
                 })
                 .catch(() => {});
           }}
         >
           <Input
-            label="View name"
+            label={t("ticket.list.viewName")}
             required
             maxLength={80}
             value={viewName}
@@ -1229,15 +1276,15 @@ export function TicketList({
           <FormActions
             error={saveView.error}
             pending={saveView.isPending}
-            submitLabel="Save view"
+            submitLabel={t("ticket.list.saveView")}
             onCancel={() => setSavingView(false)}
           />
         </form>
       </Modal>
       {deletingView && (
         <Confirm
-          label={`Delete view ${deletingView.name}`}
-          description={`Remove ${deletingView.name} from saved views? Tickets stay unchanged.`}
+          label={t("ticket.list.deleteView", { name: deletingView.name })}
+          description={t("ticket.list.deleteViewConfirm", { name: deletingView.name })}
           trigger={false}
           open
           onOpenChange={(open) => {
@@ -1268,12 +1315,12 @@ export function TicketList({
             for (const query of queries) if (query.error) void query.refetch();
           }}
         >
-          Retry loading tickets
+          {t("ticket.list.retry")}
         </Button>
       ) : board ? (
         <div
           role="region"
-          aria-label="Ticket board"
+          aria-label={t("ticket.list.board")}
           className={cn(
             "ticket-board relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
             densityClass,
@@ -1287,7 +1334,7 @@ export function TicketList({
               {sections.map((section) => (
                 <section
                   key={section.id}
-                  aria-label={`${section.label} tickets`}
+                  aria-label={t("ticket.list.sectionTickets", { section: section.label })}
                   data-status={section.id}
                   data-drop={dropLane === section.id || undefined}
                   className="flex w-[min(19rem,calc(100vw-3.5rem))] shrink-0 flex-col transition-colors data-[drop=true]:bg-primary/5"
@@ -1312,7 +1359,7 @@ export function TicketList({
                   <h2 className="sticky top-0 z-10 mb-0 flex h-9 items-center gap-2 border-b bg-background px-2 text-xs font-normal">
                     {canWrite && (
                       <Check
-                        label={`Select ${section.label} tickets`}
+                        label={t("ticket.list.selectSection", { section: section.label })}
                         className="sr-checkbox"
                         {...sectionSelection(section)}
                       />
@@ -1415,7 +1462,7 @@ export function TicketList({
               wrapper is the single accessible table. */}
           <div
             role="table"
-            aria-label="Tickets"
+            aria-label={t("ticket.list.tickets")}
             className={cn(
               "ticket-table",
               densityClass,
@@ -1449,7 +1496,7 @@ export function TicketList({
                                   : undefined
                             }
                             className={cn(
-                              "relative h-8 bg-transparent px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase",
+                              "relative h-8 overflow-hidden bg-transparent px-3 text-[10.5px] font-medium tracking-[0.08em] text-ellipsis text-muted-foreground uppercase",
                               sort && "p-0",
                             )}
                             style={{ width: header.getSize() }}
@@ -1457,8 +1504,13 @@ export function TicketList({
                             {sort ? (
                               <Button
                                 variant="ghost"
+                                title={
+                                  typeof header.column.columnDef.header === "string"
+                                    ? header.column.columnDef.header
+                                    : undefined
+                                }
                                 className={cn(
-                                  "h-8 w-full justify-start gap-1 rounded-none px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
+                                  "h-8 w-full justify-start gap-1 rounded-none pr-2 pl-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
                                   sorted && "text-foreground",
                                 )}
                                 onClick={() =>
@@ -1474,9 +1526,12 @@ export function TicketList({
                                   })
                                 }
                               >
-                                <table.FlexRender header={header} />
-                                {direction === "asc" && <ArrowUp className="size-3" />}
-                                {direction === "desc" && <ArrowDown className="size-3" />}
+                                {/* Long column names, as in German, end in an ellipsis. */}
+                                <span className="min-w-0 truncate">
+                                  <table.FlexRender header={header} />
+                                </span>
+                                {direction === "asc" && <ArrowUp className="size-3 shrink-0" />}
+                                {direction === "desc" && <ArrowDown className="size-3 shrink-0" />}
                               </Button>
                             ) : (
                               <table.FlexRender header={header} />
@@ -1485,7 +1540,12 @@ export function TicketList({
                               <Button
                                 variant="ghost"
                                 className="resizer absolute top-2 right-0 bottom-2 h-auto w-2 min-w-0 cursor-col-resize touch-none rounded-none border-r bg-transparent p-0 hover:border-primary hover:bg-transparent"
-                                aria-label={`Resize ${fields.data?.find((field) => customFieldColumn(field.id) === header.id)?.name ?? header.id} column`}
+                                aria-label={t("ticket.list.resizeColumn", {
+                                  column:
+                                    fields.data?.find(
+                                      (field) => customFieldColumn(field.id) === header.id,
+                                    )?.name ?? header.id,
+                                })}
                                 onMouseDown={header.getResizeHandler()}
                                 onTouchStart={header.getResizeHandler()}
                                 onKeyDown={(event) => {
@@ -1516,7 +1576,11 @@ export function TicketList({
                 <ColumnGroup leaves={table.getVisibleLeafColumns()} />
                 <TableBody
                   role="rowgroup"
-                  aria-label={grouped ? `${section.label} tickets` : "Tickets"}
+                  aria-label={
+                    grouped
+                      ? t("ticket.list.sectionTickets", { section: section.label })
+                      : t("ticket.list.tickets")
+                  }
                 >
                   {grouped && (
                     <TableRow
@@ -1594,7 +1658,9 @@ export function TicketList({
       )}
       {!tickets.isPending && !tickets.error && (
         <footer className="shrink-0 py-2 text-xs text-muted-foreground">
-          {tickets.data.total} {schedule ? "scheduled tickets" : "tickets"}
+          {schedule
+            ? t("ticket.list.scheduledCount", { count: tickets.data.total })
+            : t("ticket.list.count", { count: tickets.data.total })}
         </footer>
       )}
       <span role="status" className="sr-only">
@@ -1615,7 +1681,12 @@ export function TicketList({
             : null
         }
       />
-      <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
+      <Modal
+        size="composer"
+        title={t("ticket.menu.newTicket")}
+        open={creating}
+        onOpenChange={setCreating}
+      >
         {creating && project && (
           <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />
         )}

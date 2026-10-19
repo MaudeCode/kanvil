@@ -5,6 +5,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
+import { t } from "@kanvil/contracts/i18n";
 
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -203,8 +204,8 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>{t("shell.primitive.sidebar")}</SheetTitle>
+            <SheetDescription>{t("shell.primitive.sidebarDescription")}</SheetDescription>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -275,7 +276,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t("shell.primitive.toggleSidebar")}</span>
     </Button>
   );
 }
@@ -295,7 +296,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       data-slot="sidebar-rail"
       data-resizing={resizing || undefined}
       role={open ? "separator" : "button"}
-      aria-label={open ? "Resize sidebar" : "Expand sidebar"}
+      aria-label={open ? t("shell.primitive.resizeSidebar") : t("shell.primitive.expandSidebar")}
       aria-orientation={open ? "vertical" : undefined}
       aria-valuemin={open ? SIDEBAR_MIN_WIDTH : undefined}
       aria-valuemax={open ? SIDEBAR_MAX_WIDTH : undefined}

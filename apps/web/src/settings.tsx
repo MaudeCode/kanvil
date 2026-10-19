@@ -21,6 +21,7 @@ import {
   FormActions,
   Select,
   SelectItem,
+  reportError,
 } from "./ui.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -37,6 +38,8 @@ import {
   usePreference,
 } from "./hooks/use-preference.ts";
 import type { accountSections } from "./search.ts";
+import { formatDate, localeDetails, localePreference, locales, t } from "@kanvil/contracts/i18n";
+import { setLocalePreference, useLocalePreference } from "./lib/locale.tsx";
 import { formText } from "./forms.ts";
 export function AccountSettings({ section }: { section: (typeof accountSections)[number] }) {
   const [error, setError] = useAuthError();
@@ -58,7 +61,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
     setError(undefined);
     const values = new FormData(event.currentTarget);
     if (values.get("next") !== values.get("confirm")) {
-      setError(new Error("The new passwords do not match."));
+      setError(new Error(t("settings.account.passwordMismatch")));
       return;
     }
     setPending(true);
@@ -70,7 +73,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
       });
       if (result.error) throw new Error(result.error.message);
       setPasswordOpen(false);
-      toast.success("Password updated. Other sessions signed out.");
+      toast.success(t("settings.account.passwordUpdated"));
     } catch (cause) {
       setError(cause);
     } finally {
@@ -78,14 +81,14 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
     }
   }
   return (
-    <SettingsLayout title="Settings" section={section}>
+    <SettingsLayout title={t("settings.account.title")} section={section}>
       <SettingsPanel value="account">
         <ProfileSettings />
         <section>
-          <SectionHeading title="Sign-in & security" />
+          <SectionHeading title={t("settings.account.security")} />
           <SettingRow
-            title="Local password"
-            description="Changing your password signs out your other sessions."
+            title={t("settings.account.localPassword")}
+            description={t("settings.account.localPasswordDescription")}
           >
             <Button
               onClick={() => {
@@ -93,7 +96,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
                 setPasswordOpen(true);
               }}
             >
-              Change password
+              {t("settings.account.changePassword")}
             </Button>
           </SettingRow>
           {info.data?.providers.map((provider) => {
@@ -103,13 +106,11 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
                 key={provider.id}
                 title={provider.name}
                 description={
-                  linked
-                    ? "Use this identity provider to sign in to the same account."
-                    : "Link your account before signing in through this provider."
+                  linked ? t("settings.account.oidcLinked") : t("settings.account.oidcUnlinked")
                 }
               >
                 {linked ? (
-                  <Badge variant="secondary">Linked</Badge>
+                  <Badge variant="secondary">{t("settings.account.linked")}</Badge>
                 ) : (
                   <Button
                     disabled={pending}
@@ -129,7 +130,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
                         .finally(() => setPending(false));
                     }}
                   >
-                    Link {provider.name}
+                    {t("settings.account.link", { name: provider.name })}
                   </Button>
                 )}
               </SettingRow>
@@ -149,7 +150,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
           <ErrorNotice error={accounts.error ?? info.error} />
         </section>
         <Modal
-          title="Change password"
+          title={t("settings.account.changePassword")}
           open={passwordOpen}
           onOpenChange={setPasswordOpen}
           busy={pending}
@@ -160,14 +161,14 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
             }}
           >
             <Input
-              label="Current password"
+              label={t("settings.account.currentPassword")}
               name="current"
               type="password"
               autoComplete="current-password"
               required
             />
             <Input
-              label="New password"
+              label={t("settings.account.newPassword")}
               name="next"
               type="password"
               autoComplete="new-password"
@@ -176,7 +177,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
               maxLength={128}
             />
             <Input
-              label="Confirm new password"
+              label={t("settings.account.confirmPassword")}
               name="confirm"
               type="password"
               autoComplete="new-password"
@@ -187,7 +188,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
             <FormActions
               error={error}
               pending={pending}
-              submitLabel="Change password"
+              submitLabel={t("settings.account.changePassword")}
               onCancel={() => setPasswordOpen(false)}
             />
           </form>
@@ -212,14 +213,39 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
 function PreferenceSettings() {
   const identity = useIdentity(),
     [weekStart, setWeekStart] = usePreference(browserPreferences.weekStart),
-    [sidebar, setSidebar] = usePreference(browserPreferences.sidebar);
+    [sidebar, setSidebar] = usePreference(browserPreferences.sidebar),
+    { preference: language } = useLocalePreference();
   return (
     <>
       <section className="[&>.setting-row:last-child]:border-b-0">
-        <SectionHeading title="Behavior" />
-        <SettingRow title="Week starts on" description="Applies to every date picker.">
+        <SectionHeading title={t("settings.preferences.behavior")} />
+        <SettingRow
+          title={t("common.language.label")}
+          description={t("settings.preferences.languageDescription")}
+        >
           <Select
-            label="Week starts on"
+            label={t("common.language.label")}
+            labelHidden
+            className="mb-0 w-44"
+            value={language}
+            onValueChange={(value) =>
+              void setLocalePreference(localePreference.parse(value)).catch(reportError)
+            }
+          >
+            <SelectItem value="system">{t("common.language.system")}</SelectItem>
+            {locales.map((locale) => (
+              <SelectItem key={locale} value={locale} lang={locale}>
+                {localeDetails[locale].name}
+              </SelectItem>
+            ))}
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title={t("settings.preferences.weekStart")}
+          description={t("settings.preferences.weekStartDescription")}
+        >
+          <Select
+            label={t("settings.preferences.weekStart")}
             labelHidden
             className="mb-0 w-44"
             value={weekStart}
@@ -227,47 +253,55 @@ function PreferenceSettings() {
               setWeekStart(browserPreferences.weekStart.schema.parse(value))
             }
           >
-            <SelectItem value="sunday">Sunday</SelectItem>
-            <SelectItem value="monday">Monday</SelectItem>
-            <SelectItem value="saturday">Saturday</SelectItem>
+            <SelectItem value="language">{t("settings.preferences.weekStartLanguage")}</SelectItem>
+            {/* 1 January 2023 was a Sunday. */}
+            <SelectItem value="sunday">
+              {formatDate(new Date(2023, 0, 1), { weekday: "long" })}
+            </SelectItem>
+            <SelectItem value="monday">
+              {formatDate(new Date(2023, 0, 2), { weekday: "long" })}
+            </SelectItem>
+            <SelectItem value="saturday">
+              {formatDate(new Date(2023, 0, 7), { weekday: "long" })}
+            </SelectItem>
           </Select>
         </SettingRow>
         <SettingRow
-          title="Sidebar on launch"
-          description="Takes effect the next time Kanvil opens."
+          title={t("settings.preferences.sidebar")}
+          description={t("settings.preferences.sidebarDescription")}
         >
           <Select
-            label="Sidebar on launch"
+            label={t("settings.preferences.sidebar")}
             labelHidden
             className="mb-0 w-44"
             value={sidebar}
             onValueChange={(value) => setSidebar(browserPreferences.sidebar.schema.parse(value))}
           >
-            <SelectItem value="last">As last left</SelectItem>
-            <SelectItem value="expanded">Expanded</SelectItem>
-            <SelectItem value="collapsed">Collapsed</SelectItem>
+            <SelectItem value="last">{t("settings.preferences.sidebarLast")}</SelectItem>
+            <SelectItem value="expanded">{t("settings.preferences.sidebarExpanded")}</SelectItem>
+            <SelectItem value="collapsed">{t("settings.preferences.sidebarCollapsed")}</SelectItem>
           </Select>
         </SettingRow>
       </section>
       <section>
-        <SectionHeading title="Ticket lists" />
+        <SectionHeading title={t("settings.preferences.ticketLists")} />
         <div className="grid max-w-sm gap-3">
           <TicketDisplayPreferences />
         </div>
       </section>
       <section className="[&>.setting-row:last-child]:border-b-0">
         <SettingRow
-          title="Reset preferences"
-          description="Restores these choices to their defaults in this browser."
+          title={t("settings.preferences.reset")}
+          description={t("settings.preferences.resetDescription")}
         >
           <Button
             variant="outline"
             onClick={() => {
               resetPreferences(identity.id, Object.values(browserPreferences));
-              toast.success("Preferences reset");
+              toast.success(t("settings.preferences.resetDone"));
             }}
           >
-            Reset preferences
+            {t("settings.preferences.reset")}
           </Button>
         </SettingRow>
       </section>
@@ -292,7 +326,7 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
   return (
     <>
       <section className="[&>.setting-row:last-child]:border-b-0">
-        <SectionHeading title="Notifications" />
+        <SectionHeading title={t("settings.notifications.title")} />
         <ErrorNotice error={preferences.error ?? update.error} />
         {preferences.isPending ? (
           <Loading />
@@ -300,26 +334,26 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
           shown && (
             <>
               <SettingRow
-                title="Inbox"
-                description="Updates to tickets you follow appear in Kanvil."
+                title={t("settings.notifications.inbox")}
+                description={t("settings.notifications.inboxDescription")}
               >
                 <Switch
-                  aria-label="Subscribed ticket updates in Inbox"
+                  aria-label={t("settings.notifications.inboxSwitch")}
                   checked={shown.inApp}
                   disabled={update.isPending}
                   onCheckedChange={(checked) => save({ inApp: checked })}
                 />
               </SettingRow>
               <SettingRow
-                title="Push notifications"
+                title={t("settings.notifications.push")}
                 description={
                   pushAvailable
-                    ? "Send updates to devices you’ve registered."
-                    : "Push delivery is not enabled on this instance."
+                    ? t("settings.notifications.pushDescription")
+                    : t("settings.notifications.pushUnavailable")
                 }
               >
                 <Switch
-                  aria-label="Push notifications on registered devices"
+                  aria-label={t("settings.notifications.pushSwitch")}
                   checked={shown.push}
                   disabled={update.isPending || !pushAvailable}
                   onCheckedChange={(checked) => save({ push: checked })}
@@ -331,7 +365,7 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
       </section>
       {shown && (
         <section className="[&>.setting-row:last-child]:border-b-0">
-          <SectionHeading title="Categories" />
+          <SectionHeading title={t("settings.notifications.categories")} />
           {notificationCategories.map((category) => {
             const Icon = notificationCategoryIcons[category];
             return (
@@ -346,7 +380,9 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
                 }
               >
                 <Switch
-                  aria-label={`${notificationCategoryLabels[category]} notifications`}
+                  aria-label={t("settings.notifications.categorySwitch", {
+                    label: notificationCategoryLabels[category],
+                  })}
                   checked={shown.categories[category]}
                   disabled={update.isPending}
                   onCheckedChange={(checked) =>
@@ -357,8 +393,8 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
             );
           })}
           <SettingRow
-            title="Due soon reminder"
-            description="How long before a followed ticket’s due date."
+            title={t("settings.notifications.reminder")}
+            description={t("settings.notifications.reminderDescription")}
           >
             <div className="flex items-center gap-2">
               <ReminderAmount
@@ -368,7 +404,7 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
                 onCommit={(amount) => save({ reminderLead: { ...shown.reminderLead, amount } })}
               />
               <Select
-                label="Reminder unit"
+                label={t("settings.notifications.reminderUnit")}
                 labelHidden
                 className="mb-0 w-32"
                 value={shown.reminderLead.unit}
@@ -381,7 +417,7 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
               >
                 {reminderUnits.map((unit) => (
                   <SelectItem key={unit} value={unit}>
-                    {unit.charAt(0).toUpperCase() + unit.slice(1)}
+                    {t(`settings.notifications.unit.${unit}`)}
                   </SelectItem>
                 ))}
               </Select>
@@ -411,7 +447,7 @@ function ReminderAmount({
   };
   return (
     <Input
-      label="Reminder amount"
+      label={t("settings.notifications.reminderAmount")}
       labelHidden
       type="number"
       inputMode="numeric"

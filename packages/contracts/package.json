@@ -8,12 +8,14 @@
     "./theme": "./src/theme.ts",
     "./drafts": "./src/drafts.ts",
     "./instance": "./src/instance.ts",
-    "./users": "./src/users.ts"
+    "./users": "./src/users.ts",
+    "./i18n": "./src/i18n/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "i18next": "26.5.2",
     "zod": "4.6.7"
   }
 }

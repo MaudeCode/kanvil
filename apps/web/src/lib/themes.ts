@@ -1,5 +1,6 @@
 import { z } from "zod";
-const hex = z.string().regex(/^#[0-9a-f]{6}$/i, "Use a six-digit hex color");
+import { t } from "@kanvil/contracts/i18n";
+const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { error: () => t("settings.theme.hexColor") });
 export const paletteSchema = z
   .object({ background: hex, foreground: hex, sidebar: hex, primary: hex, primaryForeground: hex })
   .strict();
@@ -52,7 +53,10 @@ const roseDawn = colors("#faf4ed", "#575279", "#f2e9e1", "#907aa9", "#ffffff");
 export const builtInThemes: [ThemeDefinition, ...ThemeDefinition[]] = [
   {
     id: "aligned",
-    name: "Aligned",
+    // Kanvil's own theme; the others carry the published names of their color schemes.
+    get name() {
+      return t("settings.theme.aligned");
+    },
     light: colors("#ffffff", "#202020", "#f7f7f7", "#5e6ad2", "#ffffff"),
     dark: colors("#171717", "#eeeeee", "#111111", "#8a8ff5", "#181822"),
   },
@@ -210,7 +214,7 @@ export function validateTheme(value: unknown) {
       contrast(p.sidebar, p.foreground) < 4.5 ||
       contrast(p.primary, p.primaryForeground) < 4.5
     )
-      throw new Error(`Increase the ${mode} theme's text contrast to at least 4.5:1.`);
+      throw new Error(t(`settings.theme.contrast.${mode}`));
   }
   return theme;
 }
@@ -253,7 +257,7 @@ export function themeVariables(p: ThemePalette): Record<string, string> {
   };
 }
 export function decodeThemeFile(raw: string) {
-  if (raw.length > 100000) throw new Error("Theme files must be smaller than 100 KB.");
+  if (raw.length > 100000) throw new Error(t("settings.theme.fileTooLarge"));
   const parsed = z
     .object({ version: z.literal(1), themes: z.array(themeSchema).min(1).max(50) })
     .strict()

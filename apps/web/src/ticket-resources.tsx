@@ -38,7 +38,10 @@ import {
   resourceHost,
   type Output,
   type Ticket,
+  evidenceKindLabels,
+  evidenceOutcomeLabels,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api, ActorName, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
@@ -129,7 +132,7 @@ function ResourceRow({
   );
 }
 function checkFileSize(file: File) {
-  if (file.size > attachmentLimit) throw new Error("Choose files no larger than 10 MB each.");
+  if (file.size > attachmentLimit) throw new Error(t("detail.attachment.tooLarge"));
 }
 const fileFields = async (file: File) => ({
   name: file.name,
@@ -178,7 +181,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
           ticketId: ticket.id,
           ...(await fileFields(item)),
         });
-      toast.success(files.length === 1 ? "File attached" : `${files.length} files attached`);
+      toast.success(t("detail.attachment.attached", { count: files.length }));
     } catch (cause) {
       setError(cause);
     } finally {
@@ -206,11 +209,11 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
     >
       <SectionHeading
         compact
-        title="Attachments"
+        title={t("detail.attachment.heading")}
         action={
           access.canWrite && (
             <IconButton
-              label={uploading ? "Uploading…" : "Attach file"}
+              label={uploading ? t("detail.resource.uploading") : t("detail.attachment.attach")}
               size="icon-sm"
               disabled={uploading}
               onClick={() => file.current?.click()}
@@ -222,7 +225,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       />
       {!items.isPending && !items.data?.length && (
         <p className="mb-0 text-xs text-muted-foreground">
-          {access.canWrite ? "No attachments. Drop files here." : "No attachments"}
+          {access.canWrite ? t("detail.attachment.emptyWritable") : t("detail.attachment.empty")}
         </p>
       )}
       <ItemGroup className="gap-0">
@@ -239,9 +242,9 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
             actions={
               access.canWrite && (
                 <Confirm
-                  label="Remove attachment"
+                  label={t("detail.attachment.remove")}
                   icon={<Trash2 />}
-                  description={`Remove ${item.name}?`}
+                  description={t("detail.resource.removeConfirm", { name: item.name })}
                   onConfirm={() =>
                     remove.mutateAsync({ projectId: ticket.projectId, attachmentId: item.id })
                   }
@@ -256,7 +259,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
         type="file"
         multiple
         className="hidden"
-        aria-label="File (up to 10 MB)"
+        aria-label={t("detail.attachment.fileInput")}
         disabled={uploading}
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
@@ -285,12 +288,12 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
   return (
     <section>
       <SectionHeading
-        title="Evidence"
-        description="Links and outcomes reported by the people and integrations working on this ticket."
+        title={t("detail.section.evidence")}
+        description={t("detail.evidence.description")}
         action={
           access.canWrite && (
             <IconButton
-              label="Add evidence"
+              label={t("detail.evidence.add")}
               onClick={() => {
                 add.reset();
                 setValidationError(undefined);
@@ -303,7 +306,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
         }
       />
       {!items.isPending && !items.data?.length && (
-        <p className="text-sm text-muted-foreground">No evidence attached</p>
+        <p className="text-sm text-muted-foreground">{t("detail.evidence.empty")}</p>
       )}
       <ItemGroup className="gap-0">
         {items.data?.map((item) => {
@@ -323,19 +326,19 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
               label={item.title}
               badges={
                 <>
-                  <Badge variant="outline" className="ml-2 capitalize">
-                    {item.kind}
+                  <Badge variant="outline" className="ml-2">
+                    {evidenceKindLabels[item.kind]}
                   </Badge>
                   <Badge
                     variant="outline"
                     className={cn(
-                      "ml-1 capitalize",
+                      "ml-1",
                       item.outcome === "passed" && "text-[var(--success)]",
                       item.outcome === "failed" && "text-destructive",
                     )}
                     data-outcome={item.outcome}
                   >
-                    {item.outcome}
+                    {evidenceOutcomeLabels[item.outcome]}
                   </Badge>
                 </>
               }
@@ -359,7 +362,12 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
           );
         })}
       </ItemGroup>
-      <Modal title="Add evidence" open={open} onOpenChange={setOpen} busy={add.isPending}>
+      <Modal
+        title={t("detail.evidence.add")}
+        open={open}
+        onOpenChange={setOpen}
+        busy={add.isPending}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -377,35 +385,35 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
               })
               .then(() => {
                 setOpen(false);
-                toast.success("Evidence added");
+                toast.success(t("detail.evidence.added"));
               })
               .catch(setValidationError);
           }}
         >
-          <Input label="Title" name="title" required maxLength={200} />
-          <Input label="URL" name="url" type="url" required />
+          <Input label={t("detail.field.title")} name="title" required maxLength={200} />
+          <Input label={t("detail.field.url")} name="url" type="url" required />
           <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
-            <Select label="Kind" name="kind">
+            <Select label={t("detail.evidence.kindLabel")} name="kind">
               {evidenceFields.shape.kind.options.map((kind) => (
                 <SelectItem key={kind} value={kind}>
-                  <span className="capitalize">{kind}</span>
+                  {evidenceKindLabels[kind]}
                 </SelectItem>
               ))}
             </Select>
-            <Select label="Reported outcome" name="outcome">
-              {["reported", "pending", "passed", "failed"].map((outcome) => (
+            <Select label={t("detail.evidence.outcomeLabel")} name="outcome">
+              {evidenceFields.shape.outcome.unwrap().options.map((outcome) => (
                 <SelectItem key={outcome} value={outcome}>
-                  <span className="capitalize">{outcome}</span>
+                  {evidenceOutcomeLabels[outcome]}
                 </SelectItem>
               ))}
             </Select>
           </div>
-          <Input label="Commit (full hash)" name="commit" pattern="[a-fA-F0-9]{40,64}" />
-          <Textarea label="Note" name="note" maxLength={20000} />
+          <Input label={t("detail.evidence.commit")} name="commit" pattern="[a-fA-F0-9]{40,64}" />
+          <Textarea label={t("detail.evidence.note")} name="note" maxLength={20000} />
           <FormActions
             error={validationError ?? add.error}
             pending={add.isPending}
-            submitLabel="Add evidence"
+            submitLabel={t("detail.evidence.add")}
             onCancel={() => setOpen(false)}
           />
         </form>
@@ -416,10 +424,17 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
 }
 type Resource = Output<"list_resources">[number];
 // What a connection verified, such as "Pull request · Merged"; unknown without one.
+const remoteStates = ["open", "closed", "merged", "draft", "active", "deleted"] as const;
 function remoteLabel({ remoteKind, remoteState, provider }: Resource) {
-  const state = remoteState && remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
-  if (!state) return "State unknown";
-  return remoteKind ? `${remoteKindLabel(remoteKind, provider)} · ${state}` : state;
+  if (!remoteState) return t("detail.link.stateUnknown");
+  // A state this release has no wording for shows as the host reported it.
+  const known = remoteStates.find((value) => value === remoteState),
+    state = known
+      ? t(`detail.link.remoteState.${known}`)
+      : remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
+  return remoteKind
+    ? t("detail.link.remote", { kind: remoteKindLabel(remoteKind, provider), state })
+    : state;
 }
 export function Links({ ticket }: { ticket: Ticket }) {
   const access = useProjectAccess(ticket.projectId),
@@ -440,20 +455,20 @@ export function Links({ ticket }: { ticket: Ticket }) {
     setOpen(true);
   };
   return (
-    <section aria-label="Links">
+    <section aria-label={t("detail.link.heading")}>
       <SectionHeading
         compact
-        title="Links"
+        title={t("detail.link.heading")}
         action={
           access.canWrite && (
-            <IconButton label="Add link" size="icon-sm" onClick={() => edit()}>
+            <IconButton label={t("detail.link.add")} size="icon-sm" onClick={() => edit()}>
               <Plus />
             </IconButton>
           )
         }
       />
       {!items.isPending && !items.data?.length && (
-        <p className="mb-0 text-xs text-muted-foreground">No links</p>
+        <p className="mb-0 text-xs text-muted-foreground">{t("detail.link.empty")}</p>
       )}
       <ItemGroup className="gap-0">
         {items.data?.map((item) => (
@@ -481,13 +496,19 @@ export function Links({ ticket }: { ticket: Ticket }) {
             actions={
               access.canWrite && (
                 <>
-                  <IconButton size="icon-sm" label="Edit link" onClick={() => edit(item)}>
+                  <IconButton
+                    size="icon-sm"
+                    label={t("detail.link.edit")}
+                    onClick={() => edit(item)}
+                  >
                     <Pencil />
                   </IconButton>
                   <Confirm
-                    label="Remove link"
+                    label={t("detail.link.remove")}
                     icon={<Trash2 />}
-                    description={`Remove ${item.title || item.url}?`}
+                    description={t("detail.resource.removeConfirm", {
+                      name: item.title || item.url,
+                    })}
                     onConfirm={() =>
                       remove.mutateAsync({
                         projectId: ticket.projectId,
@@ -503,7 +524,7 @@ export function Links({ ticket }: { ticket: Ticket }) {
         ))}
       </ItemGroup>
       <Modal
-        title={editing ? "Edit link" : "Add link"}
+        title={editing ? t("detail.link.edit") : t("detail.link.add")}
         open={open}
         onOpenChange={setOpen}
         busy={pending}
@@ -528,12 +549,24 @@ export function Links({ ticket }: { ticket: Ticket }) {
               .catch(setError);
           }}
         >
-          <Input label="URL" name="url" type="url" required autoFocus defaultValue={editing?.url} />
-          <Input label="Title" name="title" maxLength={200} defaultValue={editing?.title} />
+          <Input
+            label={t("detail.field.url")}
+            name="url"
+            type="url"
+            required
+            autoFocus
+            defaultValue={editing?.url}
+          />
+          <Input
+            label={t("detail.field.title")}
+            name="title"
+            maxLength={200}
+            defaultValue={editing?.title}
+          />
           <FormActions
             error={error}
             pending={pending}
-            submitLabel={editing ? "Save link" : "Add link"}
+            submitLabel={editing ? t("detail.link.save") : t("detail.link.add")}
             onCancel={() => setOpen(false)}
           />
         </form>
@@ -549,7 +582,7 @@ export function Activity({ ticket }: { ticket: Ticket }) {
   );
   return (
     <section>
-      <h2>Activity</h2>
+      <h2>{t("detail.section.activity")}</h2>
       <ErrorNotice error={activity.error} />
       <ol className="m-0 list-none p-0">
         {activity.data?.items.map((event) => (
@@ -568,14 +601,14 @@ export function Activity({ ticket }: { ticket: Ticket }) {
       {((activity.data?.total ?? 0) > 50 || offset > 0) && (
         <ButtonGroup className="mt-5 justify-end">
           <Button size="sm" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 50))}>
-            Previous activity
+            {t("detail.activity.previous")}
           </Button>
           <Button
             size="sm"
             disabled={offset + 50 >= (activity.data?.total ?? 0)}
             onClick={() => setOffset(offset + 50)}
           >
-            Next activity
+            {t("detail.activity.next")}
           </Button>
         </ButtonGroup>
       )}

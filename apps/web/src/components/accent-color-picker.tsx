@@ -4,7 +4,8 @@ import { isHexColor, projectIconColors, type LabelColor } from "@kanvil/contract
 import { api, useOperation } from "../data.tsx";
 import { reportError } from "../ui.tsx";
 import { Button } from "@/components/ui/button";
-import { accentColor } from "../lib/accent-colors.ts";
+import { accentColor, accentColorName } from "../lib/accent-colors.ts";
+import { t } from "@kanvil/contracts/i18n";
 import { cn } from "@/lib/utils";
 
 function Swatch({
@@ -28,7 +29,7 @@ function Swatch({
       disabled={disabled}
       variant={selected ? "secondary" : "ghost"}
       size="icon"
-      aria-label={`${value} ${label.toLowerCase()}`}
+      aria-label={t("settings.color.swatch", { color: accentColorName(value), label })}
       aria-pressed={selected}
       className={tone.className}
       style={tone.style}
@@ -98,7 +99,7 @@ export function AccentColorPicker<T extends LabelColor>({
                 <Button
                   variant="secondary"
                   size="icon-xs"
-                  aria-label={`Remove ${hex} from custom colors`}
+                  aria-label={t("settings.color.removeCustom", { hex })}
                   disabled={disabled || remove.isPending}
                   className="absolute -top-1 -right-1 size-4 rounded-full border opacity-0 shadow-sm transition-opacity group-hover/swatch:opacity-100 focus-visible:opacity-100 max-md:opacity-100"
                   onClick={() => {
@@ -115,12 +116,12 @@ export function AccentColorPicker<T extends LabelColor>({
               "relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-within:ring-2 focus-within:ring-ring",
               disabled && "pointer-events-none opacity-50",
             )}
-            title="Custom color"
+            title={t("settings.color.custom")}
           >
             <Plus className="size-4" aria-hidden="true" />
             <input
               type="color"
-              aria-label="Custom color"
+              aria-label={t("settings.color.custom")}
               disabled={disabled}
               value={isHexColor(value) ? value : "#6366f1"}
               onChange={(event) => pick(event.target.value.toLowerCase())}

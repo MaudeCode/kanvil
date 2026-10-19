@@ -5,7 +5,6 @@ import { Archive, ArchiveRestore, ArrowRightLeft, Download, LogIn, Trash2 } from
 import { toast } from "sonner";
 import {
   ApiError,
-  deletedAccountName,
   signInMethodLabels,
   type AccountImpact,
   type Project,
@@ -30,6 +29,8 @@ import {
   reportError,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
+import { t, formatList } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 
 function useArchive(project: Project) {
   const archive = useOperation("archive_project");
@@ -38,7 +39,13 @@ function useArchive(project: Project) {
     set: (archived: boolean) =>
       archive
         .mutateAsync({ projectId: project.id, expectedVersion: project.version, archived })
-        .then(() => toast.success(archived ? "Project archived" : "Project restored")),
+        .then(() =>
+          toast.success(
+            archived
+              ? t("settings.lifecycle.archivedToast")
+              : t("settings.lifecycle.restoredToast"),
+          ),
+        ),
   };
 }
 // Shown above an archived project's tickets; its administrators restore it from here.
@@ -53,7 +60,10 @@ export function ArchivedNotice({ project }: { project: Project }) {
     >
       <Archive className="size-3.5" aria-hidden="true" />
       <span>
-        Archived <RelativeTime value={project.archivedAt} /> · read only
+        <Trans
+          i18nKey="settings.lifecycle.archivedNotice"
+          components={{ time: <RelativeTime value={project.archivedAt} /> }}
+        />
       </span>
       {access.canManage && (
         <Button
@@ -64,7 +74,7 @@ export function ArchivedNotice({ project }: { project: Project }) {
           onClick={() => void archive.set(false).catch(reportError)}
         >
           <ArchiveRestore />
-          Restore
+          {t("settings.lifecycle.restore")}
         </Button>
       )}
     </p>
@@ -74,15 +84,15 @@ export function ArchiveProjectRow({ project }: { project: Project }) {
   const archive = useArchive(project);
   return (
     <SettingRow
-      title="Archive"
+      title={t("settings.lifecycle.archive")}
       description={
         project.archivedAt ? (
-          <>
-            Archived <RelativeTime value={project.archivedAt} />. Its tickets are read only and stay
-            out of lists, search, My work, calendar feeds, and agent queues.
-          </>
+          <Trans
+            i18nKey="settings.lifecycle.archivedDescription"
+            components={{ time: <RelativeTime value={project.archivedAt} /> }}
+          />
         ) : (
-          "Hides the project from lists, search, My work, calendar feeds, and agent queues and makes its tickets read only. History is kept."
+          t("settings.lifecycle.archiveDescription")
         )
       }
     >
@@ -92,21 +102,19 @@ export function ArchiveProjectRow({ project }: { project: Project }) {
           onClick={() => void archive.set(false).catch(reportError)}
         >
           <ArchiveRestore />
-          Restore
+          {t("settings.lifecycle.restore")}
         </Button>
       ) : (
         <Confirm
-          label="Archive project"
-          description={`${project.name} leaves project lists and agent queues until it is restored. Claimed tickets must be released first.`}
+          label={t("settings.lifecycle.archiveProject")}
+          description={t("settings.lifecycle.archiveConfirm", { name: project.name })}
           onConfirm={() => archive.set(true)}
         />
       )}
     </SettingRow>
   );
 }
-const names = (people: { name: string }[]) => people.map((person) => person.name).join(", ");
-const counted = (value: number, one: string, many = `${one}s`) =>
-  `${value} ${value === 1 ? one : many}`;
+const names = (people: { name: string }[]) => formatList(people.map((person) => person.name));
 type ImpactRows = [string, ReactNode][];
 // What a deletion or move changes, as its impact preview reports it; blockers come first.
 function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
@@ -128,7 +136,10 @@ function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
           error={
             new Error(
               blocker.tickets.length
-                ? `${blocker.message}: ${blocker.tickets.join(", ")}`
+                ? t("settings.lifecycle.blocker", {
+                    message: blocker.message,
+                    tickets: formatList(blocker.tickets),
+                  })
                 : blocker.message,
             )
           }
@@ -158,27 +169,45 @@ const projectRows =
   (impact: ProjectImpact): ImpactRows =>
     impact.transfer
       ? [
-          ["Tickets", `${impact.tickets}, keeping their keys and links`],
-          ["Loses access", names(impact.transfer.losingAccess) || "No one"],
-          ["Gains access", names(impact.transfer.gainingAccess) || "No one"],
-          ["Labels copied", impact.transfer.copiedLabels.join(", ")],
-          ["Labels merged", impact.transfer.mergedLabels.join(", ")],
           [
-            "Follows removed",
+            t("settings.lifecycle.row.tickets"),
+            t("settings.lifecycle.transferTickets", { count: impact.tickets }),
+          ],
+          [
+            t("settings.lifecycle.row.losesAccess"),
+            names(impact.transfer.losingAccess) || t("settings.lifecycle.noOne"),
+          ],
+          [
+            t("settings.lifecycle.row.gainsAccess"),
+            names(impact.transfer.gainingAccess) || t("settings.lifecycle.noOne"),
+          ],
+          [t("settings.lifecycle.row.labelsCopied"), formatList(impact.transfer.copiedLabels)],
+          [t("settings.lifecycle.row.labelsMerged"), formatList(impact.transfer.mergedLabels)],
+          [
+            t("settings.lifecycle.row.followsRemoved"),
             impact.transfer.subscriptions ? String(impact.transfer.subscriptions) : "",
           ],
           [
-            "Invitations",
+            t("settings.lifecycle.row.invitations"),
             impact.transfer.invitations
-              ? `${impact.transfer.invitations} pending ${impact.transfer.invitations === 1 ? "invitation drops" : "invitations drop"} the project`
+              ? t("settings.lifecycle.transferInvitations", { count: impact.transfer.invitations })
               : "",
           ],
         ]
       : [
-          ["Tickets", String(impact.tickets)],
-          ["Comments", String(impact.comments)],
-          ["Files", `${impact.attachments} · ${fileSize(impact.attachmentBytes)}`],
-          ["Kept", `${impact.events} activity entries and the ${project.key} prefix`],
+          [t("settings.lifecycle.row.tickets"), String(impact.tickets)],
+          [t("settings.lifecycle.row.comments"), String(impact.comments)],
+          [
+            t("settings.lifecycle.row.files"),
+            t("settings.lifecycle.files", {
+              count: impact.attachments,
+              size: fileSize(impact.attachmentBytes),
+            }),
+          ],
+          [
+            t("settings.lifecycle.row.kept"),
+            t("settings.lifecycle.keptProject", { count: impact.events, key: project.key }),
+          ],
         ];
 // Offered to administrators of the project's workspace who administer another one too.
 export function MoveProject({
@@ -200,10 +229,10 @@ export function MoveProject({
     <>
       <Button onClick={() => setOpen(true)}>
         <ArrowRightLeft />
-        Move
+        {t("settings.lifecycle.move")}
       </Button>
       <Modal
-        title={`Move ${project.name}`}
+        title={t("settings.lifecycle.moveTitle", { name: project.name })}
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
@@ -222,13 +251,17 @@ export function MoveProject({
               })
               .then(() => {
                 setOpen(false);
-                toast.success(`Moved to ${destination?.name ?? "the workspace"}`);
+                toast.success(
+                  destination
+                    ? t("settings.lifecycle.moved", { name: destination.name })
+                    : t("settings.lifecycle.movedUnnamed"),
+                );
               })
               .catch(() => {});
           }}
         >
           <Select
-            label="Destination workspace"
+            label={t("settings.lifecycle.destination")}
             value={target}
             onValueChange={(value) => {
               if (value) setTarget(value);
@@ -244,8 +277,8 @@ export function MoveProject({
           <FormActions
             error={transfer.error}
             pending={transfer.isPending}
-            submitLabel="Move project"
-            pendingLabel="Moving…"
+            submitLabel={t("settings.lifecycle.moveProject")}
+            pendingLabel={t("settings.lifecycle.moving")}
             submitDisabled={!impact.data || impact.data.blockers.length > 0}
             onCancel={() => setOpen(false)}
           />
@@ -259,8 +292,8 @@ export function ExportProjectRow({ project }: { project: Project }) {
   const [pending, setPending] = useState(false);
   return (
     <SettingRow
-      title="Export"
-      description="Tickets with their workflow, fields, labels, relationships, comments, evidence, and links as versioned JSON. Attachments and activity history stay here."
+      title={t("settings.lifecycle.export")}
+      description={t("settings.lifecycle.exportDescription")}
     >
       <Button
         disabled={pending}
@@ -276,7 +309,7 @@ export function ExportProjectRow({ project }: { project: Project }) {
         }}
       >
         <Download />
-        {pending ? "Exporting…" : "Export JSON"}
+        {pending ? t("settings.lifecycle.exporting") : t("settings.lifecycle.exportJson")}
       </Button>
     </SettingRow>
   );
@@ -317,23 +350,28 @@ function DeletionRow({
       if (!next) setTyped("");
     };
   return (
-    <SettingRow title="Delete" description={description}>
+    <SettingRow title={t("settings.lifecycle.delete")} description={description}>
       <Button variant="destructive" onClick={() => toggle(true)}>
         <Trash2 />
         {label}
       </Button>
-      <Modal title={`Delete ${name}`} open={open} onOpenChange={toggle} busy={pending}>
+      <Modal
+        title={t("settings.lifecycle.deleteTitle", { name })}
+        open={open}
+        onOpenChange={toggle}
+        busy={pending}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault();
             void onDelete(typed)
-              .then(() => toast.success(`${name} deleted`))
+              .then(() => toast.success(t("settings.lifecycle.deleted", { name })))
               .catch(() => {});
           }}
         >
           {summary}
           <Input
-            label={`Type ${confirm} to confirm`}
+            label={t("settings.lifecycle.typeToConfirm", { value: confirm })}
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             autoComplete="off"
@@ -346,7 +384,7 @@ function DeletionRow({
             error={error}
             pending={pending}
             submitLabel={label}
-            pendingLabel="Deleting…"
+            pendingLabel={t("settings.lifecycle.deleting")}
             submitDisabled={typed.trim().toLowerCase() !== confirm.toLowerCase() || !ready}
             onCancel={() => toggle(false)}
           />
@@ -366,8 +404,8 @@ export function DeleteProjectRow({ project }: { project: Project }) {
   });
   return (
     <DeletionRow
-      description={`Permanently removes tickets, comments, and files. Activity history stays, and ${project.key} is never reused.`}
-      label="Delete project"
+      description={t("settings.lifecycle.deleteProjectDescription", { key: project.key })}
+      label={t("settings.lifecycle.deleteProject")}
       name={project.name}
       confirm={project.key}
       open={open}
@@ -393,31 +431,49 @@ const workspaceRows =
   (workspace: Workspace) =>
   (impact: WorkspaceImpact): ImpactRows => [
     [
-      "Projects",
+      t("settings.lifecycle.row.projects"),
       impact.projects.length ? (
         <ul key="projects" className="m-0 list-none p-0">
           {impact.projects.map((project) => (
             <li key={project.id}>
-              {project.name} <span className="font-mono text-muted-foreground">{project.key}</span>
+              <span dir="auto">{project.name}</span>{" "}
+              <span className="font-mono text-muted-foreground">{project.key}</span>
               <span className="text-muted-foreground">
                 {" "}
-                · {counted(project.tickets, "ticket")}
-                {project.archived && " · archived"}
+                · {t("settings.tickets", { count: project.tickets })}
+                {project.archived && <> · {t("settings.lifecycle.archivedProject")}</>}
               </span>
             </li>
           ))}
         </ul>
       ) : (
-        "None"
+        t("common.state.none")
       ),
     ],
-    ["Tickets", String(impact.tickets)],
-    ["Comments", String(impact.comments)],
-    ["Files", `${impact.attachments} · ${fileSize(impact.attachmentBytes)}`],
-    ["Members", `${impact.members} lose access; their accounts stay`],
-    ["Invitations", impact.invitations ? `${impact.invitations} pending` : ""],
-    ["Shared labels", impact.labels ? String(impact.labels) : ""],
-    ["Kept", `${impact.events} activity entries and the ${workspace.slug} URL key`],
+    [t("settings.lifecycle.row.tickets"), String(impact.tickets)],
+    [t("settings.lifecycle.row.comments"), String(impact.comments)],
+    [
+      t("settings.lifecycle.row.files"),
+      t("settings.lifecycle.files", {
+        count: impact.attachments,
+        size: fileSize(impact.attachmentBytes),
+      }),
+    ],
+    [
+      t("settings.lifecycle.row.members"),
+      t("settings.lifecycle.membersLoseAccess", { count: impact.members }),
+    ],
+    [
+      t("settings.lifecycle.row.invitations"),
+      impact.invitations
+        ? t("settings.lifecycle.pendingInvitations", { count: impact.invitations })
+        : "",
+    ],
+    [t("settings.lifecycle.row.sharedLabels"), impact.labels ? String(impact.labels) : ""],
+    [
+      t("settings.lifecycle.row.kept"),
+      t("settings.lifecycle.keptWorkspace", { count: impact.events, slug: workspace.slug }),
+    ],
   ];
 // Workspace and account deletion ask for a sign-in within the last 15 minutes; an older session
 // signs in again and returns to the same page.
@@ -432,7 +488,7 @@ function SignInAgain({ error }: { error: unknown }) {
       }
     >
       <LogIn />
-      Sign in again
+      {t("settings.lifecycle.signInAgain")}
     </Button>
   );
 }
@@ -447,8 +503,8 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   });
   return (
     <DeletionRow
-      description="Permanently deletes every project in the workspace with its tickets, comments, and files, and removes its members. Accounts and activity history stay."
-      label="Delete workspace"
+      description={t("settings.lifecycle.deleteWorkspaceDescription")}
+      label={t("settings.lifecycle.deleteWorkspace")}
       name={workspace.name}
       confirm={workspace.slug}
       open={open}
@@ -472,29 +528,50 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   );
 }
 export const signInMethods = (providers: readonly string[]) =>
-  providers.map((provider) => signInMethodLabels[provider] ?? provider).join(", ") ||
-  "No linked sign-in methods";
+  formatList(providers.map((provider) => signInMethodLabels[provider] ?? provider)) ||
+  t("settings.lifecycle.noSignInMethods");
 const accountRows = (impact: AccountImpact): ImpactRows => [
-  ["Sign-in", signInMethods(impact.providers)],
-  ["Sessions", `${counted(impact.sessions, "session")} signed out`],
+  [t("settings.lifecycle.row.signIn"), signInMethods(impact.providers)],
   [
-    "Credentials",
-    impact.credentials ? `${counted(impact.credentials, "API key or app connection")} revoked` : "",
+    t("settings.lifecycle.row.sessions"),
+    t("settings.lifecycle.sessions", { count: impact.sessions }),
   ],
   [
-    "Devices",
-    impact.devices ? `${counted(impact.devices, "device or notification channel")} removed` : "",
+    t("settings.lifecycle.row.credentials"),
+    impact.credentials ? t("settings.lifecycle.credentials", { count: impact.credentials }) : "",
   ],
   [
-    "Access",
-    `${counted(impact.workspaces, "workspace")}${impact.projects ? ` and ${counted(impact.projects, "direct project")}` : ""} removed`,
+    t("settings.lifecycle.row.devices"),
+    impact.devices ? t("settings.lifecycle.devices", { count: impact.devices }) : "",
   ],
-  ["Claims", impact.claims ? `${counted(impact.claims, "claim")} released` : ""],
-  ["Imports", impact.imports ? `${counted(impact.imports, "import")} cancelled` : ""],
-  ["Profile", "Name, email, and photo erased"],
   [
-    "Kept",
-    `${counted(impact.tickets, "ticket")}, ${counted(impact.comments, "comment")}, and ${counted(impact.events, "activity entry", "activity entries")} shown as ${deletedAccountName}`,
+    t("settings.lifecycle.row.access"),
+    impact.projects
+      ? t("settings.lifecycle.accessBoth", {
+          workspaces: t("settings.lifecycle.workspaceCount", { count: impact.workspaces }),
+          projects: t("settings.lifecycle.directProjectCount", { count: impact.projects }),
+        })
+      : t("settings.lifecycle.accessWorkspaces", {
+          workspaces: t("settings.lifecycle.workspaceCount", { count: impact.workspaces }),
+        }),
+  ],
+  [
+    t("settings.lifecycle.row.claims"),
+    impact.claims ? t("settings.lifecycle.claims", { count: impact.claims }) : "",
+  ],
+  [
+    t("settings.lifecycle.row.imports"),
+    impact.imports ? t("settings.lifecycle.imports", { count: impact.imports }) : "",
+  ],
+  [t("settings.lifecycle.row.profile"), t("settings.lifecycle.profileErased")],
+  [
+    t("settings.lifecycle.row.kept"),
+    t("settings.lifecycle.keptAccount", {
+      tickets: t("settings.tickets", { count: impact.tickets }),
+      comments: t("settings.lifecycle.commentCount", { count: impact.comments }),
+      events: t("settings.lifecycle.activityCount", { count: impact.events }),
+      name: t("common.person.deleted"),
+    }),
   ],
 ];
 // One flow for deleting your own account and for an instance administrator deleting someone
@@ -516,8 +593,13 @@ export function DeleteAccountRow({
   });
   return (
     <DeletionRow
-      description={`Permanently removes ${own ? "your" : "this account's"} sign-in, sessions, keys, devices, memberships, and personal details. Tickets, comments, and activity stay and show as ${deletedAccountName}.`}
-      label="Delete account"
+      description={t(
+        own ? "settings.lifecycle.deleteOwnAccount" : "settings.lifecycle.deleteOtherAccount",
+        {
+          name: t("common.person.deleted"),
+        },
+      )}
+      label={t("settings.lifecycle.deleteAccount")}
       name={account.name}
       confirm={account.email}
       open={open}

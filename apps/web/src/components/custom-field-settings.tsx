@@ -35,6 +35,7 @@ import { SettingRow } from "./settings-layout.tsx";
 import { AccentColorPicker } from "./accent-color-picker.tsx";
 import { CustomFieldProperty, customFieldIcons, useCustomFields } from "./ticket-property.tsx";
 import { accentColor } from "../lib/accent-colors.ts";
+import { t } from "@kanvil/contracts/i18n";
 
 type Option = { id: string; name: string; color: LabelColor };
 type Draft = {
@@ -48,7 +49,6 @@ type Draft = {
   reassign: Record<string, string | null>;
 };
 const hasOptions = (type: CustomFieldType) => type === "select" || type === "multiselect";
-const ticketCount = (count: number) => `${count} ${count === 1 ? "ticket" : "tickets"}`;
 
 // The project's typed ticket fields, laid out like the label directory: one row per field with its
 // usage, order, and editor actions.
@@ -94,10 +94,14 @@ export function CustomFieldSettings({
   return (
     <section>
       <SectionHeading
-        title="Fields"
+        title={t("settings.fields.title")}
         action={
           canAdmin && (
-            <IconButton label="New field" variant="default" onClick={() => edit(null)}>
+            <IconButton
+              label={t("settings.fields.new")}
+              variant="default"
+              onClick={() => edit(null)}
+            >
               <Plus />
             </IconButton>
           )
@@ -116,14 +120,18 @@ export function CustomFieldSettings({
               title={
                 <span className="inline-flex min-w-0 items-center gap-2">
                   <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 break-words">{field.name}</span>
+                  <span dir="auto" className="min-w-0 break-words">
+                    {field.name}
+                  </span>
                 </span>
               }
               description={[
                 customFieldTypeLabels[field.type],
-                field.required && "Required",
+                field.required && t("settings.fields.required"),
                 field.defaultValue !== null &&
-                  `Default ${formatCustomFieldValue(field, field.defaultValue)}`,
+                  t("settings.fields.defaultValue", {
+                    value: formatCustomFieldValue(field, field.defaultValue),
+                  }),
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -136,35 +144,38 @@ export function CustomFieldSettings({
                 }}
                 className="text-xs whitespace-nowrap text-muted-foreground tabular-nums hover:text-foreground"
               >
-                {ticketCount(field.count)}
+                {t("settings.tickets", { count: field.count })}
               </Link>
               {canAdmin && (
                 <>
                   <IconButton
-                    label={`Move ${field.name} up`}
+                    label={t("settings.moveUp", { name: field.name })}
                     disabled={index === 0 || move.isPending}
                     onClick={() => place(field, list[index - 1], "before")}
                   >
                     <ArrowUp />
                   </IconButton>
                   <IconButton
-                    label={`Move ${field.name} down`}
+                    label={t("settings.moveDown", { name: field.name })}
                     disabled={index === list.length - 1 || move.isPending}
                     onClick={() => place(field, list[index + 1], "after")}
                   >
                     <ArrowDown />
                   </IconButton>
-                  <IconButton label={`Edit field ${field.name}`} onClick={() => edit(field)}>
+                  <IconButton
+                    label={t("settings.fields.editNamed", { name: field.name })}
+                    onClick={() => edit(field)}
+                  >
                     <Pencil />
                   </IconButton>
                   <Confirm
-                    label={`Delete field ${field.name}`}
+                    label={t("settings.fields.deleteNamed", { name: field.name })}
                     icon={<Trash2 />}
                     danger
                     description={
                       field.count
-                        ? `Delete ${field.name} and remove its values from ${ticketCount(field.count)}, including archived tickets? Saved views lose their filters on it.`
-                        : `Delete the unused field ${field.name}? Saved views lose their filters on it.`
+                        ? t("settings.fields.deleteUsed", { name: field.name, count: field.count })
+                        : t("settings.fields.deleteUnused", { name: field.name })
                     }
                     onConfirm={async () => {
                       await remove.mutateAsync({
@@ -172,7 +183,7 @@ export function CustomFieldSettings({
                         fieldId: field.id,
                         expectedVersion: field.version,
                       });
-                      toast.success("Field deleted");
+                      toast.success(t("settings.fields.deleted"));
                     }}
                   />
                 </>
@@ -181,10 +192,10 @@ export function CustomFieldSettings({
           );
         })
       ) : (
-        !fields.error && <EmptyState title="No fields yet" />
+        !fields.error && <EmptyState title={t("settings.fields.empty")} />
       )}
       <Modal
-        title={draft?.field ? "Edit field" : "New field"}
+        title={draft?.field ? t("settings.fields.edit") : t("settings.fields.new")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -231,7 +242,7 @@ export function CustomFieldSettings({
               void action
                 .then(() => {
                   setDraft(null);
-                  toast.success("Field saved");
+                  toast.success(t("settings.fields.saved"));
                 })
                 .catch(() => {});
             }}
@@ -269,7 +280,7 @@ function FieldEditor({
   const preview: CustomField = {
     id: draft.field?.id ?? "draft",
     projectId,
-    name: "Default",
+    name: t("settings.fields.default"),
     type: draft.type,
     options: draft.options,
     required: false,
@@ -305,7 +316,7 @@ function FieldEditor({
       }}
     >
       <Input
-        label="Field name"
+        label={t("settings.fields.name")}
         value={draft.name}
         onChange={(event) => onChange({ ...draft, name: event.target.value })}
         maxLength={60}
@@ -313,7 +324,7 @@ function FieldEditor({
         autoFocus
       />
       <Select
-        label="Type"
+        label={t("settings.fields.type")}
         value={draft.type}
         disabled={!!draft.field || busy}
         onValueChange={(value) => {
@@ -335,64 +346,72 @@ function FieldEditor({
       </Select>
       {choices && (
         <fieldset className="mb-4">
-          <legend className="mb-2 text-xs font-medium text-muted-foreground">Options</legend>
+          <legend className="mb-2 text-xs font-medium text-muted-foreground">
+            {t("settings.fields.options")}
+          </legend>
           <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {draft.options.map((option, index) => (
-              <li key={option.id} className="flex items-center gap-1">
-                <OptionColor
-                  name={option.name || `Option ${index + 1}`}
-                  value={option.color}
-                  disabled={busy}
-                  onChange={(color) =>
-                    setOptions(
-                      draft.options.map((item) =>
-                        item.id === option.id ? { ...item, color } : item,
-                      ),
-                    )
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <Input
-                    label={`Option ${index + 1}`}
-                    labelHidden
-                    value={option.name}
-                    maxLength={60}
-                    required
-                    onChange={(event) =>
+            {draft.options.map((option, index) => {
+              // An unnamed option goes by its place in the list.
+              const named = option.name || t("settings.fields.optionInline", { number: index + 1 });
+              return (
+                <li key={option.id} className="flex items-center gap-1">
+                  <OptionColor
+                    name={option.name || t("settings.fields.option", { number: index + 1 })}
+                    value={option.color}
+                    disabled={busy}
+                    onChange={(color) =>
                       setOptions(
                         draft.options.map((item) =>
-                          item.id === option.id ? { ...item, name: event.target.value } : item,
+                          item.id === option.id ? { ...item, color } : item,
                         ),
                       )
                     }
                   />
-                </div>
-                <IconButton
-                  label={`Move ${option.name || `option ${index + 1}`} up`}
-                  size="icon-sm"
-                  disabled={index === 0 || busy}
-                  onClick={() => swap(index, index - 1)}
-                >
-                  <ArrowUp />
-                </IconButton>
-                <IconButton
-                  label={`Move ${option.name || `option ${index + 1}`} down`}
-                  size="icon-sm"
-                  disabled={index === draft.options.length - 1 || busy}
-                  onClick={() => swap(index, index + 1)}
-                >
-                  <ArrowDown />
-                </IconButton>
-                <IconButton
-                  label={`Remove ${option.name || `option ${index + 1}`}`}
-                  size="icon-sm"
-                  disabled={busy}
-                  onClick={() => setOptions(draft.options.filter((item) => item.id !== option.id))}
-                >
-                  <X />
-                </IconButton>
-              </li>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      label={t("settings.fields.option", { number: index + 1 })}
+                      labelHidden
+                      value={option.name}
+                      maxLength={60}
+                      required
+                      onChange={(event) =>
+                        setOptions(
+                          draft.options.map((item) =>
+                            item.id === option.id ? { ...item, name: event.target.value } : item,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                  <IconButton
+                    label={t("settings.moveUp", { name: named })}
+                    size="icon-sm"
+                    disabled={index === 0 || busy}
+                    onClick={() => swap(index, index - 1)}
+                  >
+                    <ArrowUp />
+                  </IconButton>
+                  <IconButton
+                    label={t("settings.moveDown", { name: named })}
+                    size="icon-sm"
+                    disabled={index === draft.options.length - 1 || busy}
+                    onClick={() => swap(index, index + 1)}
+                  >
+                    <ArrowDown />
+                  </IconButton>
+                  <IconButton
+                    label={t("settings.fields.removeOption", { name: named })}
+                    size="icon-sm"
+                    disabled={busy}
+                    onClick={() =>
+                      setOptions(draft.options.filter((item) => item.id !== option.id))
+                    }
+                  >
+                    <X />
+                  </IconButton>
+                </li>
+              );
+            })}
           </ol>
           <Button
             variant="ghost"
@@ -404,33 +423,33 @@ function FieldEditor({
             }
           >
             <Plus />
-            Add option
+            {t("settings.fields.addOption")}
           </Button>
         </fieldset>
       )}
       {removed.map((option) => (
         <Select
           key={option.id}
-          label={`Tickets with ${option.name}`}
+          label={t("settings.fields.reassign", { name: option.name })}
           value={draft.reassign[option.id] ?? ""}
           onValueChange={(value) =>
             onChange({ ...draft, reassign: { ...draft.reassign, [option.id]: value || null } })
           }
         >
-          <SelectItem value="">Clear the value</SelectItem>
+          <SelectItem value="">{t("settings.fields.clearValue")}</SelectItem>
           {draft.options
             .filter((kept) => kept.name.trim())
             .map((kept) => (
               <SelectItem key={kept.id} value={kept.id}>
-                Move to {kept.name}
+                {t("settings.fields.moveTo", { name: kept.name })}
               </SelectItem>
             ))}
         </Select>
       ))}
       {draft.type !== "checkbox" && (
         <Check
-          label="Required"
-          description="New tickets need a value."
+          label={t("settings.fields.required")}
+          description={t("settings.fields.requiredDescription")}
           checked={draft.required}
           disabled={busy}
           onCheckedChange={(required) => onChange({ ...draft, required })}
@@ -448,7 +467,7 @@ function FieldEditor({
       <FormActions
         error={error}
         pending={busy}
-        submitLabel="Save field"
+        submitLabel={t("settings.fields.save")}
         submitDisabled={!draft.name.trim()}
         onCancel={onCancel}
       />
@@ -476,7 +495,7 @@ function OptionColor({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={`${name} color`}
+            aria-label={t("settings.fields.optionColor", { name })}
             className={tone.className}
             style={tone.style}
           />
@@ -485,7 +504,12 @@ function OptionColor({
         <span className="size-3 rounded-full bg-current" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] p-3 pb-0">
-        <AccentColorPicker label={`${name} color`} value={value} onChange={onChange} custom />
+        <AccentColorPicker
+          label={t("settings.fields.optionColor", { name })}
+          value={value}
+          onChange={onChange}
+          custom
+        />
       </PopoverContent>
     </Popover>
   );

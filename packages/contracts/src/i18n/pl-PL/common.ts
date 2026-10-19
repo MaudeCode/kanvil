@@ -1,0 +1,400 @@
+// Shared by web and native: the wording of contract values and the generic actions every screen
+// reuses. Keys follow the API values they present, which never change with the language.
+export default {
+  status: {
+    backlog: "Backlog",
+    todo: "Do zrobienia",
+    in_progress: "W toku",
+    in_review: "W przeglądzie",
+    done: "Gotowe",
+    cancelled: "Anulowane",
+  },
+  priority: {
+    urgent: "Pilny",
+    high: "Wysoki",
+    medium: "Średni",
+    low: "Niski",
+    none: "Brak priorytetu",
+  },
+  kind: {
+    feature: "Funkcja",
+    bug: "Błąd",
+    chore: "Prace porządkowe",
+    research: "Badanie",
+    documentation: "Dokumentacja",
+  },
+  difficulty: {
+    low: "Niska",
+    med: "Średnia",
+    high: "Wysoka",
+    none: "Brak trudności",
+  },
+  role: {
+    reader: "Tylko odczyt",
+    writer: "Może edytować",
+    admin: "Administrator",
+  },
+  permission: {
+    ticket: {
+      write: {
+        label: "Edycja zadań",
+        description:
+          "Tworzenie, edycja, przenoszenie, przejmowanie i komentowanie zadań; tworzenie projektów",
+      },
+      delete: { label: "Usuwanie zadań", description: "Trwałe usuwanie zadań" },
+    },
+    project: {
+      manage: {
+        label: "Zarządzanie projektami",
+        description: "Szczegóły projektu, przepływ pracy, etykiety, pola, integracje i cykl życia",
+      },
+    },
+    member: {
+      manage: {
+        label: "Zarządzanie członkami",
+        description: "Dodawanie, zmiana i usuwanie członków",
+      },
+    },
+    invitation: {
+      manage: {
+        label: "Zarządzanie zaproszeniami",
+        description: "Zapraszanie osób przez e-mail",
+      },
+    },
+    sharing: {
+      manage: {
+        label: "Zarządzanie udostępnianiem",
+        description: "Publiczne linki tylko do odczytu i kanały kalendarza",
+      },
+    },
+    workspace: {
+      manage: {
+        label: "Zarządzanie przestrzenią roboczą",
+        description: "Szczegóły przestrzeni roboczej, wspólne etykiety i role",
+      },
+    },
+  },
+  customFieldType: {
+    text: "Tekst",
+    number: "Liczba",
+    date: "Data",
+    checkbox: "Pole wyboru",
+    select: "Lista wyboru",
+    multiselect: "Wielokrotny wybór",
+  },
+  customField: {
+    removedOption: "Usunięta opcja",
+    checked: "Tak",
+  },
+  filterField: {
+    status: "Status",
+    priority: "Priorytet",
+    kind: "Rodzaj",
+    difficulty: "Trudność",
+    label: "Etykieta",
+    assigneeId: "Osoba przypisana",
+    customField: "Pole",
+  },
+  sort: {
+    priority: "Priorytet",
+    updated: "Ostatnio zaktualizowane",
+    created: "Ostatnio utworzone",
+    title: "Tytuł",
+    labels: "Etykiety",
+    due: "Termin",
+    start: "Data rozpoczęcia",
+    number: "Numer zadania",
+    status: "Status",
+    difficulty: "Trudność",
+    kind: "Rodzaj",
+    assignee: "Osoba przypisana",
+    manual: "Ręcznie",
+  },
+  due: {
+    overdue: "Po terminie",
+    today: "Termin dzisiaj",
+    week: "Termin w tym tygodniu",
+    scheduled: "Ma termin",
+    none: "Bez terminu",
+  },
+  relation: {
+    blocks: { outgoing: "Blokuje", incoming: "Jest blokowane przez" },
+    related: { outgoing: "Powiązane z", incoming: "Powiązane z" },
+    duplicate: { outgoing: "Duplikuje", incoming: "Jest duplikowane przez" },
+    causes: { outgoing: "Powoduje", incoming: "Jest powodowane przez" },
+    clones: { outgoing: "Klonuje", incoming: "Jest klonowane przez" },
+    implements: { outgoing: "Implementuje", incoming: "Jest implementowane przez" },
+    reviews: { outgoing: "Przegląda", incoming: "Jest przeglądane przez" },
+  },
+  remoteKind: {
+    branch: "Gałąź",
+    pull_request: "Pull request",
+    issue: "Zgłoszenie",
+  },
+  notificationCategory: {
+    assignment: "Przypisania",
+    status: "Zmiany statusu",
+    comment: "Komentarze",
+    mention: "Wzmianki",
+    update: "Inne aktualizacje",
+    due_soon: "Wkrótce termin",
+    overdue: "Po terminie",
+  },
+  destinationEvent: {
+    created: "Nowe zadania",
+  },
+  deliveryKind: {
+    email: "E-mail",
+    webhook: "Webhook",
+  },
+  // A code host's word for a change request, and what each repository trigger reads as for it.
+  change: {
+    pull_request: {
+      name: "Pull request",
+      opened: "Pull request otwarty",
+      draft: "Wersja robocza pull requesta",
+      merged: "Pull request scalony",
+      closed: "Pull request zamknięty bez scalenia",
+    },
+    merge_request: {
+      name: "Merge request",
+      opened: "Merge request otwarty",
+      draft: "Wersja robocza merge requesta",
+      merged: "Merge request scalony",
+      closed: "Merge request zamknięty bez scalenia",
+    },
+    branchCreated: "Gałąź utworzona",
+  },
+  issueLinkState: {
+    active: "Synchronizacja",
+    paused: "Wstrzymane",
+    review: "Wymaga przeglądu",
+    creating: "Tworzenie zgłoszenia",
+    unknown: "Utworzenie niepotwierdzone",
+  },
+  importStatus: {
+    previewed: "Gotowe do importu",
+    running: "Importowanie",
+    completed: "Zaimportowano",
+    failed: "Niepowodzenie",
+    cancelled: "Anulowano",
+  },
+  importProvider: {
+    linear: {
+      project: "Zespół",
+      setup:
+        "Utwórz osobisty klucz API w Linear w sekcji Settings › Security & access; wystarczy dostęp do odczytu.",
+    },
+    jira: {
+      project: "Projekt",
+      setup:
+        "Jira Cloud loguje za pomocą adresu e-mail konta i tokenu API z id.atlassian.com; Data Center i Server używają osobistego tokenu dostępu. Wystarczy uprawnienie do przeglądania projektu.",
+    },
+    trello: {
+      project: "Tablica",
+      setup:
+        "Użyj klucza API Power-Upa, którym administrujesz na trello.com/power-ups/admin, oraz wygenerowanego dla niego tokenu; wystarczy dostęp do odczytu.",
+    },
+    plane: {
+      project: "Projekt",
+      setup:
+        "Utwórz osobisty token dostępu w Plane w sekcji Profile settings › Personal access tokens. Adres API Plane Cloud to https://api.plane.so; klucz URL przestrzeni roboczej to pierwsza część jej adresu internetowego.",
+    },
+    planka: {
+      project: "Tablica",
+      setup:
+        "Zaloguj się kontem PLANKA, które może otworzyć tablicę; sesja otwarta przez Kanvil kończy się wraz z odczytem. Administratorzy PLANKA 2 mogą zamiast tego wydawać klucze API.",
+    },
+    kaneo: {
+      project: "Projekt",
+      setup: "Utwórz klucz API w Kaneo w sekcji Settings › Account › Developer.",
+    },
+  },
+  plankaSignIn: {
+    password: "Nazwa użytkownika i hasło",
+    api_key: "Klucz API",
+  },
+  jiraEdition: {
+    cloud: "Cloud",
+    data_center: "Data Center lub Server",
+  },
+  event: {
+    label: {
+      created: "Etykieta utworzona",
+      updated: "Etykieta zaktualizowana",
+      deleted: "Etykieta usunięta",
+    },
+    workflow: {
+      created: "Dodano stan przepływu pracy",
+      updated: "Zmieniono stan przepływu pracy",
+      deleted: "Usunięto stan przepływu pracy",
+    },
+    custom_field: {
+      created: "Pole utworzone",
+      updated: "Pole zaktualizowane",
+      deleted: "Pole usunięte",
+    },
+    ticket: {
+      created: "Zadanie utworzone",
+      updated: "Zadanie zaktualizowane",
+      deleted: "Zadanie usunięte",
+      moved: "Przeniesione z innego projektu",
+      moved_away: "Przeniesione do innego projektu",
+      due_soon: "Wkrótce termin",
+      overdue: "Po terminie",
+      claimed: "Praca przejęta",
+    },
+    claim: {
+      renewed: "Przejęcie odnowione",
+      released: "Przejęcie zwolnione",
+      recovered: "Przejęcie odzyskane",
+    },
+    comment: {
+      created: "Dodano komentarz",
+      updated: "Edytowano komentarz",
+      deleted: "Usunięto komentarz",
+    },
+    relation: { added: "Dodano powiązanie", removed: "Usunięto powiązanie" },
+    attachment: { created: "Załączono plik", deleted: "Usunięto plik" },
+    evidence: { added: "Załączono dowód" },
+    resource: { added: "Dodano link", updated: "Edytowano link", removed: "Usunięto link" },
+    calendar_feed: {
+      created: "Utworzono kanał kalendarza",
+      revoked: "Odwołano kanał kalendarza",
+    },
+    project: {
+      created: "Projekt utworzony",
+      updated: "Projekt zaktualizowany",
+      archived: "Projekt zarchiwizowany",
+      restored: "Projekt przywrócony",
+      transferred: "Projekt przeniesiony do innej przestrzeni roboczej",
+      deleted: "Projekt usunięty",
+    },
+    membership: { updated: "Zmieniono dostęp do projektu" },
+    workspace: { owner_changed: "Zmieniono właściciela przestrzeni roboczej" },
+    role: { created: "Rola utworzona", updated: "Rola zmieniona", deleted: "Rola usunięta" },
+    invitation: { updated: "Zmieniono zaproszenie" },
+    destination: {
+      created: "Dodano miejsce docelowe",
+      updated: "Zmieniono miejsce docelowe",
+      deleted: "Usunięto miejsce docelowe",
+    },
+    repository: {
+      connected: "Połączono repozytorium",
+      updated: "Zmieniono połączenie z repozytorium",
+      disconnected: "Odłączono repozytorium",
+      received: "Odebrano webhook repozytorium",
+    },
+    issue_link: { updated: "Zmieniono synchronizację zgłoszenia" },
+  },
+  // Other languages show these for the error codes they name; English shows the server's own,
+  // more specific message.
+  error: {
+    network: "Nie można połączyć się z Kanvil. Sprawdź połączenie i spróbuj ponownie.",
+    fallback: "Nie udało się wykonać żądania",
+    input: "Dane wejściowe",
+    code: {
+      unauthorized: "Zaloguj się, aby kontynuować.",
+      session_required: "Ta czynność wymaga zalogowanego konta.",
+      account_disabled: "To konto jest wyłączone.",
+      forbidden: "Brak uprawnień do wykonania tej czynności.",
+      insufficient_scope: "To poświadczenie nie pozwala na tę czynność.",
+      workspace_scope_required: "Ta czynność wymaga konta z dostępem do przestrzeni roboczej.",
+      invalid_origin: "To źródło nie jest dozwolone.",
+      not_found: "Nie znaleziono tego elementu lub nie masz do niego dostępu.",
+      version_conflict: "To zmieniło się od czasu wczytania. Odśwież i spróbuj ponownie.",
+      claim_conflict: "To zadanie jest przejęte przez innego wykonawcę.",
+      idempotency_conflict: "To żądanie zostało już użyte dla innej zmiany.",
+      project_archived: "Przywróć zarchiwizowany projekt, zanim go zmienisz.",
+      rate_limited: "Zbyt wiele zmian w krótkim czasie. Odczekaj i spróbuj ponownie.",
+      snapshot_required: "Kanał na żywo jest opóźniony. Odśwież, aby kontynuować.",
+      request_failed: "Nie udało się wykonać żądania",
+    },
+  },
+  // Generic words and actions any screen may use.
+  action: {
+    add: "Dodaj",
+    apply: "Zastosuj",
+    back: "Wstecz",
+    cancel: "Anuluj",
+    clear: "Wyczyść",
+    close: "Zamknij",
+    confirm: "Potwierdź",
+    continue: "Kontynuuj",
+    copy: "Kopiuj",
+    create: "Utwórz",
+    delete: "Usuń",
+    done: "Gotowe",
+    edit: "Edytuj",
+    open: "Otwórz",
+    remove: "Usuń",
+    rename: "Zmień nazwę",
+    reset: "Resetuj",
+    retry: "Ponów",
+    save: "Zapisz",
+    search: "Szukaj",
+  },
+  state: {
+    copied: "Skopiowano",
+    loading: "Wczytywanie…",
+    saved: "Zapisano",
+    saving: "Zapisywanie…",
+    none: "Brak",
+    unassigned: "Nieprzypisane",
+  },
+  evidenceKind: {
+    pull_request: "Pull request",
+    test: "Test",
+    review: "Przegląd",
+    deployment: "Wdrożenie",
+    device: "Urządzenie",
+    other: "Inne",
+  },
+  evidenceOutcome: {
+    reported: "Zgłoszono",
+    pending: "Oczekuje",
+    passed: "Zaliczono",
+    failed: "Niezaliczono",
+  },
+  // Why a ticket is not ready for agent work, keyed by the server's reason code.
+  readinessReason: {
+    project_archived: "Projekt jest zarchiwizowany",
+    not_open: "Zadanie musi być w stanie Do zrobienia i nie może być zarchiwizowane",
+    not_enabled: "Praca agentów nie została włączona",
+    missing_description: "Dodaj opis",
+    missing_acceptance_criteria: "Dodaj kryteria akceptacji",
+    missing_difficulty: "Wybierz trudność",
+    duplicate: "To zadanie jest oznaczone jako duplikat",
+    claim_recovery_required:
+      "Przed odzyskaniem własności potwierdź, że poprzedni wykonawca zakończył pracę",
+    claimed: "Przejęte przez: {{worker}}",
+    dependency: "{{key}} nie jest ukończone",
+  },
+  person: {
+    deleted: "Usunięte konto",
+    former: "Były członek",
+  },
+  signIn: {
+    codeTitle: "Zaloguj się kodem",
+    resetTitle: "Resetowanie hasła",
+    codeSent: "Jeśli {{email}} ma konto, kod jest już w drodze. Wygasa za 10 minut.",
+    code: "Kod",
+    newPassword: "Nowe hasło",
+    sendCode: "Wyślij kod e-mailem",
+    back: "Wróć do logowania",
+    resend: "Wyślij kod ponownie",
+    resent: "Kod wysłany ponownie",
+    emailCode: "Wyślij kod logowania e-mailem",
+    forgot: "Nie pamiętasz hasła?",
+    resetDone: "Hasło zostało zresetowane. Zaloguj się nowym hasłem.",
+    resetDoneTitle: "Hasło zresetowane",
+    resetDoneBody: "Zaloguj się nowym hasłem.",
+    invalidCode:
+      "Ten kod jest nieprawidłowy, został już użyty lub wygasł. Wyślij go ponownie, aby otrzymać prawidłowy kod.",
+    localPassword: "Hasło lokalne",
+  },
+  language: {
+    label: "Język",
+    system: "Domyślny systemowy",
+  },
+};

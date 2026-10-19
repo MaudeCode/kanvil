@@ -26,6 +26,8 @@ import {
 } from "../ui.tsx";
 import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
+import { t, formatList } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 
 const lifetimes = [1, 7, 14, 30] as const;
 type Sent = { invitation: Invitation; url: string; emailed: boolean };
@@ -45,10 +47,10 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
   return (
     <section className="pt-8">
       <SectionHeading
-        title="Invitations"
+        title={t("settings.invitations.title")}
         action={
           <IconButton
-            label="Invite by email"
+            label={t("settings.invitations.invite")}
             variant="default"
             onClick={() => {
               create.reset();
@@ -77,24 +79,27 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
                   <span>
                     {roleLabels[invitation.role]} ·{" "}
                     {invitation.projects
-                      ? invitation.projects.map((project) => project.name).join(", ") ||
-                        "Removed projects"
-                      : "Whole workspace"}
+                      ? formatList(invitation.projects.map((project) => project.name)) ||
+                        t("settings.invitations.removedProjects")
+                      : t("settings.invitations.wholeWorkspace")}
                   </span>
                   {invitation.status === "expired" ? (
                     <Badge variant="outline" className="font-normal text-(--warning)">
-                      Expired
+                      {t("settings.invitations.expired")}
                     </Badge>
                   ) : (
                     <span>
-                      Expires <RelativeTime value={invitation.expiresAt} />
+                      <Trans
+                        i18nKey="settings.invitations.expires"
+                        components={{ time: <RelativeTime value={invitation.expiresAt} /> }}
+                      />
                     </span>
                   )}
                 </span>
               </ItemContent>
               <ItemActions>
                 <IconButton
-                  label={`Resend invitation to ${invitation.email}`}
+                  label={t("settings.invitations.resend", { email: invitation.email })}
                   disabled={resend.isPending}
                   onClick={() => {
                     void resend
@@ -110,10 +115,12 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
                   <Send />
                 </IconButton>
                 <Confirm
-                  label="Revoke invitation"
+                  label={t("settings.invitations.revoke")}
                   icon={<Trash2 />}
                   danger
-                  description={`The link sent to ${invitation.email} will stop working.`}
+                  description={t("settings.invitations.revokeDescription", {
+                    email: invitation.email,
+                  })}
                   onConfirm={() =>
                     revoke
                       .mutateAsync({
@@ -121,7 +128,7 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
                         invitationId: invitation.id,
                         expectedVersion: invitation.version,
                       })
-                      .then(() => toast.success("Invitation revoked"))
+                      .then(() => toast.success(t("settings.invitations.revoked")))
                   }
                 />
               </ItemActions>
@@ -129,10 +136,10 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
           ))}
         </ItemGroup>
       ) : (
-        <EmptyState title="No pending invitations" className="py-8" />
+        <EmptyState title={t("settings.invitations.empty")} className="py-8" />
       )}
       <Modal
-        title="Invite by email"
+        title={t("settings.invitations.invite")}
         open={inviting}
         onOpenChange={setInviting}
         busy={create.isPending}
@@ -156,8 +163,14 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
               .catch(() => {});
           }}
         >
-          <Input label="Email" name="email" type="email" required autoFocus />
-          <Select label="Role" name="role" defaultValue="writer">
+          <Input
+            label={t("settings.invitations.email")}
+            name="email"
+            type="email"
+            required
+            autoFocus
+          />
+          <Select label={t("settings.invitations.role")} name="role" defaultValue="writer">
             {roles.map((role) => (
               <SelectItem key={role} value={role}>
                 {roleLabels[role]}
@@ -165,16 +178,18 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
             ))}
           </Select>
           <Select
-            label="Access"
+            label={t("settings.invitations.access")}
             value={scope}
             onValueChange={(value) => setScope(value === "projects" ? "projects" : "workspace")}
           >
-            <SelectItem value="workspace">Whole workspace</SelectItem>
-            <SelectItem value="projects">Selected projects</SelectItem>
+            <SelectItem value="workspace">{t("settings.invitations.wholeWorkspace")}</SelectItem>
+            <SelectItem value="projects">{t("settings.invitations.selectedProjects")}</SelectItem>
           </Select>
           {scope === "projects" && (
             <fieldset className="mb-4">
-              <legend className="mb-1 text-sm font-medium">Projects</legend>
+              <legend className="mb-1 text-sm font-medium">
+                {t("settings.invitations.projects")}
+              </legend>
               {choices.length ? (
                 choices.map((project) => (
                   <Check
@@ -191,32 +206,36 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
                   />
                 ))
               ) : (
-                <p className="m-0 text-sm text-muted-foreground">This workspace has no projects.</p>
+                <p className="m-0 text-sm text-muted-foreground">
+                  {t("settings.invitations.noProjects")}
+                </p>
               )}
             </fieldset>
           )}
-          <Select label="Link expires" name="expires" defaultValue="7">
+          <Select label={t("settings.invitations.linkExpires")} name="expires" defaultValue="7">
             {lifetimes.map((days) => (
               <SelectItem key={days} value={String(days)}>
-                {days === 1 ? "In 1 day" : `In ${days} days`}
+                {t("settings.invitations.inDays", { count: days })}
               </SelectItem>
             ))}
           </Select>
           <FormActions
             error={create.error}
             pending={create.isPending}
-            submitLabel="Invite"
+            submitLabel={t("settings.invitations.submit")}
             submitDisabled={scope === "projects" && !selected.length}
             onCancel={() => setInviting(false)}
           />
         </form>
       </Modal>
       <Modal
-        title="Invitation link"
+        title={t("settings.invitations.link")}
         description={
           sent?.emailed
-            ? `Emailed to ${sent.invitation.email}. The link works once, for that address.`
-            : `Email is not configured on this instance. Send this link to ${sent?.invitation.email ?? "the recipient"}; it works once, for that address.`
+            ? t("settings.invitations.emailed", { email: sent.invitation.email })
+            : sent
+              ? t("settings.invitations.notEmailed", { email: sent.invitation.email })
+              : t("settings.invitations.notEmailedUnknown")
         }
         open={!!sent}
         onOpenChange={(open) => {
@@ -227,18 +246,18 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1">
               <Input
-                label="Invitation link"
+                label={t("settings.invitations.link")}
                 labelHidden
                 value={sent.url}
                 readOnly
                 onFocus={(event) => event.currentTarget.select()}
               />
             </div>
-            <CopyButton label="Copy invitation link" value={sent.url} />
+            <CopyButton label={t("settings.invitations.copyLink")} value={sent.url} />
           </div>
         )}
         <ModalActions>
-          <Button onClick={() => setSent(null)}>Done</Button>
+          <Button onClick={() => setSent(null)}>{t("common.action.done")}</Button>
         </ModalActions>
       </Modal>
     </section>

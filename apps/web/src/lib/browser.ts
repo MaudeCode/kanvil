@@ -1,3 +1,4 @@
+import { t } from "@kanvil/contracts/i18n";
 export async function copyText(value: string) {
   try {
     if (navigator.clipboard) {
@@ -15,8 +16,7 @@ export async function copyText(value: string) {
   document.body.append(area);
   try {
     area.select();
-    if (!document.execCommand("copy"))
-      throw new Error("Copy failed. Select the text and copy it manually.");
+    if (!document.execCommand("copy")) throw new Error(t("shell.browser.copyFailed"));
   } finally {
     area.remove();
     if (previous instanceof HTMLElement) previous.focus();
@@ -34,7 +34,7 @@ export function downloadFile(name: string, text: string, type = "application/jso
 export function blobToBase64(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.addEventListener("error", () => reject(new Error("The file could not be read")), {
+    reader.addEventListener("error", () => reject(new Error(t("shell.browser.readFailed"))), {
       once: true,
     });
     reader.addEventListener(
@@ -42,7 +42,7 @@ export function blobToBase64(blob: Blob) {
       () =>
         typeof reader.result === "string"
           ? resolve(reader.result.slice(reader.result.indexOf(",") + 1))
-          : reject(new Error("The file could not be encoded")),
+          : reject(new Error(t("shell.browser.encodeFailed"))),
       { once: true },
     );
     reader.readAsDataURL(blob);
@@ -63,7 +63,7 @@ export async function prepareImage(
     size?: number;
   } = {},
 ) {
-  if (file.size > 10000000) throw new Error("Choose an image smaller than 10 MB.");
+  if (file.size > 10000000) throw new Error(t("shell.browser.imageTooBig"));
   const bitmap = await createImageBitmap(file);
   try {
     const canvas = document.createElement("canvas");
@@ -76,7 +76,7 @@ export async function prepareImage(
     canvas.width = fit === "inside" ? width : size;
     canvas.height = fit === "inside" ? height : size;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("This browser cannot resize the image.");
+    if (!context) throw new Error(t("shell.browser.cannotResize"));
     context.drawImage(
       bitmap,
       (canvas.width - width) / 2,
@@ -87,15 +87,14 @@ export async function prepareImage(
     for (const quality of [0.9, 0.75, 0.6, 0.45]) {
       const blob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
-          (value) =>
-            value ? resolve(value) : reject(new Error("The image could not be prepared.")),
+          (value) => (value ? resolve(value) : reject(new Error(t("shell.browser.prepareFailed")))),
           format,
           quality,
         ),
       );
       if (blob.size <= 500000) return { contentType: format, data: await blobToBase64(blob) };
     }
-    throw new Error("This image stays too large after resizing. Choose a simpler image.");
+    throw new Error(t("shell.browser.stillTooLarge"));
   } finally {
     bitmap.close();
   }

@@ -20,7 +20,9 @@ import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { type Ticket, ApiError } from "@kanvil/contracts";
+import { Trans } from "react-i18next";
+import { type Ticket, ApiError, readinessReasonText } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api, date, ActorName, useProjectAccess, useOperation } from "./data.tsx";
 import {
   Button,
@@ -88,7 +90,7 @@ export function TicketPreviewSheet({
       }}
     >
       <SheetContent
-        aria-label="Ticket preview"
+        aria-label={t("detail.page.preview")}
         showCloseButton={false}
         // The list stays readable beside the preview, so the backdrop only dims it.
         overlayClassName="supports-backdrop-filter:backdrop-blur-none"
@@ -105,9 +107,9 @@ export function TicketPreviewSheet({
                 preview={{ order, open: onOpen, close: onClose }}
               />
             ) : (
-              <EmptyState title="Ticket unavailable">
-                <p>The link does not name the ticket's project.</p>
-                <Button onClick={onClose}>Close preview</Button>
+              <EmptyState title={t("detail.page.unavailable")}>
+                <p>{t("detail.page.noProject")}</p>
+                <Button onClick={onClose}>{t("detail.page.closePreview")}</Button>
               </EmptyState>
             ))}
         </div>
@@ -176,13 +178,13 @@ export function TicketDetail({
     );
   if (!result.data || !ticket || gone)
     return gone ? (
-      <EmptyState title="Ticket unavailable">
-        <p>This ticket was deleted or you no longer have access.</p>
+      <EmptyState title={t("detail.page.unavailable")}>
+        <p>{t("detail.page.gone")}</p>
         {preview ? (
-          <Button onClick={preview.close}>Close preview</Button>
+          <Button onClick={preview.close}>{t("detail.page.closePreview")}</Button>
         ) : (
           <Button render={<Link to="/projects/$projectId" params={{ projectId }} />}>
-            Back to tickets
+            {t("detail.page.backToTickets")}
           </Button>
         )}
       </EmptyState>
@@ -194,7 +196,7 @@ export function TicketDetail({
             void result.refetch();
           }}
         >
-          Retry
+          {t("common.action.retry")}
         </Button>
       </>
     );
@@ -214,7 +216,7 @@ export function TicketDetail({
                   render={<Link to="/projects/$projectId" params={{ projectId }} />}
                 >
                   <ArrowLeft />
-                  Tickets
+                  {t("detail.page.tickets")}
                 </Button>
               )
             }
@@ -223,19 +225,19 @@ export function TicketDetail({
               {position >= 0 && (
                 <div className="mr-1 flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums">
                   <IconButton
-                    label="Previous ticket"
-                    title="Previous ticket (K)"
+                    label={t("detail.page.previousTicket")}
+                    title={t("detail.page.previousTicketShortcut")}
                     disabled={position === 0}
                     onClick={() => step(-1)}
                   >
                     <ChevronUp />
                   </IconButton>
                   <span>
-                    {position + 1} / {order.length}
+                    {t("detail.page.position", { position: position + 1, total: order.length })}
                   </span>
                   <IconButton
-                    label="Next ticket"
-                    title="Next ticket (J)"
+                    label={t("detail.page.nextTicket")}
+                    title={t("detail.page.nextTicketShortcut")}
                     disabled={position === order.length - 1}
                     onClick={() => step(1)}
                   >
@@ -244,12 +246,16 @@ export function TicketDetail({
                 </div>
               )}
               <IconButton
-                label={following ? "Unsubscribe" : "Subscribe"}
+                label={following ? t("detail.page.unsubscribe") : t("detail.page.subscribe")}
                 disabled={subscribe.isPending}
                 onClick={() => {
                   void subscribe
                     .mutateAsync({ projectId, ticketId: ticket.id, enabled: !following })
-                    .then(() => toast.success(following ? "Unsubscribed" : "Subscribed to updates"))
+                    .then(() =>
+                      toast.success(
+                        following ? t("detail.page.unsubscribed") : t("detail.page.subscribed"),
+                      ),
+                    )
                     .catch(reportError);
                 }}
               >
@@ -264,34 +270,38 @@ export function TicketDetail({
                 <copyLink.icon />
               </IconButton>
               <IconButton
-                label={ticket.archived ? "Unarchive ticket" : "Archive ticket"}
+                label={ticket.archived ? t("detail.page.unarchive") : t("detail.page.archive")}
                 disabled={!editable}
                 onClick={() => {
                   void change({ archived: !ticket.archived }).then((saved) => {
                     if (saved)
-                      toast.success(ticket.archived ? "Ticket unarchived" : "Ticket archived");
+                      toast.success(
+                        ticket.archived
+                          ? t("detail.page.unarchivedToast")
+                          : t("detail.page.archivedToast"),
+                      );
                   });
                 }}
               >
                 {ticket.archived ? <ArchiveRestore /> : <Archive />}
               </IconButton>
               <IconButton
-                label="Edit ticket"
-                title="Edit ticket (E)"
+                label={t("detail.page.edit")}
+                title={t("detail.page.editShortcut")}
                 disabled={!access.canWrite}
                 onClick={() => setEditing(true)}
               >
                 <Pencil />
               </IconButton>
               <TicketContextMenu ticket={ticket} variant="dropdown" onEdit={() => setEditing(true)}>
-                <Button variant="ghost" size="icon" aria-label="Ticket actions">
+                <Button variant="ghost" size="icon" aria-label={t("detail.page.actions")}>
                   <MoreHorizontal />
                 </Button>
               </TicketContextMenu>
               {preview && (
                 <>
                   <IconButton
-                    label="Open in full page"
+                    label={t("detail.page.openFullPage")}
                     render={
                       <Link
                         to="/projects/$projectId/tickets/$ticketId"
@@ -301,7 +311,11 @@ export function TicketDetail({
                   >
                     <Maximize2 />
                   </IconButton>
-                  <IconButton label="Close preview" shortcut="Esc" onClick={preview.close}>
+                  <IconButton
+                    label={t("detail.page.closePreview")}
+                    shortcut="Esc"
+                    onClick={preview.close}
+                  >
                     <X />
                   </IconButton>
                 </>
@@ -315,13 +329,13 @@ export function TicketDetail({
                   variant="ghost"
                   size="xs"
                   className="-ml-2 gap-1.5 font-mono text-xs text-muted-foreground"
-                  title="Copy ticket key"
+                  title={t("detail.page.copyKey")}
                   onClick={() => {
                     void copyText(ticket.key)
                       .then(() => {
                         setCopied(true);
                         setTimeout(() => setCopied(false), 1500);
-                        toast.success(`${ticket.key} copied`);
+                        toast.success(t("detail.page.keyCopied", { key: ticket.key }));
                       })
                       .catch(reportError);
                   }}
@@ -334,7 +348,7 @@ export function TicketDetail({
                   value={statusValue(ticket)}
                   projectId={projectId}
                 />
-                {ticket.archived && <strong>Archived</strong>}
+                {ticket.archived && <strong>{t("detail.page.archived")}</strong>}
                 {pending && <Spinner className="size-3.5 text-muted-foreground" />}
               </div>
               {preview ? (
@@ -348,23 +362,23 @@ export function TicketDetail({
           </TicketContextMenu>
           <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
             <section>
-              <h2>Description</h2>
+              <h2>{t("detail.field.description")}</h2>
               <Markdown
                 {...(editable
                   ? { onChange: (description: string) => change({ description }) }
                   : {})}
               >
-                {ticket.description || "_No description_"}
+                {ticket.description || t("detail.page.noDescription")}
               </Markdown>
             </section>
             <section>
-              <h2>Acceptance criteria</h2>
+              <h2>{t("detail.field.acceptanceCriteria")}</h2>
               <Markdown
                 {...(editable
                   ? { onChange: (acceptanceCriteria: string) => change({ acceptanceCriteria }) }
                   : {})}
               >
-                {ticket.acceptanceCriteria || "_No acceptance criteria_"}
+                {ticket.acceptanceCriteria || t("detail.page.noAcceptanceCriteria")}
               </Markdown>
             </section>
           </div>
@@ -373,9 +387,9 @@ export function TicketDetail({
             className="mt-8 min-w-0 [&_[data-slot=tabs-content]>section]:border-0 [&_[data-slot=tabs-content]>section]:pt-0"
           >
             <TabsList variant="line" className="mb-5">
-              <TabsTrigger value="discussion">Discussion</TabsTrigger>
-              <TabsTrigger value="evidence">Evidence</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
+              <TabsTrigger value="discussion">{t("detail.section.discussion")}</TabsTrigger>
+              <TabsTrigger value="evidence">{t("detail.section.evidence")}</TabsTrigger>
+              <TabsTrigger value="activity">{t("detail.section.activity")}</TabsTrigger>
             </TabsList>
             <TabsContent value="discussion" className="animate-in fade-in-0 duration-150">
               <Discussion ticket={ticket} />
@@ -391,9 +405,9 @@ export function TicketDetail({
         </div>
         <aside
           className="min-w-0 border-l pl-5 @max-[850px]:border-l-0 @max-[850px]:pl-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0 @max-[850px]:[&>section:first-child]:border-t @max-[850px]:[&>section:first-child]:pt-6 [&_h2]:text-xs [&_h2]:font-medium [&_h2]:text-muted-foreground [&_p]:text-xs [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:text-xs [&_ul]:leading-relaxed [&_ul]:text-muted-foreground"
-          aria-label="Ticket coordination"
+          aria-label={t("detail.page.coordination")}
         >
-          <section aria-label="Properties" className="ticket-properties">
+          <section aria-label={t("detail.page.properties")} className="ticket-properties">
             <TicketProperty
               variant="row"
               property="status"
@@ -463,32 +477,40 @@ export function TicketDetail({
               onChange={(fieldId, value) => void change({ customFields: { [fieldId]: value } })}
             />
             <dl className="mt-4 grid grid-cols-[80px_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t pt-4 text-xs [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:wrap-anywhere [&_dt]:text-muted-foreground">
-              <dt>Created</dt>
+              <dt>{t("detail.page.created")}</dt>
               <dd>
                 <ActorName projectId={projectId} actorId={ticket.createdBy} />
                 {" · "}
                 <RelativeTime value={ticket.createdAt} />
               </dd>
-              <dt>Updated</dt>
+              <dt>{t("detail.page.updated")}</dt>
               <dd>
                 <RelativeTime value={ticket.updatedAt} />
               </dd>
             </dl>
           </section>
           <section>
-            <h2>Agent readiness</h2>
+            <h2>{t("detail.readiness.heading")}</h2>
             <p className={readiness.ready ? "text-[var(--success)]" : "text-muted-foreground"}>
-              {readiness.ready ? "Ready to claim" : "Not ready to claim"}
+              {readiness.ready ? t("detail.readiness.ready") : t("detail.readiness.notReady")}
             </p>
             <ul>
               {readiness.reasons.map((reason, index) => (
-                <li key={`${reason.code}:${index}`}>{reason.message}</li>
+                <li key={`${reason.code}:${index}`}>
+                  {readinessReasonText(reason, claim?.workerId)}
+                </li>
               ))}
             </ul>
-            {ticket.holdReason && <p>Hold: {ticket.holdReason}</p>}
+            {ticket.holdReason && (
+              <p>{t("detail.readiness.hold", { reason: ticket.holdReason })}</p>
+            )}
             {claim && (
               <p>
-                Claimed by <strong>{claim.workerId}</strong> until {date(claim.expiresAt)}.
+                <Trans
+                  i18nKey="detail.readiness.claimedUntil"
+                  values={{ worker: claim.workerId, date: date(claim.expiresAt) }}
+                  components={{ strong: <strong /> }}
+                />
               </p>
             )}
             {claim && (
@@ -508,7 +530,12 @@ export function TicketDetail({
           <Attachments ticket={ticket} />
         </aside>
       </article>
-      <Modal size="composer" title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
+      <Modal
+        size="composer"
+        title={t("detail.page.editTitle", { key: ticket.key })}
+        open={editing}
+        onOpenChange={setEditing}
+      >
         {editing && (
           <TicketEditor projectId={projectId} ticket={ticket} onSaved={() => setEditing(false)} />
         )}
@@ -516,6 +543,8 @@ export function TicketDetail({
     </>
   );
 }
+// Reasons the server names by code read in the interface language. A hold is the ticket's own
+// text, and a dependency's message names its blocker, so those keep the server's wording.
 function ClaimActions({
   ticket,
   claim,
@@ -535,8 +564,8 @@ function ClaimActions({
     <div className="flex flex-wrap items-center gap-2">
       {canRelease && (
         <Confirm
-          label="Release my claim"
-          description="Release ownership after your worker has stopped writing?"
+          label={t("detail.claim.release")}
+          description={t("detail.claim.releaseDescription")}
           onConfirm={() =>
             release.mutateAsync({
               projectId: ticket.projectId,
@@ -547,7 +576,7 @@ function ClaimActions({
         />
       )}
       {canRecover && (
-        <Modal title="Recover expired claim" trigger="Recover expired claim">
+        <Modal title={t("detail.claim.recover")} trigger={t("detail.claim.recover")}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -561,12 +590,9 @@ function ClaimActions({
                 });
             }}
           >
-            <p>
-              Recovery requires project administrator access and an expired claim. Stop the worker
-              first.
-            </p>
+            <p>{t("detail.claim.recoverHelp")}</p>
             <Textarea
-              label="Recovery reason"
+              label={t("detail.claim.reason")}
               required
               minLength={10}
               maxLength={2000}
@@ -574,14 +600,14 @@ function ClaimActions({
               onChange={(event) => setReason(event.target.value)}
             />
             <Check
-              label="I have confirmed the worker has stopped"
+              label={t("detail.claim.confirmed")}
               checked={confirmed}
               onCheckedChange={(checked) => setConfirmed(checked)}
             />
             <FormActions
               error={recover.error}
               pending={!confirmed}
-              submitLabel="Recover ownership"
+              submitLabel={t("detail.claim.submit")}
               submitDisabled={recover.isPending}
             />
           </form>

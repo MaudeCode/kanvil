@@ -9,6 +9,7 @@ import {
   type PublicProject as Project,
   type PublicTicket,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api } from "./data.tsx";
 import {
   Brand,
@@ -65,7 +66,7 @@ function Status({
 }
 function PublicFrame({ project, children }: { project?: Project; children: ReactNode }) {
   useEffect(() => {
-    if (project) document.title = `${project.name} · Kanvil`;
+    if (project) document.title = t("shell.documentTitle", { name: project.name });
   }, [project]);
   return (
     <div className="min-h-svh bg-background">
@@ -74,7 +75,7 @@ function PublicFrame({ project, children }: { project?: Project; children: React
           <Brand />
         </span>
         <Button variant="ghost" size="sm" render={<a href="/" />}>
-          Open Kanvil
+          {t("shell.openKanvil")}
         </Button>
       </header>
       <main id="main" className="@container mx-auto w-full max-w-5xl px-4 py-6 md:px-6">
@@ -89,10 +90,8 @@ function PublicFrame({ project, children }: { project?: Project; children: React
 function Unavailable() {
   return (
     <PublicFrame>
-      <EmptyState title="This project is not shared">
-        <p className="m-0 text-sm text-muted-foreground">
-          The link was turned off or never existed. Members can sign in to read it.
-        </p>
+      <EmptyState title={t("shell.public.notShared")}>
+        <p className="m-0 text-sm text-muted-foreground">{t("shell.public.notSharedHint")}</p>
       </EmptyState>
     </PublicFrame>
   );
@@ -101,7 +100,7 @@ function Failed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <PublicFrame>
       <ErrorNotice error={error} />
-      <Button onClick={onRetry}>Retry</Button>
+      <Button onClick={onRetry}>{t("common.action.retry")}</Button>
     </PublicFrame>
   );
 }
@@ -169,7 +168,9 @@ export function PublicProject({ projectId }: { projectId: string }) {
           title={
             <div className="flex min-w-0 items-center gap-3">
               <ProjectIcon project={{ ...shared, image: null }} />
-              <h1 className="m-0 text-lg wrap-anywhere">{shared.name}</h1>
+              <h1 dir="auto" className="m-0 text-lg wrap-anywhere">
+                {shared.name}
+              </h1>
               <Badge variant="secondary" className="font-mono text-[10px] font-normal">
                 {shared.key}
               </Badge>
@@ -205,7 +206,10 @@ export function PublicProject({ projectId }: { projectId: string }) {
                       <span className="pt-0.5 font-mono text-[11px] text-muted-foreground">
                         {ticket.key}
                       </span>
-                      <span className="min-w-0 flex-1 basis-60 pt-px text-sm wrap-anywhere">
+                      <span
+                        dir="auto"
+                        className="min-w-0 flex-1 basis-60 pt-px text-sm wrap-anywhere"
+                      >
                         {ticket.title}
                       </span>
                       {ticket.labels.length > 0 && (
@@ -227,13 +231,14 @@ export function PublicProject({ projectId }: { projectId: string }) {
             </section>
           ))
         ) : (
-          <EmptyState title="No tickets" />
+          <EmptyState title={t("shell.public.noTickets")} />
         )}
       </div>
     </PublicFrame>
   );
 }
-const day = (value: string | null) => (value ? dayFormat.format(new Date(value)) : "None");
+const day = (value: string | null) =>
+  value ? dayFormat.format(new Date(value)) : t("common.state.none");
 export function PublicTicket({ projectId, ticketId }: { projectId: string; ticketId: string }) {
   const project = useQuery({ ...api.publicQuery("get_public_project", { projectId }), retry }),
     result = useQuery({ ...api.publicQuery("get_public_ticket", { projectId, ticketId }), retry });
@@ -241,9 +246,9 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
   if (unavailable(result.error))
     return (
       <PublicFrame {...(project.data ? { project: project.data } : {})}>
-        <EmptyState title="Ticket unavailable">
+        <EmptyState title={t("shell.public.ticketUnavailable")}>
           <Button render={<Link to="/public/projects/$projectId" params={{ projectId }} />}>
-            Back to tickets
+            {t("shell.public.backToTickets")}
           </Button>
         </EmptyState>
       </PublicFrame>
@@ -291,58 +296,62 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
               <span className="font-mono">{ticket.key}</span>
               <Status project={shared} ticket={ticket} />
             </div>
-            <h1 className={ticketTitleClass}>{ticket.title}</h1>
+            <h1 dir="auto" className={ticketTitleClass}>
+              {ticket.title}
+            </h1>
           </header>
           <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
             <section>
-              <h2>Description</h2>
-              <Markdown>{ticket.description || "_No description_"}</Markdown>
+              <h2>{t("shell.public.description")}</h2>
+              <Markdown>{ticket.description || t("shell.public.noDescription")}</Markdown>
             </section>
             <section>
-              <h2>Acceptance criteria</h2>
-              <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
+              <h2>{t("shell.public.acceptanceCriteria")}</h2>
+              <Markdown>
+                {ticket.acceptanceCriteria || t("shell.public.noAcceptanceCriteria")}
+              </Markdown>
             </section>
           </div>
         </div>
         <aside
           className="min-w-0 border-l pl-5 @max-[850px]:border-l-0 @max-[850px]:pl-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0 @max-[850px]:[&>section:first-child]:border-t @max-[850px]:[&>section:first-child]:pt-6"
-          aria-label="Ticket properties"
+          aria-label={t("shell.public.ticketProperties")}
         >
           <section
-            aria-label="Properties"
+            aria-label={t("shell.public.properties")}
             className="space-y-1.5 text-sm [&_[data-slot=badge]]:ml-0"
           >
-            <PropertyRow label="Status">
+            <PropertyRow label={t("shell.public.status")}>
               <Status project={shared} ticket={ticket} />
             </PropertyRow>
-            <PropertyRow label="Priority">
+            <PropertyRow label={t("shell.public.priority")}>
               <TicketIndicator property="priority" value={ticket.priority} />
             </PropertyRow>
-            <PropertyRow label="Kind">
+            <PropertyRow label={t("shell.public.kind")}>
               <PropertyValue property="kind" value={ticket.kind} projectId={projectId} />
             </PropertyRow>
-            <PropertyRow label="Difficulty">
+            <PropertyRow label={t("shell.public.difficulty")}>
               <PropertyValue
                 property="difficulty"
                 value={ticket.difficulty}
                 projectId={projectId}
               />
             </PropertyRow>
-            <PropertyRow label="Start date">
+            <PropertyRow label={t("shell.public.startDate")}>
               <span className="text-xs">{day(ticket.startAt)}</span>
             </PropertyRow>
-            <PropertyRow label="Due date">
+            <PropertyRow label={t("shell.public.dueDate")}>
               <span className="text-xs">{day(ticket.dueAt)}</span>
             </PropertyRow>
-            <PropertyRow label="Labels">
+            <PropertyRow label={t("shell.public.labels")}>
               <span className="flex flex-wrap gap-1 text-xs">
                 {ticket.labels.length
                   ? ticket.labels.map((label) => <TicketTag key={label} tag={label} />)
-                  : "None"}
+                  : t("common.state.none")}
               </span>
             </PropertyRow>
             {ticket.scopes.length > 0 && (
-              <PropertyRow label="Scopes">
+              <PropertyRow label={t("shell.public.scopes")}>
                 <span className="flex flex-wrap gap-1">
                   {ticket.scopes.map((scope) => (
                     <TicketTag key={scope} tag={scope} kind="scope" variant="outline" />
@@ -351,11 +360,11 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
               </PropertyRow>
             )}
             <dl className="mt-4 grid grid-cols-[80px_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t pt-4 text-xs [&_dd]:m-0 [&_dt]:text-muted-foreground">
-              <dt>Created</dt>
+              <dt>{t("shell.public.created")}</dt>
               <dd>
                 <RelativeTime value={ticket.createdAt} />
               </dd>
-              <dt>Updated</dt>
+              <dt>{t("shell.public.updated")}</dt>
               <dd>
                 <RelativeTime value={ticket.updatedAt} />
               </dd>
@@ -363,7 +372,7 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
           </section>
           {(parent || children.length > 0 || relations.length > 0) && (
             <section>
-              <SectionHeading compact title="Relationships" />
+              <SectionHeading compact title={t("shell.public.relationships")} />
               <ItemGroup className="gap-0">
                 {parent && (
                   <Item size="xs" className="px-0">
@@ -372,7 +381,9 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
                       aria-hidden="true"
                     />
                     <ItemContent className="min-w-0 gap-0">
-                      <span className="text-xs text-muted-foreground">Parent</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t("shell.public.parent")}
+                      </span>
                       {reference(parent)}
                     </ItemContent>
                   </Item>
@@ -381,7 +392,9 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
                   <Item key={child.id} size="xs" className="px-0">
                     <Status project={shared} ticket={child} iconOnly />
                     <ItemContent className="min-w-0 gap-0">
-                      <span className="text-xs text-muted-foreground">Child</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t("shell.public.child")}
+                      </span>
                       {reference(child)}
                     </ItemContent>
                   </Item>

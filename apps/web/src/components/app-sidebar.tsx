@@ -1,4 +1,5 @@
 import { capabilitiesOf } from "@kanvil/contracts";
+import { i18n, t } from "@kanvil/contracts/i18n";
 import { ProjectIcon } from "./project-icon.tsx";
 import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu, useProjectMove } from "./object-context-menu.tsx";
@@ -83,6 +84,10 @@ import { actions, shortcutGroups, ticketCopyActions } from "../lib/actions.ts";
 import { settingsLocation } from "../lib/settings-nav.ts";
 import { useSettingsGroups } from "./settings-layout.tsx";
 import { copyTicket } from "./object-context-menu.tsx";
+// Palette entries match the words of the interface language and the English ones, so people find
+// them either way.
+const english = i18n.getFixedT("en-US");
+const paletteWords = (words: (translate: typeof t) => string) => `${words(t)} ${words(english)}`;
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -128,43 +133,43 @@ export function AppSidebar() {
         <CommandPalette />
       </SidebarHeader>
       <SidebarContent>
-        <nav aria-label="Workspace">
+        <nav aria-label={t("shell.sidebar.workspace")}>
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname === "/"}
-                    tooltip="Home"
+                    tooltip={t("shell.page.home")}
                     render={<Link to="/" activeOptions={{ exact: true }} />}
                   >
                     <House />
-                    <span>Home</span>
+                    <span>{t("shell.page.home")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname === "/my-work"}
-                    tooltip="My work"
+                    tooltip={t("shell.page.myWork")}
                     render={<Link to="/my-work" />}
                   >
                     <UserCheck />
-                    <span>My work</span>
+                    <span>{t("shell.page.myWork")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname === "/inbox"}
-                    tooltip="Inbox"
+                    tooltip={t("shell.page.inbox")}
                     render={<Link to="/inbox" />}
                   >
                     <Bell />
-                    <span>Inbox</span>
+                    <span>{t("shell.page.inbox")}</span>
                   </SidebarMenuButton>
                   {unread > 0 && (
                     <SidebarMenuBadge
                       className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground tabular-nums animate-in zoom-in-75 duration-200"
-                      aria-label={`${unread} unread`}
+                      aria-label={t("shell.sidebar.unread", { count: unread })}
                     >
                       {unread > 99 ? "99+" : unread}
                     </SidebarMenuBadge>
@@ -174,7 +179,7 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
           <SidebarGroup className="mt-1">
-            <SidebarGroupLabel>Projects</SidebarGroupLabel>
+            <SidebarGroupLabel>{t("shell.page.projects")}</SidebarGroupLabel>
             <CreateProject sidebarAction />
             <SidebarGroupContent>
               <SidebarMenu>
@@ -197,7 +202,9 @@ export function AppSidebar() {
                         }
                       >
                         <ProjectIcon project={project} className="size-4" />
-                        <span className="min-w-0 truncate">{project.name}</span>
+                        <span dir="auto" className="min-w-0 truncate">
+                          {project.name}
+                        </span>
                         <SidebarMenuBadge
                           aria-hidden="true"
                           className="static h-auto min-w-0 p-0 font-mono text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden"
@@ -248,12 +255,12 @@ function AccountMenu() {
             <DropdownMenuLabel>{identity.email}</DropdownMenuLabel>
             <DropdownMenuItem render={<Link to="/settings" />}>
               <Settings />
-              User settings
+              {t("shell.sidebar.userSettings")}
             </DropdownMenuItem>
             {identity.admin && (
               <DropdownMenuItem render={<Link to="/admin" />}>
                 <ShieldCheck />
-                Administration
+                {t("shell.sidebar.administration")}
               </DropdownMenuItem>
             )}
           </DropdownMenuGroup>
@@ -264,7 +271,7 @@ function AccountMenu() {
             }}
           >
             <LogOut />
-            Sign out
+            {t("shell.sidebar.signOut")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -340,12 +347,12 @@ function CommandPalette() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
-            tooltip="Go to…"
+            tooltip={t("shell.palette.open")}
             onClick={() => setOpen(true)}
             className="text-muted-foreground"
           >
             <Search />
-            <span>Go to…</span>
+            <span>{t("shell.palette.open")}</span>
             <Kbd className="ml-auto group-data-[collapsible=icon]:hidden">⌘K</Kbd>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -356,32 +363,43 @@ function CommandPalette() {
           setOpen(next);
           if (!next) setQuery("");
         }}
-        title="Go to"
-        description="Find a project, ticket, page, or action"
+        title={t("shell.palette.title")}
+        description={t("shell.palette.description")}
         className="sm:max-w-xl"
       >
         <Command>
           <CommandInput
-            placeholder="Search tickets, projects, pages, actions…"
+            placeholder={t("shell.palette.placeholder")}
             value={query}
             onValueChange={setQuery}
           />
           <CommandList>
-            <CommandEmpty>{results.isFetching ? "Searching…" : "No results"}</CommandEmpty>
+            <CommandEmpty>
+              {results.isFetching ? t("shell.palette.searching") : t("shell.palette.noResults")}
+            </CommandEmpty>
             {keyProject && keyMatch && (
-              <CommandGroup heading="Jump to">
+              <CommandGroup heading={t("shell.palette.jumpTo")}>
                 <CommandItem
-                  value={`${trimmed} jump open`}
+                  value={paletteWords((tr) =>
+                    tr("shell.palette.keywords.jump", { query: trimmed }),
+                  )}
                   onSelect={() => go(`/projects/${keyProject.id}/tickets/${trimmed.toUpperCase()}`)}
                 >
                   <ProjectIcon project={keyProject} className="size-4" />
-                  Open {trimmed.toUpperCase()} in {keyProject.name}
+                  {t("shell.palette.openKey", {
+                    key: trimmed.toUpperCase(),
+                    project: keyProject.name,
+                  })}
                 </CommandItem>
               </CommandGroup>
             )}
             {trimmed.length > 1 && (
               <CommandGroup
-                heading={workspace.active ? `Results in ${workspace.active.name}` : "Results"}
+                heading={
+                  workspace.active
+                    ? t("shell.palette.resultsIn", { workspace: workspace.active.name })
+                    : t("shell.palette.results")
+                }
               >
                 {/* Projects already have their own group below. */}
                 {results.data?.items
@@ -399,32 +417,34 @@ function CommandPalette() {
                   ))}
                 {results.data && results.data.total > 0 && (
                   <CommandItem
-                    value={`all results ${trimmed}`}
+                    value={paletteWords((tr) =>
+                      tr("shell.palette.keywords.allResults", { query: trimmed }),
+                    )}
                     keywords={[trimmed]}
                     onSelect={() =>
                       run(() => void navigate({ to: "/search", search: { q: trimmed } }))
                     }
                   >
                     <Search />
-                    See all {results.data.total} results
+                    {t("shell.palette.seeAll", { count: results.data.total })}
                   </CommandItem>
                 )}
               </CommandGroup>
             )}
-            <CommandGroup heading="Actions">
+            <CommandGroup heading={t("shell.palette.actions")}>
               {project && access.canWrite && (
                 <CommandItem
-                  value="new ticket create"
+                  value={paletteWords((tr) => tr("shell.palette.keywords.newTicket"))}
                   onSelect={() => run(() => setCreating(true))}
                 >
                   <Plus />
-                  {actions.newTicket.label} in {project.name}
+                  {t("shell.palette.newTicketIn", { project: project.name })}
                   <CommandShortcut>{actions.newTicket.keys}</CommandShortcut>
                 </CommandItem>
               )}
               {project && (
                 <CommandItem
-                  value="my tickets assigned to me"
+                  value={paletteWords((tr) => tr("shell.palette.keywords.myTickets"))}
                   onSelect={() =>
                     run(() => {
                       void navigate({
@@ -436,21 +456,25 @@ function CommandPalette() {
                   }
                 >
                   <UserCheck />
-                  My tickets in {project.name}
+                  {t("shell.palette.myTicketsIn", { project: project.name })}
                 </CommandItem>
               )}
               {
                 <CommandItem
-                  value={`switch to ${resolved === "dark" ? "light" : "dark"} mode theme appearance`}
+                  value={
+                    resolved === "dark"
+                      ? paletteWords((tr) => tr("shell.palette.keywords.lightMode"))
+                      : paletteWords((tr) => tr("shell.palette.keywords.darkMode"))
+                  }
                   onSelect={() => run(() => setMode(resolved === "dark" ? "light" : "dark"))}
                 >
                   {resolved === "dark" ? <Sun /> : <Moon />}
-                  Switch to {resolved === "dark" ? "light" : "dark"} mode
+                  {resolved === "dark" ? t("shell.palette.lightMode") : t("shell.palette.darkMode")}
                 </CommandItem>
               }
               {
                 <CommandItem
-                  value="keyboard shortcuts help"
+                  value={paletteWords((tr) => tr("shell.palette.keywords.help"))}
                   onSelect={() => run(() => setHelp(true))}
                 >
                   <Keyboard />
@@ -473,40 +497,54 @@ function CommandPalette() {
                 ))}
               </CommandGroup>
             )}
-            <CommandGroup heading="Pages">
+            <CommandGroup heading={t("shell.palette.pages")}>
               {
-                <CommandItem value="home overview all projects" onSelect={() => go("/")}>
+                <CommandItem
+                  value={paletteWords((tr) => tr("shell.palette.keywords.home"))}
+                  onSelect={() => go("/")}
+                >
                   <House />
-                  Home
-                </CommandItem>
-              }
-              {
-                <CommandItem value="my work assigned tickets" onSelect={() => go("/my-work")}>
-                  <UserCheck />
-                  My work
+                  {t("shell.page.home")}
                 </CommandItem>
               }
               {
                 <CommandItem
-                  value="search comments activity projects tickets"
+                  value={paletteWords((tr) => tr("shell.palette.keywords.myWork"))}
+                  onSelect={() => go("/my-work")}
+                >
+                  <UserCheck />
+                  {t("shell.page.myWork")}
+                </CommandItem>
+              }
+              {
+                <CommandItem
+                  value={paletteWords((tr) => tr("shell.palette.keywords.search"))}
                   onSelect={() => go("/search")}
                 >
                   <Search />
-                  Search
+                  {t("shell.page.search")}
                 </CommandItem>
               }
               {
-                <CommandItem value="inbox notifications" onSelect={() => go("/inbox")}>
+                <CommandItem
+                  value={paletteWords((tr) => tr("shell.palette.keywords.inbox"))}
+                  onSelect={() => go("/inbox")}
+                >
                   <Bell />
-                  Inbox
+                  {t("shell.page.inbox")}
                 </CommandItem>
               }
             </CommandGroup>
-            <CommandGroup heading="Settings">
+            <CommandGroup heading={t("shell.page.settings")}>
               {settings.map((entry) => (
                 <CommandItem
                   key={`${entry.to}:${entry.section}`}
-                  value={`settings ${entry.scope} ${entry.label}`}
+                  value={paletteWords((tr) =>
+                    tr("shell.palette.keywords.settings", {
+                      scope: entry.scope,
+                      label: entry.label,
+                    }),
+                  )}
                   onSelect={() =>
                     run(() => {
                       void navigate({ to: entry.to, search: { section: entry.section } });
@@ -519,7 +557,7 @@ function CommandPalette() {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="Projects">
+            <CommandGroup heading={t("shell.page.projects")}>
               {projects.data?.map((item) => (
                 <CommandItem
                   key={item.id}
@@ -535,14 +573,14 @@ function CommandPalette() {
           </CommandList>
         </Command>
       </CommandDialog>
-      <Modal title="Keyboard shortcuts" open={help} onOpenChange={setHelp}>
+      <Modal title={actions.help.label} open={help} onOpenChange={setHelp}>
         {shortcutGroups.map((group) => (
           <section key={group.category} aria-labelledby={`shortcuts-${group.category}`}>
             <h3
               id={`shortcuts-${group.category}`}
               className="mt-4 mb-2 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase first:mt-0"
             >
-              {group.category}
+              {t(`shell.actionCategory.${group.category}`)}
             </h3>
             <dl className="grid grid-cols-[5.5rem_1fr] items-center gap-x-6 gap-y-2.5 text-sm">
               {group.actions.map((action) => (
@@ -562,7 +600,12 @@ function CommandPalette() {
         ))}
       </Modal>
       {project && (
-        <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
+        <Modal
+          size="composer"
+          title={actions.newTicket.label}
+          open={creating}
+          onOpenChange={setCreating}
+        >
           {creating && (
             <Suspense fallback={<Loading />}>
               <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />
@@ -582,24 +625,25 @@ export function WorkspaceHeader() {
     ...api.query("get_ticket", { projectId: project?.id ?? "", ticketId: ticketId ?? "" }),
     enabled: !!project && !!ticketId,
   });
-  const projectList = project && pathname === `/projects/${project.id}`;
+  const projectList = project && pathname === `/projects/${project.id}`,
+    planning = !!project && pathname === `/projects/${project.id}/planning`;
   const { section } = useSearch({ strict: false }),
     place = settingsLocation(useSettingsGroups(), pathname, section);
   const page = place
     ? place.group.title
     : pathname === "/inbox"
-      ? "Inbox"
+      ? t("shell.page.inbox")
       : pathname === "/my-work"
-        ? "My work"
+        ? t("shell.page.myWork")
         : pathname === "/search"
-          ? "Search"
-          : project && pathname === `/projects/${project.id}/planning`
-            ? "Planning"
+          ? t("shell.page.search")
+          : planning
+            ? t("shell.page.planning")
             : pathname === "/admin" || pathname.endsWith("/settings")
-              ? "Settings"
+              ? t("shell.page.settings")
               : ticketId
-                ? (ticket.data?.ticket.key ?? "Ticket")
-                : "Tickets";
+                ? (ticket.data?.ticket.key ?? t("shell.page.ticket"))
+                : t("shell.page.tickets");
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />
@@ -609,9 +653,9 @@ export function WorkspaceHeader() {
         >
           <BreadcrumbItem>
             {pathname === "/" ? (
-              <BreadcrumbPage>Home</BreadcrumbPage>
+              <BreadcrumbPage>{t("shell.page.home")}</BreadcrumbPage>
             ) : (
-              <BreadcrumbLink render={<Link to="/" />}>Home</BreadcrumbLink>
+              <BreadcrumbLink render={<Link to="/" />}>{t("shell.page.home")}</BreadcrumbLink>
             )}
           </BreadcrumbItem>
           {project && (
@@ -642,7 +686,7 @@ export function WorkspaceHeader() {
               <BreadcrumbItem className={place ? "max-[650px]:hidden" : undefined}>
                 {place ? (
                   <BreadcrumbLink render={<Link to={place.entry.to} />}>{page}</BreadcrumbLink>
-                ) : pathname === "/my-work" || page === "Planning" ? (
+                ) : pathname === "/my-work" || planning ? (
                   // These lists' controls have no title of their own, like a project list.
                   <h1 className="m-0 text-[13px] font-medium tracking-normal">
                     <BreadcrumbPage>{page}</BreadcrumbPage>
@@ -667,7 +711,7 @@ export function WorkspaceHeader() {
       </Breadcrumb>
       {projectList && (
         <IconButton
-          label="Project settings"
+          label={t("shell.sidebar.projectSettings")}
           className="ml-auto"
           render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
         >

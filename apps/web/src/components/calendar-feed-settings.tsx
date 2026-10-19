@@ -22,6 +22,7 @@ import { SettingRow } from "./settings-layout.tsx";
 import { TagInput } from "./tag-input.tsx";
 import { TicketTags } from "./ticket-tags.tsx";
 import { ProjectLabelProvider } from "./project-label-provider.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
 // The browser's zone names the days a new feed's all-day events fall on.
 const browserZone = () => new Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -51,11 +52,11 @@ export function CalendarFeedSettings({
   return (
     <section>
       <SectionHeading
-        title="Calendar feeds"
+        title={t("settings.calendarFeeds.title")}
         action={
           canCreate && (
             <IconButton
-              label="New calendar feed"
+              label={t("settings.calendarFeeds.new")}
               variant="default"
               onClick={() => {
                 create.reset();
@@ -68,9 +69,7 @@ export function CalendarFeedSettings({
         }
       />
       {!canAdmin ? (
-        <p className="text-sm text-muted-foreground">
-          Project administrators share and revoke calendar feeds.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("settings.calendarFeeds.adminOnly")}</p>
       ) : feeds.isPending ? (
         <Loading />
       ) : feeds.data?.length ? (
@@ -78,43 +77,45 @@ export function CalendarFeedSettings({
           <SettingRow
             key={feed.id}
             compact
-            title={feed.name}
+            title={<span dir="auto">{feed.name}</span>}
             description={
               <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                 {feed.labels.length ? (
-                  <TicketTags tags={feed.labels} label="Labels" variant="secondary" />
+                  <TicketTags
+                    tags={feed.labels}
+                    label={t("settings.calendarFeeds.labels")}
+                    variant="secondary"
+                  />
                 ) : (
-                  "Every label"
+                  t("settings.calendarFeeds.everyLabel")
                 )}
                 <span>· {feed.timeZone} ·</span>
                 <ActorName projectId={projectId} actorId={feed.createdBy} />
                 <RelativeTime value={feed.createdAt} />
                 {!feed.active && (
-                  <span className="text-destructive">
-                    · Stopped: its creator no longer has access
-                  </span>
+                  <span className="text-destructive">{t("settings.calendarFeeds.stopped")}</span>
                 )}
               </span>
             }
           >
             <Confirm
-              label={`Revoke ${feed.name}`}
+              label={t("settings.calendarFeeds.revoke", { name: feed.name })}
               icon={<Trash2 />}
               danger
-              description={`Calendars subscribed to ${feed.name} stop updating at once. Tickets stay unchanged.`}
+              description={t("settings.calendarFeeds.revokeDescription", { name: feed.name })}
               onConfirm={async () => {
                 await revoke.mutateAsync({ projectId, feedId: feed.id });
-                toast.success("Calendar feed revoked");
+                toast.success(t("settings.calendarFeeds.revoked"));
               }}
             />
           </SettingRow>
         ))
       ) : (
-        !feeds.error && <EmptyState title="No calendar feeds" icon={CalendarSync} />
+        !feeds.error && <EmptyState title={t("settings.calendarFeeds.empty")} icon={CalendarSync} />
       )}
       <ErrorNotice error={feeds.error} />
       <Modal
-        title={created ? "Calendar feed created" : "New calendar feed"}
+        title={created ? t("settings.calendarFeeds.created") : t("settings.calendarFeeds.new")}
         open={!!draft || !!created}
         onOpenChange={(open) => {
           if (!open) close();
@@ -123,17 +124,14 @@ export function CalendarFeedSettings({
       >
         {created ? (
           <div>
-            <p>
-              Copy this link into a calendar app now. It is shown only once, and anyone with it can
-              read the shared tickets.
-            </p>
+            <p>{t("settings.calendarFeeds.copyNow")}</p>
             <CopyValue
-              label="Feed link"
+              label={t("settings.calendarFeeds.link")}
               value={new URL(created.path, window.location.origin).href}
             />
             <div className="flex justify-end">
               <Button variant="default" onClick={close}>
-                Done
+                {t("common.action.done")}
               </Button>
             </div>
           </div>
@@ -157,7 +155,7 @@ export function CalendarFeedSettings({
               }}
             >
               <Input
-                label="Feed name"
+                label={t("settings.calendarFeeds.name")}
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 maxLength={80}
@@ -166,20 +164,18 @@ export function CalendarFeedSettings({
               />
               <ProjectLabelProvider projectId={projectId}>
                 <TagInput
-                  label="Only tickets with these labels"
+                  label={t("settings.calendarFeeds.onlyLabels")}
                   value={draft.labels}
                   onChange={(labels) => setDraft({ ...draft, labels })}
                 />
               </ProjectLabelProvider>
               <p className="text-xs text-muted-foreground">
-                The feed lists open, unarchived tickets with a start or due date as all-day events
-                in {browserZone()}. Anyone with its link sees their keys, titles, statuses,
-                priorities, and dates.
+                {t("settings.calendarFeeds.explanation", { zone: browserZone() })}
               </p>
               <FormActions
                 error={create.error}
                 pending={create.isPending}
-                submitLabel="Create feed"
+                submitLabel={t("settings.calendarFeeds.create")}
                 submitDisabled={!draft.name.trim()}
                 onCancel={close}
               />

@@ -1,4 +1,5 @@
 import { formatEvent, formatTimestamp } from "@kanvil/contracts";
+import { formatNumber, t } from "@kanvil/contracts/i18n";
 import { useState } from "react";
 import { Alert, Linking, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
@@ -6,7 +7,14 @@ import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { attachmentLimit, evidenceFields, type Ticket, type Output } from "@kanvil/contracts";
+import {
+  attachmentLimit,
+  evidenceFields,
+  evidenceKindLabels,
+  evidenceOutcomeLabels,
+  type Ticket,
+  type Output,
+} from "@kanvil/contracts";
 import { useConnection, useOperation } from "./data.tsx";
 import {
   Body,
@@ -42,7 +50,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       if (!asset) return;
       const file = new File(asset.uri);
       try {
-        if (file.size > attachmentLimit) throw new Error("Choose a file no larger than 10 MB.");
+        if (file.size > attachmentLimit) throw new Error(t("native.attachments.tooLarge"));
         await upload.mutateAsync({
           projectId: ticket.projectId,
           ticketId: ticket.id,
@@ -75,7 +83,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
         { headers: await connection.headers(), idempotent: true },
       );
       if (!(await Sharing.isAvailableAsync()))
-        throw new Error("File sharing is unavailable on this device.");
+        throw new Error(t("native.attachments.sharingUnavailable"));
       await Sharing.shareAsync(target.uri, { mimeType: item.contentType, dialogTitle: item.name });
     } catch (cause) {
       setError(cause);
@@ -89,24 +97,27 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
     }
   }
   return (
-    <Section title="Attachments">
+    <Section title={t("native.attachments.title")}>
       {attachments.data?.map((item) => (
         <View key={item.id} style={{ gap: 8 }}>
           <Button
-            title={`${item.name} · ${Math.max(1, Math.ceil(item.size / 1000))} kB`}
+            title={t("native.attachments.item", {
+              name: item.name,
+              size: formatNumber(Math.max(1, Math.ceil(item.size / 1000))),
+            })}
             disabled={pending}
             onPress={() => {
               void open(item);
             }}
           />
           <Button
-            title={`Remove ${item.name}`}
+            title={t("native.attachments.remove", { name: item.name })}
             disabled={remove.isPending}
             onPress={() =>
-              Alert.alert("Remove attachment?", item.name, [
-                { text: "Cancel", style: "cancel" },
+              Alert.alert(t("native.attachments.removeTitle"), item.name, [
+                { text: t("common.action.cancel"), style: "cancel" },
                 {
-                  text: "Remove",
+                  text: t("common.action.remove"),
                   style: "destructive",
                   onPress: () =>
                     remove.mutate({ projectId: ticket.projectId, attachmentId: item.id }),
@@ -118,7 +129,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       ))}
       <ErrorNotice error={error ?? attachments.error ?? remove.error} />
       <Button
-        title={pending ? "Working…" : "Add attachment"}
+        title={pending ? t("native.attachments.working") : t("native.attachments.add")}
         disabled={pending}
         onPress={() => {
           void choose();
@@ -142,8 +153,8 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
     ),
     add = useOperation("add_evidence");
   return (
-    <Section title="Evidence">
-      <Body muted>Outcomes are reported by their submitting accounts.</Body>
+    <Section title={t("native.evidence.title")}>
+      <Body muted>{t("native.evidence.explanation")}</Body>
       {items.data?.map((item) => (
         <View key={item.id} style={{ gap: 8, paddingVertical: 10 }}>
           <Button
@@ -153,18 +164,23 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
             }}
           />
           <Body muted>
-            {item.kind} · {item.outcome}
+            {evidenceKindLabels[item.kind]} · {evidenceOutcomeLabels[item.outcome]}
             {item.commit ? ` · ${item.commit}` : ""}
           </Body>
           <Markdown>{item.note}</Markdown>
         </View>
       ))}
-      <Button title="Add evidence" onPress={() => setOpen(true)} />
+      <Button title={t("native.evidence.add")} onPress={() => setOpen(true)} />
       <ErrorNotice error={items.error ?? error} />
-      <Sheet title="Add evidence" open={open} onClose={() => setOpen(false)}>
-        <Field label="Title" value={title} onChangeText={setTitle} maxLength={200} />
+      <Sheet title={t("native.evidence.add")} open={open} onClose={() => setOpen(false)}>
         <Field
-          label="URL"
+          label={t("native.evidence.name")}
+          value={title}
+          onChangeText={setTitle}
+          maxLength={200}
+        />
+        <Field
+          label={t("native.evidence.url")}
           value={url}
           onChangeText={setUrl}
           autoCapitalize="none"
@@ -172,31 +188,40 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
           keyboardType="url"
         />
         <Choice
-          label="Kind"
+          label={t("common.filterField.kind")}
           value={kind}
           onChange={setKind}
-          options={evidenceFields.shape.kind.options.map((value) => ({ value, label: value }))}
+          options={evidenceFields.shape.kind.options.map((value) => ({
+            value,
+            label: evidenceKindLabels[value],
+          }))}
         />
         <Choice
-          label="Reported outcome"
+          label={t("native.evidence.outcome")}
           value={outcome}
           onChange={setOutcome}
-          options={["reported", "pending", "passed", "failed"].map((value) => ({
+          options={evidenceFields.shape.outcome.unwrap().options.map((value) => ({
             value,
-            label: value,
+            label: evidenceOutcomeLabels[value],
           }))}
         />
         <Field
-          label="Commit (full hash)"
+          label={t("native.evidence.commit")}
           value={commit}
           onChangeText={setCommit}
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Field label="Note" value={note} onChangeText={setNote} multiline maxLength={20000} />
+        <Field
+          label={t("native.evidence.note")}
+          value={note}
+          onChangeText={setNote}
+          multiline
+          maxLength={20000}
+        />
         <ErrorNotice error={add.error} />
         <Button
-          title="Save evidence"
+          title={t("native.evidence.save")}
           primary
           disabled={!title.trim() || !url || add.isPending}
           onPress={() => {
@@ -226,7 +251,7 @@ export function Activity({ ticket }: { ticket: Ticket }) {
     api.query("list_activity", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
   );
   return (
-    <Section title="Activity">
+    <Section title={t("native.activity.title")}>
       <ErrorNotice error={events.error} />
       {events.data?.items.map((event) => (
         <View key={event.id}>
@@ -236,12 +261,12 @@ export function Activity({ ticket }: { ticket: Ticket }) {
       ))}
       <View style={styles.actions}>
         <Button
-          title="Previous activity"
+          title={t("native.activity.previous")}
           disabled={!offset}
           onPress={() => setOffset(Math.max(0, offset - 50))}
         />
         <Button
-          title="Next activity"
+          title={t("native.activity.next")}
           disabled={offset + 50 >= (events.data?.total ?? 0)}
           onPress={() => setOffset(offset + 50)}
         />

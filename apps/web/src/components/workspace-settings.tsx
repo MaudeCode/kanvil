@@ -24,6 +24,7 @@ import { InvitationList } from "./invitations.tsx";
 import { LabelSettings } from "./label-settings.tsx";
 import { ImportProjects } from "./project-import.tsx";
 import type { workspaceSections } from "../search.ts";
+import { t } from "@kanvil/contracts/i18n";
 type Member = z.output<typeof memberSchema>;
 // Only the owner and instance administrators see the transfer; it goes to another active
 // administrator, and the previous owner stays an administrator.
@@ -47,13 +48,13 @@ function WorkspaceOwnerRow({
     chosen = eligible.find((person) => person.email === email);
   return (
     <SettingRow
-      title="Owner"
+      title={t("settings.workspace.owner")}
       description={
         owner
           ? `${owner.name} · ${owner.email}`
           : workspace.ownerId
             ? undefined
-            : "No owner. An instance administrator can assign one."
+            : t("settings.workspace.noOwner")
       }
     >
       {canTransfer && (
@@ -64,10 +65,10 @@ function WorkspaceOwnerRow({
               setOpen(true);
             }}
           >
-            Transfer ownership
+            {t("settings.workspace.transfer")}
           </Button>
           <Modal
-            title="Transfer ownership"
+            title={t("settings.workspace.transfer")}
             open={open}
             onOpenChange={(next) => {
               setOpen(next);
@@ -87,7 +88,12 @@ function WorkspaceOwnerRow({
                   })
                   .then(() => {
                     setOpen(false);
-                    toast.success(`${chosen.name} now owns ${workspace.name}`);
+                    toast.success(
+                      t("settings.workspace.transferred", {
+                        name: chosen.name,
+                        workspace: workspace.name,
+                      }),
+                    );
                   })
                   .catch(() => {});
               }}
@@ -98,26 +104,25 @@ function WorkspaceOwnerRow({
                   value={email}
                   onChange={setEmail}
                   disabled={transfer.isPending}
-                  label="New owner"
+                  label={t("settings.workspace.newOwner")}
                   anyAccount={false}
                 />
               ) : (
                 <p className="mt-0 text-sm text-muted-foreground">
-                  Ownership goes to an active workspace administrator. Make another member an
-                  administrator first.
+                  {t("settings.workspace.noEligible")}
                 </p>
               )}
               <p className="mt-0 text-sm text-muted-foreground">
                 {chosen
-                  ? `${chosen.name} can then transfer or delete the workspace.`
-                  : "The new owner can transfer or delete the workspace."}{" "}
-                {owner ? `${owner.name} stays an administrator.` : ""}
+                  ? t("settings.workspace.chosenCan", { name: chosen.name })
+                  : t("settings.workspace.newOwnerCan")}{" "}
+                {owner ? t("settings.workspace.ownerStays", { name: owner.name }) : ""}
               </p>
               <FormActions
                 error={transfer.error}
                 pending={transfer.isPending}
-                submitLabel="Transfer ownership"
-                pendingLabel="Transferring…"
+                submitLabel={t("settings.workspace.transfer")}
+                pendingLabel={t("settings.workspace.transferring")}
                 submitDisabled={!chosen}
                 onCancel={() => setOpen(false)}
               />
@@ -152,9 +157,9 @@ export function WorkspaceSettings({
   if (spaces.isPending) return <Loading />;
   if (!workspace?.role)
     return (
-      <EmptyState title="Workspace unavailable">
+      <EmptyState title={t("settings.workspace.unavailable")}>
         <ErrorNotice error={spaces.error} />
-        <Button render={<Link to="/" />}>Back to projects</Button>
+        <Button render={<Link to="/" />}>{t("settings.workspace.backToProjects")}</Button>
       </EmptyState>
     );
   // What the caller's role allows here, as the server reports it.
@@ -165,24 +170,28 @@ export function WorkspaceSettings({
     count = projects.data?.filter((project) => project.workspaceId === workspace.id).length ?? 0;
   return (
     <>
-      <SettingsLayout title="Workspace settings" section={section}>
+      <SettingsLayout title={t("settings.workspace.title")} section={section}>
         <SettingsPanel value="general">
           <section>
             <EditableHeading
               name={workspace.name}
               description={workspace.description}
-              nameLabel="Workspace name"
+              nameLabel={t("settings.workspace.name")}
               canEdit={canAdmin}
               version={workspace.version}
               pending={update.isPending}
               error={update.error}
-              editLabel="Edit workspace"
+              editLabel={t("settings.workspace.edit")}
               badges={
                 <>
                   <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
                     {workspace.slug}
                   </Badge>
-                  <CopyButton label="Copy workspace key" value={workspace.slug} size="icon-xs" />
+                  <CopyButton
+                    label={t("settings.workspace.copyKey")}
+                    value={workspace.slug}
+                    size="icon-xs"
+                  />
                 </>
               }
               onSave={(draft) =>
@@ -193,16 +202,16 @@ export function WorkspaceSettings({
                     name: draft.name,
                     description: draft.description,
                   })
-                  .then(() => toast.success("Workspace saved"))
+                  .then(() => toast.success(t("settings.workspace.saved")))
               }
             />
           </section>
           <section>
             <SettingRow
-              title="Projects"
-              description={`${count} ${count === 1 ? "project" : "projects"} you can access in this workspace.`}
+              title={t("settings.workspace.projects")}
+              description={t("settings.workspace.projectCount", { count })}
             >
-              <Button render={<Link to="/" />}>View projects</Button>
+              <Button render={<Link to="/" />}>{t("settings.workspace.viewProjects")}</Button>
             </SettingRow>
             <WorkspaceOwnerRow
               workspace={workspace}
@@ -210,8 +219,8 @@ export function WorkspaceSettings({
               canTransfer={isOwner}
             />
             <SettingRow
-              title="Members"
-              description="Workspace roles apply to projects that use workspace access."
+              title={t("settings.workspace.members")}
+              description={t("settings.workspace.membersDescription")}
             >
               <Button
                 render={
@@ -222,7 +231,7 @@ export function WorkspaceSettings({
                   />
                 }
               >
-                Manage members
+                {t("settings.workspace.manageMembers")}
               </Button>
             </SettingRow>
             {granted.includes("ticket.write") && <ImportProjects workspaceId={workspaceId} />}

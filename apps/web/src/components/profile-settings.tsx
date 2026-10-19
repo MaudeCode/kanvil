@@ -9,6 +9,7 @@ import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
 import { prepareImage } from "../lib/browser.ts";
 import { ImageEditTrigger } from "./image-edit-trigger.tsx";
+import { t } from "@kanvil/contracts/i18n";
 export function ProfileSettings() {
   const cache = useQueryClient();
   const identity = useIdentity(),
@@ -38,7 +39,7 @@ export function ProfileSettings() {
           : { method: "DELETE" },
       );
       await refreshProfile();
-      setMessage(value ? "Photo updated" : "Photo removed");
+      setMessage(value ? t("settings.profile.photoUpdated") : t("settings.profile.photoRemoved"));
     } catch (cause) {
       setError(cause);
     } finally {
@@ -47,18 +48,18 @@ export function ProfileSettings() {
   }
   return (
     <section>
-      <SectionHeading title="Profile" />
+      <SectionHeading title={t("settings.profile.title")} />
       <EditableHeading
         name={identity.name}
-        nameLabel="Display name"
+        nameLabel={t("settings.profile.displayName")}
         withDescription={false}
         canEdit
         pending={pending}
         error={editError}
-        editLabel="Edit profile"
+        editLabel={t("settings.profile.edit")}
         media={
           <ImageEditTrigger
-            label="Change photo"
+            label={t("settings.profile.changePhoto")}
             round
             disabled={pending}
             onClick={() => file.current?.click()}
@@ -73,7 +74,7 @@ export function ProfileSettings() {
             const result = await auth.updateUser({ name });
             if (result.error) throw new Error(result.error.message);
             await refreshProfile();
-            setMessage("Profile saved");
+            setMessage(t("settings.profile.saved"));
           } catch (cause) {
             setEditError(cause);
             throw cause;
@@ -94,7 +95,7 @@ export function ProfileSettings() {
           }}
         >
           <Trash2 />
-          Remove photo
+          {t("settings.profile.removePhoto")}
         </Button>
       )}
       <FileInput
@@ -103,7 +104,7 @@ export function ProfileSettings() {
         disabled={pending}
         accept="image/png,image/jpeg,image/webp"
         className="hidden"
-        aria-label="Profile photo file"
+        aria-label={t("settings.profile.photoFile")}
         onChange={(event) => {
           const chosen = event.currentTarget.files?.[0];
           if (chosen) void photo(chosen);

@@ -16,6 +16,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import { t } from "@kanvil/contracts/i18n";
 import { InputGroup } from "@/components/ui/input-group";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { IconButton, Input } from "../ui.tsx";
@@ -89,24 +90,31 @@ const activeNames: Record<MarkdownFormat, string> = {
   code: "codeBlock",
 };
 // Blocks the `/` menu inserts: the toolbar's block formats, then the ones only this editor has.
+// Labels are getters, so they read the interface language when shown.
 type Block = { key: string; label: string; icon: LucideIcon; run: (editor: Editor) => void };
 const extraBlocks: Block[] = [
   {
     key: "quote",
-    label: "Quote",
+    get label() {
+      return t("detail.markdown.block.quote");
+    },
     icon: TextQuote,
     run: (editor) => editor.chain().focus().toggleBlockquote().run(),
   },
   {
     key: "table",
-    label: "Table",
+    get label() {
+      return t("detail.markdown.block.table");
+    },
     icon: Table,
     run: (editor) =>
       editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
   },
   {
     key: "diagram",
-    label: "Diagram",
+    get label() {
+      return t("detail.markdown.block.diagram");
+    },
     icon: Workflow,
     run: (editor) =>
       editor
@@ -121,30 +129,32 @@ const extraBlocks: Block[] = [
   },
   {
     key: "divider",
-    label: "Divider",
+    get label() {
+      return t("detail.markdown.block.divider");
+    },
     icon: Minus,
     run: (editor) => editor.chain().focus().setHorizontalRule().run(),
   },
 ];
 const tableActions = [
   {
-    label: "Add row",
+    key: "addRow",
     icon: BetweenHorizontalEnd,
     run: (chain: ChainedCommands) => chain.addRowAfter(),
   },
   {
-    label: "Add column",
+    key: "addColumn",
     icon: BetweenVerticalEnd,
     run: (chain: ChainedCommands) => chain.addColumnAfter(),
   },
-  { label: "Delete row", icon: TableRowsSplit, run: (chain: ChainedCommands) => chain.deleteRow() },
+  { key: "deleteRow", icon: TableRowsSplit, run: (chain: ChainedCommands) => chain.deleteRow() },
   {
-    label: "Delete column",
+    key: "deleteColumn",
     icon: TableColumnsSplit,
     run: (chain: ChainedCommands) => chain.deleteColumn(),
   },
-  { label: "Delete table", icon: Grid2x2X, run: (chain: ChainedCommands) => chain.deleteTable() },
-];
+  { key: "deleteTable", icon: Grid2x2X, run: (chain: ChainedCommands) => chain.deleteTable() },
+] as const;
 type Menu = { kind: "slash" | "mention"; query: string; range: Range; rect: () => DOMRect | null };
 const menuKeys = { slash: new PluginKey("slash-menu"), mention: new PluginKey("mention-menu") };
 
@@ -260,7 +270,7 @@ function VisualEditorBody({
       ? [
           {
             key: "file",
-            label: "File",
+            label: t("detail.markdown.block.file"),
             icon: Paperclip,
             run: upload.pick,
           },
@@ -383,8 +393,8 @@ function VisualEditorBody({
         {state.table &&
           tableActions.map((action) => (
             <IconButton
-              key={action.label}
-              label={action.label}
+              key={action.key}
+              label={t(`detail.markdown.table.${action.key}`)}
               size="icon-sm"
               tabIndex={-1}
               className="text-muted-foreground hover:text-foreground"
@@ -397,7 +407,9 @@ function VisualEditorBody({
       <EditorContent editor={editor} className="w-full" />
       <SuggestionList
         id={listId}
-        label={menu?.kind === "mention" ? "Mention a member" : "Insert block"}
+        label={
+          menu?.kind === "mention" ? t("detail.markdown.mention") : t("detail.markdown.insertBlock")
+        }
         open={open}
         anchor={{ getBoundingClientRect: () => menu?.rect() ?? new DOMRect() }}
         options={options}
@@ -438,7 +450,7 @@ function VisualEditorBody({
             }}
           >
             <Input
-              label="Link address"
+              label={t("detail.markdown.linkAddress")}
               labelHidden
               placeholder="https://"
               value={linking?.href ?? ""}

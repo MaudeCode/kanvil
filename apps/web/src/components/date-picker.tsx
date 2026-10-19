@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { CalendarDays, X } from "lucide-react";
 import { startOfToday } from "date-fns";
+import { formatDate, t } from "@kanvil/contracts/i18n";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,7 +10,8 @@ import { fieldClass } from "../ui.tsx";
 import { preferences, usePreference, weekStarts } from "../hooks/use-preference.ts";
 import { cn } from "@/lib/utils";
 
-export const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+// A day in the interface language, read when formatted so it follows a language change.
+export const dayFormat = { format: (date: Date) => formatDate(date) };
 // One calendar picker for form fields, property rows, and composer pills.
 export function DatePicker({
   label,
@@ -17,7 +19,7 @@ export function DatePicker({
   onChange,
   variant = "field",
   bounds,
-  placeholder = "Choose a date",
+  placeholder = t("ticket.date.placeholder"),
   mixed = false,
   disabled = false,
   className,
@@ -141,7 +143,7 @@ export function DateCalendar({
             onClick={() => onChange(null)}
           >
             <X />
-            Clear {label.toLowerCase()}
+            {t("ticket.date.clear", { label })}
           </Button>
         </div>
       )}
@@ -184,8 +186,8 @@ export function ScheduleDates({
     <>
       <DatePicker
         variant={variant}
-        label="Start date"
-        placeholder={variant === "pill" ? "Start" : "No start date"}
+        label={t("ticket.date.start")}
+        placeholder={variant === "pill" ? t("ticket.date.startShort") : t("ticket.date.noStart")}
         value={start}
         disabled={disabled}
         {...(due ? { bounds: { to: due } } : {})}
@@ -193,8 +195,8 @@ export function ScheduleDates({
       />
       <DatePicker
         variant={variant}
-        label="Due date"
-        placeholder={variant === "pill" ? "Due" : "No due date"}
+        label={t("ticket.date.due")}
+        placeholder={variant === "pill" ? t("ticket.date.dueShort") : t("ticket.date.noDue")}
         value={due}
         disabled={disabled}
         {...(start ? { bounds: { from: start } } : {})}
