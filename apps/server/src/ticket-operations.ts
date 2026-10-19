@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   getTableColumns,
+  gt,
   inArray,
   isNull,
   isNotNull,
@@ -15,14 +16,17 @@ import {
   type AnyColumn,
 } from "drizzle-orm";
 import {
+  attachments,
   claims,
   events,
   projects,
   projectLabels,
   relations,
+  stagedUploads,
   subscriptions,
   tickets,
 } from "./schema.ts";
+import { stagedUploadCutoff } from "./blob-storage.ts";
 import {
   assertVersion,
   assertWorkerClaim,
@@ -365,7 +369,14 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
       .where(eq(projects.id, project(ctx).id))
       .returning(),
   );
-  const { projectId: _projectId, requestId: _requestId, startAt, dueAt, ...fields } = input,
+  const {
+      projectId: _projectId,
+      requestId: _requestId,
+      uploads: _uploads,
+      startAt,
+      dueAt,
+      ...fields
+    } = input,
     dates = dateColumns({ startAt, dueAt });
   assertSchedule(dates.startAt ?? null, dates.dueAt ?? null);
   const row = one(
@@ -389,6 +400,33 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
     data: { key: row.key, version: row.version },
   };
   return { row, event };
+}
+// The author's own live staged uploads become the new ticket's attachments under the same IDs, so
+// the content addresses its text embeds keep working. Any missing one fails the whole creation.
+async function claimStagedUploads(ctx: Context, ticketId: string, ids: string[]) {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return [];
+  const rows = await ctx.db
+    .delete(stagedUploads)
+    .where(
+      and(
+        inArray(stagedUploads.id, unique),
+        eq(stagedUploads.projectId, project(ctx).id),
+        eq(stagedUploads.actorId, ctx.actor.id),
+        gt(stagedUploads.createdAt, stagedUploadCutoff()),
+      ),
+    )
+    .returning();
+  if (rows.length !== unique.length)
+    fail(404, "not_found", "An inline upload expired or is not yours to attach", {
+      uploads: unique.filter((id) => !rows.some((row) => row.id === id)),
+    });
+  return ctx.db
+    .insert(attachments)
+    .values(
+      rows.map(({ createdAt: _createdAt, ...row }) => ({ ...row, objectId: row.id, ticketId })),
+    )
+    .returning();
 }
 const countRow = z.object({ type: z.enum(searchResultTypes), count: z.number().int() });
 const hitRow = z.object({
@@ -562,7 +600,15 @@ export const ticketHandlers: Pick<
   },
   async create_ticket(ctx, input) {
     const { row, event } = await createTicketRow(ctx, input);
-    await publish(ctx, event.type, event.ticketId, event.data);
+    const claimed = await claimStagedUploads(ctx, row.id, input.uploads);
+    await publishMany(ctx, [
+      event,
+      ...claimed.map((item) => ({
+        type: "attachment.created",
+        ticketId: row.id,
+        data: { attachmentId: item.id, size: item.size },
+      })),
+    ]);
     return row;
   },
   async duplicate_ticket(ctx, input) {

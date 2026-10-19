@@ -2,7 +2,7 @@ import { z } from "zod";
 import { dueDate, operations, ticketFields, type Ticket } from "./index.ts";
 
 export const ticketDefaults = operations.create_ticket.input
-  .omit({ projectId: true, requestId: true })
+  .omit({ projectId: true, requestId: true, uploads: true })
   .extend({ title: z.string().default("") })
   .parse({});
 
@@ -17,11 +17,13 @@ export const ticketDraftSchema = z.object({
   // The project a new ticket will be created in, when the author chose one other than where the
   // composer opened. The draft itself stays stored under the opening project.
   projectId: z.uuid().optional(),
+  // Inline files staged for a new ticket; creating it claims the ones its text still embeds.
+  uploads: z.array(z.uuid()).default([]),
 });
 export function createTicketDraft(ticket?: Ticket): z.output<typeof ticketDraftSchema> {
   return ticket
-    ? { fields: ticketFields.strip().parse(ticket), version: ticket.version }
-    : { fields: ticketDefaults };
+    ? { fields: ticketFields.strip().parse(ticket), version: ticket.version, uploads: [] }
+    : { fields: ticketDefaults, uploads: [] };
 }
 export const splitTags = (value: string) =>
   value

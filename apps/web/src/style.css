@@ -209,6 +209,92 @@
   .markdown img {
     @apply max-w-full;
   }
+  .markdown a[href^="mention:"] {
+    border-radius: calc(var(--radius) - 6px);
+    background: color-mix(in oklab, var(--primary) 10%, transparent);
+    padding-inline: 0.125rem;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  /* Syntax colors for highlighted code in rendered Markdown and the visual editor. */
+  .markdown .hljs-comment,
+  .markdown .hljs-quote {
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+  .markdown .hljs-keyword,
+  .markdown .hljs-selector-tag,
+  .markdown .hljs-built_in,
+  .markdown .hljs-type {
+    color: var(--primary);
+  }
+  .markdown .hljs-string,
+  .markdown .hljs-regexp,
+  .markdown .hljs-addition {
+    color: var(--success);
+  }
+  .markdown .hljs-number,
+  .markdown .hljs-literal,
+  .markdown .hljs-attr,
+  .markdown .hljs-variable {
+    color: var(--warning);
+  }
+  .markdown .hljs-title,
+  .markdown .hljs-section,
+  .markdown .hljs-name {
+    font-weight: 600;
+  }
+  .markdown .hljs-deletion {
+    color: var(--destructive);
+  }
+  /* The visual editor's checklists, tables, and placeholder. */
+  .markdown ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0.25rem;
+  }
+  .markdown ul[data-type="taskList"] > li {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .markdown ul[data-type="taskList"] > li > label {
+    display: flex;
+    height: 1lh;
+    align-items: center;
+  }
+  .markdown ul[data-type="taskList"] > li > div {
+    flex: 1;
+    min-width: 0;
+  }
+  /* The editor wraps item and cell text in paragraphs; they sit as tight as rendered Markdown. */
+  .ProseMirror li > p,
+  .ProseMirror li > div > p,
+  .ProseMirror td > p,
+  .ProseMirror th > p {
+    margin-block: 0;
+  }
+  .markdown ul[data-type="taskList"] input {
+    accent-color: var(--primary);
+  }
+  .markdown .selectedCell {
+    background: color-mix(in oklab, var(--primary) 12%, transparent);
+  }
+  .markdown .tableWrapper {
+    overflow-x: auto;
+  }
+  .ProseMirror td,
+  .ProseMirror th {
+    min-width: 6rem;
+  }
+  .markdown p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    color: var(--muted-foreground);
+    pointer-events: none;
+  }
+  .markdown .ProseMirror-selectednode {
+    outline: 2px solid var(--primary);
+  }
   .markdown-field {
     @apply mb-6;
   }
@@ -368,6 +454,16 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+/* Mermaid lays diagrams out from label sizes it measures here, which a running transition skews. */
+.diagram-render {
+  position: fixed;
+  inset: 0 auto auto 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.diagram-render * {
+  transition: none !important;
 }
 
 @media (max-width: 767px) {

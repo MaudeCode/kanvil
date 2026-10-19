@@ -37,6 +37,8 @@ export const preferences = {
   ),
   weekStart: preference("week-start", z.enum(["sunday", "monday", "saturday"]).catch("sunday")),
   sidebar: preference("sidebar", z.enum(["last", "expanded", "collapsed"]).catch("last")),
+  // The Markdown editor mode a person chose last: raw source or the visual editor.
+  editor: preference("editor-mode", z.enum(["write", "visual"]).catch("write")),
 };
 // Day-picker indexes for each week start choice.
 export const weekStarts = { sunday: 0, monday: 1, saturday: 6 } as const;
