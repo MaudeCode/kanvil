@@ -707,6 +707,30 @@ describe("repository connections", () => {
     );
   });
 
+  it("resolves tickets named by a project's earlier prefix", async () => {
+    const connection = await connect();
+    const renamed = await app.domain.execute(
+      "update_project",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: project.description,
+        key: `Q${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      },
+      owner,
+    );
+    const result = await send(
+      connection,
+      "pull_request",
+      pullRequest(14, "opened", { ref: `${ticket.key.toLowerCase()}-old-prefix` }),
+    );
+    expect(result.body).toMatchObject({
+      tickets: [{ key: `${renamed.key}-${ticket.number}`, result: "moved" }],
+    });
+    expect(await links()).toMatchObject([{ remoteKind: "pull_request", remoteState: "open" }]);
+  });
+
   it("removes connections, secrets, and webhooks with a deleted project", async () => {
     const connection = await connect();
     await app.domain.execute(

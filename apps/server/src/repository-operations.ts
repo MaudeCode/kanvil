@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ApiError,
@@ -21,6 +21,7 @@ import {
   one,
   project,
   publish,
+  ticketMatch,
   type Context,
   type Domain,
   type Handlers,
@@ -226,17 +227,15 @@ export const repositoryHandlers: Pick<
   },
 };
 
-// Ticket keys of this project named in branch names and titles, such as `feat/kan-12-fix`.
-function ticketKeys(projectKey: string, references: readonly string[]) {
-  const pattern = new RegExp(`\\b${projectKey}-(\\d+)\\b`, "gi");
-  return [
+// Key-shaped words in branch names and titles, such as `feat/kan-12-fix`. `ticketMatch` resolves
+// them, so a project's earlier prefixes and moved tickets' keys still name their tickets.
+const keyPattern = /\b[A-Za-z][A-Za-z0-9]{1,9}-[1-9]\d{0,8}\b/g;
+const ticketKeys = (references: readonly string[]) =>
+  [
     ...new Set(
-      references.flatMap((text) =>
-        [...text.matchAll(pattern)].map((match) => `${projectKey}-${Number(match[1])}`),
-      ),
+      references.flatMap((text) => [...text.matchAll(keyPattern)].map((match) => match[0])),
     ),
   ].slice(0, 20);
-}
 // Records the change on the ticket's link to it, then applies the mapped transition. A change older
 // than the state already recorded for that link applies nothing, so a late or replayed delivery
 // cannot undo a newer one.
@@ -453,12 +452,12 @@ export async function receiveRepositoryWebhook(
           return done(error.code === "project_archived" ? error.code : "access_revoked");
         throw error;
       }
-      const keys = ticketKeys(project(ctx).key, change.references);
+      const keys = ticketKeys(change.references);
       const linked = keys.length
         ? await tx
             .select()
             .from(tickets)
-            .where(and(eq(tickets.projectId, connection.projectId), inArray(tickets.key, keys)))
+            .where(and(eq(tickets.projectId, connection.projectId), or(...keys.map(ticketMatch))))
         : [];
       if (!linked.length) return done("no_ticket");
       const occurredAt = change.occurredAt ?? new Date();
