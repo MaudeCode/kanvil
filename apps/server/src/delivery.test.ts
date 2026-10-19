@@ -4,7 +4,7 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { createServer as createTcpServer, type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import type { Project, Ticket } from "@kanvil/contracts";
-import { createFixture } from "./test-fixture.ts";
+import { createFixture, startMailbox } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createHttpSender, createMailSender } from "./adapters/outbound.ts";
@@ -42,45 +42,11 @@ async function receiver() {
   const port = portOf(server.address());
   return { state, port, url: `http://127.0.0.1:${port}`, close: () => server.close() };
 }
-// A local SMTP server that accepts every message, so email never leaves the machine.
-async function smtp() {
-  const messages: string[] = [];
-  const server = createTcpServer((socket) => {
-    let buffer = "",
-      body: string | undefined;
-    socket.write("220 fake ESMTP\r\n");
-    socket.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      for (let end = buffer.indexOf("\r\n"); end >= 0; end = buffer.indexOf("\r\n")) {
-        const line = buffer.slice(0, end);
-        buffer = buffer.slice(end + 2);
-        if (body !== undefined) {
-          if (line === ".") {
-            messages.push(body);
-            body = undefined;
-            socket.write("250 queued\r\n");
-          } else body += `${line}\n`;
-          continue;
-        }
-        const command = line.slice(0, 4).toUpperCase();
-        if (command === "DATA") {
-          body = "";
-          socket.write("354 send\r\n");
-        } else if (command === "QUIT") socket.end("221 bye\r\n");
-        else socket.write("250 ok\r\n");
-      }
-    });
-  });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const port = portOf(server.address());
-  return { messages, url: `smtp://127.0.0.1:${port}`, close: () => server.close() };
-}
-
 describe("notification channels and project destinations", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
     app: Awaited<ReturnType<typeof createApplication>>,
     http: Awaited<ReturnType<typeof receiver>>,
-    mail: Awaited<ReturnType<typeof smtp>>;
+    mail: Awaited<ReturnType<typeof startMailbox>>;
   let owner: Actor, machine: Actor, reader: Actor, project: Project, ticket: Ticket;
   const secrets = () => deliverySecrets(fixture.config);
   const senders = (allowPrivate = true): OutboundSenders => ({
@@ -118,7 +84,7 @@ describe("notification channels and project destinations", () => {
   beforeAll(async () => {
     fixture = await createFixture();
     http = await receiver();
-    mail = await smtp();
+    mail = await startMailbox();
     app = await createApplication(fixture.database, fixture.config, {
       jobs: (name, _interval, run) => createPollingJob(name, 86_400_000, run),
       senders: () => senders(),
@@ -132,7 +98,7 @@ describe("notification channels and project destinations", () => {
   });
   afterAll(async () => {
     http?.close();
-    mail?.close();
+    await mail?.close();
     await app?.close();
     await fixture?.close();
   });

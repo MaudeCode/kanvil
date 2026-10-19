@@ -30,7 +30,7 @@ Pin the latest stable compatible releases during implementation. Reuse existing 
 
 - First-owner setup, account management, local login, logout, and account recovery.
 - Closed public registration by default.
-- Local email/password and OIDC login available on web and mobile.
+- Local email/password and OIDC login available on web and mobile, plus optional GitHub, Google, and Discord sign-in for linked accounts and emailed sign-in and password-reset codes when SMTP is configured.
 - PocketID setup through discovery URL, client ID, server-held secret, and documented callback URLs.
 - Explicit account linking and consistent project authorization across login methods.
 - Custom workspace roles with granular, server-enforced actions, assigned through the member editor and capped by the assigning member's own role and credential scopes.
