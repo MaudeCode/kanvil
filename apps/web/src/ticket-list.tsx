@@ -257,7 +257,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     accessorKey: "title",
     header: t("ticket.list.title"),
-    size: 372,
+    size: 400,
     enableHiding: false,
     minSize: 200,
     cell: ({ row }) => (
@@ -276,7 +276,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
       ({
         accessorKey: key,
         header: ticketColumnLabels[key],
-        size: 180,
+        size: 140,
         minSize: 120,
         cell: ({ row }) => (
           <TicketTags
@@ -300,7 +300,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
     accessorKey: "priority",
     header: ticketColumnLabels.priority,
     // Room for the heading and its sort arrow; longer names in other languages truncate.
-    size: 100,
+    size: 96,
     minSize: 64,
     cell: ({ row }) => (
       <PropertyCell
@@ -314,7 +314,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     accessorKey: "difficulty",
     header: ticketColumnLabels.difficulty,
-    size: 110,
+    size: 106,
     minSize: 85,
     cell: ({ row }) => (
       <PropertyCell ticket={row.original} property="difficulty" value={row.original.difficulty} />
@@ -1510,7 +1510,7 @@ export function TicketList({
                                     : undefined
                                 }
                                 className={cn(
-                                  "h-8 w-full justify-start gap-1 rounded-none px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
+                                  "h-8 w-full justify-start gap-1 rounded-none pr-2 pl-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
                                   sorted && "text-foreground",
                                 )}
                                 onClick={() =>
