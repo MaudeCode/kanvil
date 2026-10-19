@@ -49,28 +49,14 @@ import {
 import { DatePicker, credentialExpiry } from "./date-picker.tsx";
 import { copyText } from "../lib/browser.ts";
 import { formText } from "../forms.ts";
+import { t } from "@kanvil/contracts/i18n";
 
 // Key lifetimes in days; 90 matches the server default. No expiry is only an explicit choice.
-const expiryChoices = {
-  "7": "7 days",
-  "30": "30 days",
-  "90": "90 days",
-  "365": "1 year",
-  custom: "Custom date",
-  never: "No expiry",
-};
-const permissionText = {
-  read: { name: "Read tickets", description: "View projects, tickets, comments, and attachments." },
-  write: {
-    name: "Edit tickets",
-    description: "Create and update tickets, comments, and attachments.",
-  },
-  claim: { name: "Claim work", description: "Claim, renew, and release ticket ownership." },
-  admin: {
-    name: "Manage projects",
-    description: "Change project settings and membership where your role allows it.",
-  },
-};
+const expiryChoices = ["7", "30", "90", "365", "custom", "never"] as const;
+const permissionText = (scope: (typeof scopes)[number]) => ({
+  name: t(`settings.credentials.permission.${scope}.name`),
+  description: t(`settings.credentials.permission.${scope}.description`),
+});
 function parseJSON(value: string | null): unknown {
   try {
     return JSON.parse(value ?? "null");
@@ -106,11 +92,11 @@ export function Credentials() {
   return (
     <section>
       <SectionHeading
-        title="API keys"
-        description="Connect scripts, integrations, and agents with access you can revoke."
+        title={t("settings.credentials.title")}
+        description={t("settings.credentials.description")}
         action={
           <IconButton
-            label="Create API key"
+            label={t("settings.credentials.create")}
             variant="default"
             disabled={projects.isPending}
             onClick={() => setOpen(true)}
@@ -123,15 +109,15 @@ export function Credentials() {
       {credentials.isPending ? (
         <Loading />
       ) : credentials.data?.length ? (
-        <Table aria-label="API keys" mobileLayout="rows">
+        <Table aria-label={t("settings.credentials.title")} mobileLayout="rows">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Access</TableHead>
-              <TableHead>Projects</TableHead>
-              <TableHead>Expires</TableHead>
+              <TableHead>{t("settings.credentials.name")}</TableHead>
+              <TableHead>{t("settings.credentials.access")}</TableHead>
+              <TableHead>{t("settings.credentials.projects")}</TableHead>
+              <TableHead>{t("settings.credentials.expires")}</TableHead>
               <TableHead>
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">{t("settings.credentials.actions")}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -142,7 +128,7 @@ export function Credentials() {
               const projectNames = access.projectIds.map(
                 (id) =>
                   projects.data?.find((project) => project.id === id)?.name ??
-                  "Unavailable project",
+                  t("settings.credentials.unavailableProject"),
               );
               return (
                 <TableRow key={credential.id}>
@@ -152,40 +138,56 @@ export function Credentials() {
                         <KeyRound className="size-4" />
                       </span>
                       <div className="min-w-0">
-                        <strong className="block wrap-anywhere font-medium">
-                          {credential.name || "Untitled key"}
+                        <strong dir="auto" className="block wrap-anywhere font-medium">
+                          {credential.name || t("settings.credentials.untitled")}
                         </strong>
                         <code className="text-xs text-muted-foreground">{credential.start}…</code>
                       </div>
                       {(expired || !credential.enabled) && (
-                        <Badge variant="secondary">{expired ? "Expired" : "Disabled"}</Badge>
+                        <Badge variant="secondary">
+                          {expired
+                            ? t("settings.credentials.expired")
+                            : t("settings.credentials.disabled")}
+                        </Badge>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell data-label="Access" className="max-w-72 whitespace-normal">
+                  <TableCell
+                    data-label={t("settings.credentials.access")}
+                    className="max-w-72 whitespace-normal"
+                  >
                     <span className="text-sm">
                       {access.permissions.length === 1 && access.permissions[0] === "read"
-                        ? "Read only"
+                        ? t("settings.credentials.preset.read")
                         : access.permissions
-                            .map((scope) => permissionText[scope].name)
-                            .join(", ") || "Custom"}
+                            .map((scope) => permissionText(scope).name)
+                            .join(", ") || t("settings.credentials.custom")}
                     </span>
                   </TableCell>
-                  <TableCell data-label="Projects" className="max-w-64 whitespace-normal">
-                    {projectNames.join(", ") || "No project access"}
+                  <TableCell
+                    data-label={t("settings.credentials.projects")}
+                    className="max-w-64 whitespace-normal"
+                  >
+                    {projectNames.join(", ") || t("settings.credentials.noProjects")}
                   </TableCell>
                   <TableCell
-                    data-label="Expires"
+                    data-label={t("settings.credentials.expires")}
                     className="whitespace-nowrap text-muted-foreground"
                   >
-                    {credential.expiresAt ? date(credential.expiresAt) : "Never"}
+                    {credential.expiresAt
+                      ? date(credential.expiresAt)
+                      : t("settings.credentials.never")}
                   </TableCell>
                   <TableCell>
                     <Confirm
-                      label="Revoke API key"
+                      label={t("settings.credentials.revoke")}
                       icon={<Trash2 />}
                       danger
-                      description={`Revoke ${credential.name ?? "this API key"}? Connections using it will immediately lose access.`}
+                      description={
+                        credential.name === null
+                          ? t("settings.credentials.revokeUnnamed")
+                          : t("settings.credentials.revokeNamed", { name: credential.name })
+                      }
                       onConfirm={async () => {
                         await api.request(
                           `/api/v1/credentials/${encodeURIComponent(credential.id)}`,
@@ -202,15 +204,15 @@ export function Credentials() {
           </TableBody>
         </Table>
       ) : (
-        <EmptyState title="No API keys" icon={KeyRound} className="py-16">
+        <EmptyState title={t("settings.credentials.empty")} icon={KeyRound} className="py-16">
           <p className="mb-0 max-w-sm text-center text-sm text-muted-foreground">
-            Create a key when a script, integration, or agent needs access to your projects.
+            {t("settings.credentials.emptyDescription")}
           </p>
         </EmptyState>
       )}
       <Modal
         busy={pending}
-        title={secret ? "API key created" : "Create API key"}
+        title={secret ? t("settings.credentials.created") : t("settings.credentials.create")}
         open={open}
         onOpenChange={(value) => {
           if (!value) close();
@@ -246,9 +248,9 @@ function CreatedKey({
     [error, setError] = useState<unknown>();
   return (
     <div>
-      <p>Copy this key now. You won’t be able to see it again.</p>
+      <p>{t("settings.credentials.copyNow")}</p>
       <Input
-        label="New API key"
+        label={t("settings.credentials.newKey")}
         value={value.key}
         readOnly
         className="font-mono text-xs"
@@ -264,10 +266,10 @@ function CreatedKey({
           }}
         >
           {copied ? <CheckIcon /> : <Copy />}
-          {copied ? "Copied" : "Copy API key"}
+          {copied ? t("common.state.copied") : t("settings.credentials.copy")}
         </Button>
         <Button variant="default" onClick={onDone}>
-          Done
+          {t("common.action.done")}
         </Button>
       </div>
     </div>
@@ -283,7 +285,7 @@ function Permission({
   onChange: (checked: boolean) => void;
 }) {
   const id = useId(),
-    text = permissionText[scope];
+    text = permissionText(scope);
   return (
     <Field
       orientation="horizontal"
@@ -371,9 +373,9 @@ function CreateKey({
   if (loading) return <Loading />;
   if (!projects.length)
     return (
-      <EmptyState title="Choose a project first" className="py-8">
-        <p>API keys need access to at least one project.</p>
-        <Button render={<Link to="/" />}>Go to projects</Button>
+      <EmptyState title={t("settings.credentials.noProjectTitle")} className="py-8">
+        <p>{t("settings.credentials.noProjectDescription")}</p>
+        <Button render={<Link to="/" />}>{t("settings.credentials.goToProjects")}</Button>
       </EmptyState>
     );
   return (
@@ -384,24 +386,33 @@ function CreateKey({
     >
       <FieldSet disabled={pending}>
         <Input
-          label="Key name"
+          label={t("settings.credentials.keyName")}
           name="name"
           required
           maxLength={100}
-          placeholder="e.g. Release automation"
+          placeholder={t("settings.credentials.keyNamePlaceholder")}
           autoFocus
         />
         <FieldSet className="gap-2">
-          <FieldLegend variant="label">Project access</FieldLegend>
+          <FieldLegend variant="label">{t("settings.credentials.projectAccess")}</FieldLegend>
           {projects.length > 6 && (
-            <SearchField label="Find project" value={query} onChange={setQuery} className="mb-2" />
+            <SearchField
+              label={t("settings.credentials.findProject")}
+              value={query}
+              onChange={setQuery}
+              className="mb-2"
+            />
           )}
           <div className="max-h-44 overflow-y-auto rounded-md border px-3 py-1">
             {matches.map((project) => (
               <Check
                 key={project.id}
                 label={project.name}
-                description={`${project.key} · ${workspaceNames.get(project.workspaceId) ?? "Workspace"}`}
+                description={t("settings.credentials.projectDescription", {
+                  key: project.key,
+                  workspace:
+                    workspaceNames.get(project.workspaceId) ?? t("settings.credentials.workspace"),
+                })}
                 checked={projectIds.includes(project.id)}
                 onCheckedChange={(checked) =>
                   setProjectIds((current) =>
@@ -411,15 +422,15 @@ function CreateKey({
               />
             ))}
             {matches.length === 0 && (
-              <p className="my-4 text-sm text-muted-foreground">No matching projects</p>
+              <p className="my-4 text-sm text-muted-foreground">
+                {t("settings.credentials.noMatches")}
+              </p>
             )}
           </div>
-          <FieldDescription>
-            Your existing project role still limits what this key can do.
-          </FieldDescription>
+          <FieldDescription>{t("settings.credentials.roleLimit")}</FieldDescription>
         </FieldSet>
         <Select
-          label="Access level"
+          label={t("settings.credentials.accessLevel")}
           value={preset}
           onValueChange={(value) => {
             const next = value ?? "read";
@@ -434,10 +445,10 @@ function CreateKey({
               );
           }}
         >
-          <SelectItem value="read">Read only</SelectItem>
-          <SelectItem value="write">Read and write</SelectItem>
-          <SelectItem value="automation">Read, write, and claim work</SelectItem>
-          <SelectItem value="custom">Custom permissions</SelectItem>
+          <SelectItem value="read">{t("settings.credentials.preset.read")}</SelectItem>
+          <SelectItem value="write">{t("settings.credentials.preset.write")}</SelectItem>
+          <SelectItem value="automation">{t("settings.credentials.preset.automation")}</SelectItem>
+          <SelectItem value="custom">{t("settings.credentials.preset.custom")}</SelectItem>
         </Select>
         {preset === "custom" && (
           <FieldSet className="gap-0">
@@ -455,16 +466,20 @@ function CreateKey({
             ))}
           </FieldSet>
         )}
-        <Select label="Expires" value={expiry} onValueChange={(value) => setExpiry(value ?? "90")}>
-          {Object.entries(expiryChoices).map(([value, label]) => (
+        <Select
+          label={t("settings.credentials.expires")}
+          value={expiry}
+          onValueChange={(value) => setExpiry(value ?? "90")}
+        >
+          {expiryChoices.map((value) => (
             <SelectItem key={value} value={value}>
-              {label}
+              {t(`settings.credentials.expiry.${value}`)}
             </SelectItem>
           ))}
         </Select>
         {expiry === "custom" && (
           <DatePicker
-            label="Expires on"
+            label={t("settings.credentials.expiresOn")}
             value={expiresAt}
             onChange={(chosen) => {
               if (chosen) setExpiresAt(chosen);
@@ -473,13 +488,13 @@ function CreateKey({
           />
         )}
         {expiry === "never" && (
-          <FieldDescription>The key works until you delete it.</FieldDescription>
+          <FieldDescription>{t("settings.credentials.neverDescription")}</FieldDescription>
         )}
         <FormActions
           error={error}
           pending={pending}
-          submitLabel="Create API key"
-          pendingLabel="Creating…"
+          submitLabel={t("settings.credentials.create")}
+          pendingLabel={t("settings.credentials.creating")}
           submitDisabled={!projectIds.length || !permissions.length}
           onCancel={onCancel}
         />

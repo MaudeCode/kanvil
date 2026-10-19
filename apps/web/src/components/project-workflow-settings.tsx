@@ -20,9 +20,9 @@ import {
 import { SettingRow } from "./settings-layout.tsx";
 import { AccentColorPicker } from "./accent-color-picker.tsx";
 import { PropertyValue, stateValue, useWorkflow } from "./ticket-property.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
 type Category = WorkflowState["category"];
-const ticketCount = (count: number) => `${count} ${count === 1 ? "ticket" : "tickets"}`;
 // LabelSettings has no categories, order, or reassignment, so states get their own rows:
 // grouped by category, each with its place, presentation, and a delete that moves its tickets.
 export function ProjectWorkflowSettings({
@@ -65,10 +65,14 @@ export function ProjectWorkflowSettings({
   return (
     <section>
       <SectionHeading
-        title="Workflow"
+        title={t("settings.workflow.title")}
         action={
           canAdmin && (
-            <IconButton label="New state" variant="default" onClick={() => edit(null)}>
+            <IconButton
+              label={t("settings.workflow.new")}
+              variant="default"
+              onClick={() => edit(null)}
+            >
               <Plus />
             </IconButton>
           )
@@ -98,32 +102,38 @@ export function ProjectWorkflowSettings({
                   }
                 >
                   <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-                    {ticketCount(state.count)}
+                    {t("settings.tickets", { count: state.count })}
                   </span>
                   {canAdmin && (
                     <>
                       <IconButton
-                        label={`Move ${state.name} up`}
+                        label={t("settings.moveUp", { name: state.name })}
                         disabled={index === 0 || update.isPending}
                         onClick={() => move(state, index - 1)}
                       >
                         <ArrowUp />
                       </IconButton>
                       <IconButton
-                        label={`Move ${state.name} down`}
+                        label={t("settings.moveDown", { name: state.name })}
                         disabled={index === group.length - 1 || update.isPending}
                         onClick={() => move(state, index + 1)}
                       >
                         <ArrowDown />
                       </IconButton>
-                      <IconButton label={`Edit state ${state.name}`} onClick={() => edit(state)}>
+                      <IconButton
+                        label={t("settings.workflow.editNamed", { name: state.name })}
+                        onClick={() => edit(state)}
+                      >
                         <Pencil />
                       </IconButton>
                       <IconButton
                         label={
                           group.length === 1
-                            ? `${state.name} is the only ${stateLabels[category]} state`
-                            : `Delete state ${state.name}`
+                            ? t("settings.workflow.onlyState", {
+                                name: state.name,
+                                category: stateLabels[category],
+                              })
+                            : t("settings.workflow.deleteNamed", { name: state.name })
                         }
                         disabled={group.length === 1}
                         onClick={() => {
@@ -145,7 +155,7 @@ export function ProjectWorkflowSettings({
         })
       )}
       <Modal
-        title={draft?.state ? "Edit state" : "New state"}
+        title={draft?.state ? t("settings.workflow.edit") : t("settings.workflow.new")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -174,13 +184,13 @@ export function ProjectWorkflowSettings({
               void action
                 .then(() => {
                   setDraft(null);
-                  toast.success("State saved");
+                  toast.success(t("settings.workflow.saved"));
                 })
                 .catch(() => {});
             }}
           >
             <Input
-              label="State name"
+              label={t("settings.workflow.name")}
               value={draft.name}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               maxLength={40}
@@ -188,7 +198,7 @@ export function ProjectWorkflowSettings({
               autoFocus
             />
             <Select
-              label="Category"
+              label={t("settings.workflow.category")}
               value={draft.category}
               onValueChange={(value) => {
                 const category = states.find((item) => item === value);
@@ -202,7 +212,7 @@ export function ProjectWorkflowSettings({
               ))}
             </Select>
             <AccentColorPicker
-              label="State color"
+              label={t("settings.workflow.color")}
               value={draft.color}
               onChange={(color) => setDraft({ ...draft, color })}
               disabled={busy}
@@ -221,13 +231,13 @@ export function ProjectWorkflowSettings({
             )}
             {draft.state && draft.category !== draft.state.category && (
               <p className="text-xs text-muted-foreground">
-                Its tickets change status to {stateLabels[draft.category]}.
+                {t("settings.workflow.categoryChange", { status: stateLabels[draft.category] })}
               </p>
             )}
             <FormActions
               error={create.error ?? update.error}
               pending={busy}
-              submitLabel="Save state"
+              submitLabel={t("settings.workflow.save")}
               submitDisabled={!draft.name.trim()}
               onCancel={() => setDraft(null)}
             />
@@ -235,7 +245,11 @@ export function ProjectWorkflowSettings({
         )}
       </Modal>
       <Modal
-        title={removing ? `Delete ${removing.state.name}` : "Delete state"}
+        title={
+          removing
+            ? t("settings.workflow.deleteTitle", { name: removing.state.name })
+            : t("settings.workflow.delete")
+        }
         open={!!removing}
         onOpenChange={(open) => {
           if (!open) setRemoving(null);
@@ -255,13 +269,13 @@ export function ProjectWorkflowSettings({
                 })
                 .then(() => {
                   setRemoving(null);
-                  toast.success("State deleted");
+                  toast.success(t("settings.workflow.deleted"));
                 })
                 .catch(() => {});
             }}
           >
             <Select
-              label={`Move ${ticketCount(removing.state.count)} to`}
+              label={t("settings.workflow.reassign", { count: removing.state.count })}
               value={removing.reassignTo}
               onValueChange={(value) => {
                 if (value) setRemoving({ ...removing, reassignTo: value });
@@ -278,7 +292,7 @@ export function ProjectWorkflowSettings({
             <FormActions
               error={remove.error}
               pending={remove.isPending}
-              submitLabel="Delete state"
+              submitLabel={t("settings.workflow.delete")}
               submitDisabled={!removing.reassignTo}
               onCancel={() => setRemoving(null)}
             />

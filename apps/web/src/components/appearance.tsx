@@ -9,7 +9,6 @@ import {
   validateTheme,
   paletteSchema,
   type ThemeDefinition,
-  type ThemePalette,
 } from "../lib/themes.ts";
 import { Button, Confirm, ErrorNotice, IconButton, Input, Modal, SearchField } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
@@ -17,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { downloadFile } from "../lib/browser.ts";
+import { t } from "@kanvil/contracts/i18n";
 const modes = ["system", "light", "dark"] as const;
 const download = (theme: ThemeDefinition) =>
   downloadFile(`${theme.id}.kanvil-theme.json`, encodeThemeFile([theme]));
@@ -53,7 +53,7 @@ function ThemeChoice({
                 render={
                   <Button
                     variant="ghost"
-                    aria-label={`Use ${theme.name} ${mode} mode`}
+                    aria-label={t(`settings.appearance.useMode.${mode}`, { name: theme.name })}
                     aria-pressed={selected}
                     className="pointer-events-auto relative size-[68px] shrink-0 rounded-full p-1 transition-transform hover:scale-105 hover:bg-transparent aria-pressed:hover:scale-100"
                     onClick={() => onPickMode(mode)}
@@ -76,7 +76,7 @@ function ThemeChoice({
                   </>
                 )}
               </TooltipTrigger>
-              <TooltipContent>Use for {mode} mode only</TooltipContent>
+              <TooltipContent>{t(`settings.appearance.modeOnly.${mode}`)}</TooltipContent>
             </Tooltip>
           );
         })}
@@ -112,7 +112,7 @@ export function AppearanceSettings() {
     setEditor({
       ...item,
       id: `custom-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`,
-      name: `${item.name} copy`,
+      name: t("settings.appearance.copyName", { name: item.name }),
     });
   }
   const matches = theme.themes.filter((item) =>
@@ -121,11 +121,13 @@ export function AppearanceSettings() {
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="mb-3 text-sm font-normal text-muted-foreground">Color scheme</h2>
+        <h2 className="mb-3 text-sm font-normal text-muted-foreground">
+          {t("settings.appearance.colorScheme")}
+        </h2>
         <RadioGroup
           value={theme.mode}
           onValueChange={(value) => theme.setMode(z.enum(modes).parse(value))}
-          aria-label="Theme"
+          aria-label={t("settings.appearance.theme")}
           className="grid grid-cols-3 gap-3"
         >
           {modes.map((mode) => (
@@ -149,18 +151,28 @@ export function AppearanceSettings() {
       </div>
       <div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="mb-0 text-sm font-normal text-muted-foreground">Themes</h2>
+          <h2 className="mb-0 text-sm font-normal text-muted-foreground">
+            {t("settings.appearance.themes")}
+          </h2>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
             <SearchField
-              label="Search themes"
-              placeholder="Search themes…"
+              label={t("settings.appearance.search")}
+              placeholder={t("settings.appearance.searchPlaceholder")}
               value={query}
               onChange={setQuery}
             />
-            <IconButton label="Create theme" size="icon-sm" onClick={() => duplicate(preview)}>
+            <IconButton
+              label={t("settings.appearance.create")}
+              size="icon-sm"
+              onClick={() => duplicate(preview)}
+            >
               <Plus />
             </IconButton>
-            <IconButton label="Add theme" size="icon-sm" onClick={() => file.current?.click()}>
+            <IconButton
+              label={t("settings.appearance.add")}
+              size="icon-sm"
+              onClick={() => file.current?.click()}
+            >
               <Upload />
             </IconButton>
           </div>
@@ -170,7 +182,7 @@ export function AppearanceSettings() {
           type="file"
           accept="application/json,.json"
           className="hidden"
-          aria-label="Import theme file"
+          aria-label={t("settings.appearance.importFile")}
           onChange={(event) => {
             const chosen = event.currentTarget.files?.[0];
             if (!chosen) return;
@@ -184,7 +196,7 @@ export function AppearanceSettings() {
         />
         <ErrorNotice error={error} />
         <RadioGroup
-          aria-label="Color theme"
+          aria-label={t("settings.appearance.colorTheme")}
           value={theme.color}
           onValueChange={(value) => theme.setColor(String(value))}
           className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-2"
@@ -201,7 +213,7 @@ export function AppearanceSettings() {
               actions={
                 <>
                   <IconButton
-                    label={`Duplicate ${item.name}`}
+                    label={t("settings.appearance.duplicate", { name: item.name })}
                     className="size-6"
                     onClick={() => duplicate(item)}
                   >
@@ -210,22 +222,24 @@ export function AppearanceSettings() {
                   {item.id.startsWith("custom-") && (
                     <>
                       <IconButton
-                        label={`Edit ${item.name}`}
+                        label={t("settings.appearance.edit", { name: item.name })}
                         className="size-6"
                         onClick={() => setEditor(item)}
                       >
                         <Pencil />
                       </IconButton>
                       <IconButton
-                        label={`Export ${item.name}`}
+                        label={t("settings.appearance.export", { name: item.name })}
                         className="size-6"
                         onClick={() => download(item)}
                       >
                         <Download />
                       </IconButton>
                       <Confirm
-                        label={`Delete ${item.name}`}
-                        description={`Remove ${item.name} from this browser? Light or dark appearances using it will fall back to your base theme.`}
+                        label={t("settings.appearance.delete", { name: item.name })}
+                        description={t("settings.appearance.deleteDescription", {
+                          name: item.name,
+                        })}
                         danger
                         icon={<Trash2 />}
                         onConfirm={async () => theme.remove(item.id)}
@@ -239,12 +253,12 @@ export function AppearanceSettings() {
         </RadioGroup>
         {matches.length === 0 && (
           <p role="status" className="mt-4">
-            No matching themes
+            {t("settings.appearance.noMatches")}
           </p>
         )}
       </div>
       <Modal
-        title="Custom theme"
+        title={t("settings.appearance.customTheme")}
         open={!!editor}
         onOpenChange={(open) => {
           if (!open) setEditor(null);
@@ -264,13 +278,6 @@ export function AppearanceSettings() {
     </section>
   );
 }
-const colorLabels: Record<keyof ThemePalette, string> = {
-  background: "Background",
-  foreground: "Text",
-  sidebar: "Sidebar",
-  primary: "Accent",
-  primaryForeground: "Accent text",
-};
 function ThemeEditor({
   initial,
   onSaved,
@@ -293,7 +300,7 @@ function ThemeEditor({
       }}
     >
       <Input
-        label="Theme name"
+        label={t("settings.appearance.name")}
         value={draft.name}
         required
         maxLength={60}
@@ -308,7 +315,10 @@ function ThemeEditor({
               {paletteSchema.keyof().options.map((key) => (
                 <Input
                   key={key}
-                  label={`${modeNames[mode]} ${colorLabels[key].toLowerCase()}`}
+                  label={t("settings.appearance.paletteColor", {
+                    mode: modeNames[mode],
+                    color: t(`settings.appearance.color.${key}`),
+                  })}
                   type="color"
                   value={draft[mode][key]}
                   onChange={(event) =>
@@ -322,7 +332,7 @@ function ThemeEditor({
       </div>
       <ErrorNotice error={error} />
       <Button type="submit" variant="default" className="mt-4">
-        Save theme
+        {t("settings.appearance.save")}
       </Button>
     </form>
   );

@@ -36,6 +36,8 @@ import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
 import { PrefixInput } from "./create-project.tsx";
+import { t } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 export function ProjectSettings({
   project,
   section,
@@ -60,7 +62,7 @@ export function ProjectSettings({
   });
   return (
     <>
-      <SettingsLayout title="Project settings" section={section}>
+      <SettingsLayout title={t("settings.project.title")} section={section}>
         <SettingsPanel value="general">
           <section>
             <EditableHeading
@@ -70,14 +72,18 @@ export function ProjectSettings({
               version={project.version}
               pending={update.isPending}
               error={update.error}
-              editLabel="Edit project"
+              editLabel={t("settings.project.edit")}
               media={<ProjectIconPicker project={project} disabled={!access.canManage} />}
               badges={
                 <>
                   <Badge variant="secondary" className="ml-0.5 font-mono text-[10px] font-normal">
                     {project.key}
                   </Badge>
-                  <CopyButton label="Copy ticket prefix" value={project.key} size="icon-xs" />
+                  <CopyButton
+                    label={t("settings.project.copyPrefix")}
+                    value={project.key}
+                    size="icon-xs"
+                  />
                 </>
               }
               onSave={(draft) =>
@@ -88,7 +94,7 @@ export function ProjectSettings({
                     name: draft.name,
                     description: draft.description,
                   })
-                  .then(() => toast.success("Project saved"))
+                  .then(() => toast.success(t("settings.project.saved")))
               }
             >
               <p className="mb-0 text-xs tabular-nums">
@@ -98,28 +104,33 @@ export function ProjectSettings({
                   className="text-muted-foreground hover:text-foreground"
                 >
                   {project.openTickets === 0
-                    ? "No open tickets"
-                    : `${project.openTickets} open ${project.openTickets === 1 ? "ticket" : "tickets"}`}
+                    ? t("settings.project.noOpenTickets")
+                    : t("settings.project.openTickets", { count: project.openTickets })}
                   {project.overdueTickets > 0 && (
-                    <span className="text-(--warning)"> · {project.overdueTickets} overdue</span>
+                    <span className="text-(--warning)">
+                      {" "}
+                      {t("settings.project.overdueTickets", { count: project.overdueTickets })}
+                    </span>
                   )}
-                </Link>
-                {" · Created "}
-                <RelativeTime value={project.createdAt} />
+                </Link>{" "}
+                <Trans
+                  i18nKey="settings.project.created"
+                  components={{ time: <RelativeTime value={project.createdAt} /> }}
+                />
               </p>
             </EditableHeading>
           </section>
           <section>
             <SettingRow
-              title="Project access"
+              title={t("settings.project.access")}
               description={
                 project.visibility === "workspace"
-                  ? "Workspace members inherit access from their workspace role."
-                  : "Only members you add and workspace administrators can see this project."
+                  ? t("settings.project.accessWorkspace")
+                  : t("settings.project.accessPrivate")
               }
             >
               <Select
-                label="Project access"
+                label={t("settings.project.access")}
                 labelHidden
                 className="mb-0 w-56"
                 value={project.visibility}
@@ -135,18 +146,23 @@ export function ProjectSettings({
                       description: project.description,
                       visibility,
                     })
-                    .then(() => toast.success("Project access updated"))
+                    .then(() => toast.success(t("settings.project.accessUpdated")))
                     .catch(reportError);
                 }}
               >
-                <SelectItem value="workspace">Everyone in the workspace</SelectItem>
-                <SelectItem value="private">Only project members</SelectItem>
+                <SelectItem value="workspace">
+                  {t("settings.project.visibility.workspace")}
+                </SelectItem>
+                <SelectItem value="private">{t("settings.project.visibility.private")}</SelectItem>
               </Select>
             </SettingRow>
             <TicketPrefix project={project} canAdmin={access.canManage} />
             <PublicLink project={project} canAdmin={access.canShare} />
             <ProjectBackground project={project} canAdmin={access.canManage} />
-            <SettingRow title="Workspace" description={workspace.active?.name}>
+            <SettingRow
+              title={t("settings.project.workspace")}
+              description={workspace.active?.name}
+            >
               {access.canManage &&
                 capabilitiesOf(workspace.active ?? { role: null }).includes("project.manage") &&
                 destinations.length > 0 && (
@@ -161,7 +177,7 @@ export function ProjectSettings({
                     />
                   }
                 >
-                  Workspace settings
+                  {t("settings.project.workspaceSettings")}
                 </Button>
               )}
             </SettingRow>
@@ -229,8 +245,8 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
     [key, setKey] = useState(project.key);
   return (
     <SettingRow
-      title="Ticket prefix"
-      description="Earlier prefixes and ticket keys keep working after a change."
+      title={t("settings.project.prefix")}
+      description={t("settings.project.prefixDescription")}
     >
       {canAdmin && (
         <Button
@@ -240,12 +256,12 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
             setOpen(true);
           }}
         >
-          Change prefix
+          {t("settings.project.changePrefix")}
         </Button>
       )}
       <Modal
-        title="Change ticket prefix"
-        description={`Every ticket in ${project.name} takes the new prefix and keeps its number.`}
+        title={t("settings.project.changePrefixTitle")}
+        description={t("settings.project.changePrefixDescription", { name: project.name })}
         open={open}
         onOpenChange={setOpen}
         busy={update.isPending}
@@ -263,7 +279,7 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
               })
               .then((saved) => {
                 setOpen(false);
-                toast.success(`Tickets now use ${saved.key}`);
+                toast.success(t("settings.project.prefixChanged", { key: saved.key }));
               })
               .catch(() => {});
           }}
@@ -279,8 +295,8 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
           <FormActions
             error={update.error}
             pending={update.isPending}
-            submitLabel="Change prefix"
-            pendingLabel="Changing…"
+            submitLabel={t("settings.project.changePrefix")}
+            pendingLabel={t("settings.project.changing")}
             submitDisabled={key === project.key}
             onCancel={() => setOpen(false)}
           />
@@ -290,13 +306,12 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
   );
 }
 
-// What a public link discloses; the public operations' projection is the source of this list.
-const disclosure =
-  "Anyone with the link can read every unarchived ticket's title, description, acceptance criteria, status, priority, kind, difficulty, labels, scopes, dates, and links to other tickets in this project. People, comments, activity, attachments, evidence, and claims stay private.";
 // Shares the project read-only with anyone who has its link, or stops sharing at once.
 function PublicLink({ project, canAdmin }: { project: Project; canAdmin: boolean }) {
   const update = useOperation("update_project"),
-    url = new URL(`/public/projects/${project.id}`, window.location.origin).href;
+    url = new URL(`/public/projects/${project.id}`, window.location.origin).href,
+    // What a public link discloses; the public operations' projection is the source of this list.
+    disclosure = t("settings.project.publicDisclosure");
   const save = (publicReadEnabled: boolean) =>
     update
       .mutateAsync({
@@ -306,10 +321,14 @@ function PublicLink({ project, canAdmin }: { project: Project; canAdmin: boolean
         description: project.description,
         publicReadEnabled,
       })
-      .then(() => toast.success(publicReadEnabled ? "Public link on" : "Public link off"));
+      .then(() =>
+        toast.success(
+          publicReadEnabled ? t("settings.project.publicOn") : t("settings.project.publicOff"),
+        ),
+      );
   return (
     <SettingRow
-      title="Public link"
+      title={t("settings.project.publicLink")}
       description={
         project.publicReadEnabled ? (
           <>
@@ -317,15 +336,15 @@ function PublicLink({ project, canAdmin }: { project: Project; canAdmin: boolean
             <span className="mt-1 block">{disclosure}</span>
           </>
         ) : (
-          "Off"
+          t("settings.project.off")
         )
       }
     >
       {project.publicReadEnabled && (
         <>
-          <CopyButton label="Copy public link" value={url} />
+          <CopyButton label={t("settings.project.copyPublicLink")} value={url} />
           <IconButton
-            label="Open public view"
+            label={t("settings.project.openPublic")}
             render={<a href={url} target="_blank" rel="noreferrer" />}
           >
             <ExternalLink />
@@ -335,11 +354,11 @@ function PublicLink({ project, canAdmin }: { project: Project; canAdmin: boolean
       {canAdmin &&
         (project.publicReadEnabled ? (
           <Button disabled={update.isPending} onClick={() => void save(false).catch(reportError)}>
-            Stop sharing
+            {t("settings.project.stopSharing")}
           </Button>
         ) : (
           <Confirm
-            label="Share publicly"
+            label={t("settings.project.share")}
             description={disclosure}
             disabled={update.isPending}
             onConfirm={() => save(true)}
@@ -359,18 +378,24 @@ function ProjectBackground({ project, canAdmin }: { project: Project; canAdmin: 
   const save = (background: Parameters<typeof update.mutateAsync>[0]["background"]) =>
     update
       .mutateAsync({ projectId: project.id, expectedVersion: project.version, background })
-      .then(() => toast.success(background ? "Background updated" : "Background removed"));
+      .then(() =>
+        toast.success(
+          background
+            ? t("settings.project.backgroundUpdated")
+            : t("settings.project.backgroundRemoved"),
+        ),
+      );
   return (
     <SettingRow
-      title="Background"
+      title={t("settings.project.background")}
       description={
-        project.background ? "Shown behind this project's ticket list and board." : "None"
+        project.background ? t("settings.project.backgroundDescription") : t("common.state.none")
       }
     >
       {project.background && (
         <img
           src={project.background}
-          alt="Current background"
+          alt={t("settings.project.currentBackground")}
           className="h-14 w-24 rounded-md border object-cover"
         />
       )}
@@ -378,7 +403,11 @@ function ProjectBackground({ project, canAdmin }: { project: Project; canAdmin: 
         <>
           <Button disabled={busy} onClick={() => file.current?.click()}>
             <ImageUp />
-            {busy ? "Uploading…" : project.background ? "Replace" : "Upload image"}
+            {busy
+              ? t("settings.project.uploading")
+              : project.background
+                ? t("settings.project.replace")
+                : t("settings.project.upload")}
           </Button>
           {project.background && (
             <Button
@@ -386,7 +415,7 @@ function ProjectBackground({ project, canAdmin }: { project: Project; canAdmin: 
               disabled={busy}
               onClick={() => void save(null).catch(reportError)}
             >
-              Remove
+              {t("common.action.remove")}
             </Button>
           )}
           <FileInput
@@ -394,7 +423,7 @@ function ProjectBackground({ project, canAdmin }: { project: Project; canAdmin: 
             type="file"
             accept="image/png,image/jpeg,image/webp"
             className="hidden"
-            aria-label="Project background file"
+            aria-label={t("settings.project.backgroundFile")}
             onChange={(event) => {
               const selected = event.currentTarget.files?.[0];
               event.currentTarget.value = "";

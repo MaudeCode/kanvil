@@ -21,6 +21,7 @@ import {
 import { SettingRow } from "./settings-layout.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { AccentColorPicker } from "./accent-color-picker.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
 // The project keys a `label_conflict` names; the workspace label can adopt their definitions.
 function conflictingProjects(error: unknown) {
@@ -112,20 +113,23 @@ export function LabelSettings({
         labelId: label.id,
         expectedVersion: label.version,
       });
-    toast.success("Label deleted");
+    toast.success(t("settings.labels.deleted"));
   }
-  const where = workspaceId ? " in every project" : "";
   return (
     <section>
       <SectionHeading
-        title="Labels"
+        title={t("settings.labels.title")}
         action={
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             {!!rows.length && (
-              <SearchField label="Search labels" value={query} onChange={setQuery} />
+              <SearchField label={t("settings.labels.search")} value={query} onChange={setQuery} />
             )}
             {canAdmin && (
-              <IconButton label="New label" variant="default" onClick={() => edit(null)}>
+              <IconButton
+                label={t("settings.labels.new")}
+                variant="default"
+                onClick={() => edit(null)}
+              >
                 <Plus />
               </IconButton>
             )}
@@ -137,7 +141,7 @@ export function LabelSettings({
         <Loading />
       ) : matches.length ? (
         matches.map((label) => {
-          const tickets = `${label.count} ${label.count === 1 ? "ticket" : "tickets"}`;
+          const tickets = t("settings.tickets", { count: label.count });
           // A project shows its workspace's labels read-only; their owner is the workspace.
           const editable = canAdmin && (!!workspaceId || label.scope === "project");
           return (
@@ -152,7 +156,9 @@ export function LabelSettings({
                     className="h-auto max-w-full border-0 bg-transparent px-0 text-[13px] font-normal"
                   />
                   {projectId && label.scope === "workspace" && (
-                    <span className="shrink-0 text-xs text-muted-foreground">Workspace</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t("settings.labels.workspace")}
+                    </span>
                   )}
                 </span>
               }
@@ -173,17 +179,28 @@ export function LabelSettings({
               )}
               {editable && (
                 <>
-                  <IconButton label={`Edit label ${label.name}`} onClick={() => edit(label)}>
+                  <IconButton
+                    label={t("settings.labels.editNamed", { name: label.name })}
+                    onClick={() => edit(label)}
+                  >
                     <Pencil />
                   </IconButton>
                   <Confirm
-                    label={`Delete label ${label.name}`}
+                    label={t("settings.labels.deleteNamed", { name: label.name })}
                     icon={<Trash2 />}
                     danger
                     description={
                       label.count
-                        ? `Remove ${label.name} from ${tickets}${where}, including archived tickets? Saved views using this label will have their label filter removed.`
-                        : `Delete the unused label ${label.name}? Saved views using it will have their label filter removed.`
+                        ? t(
+                            workspaceId
+                              ? "settings.labels.deleteUsedShared"
+                              : "settings.labels.deleteUsed",
+                            {
+                              name: label.name,
+                              count: label.count,
+                            },
+                          )
+                        : t("settings.labels.deleteUnused", { name: label.name })
                     }
                     onConfirm={() => destroy(label)}
                   />
@@ -193,10 +210,12 @@ export function LabelSettings({
           );
         })
       ) : (
-        !labels.error && <EmptyState title={query ? "No matching labels" : "No labels yet"} />
+        !labels.error && (
+          <EmptyState title={query ? t("settings.labels.noMatches") : t("settings.labels.empty")} />
+        )
       )}
       <Modal
-        title={draft?.label ? "Edit label" : "New label"}
+        title={draft?.label ? t("settings.labels.edit") : t("settings.labels.new")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -210,13 +229,13 @@ export function LabelSettings({
               void save(draft.label, draft.name, draft.color, draft.adopt)
                 .then(() => {
                   setDraft(null);
-                  toast.success("Label saved");
+                  toast.success(t("settings.labels.saved"));
                 })
                 .catch(() => {});
             }}
           >
             <Input
-              label="Label name"
+              label={t("settings.labels.name")}
               value={draft.name}
               onChange={(event) => setDraft({ ...draft, name: event.target.value, adopt: false })}
               maxLength={40}
@@ -224,7 +243,7 @@ export function LabelSettings({
               autoFocus
             />
             <AccentColorPicker
-              label="Label color"
+              label={t("settings.labels.color")}
               value={draft.color}
               onChange={(color) => setDraft({ ...draft, color })}
               disabled={busy}
@@ -237,13 +256,15 @@ export function LabelSettings({
             )}
             {draft.label && draft.name.trim() !== draft.label.name && (
               <p className="text-xs text-muted-foreground">
-                Renaming updates this label on tickets and in saved views{where}.
+                {workspaceId ? t("settings.labels.renameShared") : t("settings.labels.rename")}
               </p>
             )}
             {!!conflicts.length && (
               <Check
-                label="Adopt the project labels"
-                description={`Defined in ${conflicts.join(", ")}. Their tickets keep the label and take this color.`}
+                label={t("settings.labels.adopt")}
+                description={t("settings.labels.adoptDescription", {
+                  projects: conflicts.join(", "),
+                })}
                 checked={draft.adopt}
                 onCheckedChange={(adopt) => setDraft({ ...draft, adopt })}
               />
@@ -251,7 +272,7 @@ export function LabelSettings({
             <FormActions
               error={error}
               pending={busy}
-              submitLabel="Save label"
+              submitLabel={t("settings.labels.save")}
               submitDisabled={!draft.name.trim()}
               onCancel={() => setDraft(null)}
             />
