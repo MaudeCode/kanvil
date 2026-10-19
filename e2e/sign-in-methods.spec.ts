@@ -152,7 +152,7 @@ test("a password reset from an invitation link returns to the invitation", async
   await createPerson(page, email);
   const workspace = await (
     await page.request.post("/api/v1/workspaces", {
-      data: { name: "Reset invitations", slug: "reset-invitations" },
+      data: { name: "Sign-in reset invitations", slug: "sign-in-reset-invitations" },
     })
   ).json();
   const { url } = await (
@@ -175,7 +175,7 @@ test("a password reset from an invitation link returns to the invitation", async
     await guest.getByLabel("Password", { exact: true }).fill(next);
     await guest.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      guest.getByRole("heading", { name: "Join Reset invitations", exact: true }),
+      guest.getByRole("heading", { name: "Join Sign-in reset invitations", exact: true }),
     ).toBeVisible();
   });
 });
@@ -186,7 +186,7 @@ test("an emailed sign-in link from an invitation returns to the invitation", asy
   await createPerson(page, email);
   const workspace = await (
     await page.request.post("/api/v1/workspaces", {
-      data: { name: "Code invitations", slug: "code-invitations" },
+      data: { name: "Sign-in code invitations", slug: "sign-in-code-invitations" },
     })
   ).json();
   const { url } = await (
@@ -206,7 +206,7 @@ test("an emailed sign-in link from an invitation returns to the invitation", asy
     await guest.goto(link);
     await guest.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      guest.getByRole("heading", { name: "Join Code invitations", exact: true }),
+      guest.getByRole("heading", { name: "Join Sign-in code invitations", exact: true }),
     ).toBeVisible();
     expect(new URL(guest.url()).search).toBe("");
   });
