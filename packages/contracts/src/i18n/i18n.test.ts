@@ -9,6 +9,7 @@ import {
   relationChoices,
   repositoryTriggerLabel,
   stateLabels,
+  workflowStateName,
 } from "../index.ts";
 import {
   applyLocale,
@@ -150,6 +151,12 @@ describe("presentation in another language", () => {
     const german = await catalog("de-DE");
     expect(stateLabels.in_progress).toBe(leaves(german).get("common.status.in_progress"));
     expect(priorityLabels.none).not.toBe("No priority");
+    // Default state names read in the language; names a project chose stay as written.
+    expect(workflowStateName({ slug: "todo", name: "To do", category: "todo" })).toBe(
+      stateLabels.todo,
+    );
+    expect(workflowStateName({ slug: "todo", name: "Triage", category: "todo" })).toBe("Triage");
+    expect(workflowStateName({ slug: "triage", name: "To do", category: "todo" })).toBe("To do");
     expect(relationChoices[0]?.label).toBe(leaves(german).get("common.relation.blocks.outgoing"));
     expect(repositoryTriggerLabel("pull_request_merged", "gitlab")).toBe(
       leaves(german).get("common.change.merge_request.merged"),
