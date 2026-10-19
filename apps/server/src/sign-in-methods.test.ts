@@ -397,7 +397,7 @@ describe.each(["github", "google", "discord"] as const)("%s sign-in", (provider)
     if (provider !== "discord")
       expect(
         createHash("sha256")
-          .update(providers.verifiers.at(-1) ?? "")
+          .update(providers.tokenRequests.at(-1)?.get("code_verifier") ?? "")
           .digest("base64url"),
       ).toBe(challenge);
     const accounts = await fixture.database.pool.query(

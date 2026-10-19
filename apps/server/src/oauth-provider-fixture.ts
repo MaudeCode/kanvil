@@ -39,8 +39,8 @@ const json = (body: unknown, status = 200) =>
 export function fakeOAuthProviders(real: typeof fetch, googleClientId: string) {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const key = { ...publicKey.export({ format: "jwk" }), kid: "fake-google", alg: "RS256" };
-  // The PKCE verifiers the token endpoints received, oldest first.
-  const verifiers: string[] = [];
+  // The form bodies the token endpoints received, oldest first.
+  const tokenRequests: URLSearchParams[] = [];
   function googleToken(claims: Record<string, unknown>, invalidSignature = false) {
     const body = `${Buffer.from(JSON.stringify({ alg: "RS256", kid: "fake-google" })).toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}`;
     const signature = sign("RSA-SHA256", Buffer.from(body), privateKey).toString("base64url");
@@ -53,7 +53,7 @@ export function fakeOAuthProviders(real: typeof fetch, googleClientId: string) {
       const form = new URLSearchParams(await call.text()),
         code = form.get("code") ?? "",
         identity = identityOf(code);
-      verifiers.push(form.get("code_verifier") ?? "");
+      tokenRequests.push(form);
       if (!identity) return json({ error: "bad_verification_code" });
       const now = Math.floor(Date.now() / 1000);
       return json({
@@ -97,7 +97,7 @@ export function fakeOAuthProviders(real: typeof fetch, googleClientId: string) {
     return json({}, 404);
   }
   return {
-    verifiers,
+    tokenRequests,
     googleToken,
     fetch: (input: string | URL | Request, init?: RequestInit) => {
       const call = new Request(input, init);
