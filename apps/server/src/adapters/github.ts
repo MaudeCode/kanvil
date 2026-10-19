@@ -1,9 +1,19 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { RepositoryTrigger } from "@kanvil/contracts";
 import type { RepositoryChange, RepositoryDriver } from "./ports.ts";
 
-// The parts of GitHub webhook payloads Kanvil reads; everything else is ignored.
+// Compares a received secret or signature without leaking its length or content through timing.
+export const sameSecret = (received: string, expected: string) =>
+  timingSafeEqual(
+    createHash("sha256").update(received).digest(),
+    createHash("sha256").update(expected).digest(),
+  );
+export const hmacHex = (secret: string, body: string) =>
+  createHmac("sha256", secret).update(body).digest("hex");
+
+// The parts of GitHub-format webhook payloads Kanvil reads; everything else is ignored. Gitea sends
+// the same shape.
 const repository = z.object({ full_name: z.string(), html_url: z.url({ protocol: /^https?$/ }) });
 const reference = z.object({ ref: z.string().min(1), ref_type: z.string(), repository });
 const item = {
@@ -22,6 +32,7 @@ const pullRequest = z.object({
     merged_at: z.string().nullish(),
     head: z.object({ ref: z.string() }),
   }),
+  changes: z.object({ title: z.object({ from: z.string() }).optional() }).optional(),
   repository,
 });
 const issue = z.object({ action: z.string(), issue: z.object(item), repository });
@@ -31,41 +42,62 @@ const pullRequestTriggers: Record<string, (draft: boolean) => RepositoryTrigger>
   ready_for_review: () => "pull_request_opened",
   converted_to_draft: () => "pull_request_draft",
 };
+// Gitea's default work-in-progress title prefixes, which are how it marks a draft.
+const workInProgress = (title: string) => /^\s*(?:wip:|\[wip\])/i.test(title);
 
-// Reads GitHub's signed `create`, `delete`, `pull_request`, and `issues` events.
-function change(event: string, payload: unknown): RepositoryChange | null {
+export const githubNamed = (payload: unknown) =>
+  z.object({ repository: repository.optional() }).parse(payload).repository?.full_name ?? null;
+// Reads signed `create`, `delete`, `pull_request`, and `issues` events. `branchPath` is the web path
+// of a branch under the repository; `titleDrafts` treats a WIP title prefix as a draft, so an edit
+// that adds or removes it converts the pull request.
+export function githubChange(
+  event: string,
+  payload: unknown,
+  { branchPath = "tree", titleDrafts = false } = {},
+): RepositoryChange | null {
   if (event === "create" || event === "delete") {
     const parsed = reference.parse(payload);
     if (parsed.ref_type !== "branch") return null;
-    const path = parsed.ref.split("/").map(encodeURIComponent).join("/");
+    const name = parsed.ref.replace(/^refs\/heads\//, "");
+    const path = name.split("/").map(encodeURIComponent).join("/");
     return {
       kind: "branch",
-      url: `${parsed.repository.html_url}/tree/${path}`,
-      title: parsed.ref,
+      url: `${parsed.repository.html_url}/${branchPath}/${path}`,
+      title: name,
       number: null,
       state: event === "create" ? "active" : "deleted",
       trigger: event === "create" ? "branch_created" : null,
-      references: [parsed.ref],
+      references: [name],
       occurredAt: null,
       creates: event === "create",
     };
   }
   if (event === "pull_request") {
-    const { action, pull_request: pr } = pullRequest.parse(payload);
-    const merged = !!(pr.merged ?? pr.merged_at);
+    const { action, pull_request: pr, changes } = pullRequest.parse(payload);
+    const merged = !!(pr.merged ?? pr.merged_at),
+      draft = pr.draft || (titleDrafts && workInProgress(pr.title));
     if (action !== "closed" && action !== "edited" && !pullRequestTriggers[action]) return null;
+    const retitled =
+      titleDrafts &&
+      action === "edited" &&
+      changes?.title &&
+      workInProgress(changes.title.from) !== draft;
     return {
       kind: "pull_request",
       url: pr.html_url,
       title: pr.title,
       number: pr.number,
-      state: merged ? "merged" : pr.state === "closed" ? "closed" : pr.draft ? "draft" : "open",
+      state: merged ? "merged" : pr.state === "closed" ? "closed" : draft ? "draft" : "open",
       trigger:
         action === "closed"
           ? merged
             ? "pull_request_merged"
             : "pull_request_closed"
-          : (pullRequestTriggers[action]?.(pr.draft) ?? null),
+          : retitled
+            ? draft
+              ? "pull_request_draft"
+              : "pull_request_opened"
+            : (pullRequestTriggers[action]?.(draft) ?? null),
       references: [pr.head.ref, pr.title],
       occurredAt: new Date(pr.updated_at),
       creates: true,
@@ -98,31 +130,22 @@ const headers = (token: string) => ({
 export function createGitHubDriver(apiUrl: string): RepositoryDriver {
   const api = (path: string) => new URL(path, apiUrl.endsWith("/") ? apiUrl : `${apiUrl}/`).href;
   return {
-    signed(secret, received, body) {
-      const signature = Buffer.from(received.get("x-hub-signature-256") ?? ""),
-        expected = Buffer.from(`sha256=${createHmac("sha256", secret).update(body).digest("hex")}`);
-      return signature.length === expected.length && timingSafeEqual(signature, expected);
-    },
+    signed: (secret, received, body) =>
+      sameSecret(received.get("x-hub-signature-256") ?? "", `sha256=${hmacHex(secret, body)}`),
     read(received, body) {
       const id = received.get("x-github-delivery"),
         event = received.get("x-github-event");
       if (!id || !event) throw new Error("Missing GitHub delivery headers");
       const payload: unknown = JSON.parse(body);
-      const named = z.object({ repository: repository.optional() }).parse(payload);
-      return {
-        id,
-        event,
-        repository: named.repository?.full_name ?? null,
-        change: change(event, payload),
-      };
+      return { id, event, repository: githubNamed(payload), change: githubChange(event, payload) };
     },
-    access: (name, token) => ({
+    access: ({ repository: name }, token) => ({
       method: "GET",
       url: api(`repos/${name}`),
       headers: headers(token),
       body: "",
     }),
-    comment: (name, token, number, text) => ({
+    comment: ({ repository: name }, token, { number }, text) => ({
       url: api(`repos/${name}/issues/${number}/comments`),
       headers: headers(token),
       body: JSON.stringify({ body: text }),

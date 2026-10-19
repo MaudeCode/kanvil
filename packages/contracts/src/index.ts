@@ -1044,9 +1044,29 @@ export type ProjectDestination = z.output<typeof projectDestinationSchema>;
 // Repository connections. Signed webhooks from a connected repository attach verified issue,
 // branch, and pull-request links to the tickets they name, and can move those tickets to a chosen
 // workflow state. Access checks and link comments go through the delivery outbox.
-export const repositoryProviders = ["github"] as const;
+export const repositoryProviders = ["github", "gitea", "gitlab"] as const;
 export type RepositoryProvider = (typeof repositoryProviders)[number];
-export const repositoryProviderLabels: Record<RepositoryProvider, string> = { github: "GitHub" };
+// Where code hosts differ. `baseUrl` is null when the server configures the API (GitHub and GitHub
+// Enterprise Server); otherwise each connection names its instance, falling back to `default`.
+// `nested` paths name groups and subgroups. `change` is the host's word for a pull request.
+export const repositoryProviderDefinitions: Record<
+  RepositoryProvider,
+  {
+    label: string;
+    baseUrl: { default: string | null } | null;
+    nested: boolean;
+    change: string;
+  }
+> = {
+  github: { label: "GitHub", baseUrl: null, nested: false, change: "Pull request" },
+  gitea: { label: "Gitea", baseUrl: { default: null }, nested: false, change: "Pull request" },
+  gitlab: {
+    label: "GitLab",
+    baseUrl: { default: "https://gitlab.com" },
+    nested: true,
+    change: "Merge request",
+  },
+};
 export const repositoryTriggers = [
   "branch_created",
   "pull_request_opened",
@@ -1055,19 +1075,37 @@ export const repositoryTriggers = [
   "pull_request_closed",
 ] as const;
 export type RepositoryTrigger = (typeof repositoryTriggers)[number];
-export const repositoryTriggerLabels: Record<RepositoryTrigger, string> = {
-  branch_created: "Branch created",
-  pull_request_opened: "Pull request opened",
-  pull_request_draft: "Draft pull request",
-  pull_request_merged: "Pull request merged",
-  pull_request_closed: "Pull request closed unmerged",
+const triggerLabels: Record<RepositoryTrigger, (change: string) => string> = {
+  branch_created: () => "Branch created",
+  pull_request_opened: (change) => `${change} opened`,
+  pull_request_draft: (change) => `Draft ${change.toLowerCase()}`,
+  pull_request_merged: (change) => `${change} merged`,
+  pull_request_closed: (change) => `${change} closed unmerged`,
 };
+export const repositoryTriggerLabel = (trigger: RepositoryTrigger, provider: RepositoryProvider) =>
+  triggerLabels[trigger](repositoryProviderDefinitions[provider].change);
+// A verified link's kind in its host's words; `provider` is the link's provider label.
+export function remoteKindLabel(kind: (typeof remoteKinds)[number], provider: string | null) {
+  const host = Object.values(repositoryProviderDefinitions).find((item) => item.label === provider);
+  return kind === "pull_request" && host ? host.change : remoteKindLabels[kind];
+}
 export const repositorySecretFields = ["token", "webhookSecret"] as const;
+// Slash-separated path segments; each provider's handler checks how many it takes.
 const repositoryName = z
   .string()
   .trim()
   .max(200)
-  .regex(/^[A-Za-z0-9-]+\/(?!\.\.?$)[\w.-]+$/, "Use owner/repository");
+  .regex(/^[\w.-]+(?:\/[\w.-]+)+$/, "Use owner/repository")
+  .refine(
+    (value) => value.split("/").every((segment) => segment !== "." && segment !== ".."),
+    "Use owner/repository",
+  );
+// A self-managed instance's web address, without credentials, query, or a trailing slash. The host
+// is lowercased and a default port dropped, so one instance has one spelling.
+const repositoryBaseUrl = endpoint
+  .refine((value) => !/[?#]/.test(value), "Use the server address without a query or fragment")
+  .pipe(z.url({ normalize: true }))
+  .transform((value) => value.replace(/\/+$/, ""));
 const repositorySecret = z.string().trim().min(1).max(500);
 // A trigger left out moves nothing.
 const repositoryTransitions = z.partialRecord(z.enum(repositoryTriggers), z.uuid());
@@ -1076,6 +1114,8 @@ export const repositoryConnectionSchema = z.object({
   projectId: z.uuid(),
   provider: z.enum(repositoryProviders),
   repository: z.string(),
+  // The self-managed instance; null for GitHub, whose API the server configures.
+  baseUrl: z.string().nullable(),
   // Where the code host sends signed events for this connection.
   webhookUrl: z.string(),
   secrets: z.array(z.enum(repositorySecretFields)),
@@ -2474,6 +2514,7 @@ export const operations = {
         ...mutation,
         provider: z.enum(repositoryProviders).default("github"),
         repository: repositoryName,
+        baseUrl: repositoryBaseUrl.optional(),
         token: repositorySecret,
         webhookSecret: repositorySecret,
         commentOnLink: z.boolean().default(false),
@@ -2485,7 +2526,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/repositories",
     "admin",
-    "Connect a repository with an access token and a webhook signing secret, both write-only. Queues an access check; `health` shows its result.",
+    "Connect a GitHub, Gitea, or GitLab repository with an access token and a webhook secret, both write-only. Gitea and GitLab take the instance `baseUrl` (GitLab defaults to gitlab.com). Queues an access check; `health` shows its result.",
   ),
   update_repository_connection: op(
     projectInput
@@ -2494,6 +2535,7 @@ export const operations = {
         connectionId: z.uuid(),
         expectedVersion: version,
         repository: repositoryName.optional(),
+        baseUrl: repositoryBaseUrl.optional(),
         token: repositorySecret.optional(),
         webhookSecret: repositorySecret.optional(),
         commentOnLink: z.boolean().optional(),
@@ -2505,7 +2547,7 @@ export const operations = {
     "PATCH",
     "/projects/{projectId}/repositories/{connectionId}",
     "admin",
-    "Reconnect, pause, or change the transitions of a repository connection. Omitted secrets keep their saved value; a new repository or token queues another access check.",
+    "Reconnect, pause, or change the transitions of a repository connection. Omitted secrets keep their saved value; a new repository, base URL, or token queues another access check.",
   ),
   delete_repository_connection: op(
     projectInput.extend({ ...mutation, connectionId: z.uuid(), expectedVersion: version }).strict(),

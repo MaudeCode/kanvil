@@ -21,8 +21,9 @@ import {
   destinationEventLabels,
   destinationEvents,
   destinationKinds,
-  repositoryProviderLabels,
-  repositoryTriggerLabels,
+  repositoryProviderDefinitions,
+  repositoryProviders,
+  repositoryTriggerLabel,
   repositoryTriggers,
   type ChannelRoute,
   type DeliveryKind,
@@ -30,6 +31,7 @@ import {
   type NotificationChannel,
   type ProjectDestination,
   type RepositoryConnection,
+  type RepositoryProvider,
   type RepositoryTrigger,
 } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
@@ -707,6 +709,19 @@ const accessWords = {
   none: "Access not checked",
   failed: "Access check: ",
 };
+// What each host's token and webhook need; the form reads its other wording from the definitions.
+const repositorySetup: Record<RepositoryProvider, string> = {
+  github:
+    "The token needs repository read access, and issue and pull request write access to comment. Add a GitHub webhook with the URL copied from this repository's row, content type application/json, this secret, and the Branch or tag creation, Branch or tag deletion, Issues, and Pull requests events.",
+  gitea:
+    "The token needs the read:repository scope, and write:issue to comment. Add a Gitea webhook with the URL copied from this repository's row, content type application/json, this secret, and the Create, Delete, Issues, and Pull Request events.",
+  gitlab:
+    "The token needs the read_api scope, and api to comment. Add a GitLab webhook with the URL copied from this repository's row, this secret token, and the Push, Issues, and Merge request events.",
+};
+const providerName = ({ provider, baseUrl }: RepositoryConnection) => {
+  const { label } = repositoryProviderDefinitions[provider];
+  return baseUrl ? `${label} · ${new URL(baseUrl).host}` : label;
+};
 function WebhookText({ connection }: { connection: RepositoryConnection }) {
   if (connection.lastEventError)
     return <span className="text-destructive">{failureText(connection.lastEventError)}</span>;
@@ -741,6 +756,7 @@ export function RepositoryConnections({
     verify = useOperation("verify_repository_connection");
   const [draft, setDraft] = useState<{
     connection: RepositoryConnection | null;
+    provider: RepositoryProvider;
     transitions: Partial<Record<RepositoryTrigger, string>>;
     commentOnLink: boolean;
   } | null>(null);
@@ -750,6 +766,7 @@ export function RepositoryConnections({
     update.reset();
     setDraft({
       connection,
+      provider: connection?.provider ?? "github",
       transitions: connection?.transitions ?? {},
       commentOnLink: connection?.commentOnLink ?? false,
     });
@@ -759,9 +776,17 @@ export function RepositoryConnections({
     if (!draft) return;
     const form = new FormData(event.currentTarget),
       repository = formText(form, "repository").trim(),
+      // A cleared server URL falls back to the host's default instance.
+      baseUrl =
+        formText(form, "baseUrl").trim() ||
+        repositoryProviderDefinitions[draft.provider].baseUrl?.default,
       token = formText(form, "token").trim(),
       webhookSecret = formText(form, "webhookSecret").trim(),
-      fields = { transitions: draft.transitions, commentOnLink: draft.commentOnLink };
+      fields = {
+        transitions: draft.transitions,
+        commentOnLink: draft.commentOnLink,
+        ...(baseUrl && { baseUrl }),
+      };
     const action = draft.connection
       ? update.mutateAsync({
           projectId,
@@ -772,7 +797,14 @@ export function RepositoryConnections({
           ...(webhookSecret && { webhookSecret }),
           ...fields,
         })
-      : create.mutateAsync({ projectId, repository, token, webhookSecret, ...fields });
+      : create.mutateAsync({
+          projectId,
+          provider: draft.provider,
+          repository,
+          token,
+          webhookSecret,
+          ...fields,
+        });
     void action
       .then(() => {
         setDraft(null);
@@ -781,7 +813,8 @@ export function RepositoryConnections({
       .catch(() => {});
   }
   if (!canAdmin) return null;
-  const editing = draft?.connection;
+  const editing = draft?.connection,
+    host = draft && repositoryProviderDefinitions[draft.provider];
   return (
     <>
       <DeliveryList
@@ -799,7 +832,7 @@ export function RepositoryConnections({
             key={connection.id}
             canChange={canChange}
             name={connection.repository}
-            kind={repositoryProviderLabels[connection.provider]}
+            kind={providerName(connection)}
             paused={connection.paused}
             health={connection.health}
             description={
@@ -848,15 +881,42 @@ export function RepositoryConnections({
         }}
         busy={busy}
       >
-        {draft && (
+        {draft && host && (
           <form onSubmit={save} onKeyDown={submitOnModEnter}>
             <FieldSet disabled={busy}>
+              {!editing && (
+                <Select
+                  label="Host"
+                  value={draft.provider}
+                  onValueChange={(value) => {
+                    const next = repositoryProviders.find((item) => item === value);
+                    if (next) setDraft({ ...draft, provider: next });
+                  }}
+                >
+                  {repositoryProviders.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {repositoryProviderDefinitions[item].label}
+                    </SelectItem>
+                  ))}
+                </Select>
+              )}
+              {host.baseUrl && (
+                <Input
+                  key={`${draft.provider}-baseUrl`}
+                  label={host.baseUrl.default ? "Server URL (optional)" : "Server URL"}
+                  name="baseUrl"
+                  type="url"
+                  required={!host.baseUrl.default}
+                  placeholder={host.baseUrl.default ?? "https://git.example.com"}
+                  defaultValue={editing?.baseUrl ?? undefined}
+                />
+              )}
               <Input
-                label="GitHub repository"
+                label={`${host.label} repository`}
                 name="repository"
                 required
                 autoFocus
-                placeholder="owner/repository"
+                placeholder={host.nested ? "group/project" : "owner/repository"}
                 defaultValue={editing?.repository}
               />
               {(["token", "webhookSecret"] as const).map((field) => (
@@ -873,13 +933,10 @@ export function RepositoryConnections({
                 />
               ))}
               <p className="-mt-2 mb-4 text-xs text-muted-foreground">
-                The token needs repository read access, and issue and pull request write access to
-                comment. Add a GitHub webhook with the URL copied from this repository&apos;s row,
-                content type application/json, this secret, and the Branch or tag creation, Branch
-                or tag deletion, Issues, and Pull requests events.
+                {repositorySetup[draft.provider]}
               </p>
               <Check
-                label="Comment on newly linked issues and pull requests"
+                label={`Comment on newly linked issues and ${host.change.toLowerCase()}s`}
                 checked={draft.commentOnLink}
                 onCheckedChange={(checked) => setDraft({ ...draft, commentOnLink: checked })}
               />
@@ -888,7 +945,7 @@ export function RepositoryConnections({
                 {repositoryTriggers.map((trigger) => (
                   <Select
                     key={trigger}
-                    label={repositoryTriggerLabels[trigger]}
+                    label={repositoryTriggerLabel(trigger, draft.provider)}
                     layout="property"
                     className="grid-cols-[minmax(0,1fr)_12rem] border-b py-1 last:border-b-0"
                     value={draft.transitions[trigger] ?? "none"}

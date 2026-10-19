@@ -135,3 +135,91 @@ test("repository connections keep secrets write-only and link verified pull requ
   await page.goto(`/projects/${project.id}/settings?section=integrations`);
   await expect(page.getByText("Webhook received")).toBeVisible();
 });
+
+test("self-managed GitLab connections validate their server and link merge requests", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "GLAB", name: "GitLab" } })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Ship the platform" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/settings?section=integrations`);
+  await page.getByRole("button", { name: "Connect repository", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect repository" });
+  await dialog.getByRole("combobox", { name: "Host" }).click();
+  await page.getByRole("option", { name: "GitLab", exact: true }).click();
+  await dialog.getByLabel("GitLab repository", { exact: true }).fill("acme/platform/widgets");
+  await dialog.getByLabel("Access token", { exact: true }).fill("glpat-browserTestToken");
+  await dialog.getByLabel("Webhook secret", { exact: true }).fill("browser-gitlab-secret");
+  await dialog.getByRole("combobox", { name: "Merge request merged" }).click();
+  await page.getByRole("option", { name: "Done", exact: true }).click();
+  // Credentials belong in the token field, never in the server URL.
+  const server = dialog.getByLabel("Server URL (optional)", { exact: true });
+  await server.fill("https://user:secret@gitlab.kanvil.invalid");
+  await dialog.getByRole("button", { name: "Save repository" }).click();
+  await expect(
+    dialog.getByText("Put credentials in their own field, not in the URL"),
+  ).toBeVisible();
+  await server.fill("https://gitlab.kanvil.invalid/");
+  await dialog.getByRole("button", { name: "Save repository" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("GitLab · gitlab.kanvil.invalid")).toBeVisible();
+  await expect(page.getByText("Host not found")).toBeVisible({ timeout: 20_000 });
+  const [saved] = await (
+    await page.request.get(`/api/v1/projects/${project.id}/repositories`)
+  ).json();
+  expect(saved).toMatchObject({
+    provider: "gitlab",
+    baseUrl: "https://gitlab.kanvil.invalid",
+    repository: "acme/platform/widgets",
+    secrets: ["token", "webhookSecret"],
+  });
+  expect(JSON.stringify(saved)).not.toContain("glpat-browserTestToken");
+
+  const merged = (token: string) =>
+    page.request.post(saved.webhookUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Event-UUID": crypto.randomUUID(),
+        "X-Gitlab-Token": token,
+      },
+      data: JSON.stringify({
+        object_kind: "merge_request",
+        project: {
+          path_with_namespace: "acme/platform/widgets",
+          web_url: "https://gitlab.kanvil.invalid/acme/platform/widgets",
+        },
+        object_attributes: {
+          iid: 9,
+          url: "https://gitlab.kanvil.invalid/acme/platform/widgets/-/merge_requests/9",
+          title: "Ship the platform",
+          state: "merged",
+          action: "merge",
+          draft: false,
+          source_branch: `${ticket.key.toLowerCase()}-ship`,
+          updated_at: "2030-01-01 10:00:00 UTC",
+        },
+      }),
+    });
+  expect((await merged("wrong-secret")).status()).toBe(401);
+  expect((await merged("browser-gitlab-secret")).status()).toBe(202);
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const links = page.getByRole("region", { name: "Links" });
+  await expect(links.getByRole("link", { name: "Ship the platform #9" })).toBeVisible();
+  await expect(links.getByText("Merge request · Merged", { exact: true })).toBeVisible();
+
+  // Editing keeps the host and shows the saved server.
+  await page.goto(`/projects/${project.id}/settings?section=integrations`);
+  await page.getByRole("button", { name: "Edit acme/platform/widgets" }).click();
+  const edit = page.getByRole("dialog", { name: "Edit repository" });
+  await expect(edit.getByRole("combobox", { name: "Host" })).toHaveCount(0);
+  await expect(edit.getByLabel("Server URL (optional)", { exact: true })).toHaveValue(
+    "https://gitlab.kanvil.invalid",
+  );
+});

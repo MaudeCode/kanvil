@@ -5,6 +5,8 @@ import { createObjectStore } from "./adapters/object-stores.ts";
 import { createTicketIndex } from "./adapters/ticket-indexes.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createGitHubDriver } from "./adapters/github.ts";
+import { createGiteaDriver } from "./adapters/gitea.ts";
+import { createGitLabDriver } from "./adapters/gitlab.ts";
 import type {
   JobScheduler,
   ObjectStoreFactory,
@@ -29,5 +31,9 @@ export const defaultAdapters: RuntimeAdapters = {
   objectStore: createObjectStore,
   ticketIndex: createTicketIndex,
   jobs: createPollingJob,
-  repositories: (config) => ({ github: createGitHubDriver(config.KANVIL_GITHUB_API_URL) }),
+  repositories: (config) => ({
+    github: createGitHubDriver(config.KANVIL_GITHUB_API_URL),
+    gitea: createGiteaDriver(),
+    gitlab: createGitLabDriver(),
+  }),
 };

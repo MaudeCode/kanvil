@@ -133,7 +133,7 @@ People can add notification channels in Settings → Notifications (ntfy, Gotify
 
 - Email channels need an SMTP relay: set `SMTP_URL` (for example `smtp://user:password@mail.example.com:587`, or `smtps://` for implicit TLS) and `SMTP_FROM` (for example `Kanvil <kanvil@example.com>`). Without them the email option is hidden.
 - Outbound HTTP refuses loopback and private-network addresses. Set `KANVIL_DELIVERY_ALLOW_PRIVATE=true` when channels must reach services on your own network, such as a LAN ntfy or Gotify. Only enable it when everyone who can add a channel or destination may reach those hosts.
-- Project administrators can also connect GitHub repositories under Project settings → Integrations. GitHub must reach `KANVIL_URL` to deliver webhooks; set `KANVIL_GITHUB_API_URL` for GitHub Enterprise Server. See [repository connections](api.md#repository-connections).
+- Project administrators can also connect GitHub, Gitea, and GitLab repositories under Project settings → Integrations. The code host must reach `KANVIL_URL` to deliver webhooks; set `KANVIL_GITHUB_API_URL` for GitHub Enterprise Server. Gitea and GitLab connections name their own instance URL; a self-managed instance on a loopback or private address also needs `KANVIL_DELIVERY_ALLOW_PRIVATE=true`. See [repository connections](api.md#repository-connections).
 - Channel and destination settings and repository tokens and webhook secrets, including signing secrets, are encrypted with a key derived from `BETTER_AUTH_SECRET`. Keep that secret with your backups; without it the saved settings cannot be decrypted and must be entered again.
 
 ## Optional mobile push
