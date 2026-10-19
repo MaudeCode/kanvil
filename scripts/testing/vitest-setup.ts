@@ -7,11 +7,7 @@ import { countNames, watchBoundaries, type Counts, type Violation } from "./boun
 import { familyOf, root } from "./policy.ts";
 
 const file = relative(root, expect.getState().testPath ?? "");
-const watch = watchBoundaries(
-  process.env.DISCOVER
-    ? ["database", "loopback", "network", "process"]
-    : (familyOf(file)?.boundaries ?? []),
-);
+const watch = watchBoundaries(familyOf(file)?.boundaries ?? []);
 const setup: Counts = {};
 function settle(into: Counts | undefined) {
   const { counts, violations } = watch.take();

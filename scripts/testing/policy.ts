@@ -529,7 +529,7 @@ export function summarize(reports: readonly LayerReport[]) {
         cases: report.cases.length,
         caseSeconds: report.cases.reduce((sum, test) => sum + test.durationMs, 0) / 1000,
         wallSeconds: (Date.parse(report.endedAt) - Date.parse(report.startedAt)) / 1000,
-        boundaries: totals,
+        ...totals,
       };
     });
 }
