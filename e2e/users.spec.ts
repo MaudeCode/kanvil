@@ -374,8 +374,12 @@ test("administration detail sheets open and close at once with reduced motion", 
   for (let round = 0; round < 2; round++) {
     await manage.click();
     const sheet = page.getByRole("dialog", { name: "Still workspace", exact: true });
-    await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
+    const close = sheet.getByRole("button", { name: "Close", exact: true });
+    await expect(close).toBeVisible();
+    // After Escape returns focus by keyboard, reopening focuses a control whose tooltip would take
+    // the next Escape, so the second round closes with the button.
+    if (round === 0) await page.keyboard.press("Escape");
+    else await close.click();
     await expect(sheet).toHaveCount(0);
     await expect(manage).toBeFocused();
     // Nothing the sheet locked stays behind: the page scrolls and takes pointer input again.

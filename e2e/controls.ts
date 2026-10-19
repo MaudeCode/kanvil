@@ -127,11 +127,27 @@ export async function recordMotion(page: Page) {
     );
   }, animated);
 }
-// Waits until the recorded motion includes each run, then starts a fresh record.
+// Waits until the recorded motion includes each run and those transitions have finished, then
+// starts a fresh record. A sheet closed within moments of opening skips its exit.
 export async function expectMotion(page: Page, runs: string[]) {
   await expect
     .poll(() => page.evaluate(() => window.motion ?? []))
     .toEqual(expect.arrayContaining(runs));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (slots) =>
+          document
+            .getAnimations()
+            .some(
+              ({ effect }) =>
+                effect instanceof KeyframeEffect &&
+                slots.includes(effect.target?.getAttribute("data-slot") ?? ""),
+            ),
+        animated,
+      ),
+    )
+    .toBe(false);
   await page.evaluate(() => window.motion?.splice(0));
 }
 // The shared sheet's slide and fade, in or out, with its backdrop.
