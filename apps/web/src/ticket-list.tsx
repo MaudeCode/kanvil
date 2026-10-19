@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
@@ -17,13 +17,15 @@ import {
   ticketFilter,
   closedStates,
   defaultOrder,
+  dueFilterLabels,
   states,
   stateLabels,
   type Ticket,
   type Project,
   type Output,
 } from "@kanvil/contracts";
-import { api, useIdentity, useProjectAccess, useOperation } from "./data.tsx";
+import { api, useIdentity, useProjectAccess, useProjects, useOperation } from "./data.tsx";
+import { ProjectIcon } from "./components/project-icon.tsx";
 import {
   Button,
   DueDate,
@@ -73,7 +75,12 @@ import { writeListOrder } from "./lib/list-order.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { cn } from "@/lib/utils";
 
-import { searchSchema, ticketColumnLabels, type TicketSearch } from "./search.ts";
+import {
+  searchSchema,
+  ticketColumnLabels,
+  type TicketGrouping,
+  type TicketSearch,
+} from "./search.ts";
 import {
   preferences,
   resetPreferences,
@@ -87,14 +94,20 @@ const features = tableFeatures({
   columnVisibilityFeature,
 });
 const pageSize = 100;
-function TicketStatusHeader({
-  status,
-  count,
+// A collapsible group of rows: a status, a project, or a due-date window.
+interface Section {
+  id: string;
+  label: string;
+  heading: ReactNode;
+  total: number;
+  has: (ticket: Ticket) => boolean;
+}
+function TicketSectionHeader({
+  section,
   collapsed,
   onToggle,
 }: {
-  status: Ticket["status"];
-  count: number;
+  section: Section;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -103,18 +116,30 @@ function TicketStatusHeader({
       <Button
         variant="ghost"
         className="flex-1 justify-start gap-2 rounded-none px-3"
-        aria-label={`${collapsed ? "Expand" : "Collapse"} ${stateLabels[status]} tickets`}
+        aria-label={`${collapsed ? "Expand" : "Collapse"} ${section.label} tickets`}
         aria-expanded={!collapsed}
         onClick={onToggle}
       >
         <ChevronDown
           className={cn("size-3 transition-transform duration-200", collapsed && "-rotate-90")}
         />
-        <TicketIndicator property="status" value={status} />
-        <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+        {section.heading}
+        <span className="text-xs tabular-nums text-muted-foreground">{section.total}</span>
       </Button>
     </div>
   );
+}
+// Due-date windows for My work, measured from now like the server's due filters.
+const dueWindows = [
+  ["overdue", dueFilterLabels.overdue, 0],
+  ["today", dueFilterLabels.today, 86_400_000],
+  ["week", dueFilterLabels.week, 7 * 86_400_000],
+  ["later", "Later", Infinity],
+] as const;
+function dueWindow(ticket: Ticket, now: number) {
+  if (!ticket.dueAt) return "none";
+  const left = new Date(ticket.dueAt).getTime() - now;
+  return dueWindows.find(([, , within]) => left < within)?.[0] ?? "later";
 }
 // Inline property editing on a row; readers see the plain value.
 function PropertyCell<P extends PropertyName>({
@@ -302,20 +327,29 @@ function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }
     </colgroup>
   );
 }
+// A project's tickets, or My work: the open tickets assigned to you across one workspace.
+export type TicketListScope = { project: Project } | { workspaceId: string };
 export function TicketList({
-  project,
+  scope,
   search,
   onSearch,
 }: {
-  project: Project;
+  scope: TicketListScope;
   search: TicketSearch;
   onSearch: (next: TicketSearch) => void;
 }) {
-  const access = useProjectAccess(project.id);
+  const project = "project" in scope ? scope.project : undefined;
+  const projectAccess = useProjectAccess(project?.id ?? "", !!project);
+  // My work spans projects: rows edit inline through their own project's access, and
+  // selection, bulk edits, saved views, and creation stay with a single project.
+  const canWrite = !!project && projectAccess.canWrite;
+  const projects = useProjects();
   const identity = useIdentity();
   const navigate = useNavigate();
+  const [projectGrouping] = usePreference(preferences.grouping),
+    [workGrouping] = usePreference(preferences.workGrouping);
+  const grouping: TicketGrouping = project ? projectGrouping : workGrouping;
   const [labelDisplay] = usePreference(preferences.labelDisplay),
-    [grouping] = usePreference(preferences.grouping),
     [density] = usePreference(preferences.density),
     [visibility, setVisibility] = usePreference(preferences.columns);
   const filterKey = JSON.stringify({ ...search, offset: 0, grouping });
@@ -323,14 +357,14 @@ export function TicketList({
     filterKey,
     pages: {},
   });
-  const [collapsed, setCollapsed] = useState<Set<Ticket["status"]>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const pages = paging.filterKey === filterKey ? paging.pages : {};
-  // Grouped lists fetch one series of pages per status section; a flat list fetches one series.
-  const sections: (Ticket["status"] | undefined)[] =
+  // Status sections fetch one series of pages each; other lists fetch one series and group it here.
+  const fetches: (Ticket["status"] | undefined)[] =
     grouping === "status"
       ? states.filter((status) => !search.status || status === search.status)
       : [undefined];
-  const pageQueries = sections.flatMap((status) =>
+  const pageQueries = fetches.flatMap((status) =>
     Array.from({ length: pages[pageKey(status)] ?? 1 }, (_, page) => ({
       status,
       offset: page * pageSize,
@@ -338,16 +372,25 @@ export function TicketList({
   );
   const queries = useQueries({
     queries: pageQueries.map(({ status, offset }) =>
-      api.query("list_tickets", {
-        projectId: project.id,
-        ...search,
-        status: status ?? search.status,
-        offset,
-        limit: pageSize,
-      }),
+      project
+        ? api.query("list_tickets", {
+            projectId: project.id,
+            ...search,
+            status: status ?? search.status,
+            offset,
+            limit: pageSize,
+          })
+        : api.query("list_my_work", {
+            workspaceId: "workspaceId" in scope ? scope.workspaceId : undefined,
+            q: search.q,
+            sort: search.sort,
+            order: search.order,
+            offset,
+            limit: pageSize,
+          }),
     ),
   });
-  const groups = sections.map((status) => ({
+  const groups = fetches.map((status) => ({
     status,
     data: {
       items: pageQueries.flatMap((entry, index) =>
@@ -362,7 +405,7 @@ export function TicketList({
       Math.max(1, Math.ceil(group.data.total / pageSize)),
     ]),
   );
-  const missingPages = sections.some(
+  const missingPages = fetches.some(
     (status) => (pages[pageKey(status)] ?? 1) < (requiredPages[pageKey(status)] ?? 1),
   );
   // Load the remaining pages of a section as soon as its total is known.
@@ -392,17 +435,82 @@ export function TicketList({
       fresh: new Set([...latest.keys()].filter((id) => !known.has(id))),
     });
   }
+  const all = [...latest.values()];
+  const total = groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0);
+  // Due windows move with the clock, so a ticket passes into Overdue while the list stays open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (grouping === "due") setNow(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [grouping]);
+  const sections: Section[] =
+    grouping === "status"
+      ? groups.flatMap(({ status, data }) =>
+          status && data.total > 0
+            ? [
+                {
+                  id: status,
+                  label: stateLabels[status],
+                  heading: <TicketIndicator property="status" value={status} />,
+                  total: data.total,
+                  has: (ticket: Ticket) => ticket.status === status,
+                },
+              ]
+            : [],
+        )
+      : grouping === "project"
+        ? // Sections come from the tickets, so a project missing from the cached list never hides one.
+          [...new Set(all.map((ticket) => ticket.projectId))]
+            .map((id) => ({ id, owner: projects.data?.find((item) => item.id === id) }))
+            .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
+            .map(({ id, owner }) => ({
+              id,
+              label: owner?.name ?? "Project",
+              heading: (
+                <span className="flex min-w-0 items-center gap-2 text-xs">
+                  {owner && <ProjectIcon project={owner} className="size-4" />}
+                  <span className="truncate">{owner?.name ?? "Project"}</span>
+                </span>
+              ),
+              total: all.filter((ticket) => ticket.projectId === id).length,
+              has: (ticket: Ticket) => ticket.projectId === id,
+            }))
+        : grouping === "due"
+          ? [...dueWindows, ["none", dueFilterLabels.none] as const].flatMap(([id, label]) => {
+              const count = all.filter((ticket) => dueWindow(ticket, now) === id).length;
+              return count
+                ? [
+                    {
+                      id,
+                      label,
+                      heading: <span className="text-xs">{label}</span>,
+                      total: count,
+                      has: (ticket: Ticket) => dueWindow(ticket, now) === id,
+                    },
+                  ]
+                : [];
+            })
+          : total > 0
+            ? [{ id: "all", label: "All", heading: null, total, has: () => true }]
+            : [];
+  const grouped = grouping !== "none";
   const tickets = {
     isPending: loading,
     error: queries.find((query) => query.error)?.error,
     data: {
-      items: [...latest.values()].filter(
-        (ticket) => grouping === "none" || !collapsed.has(ticket.status),
+      items: all.filter(
+        (ticket) =>
+          !grouped || !sections.some((section) => collapsed.has(section.id) && section.has(ticket)),
       ),
-      total: groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0),
+      total,
     },
   };
-  const views = useQuery(api.query("list_views", { projectId: project.id }));
+  const views = useQuery({
+    ...api.query("list_views", { projectId: project?.id ?? "" }),
+    enabled: !!project,
+  });
   const saveView = useOperation("save_view"),
     deleteView = useOperation("delete_view");
   const [creating, setCreating] = useState(false);
@@ -423,27 +531,22 @@ export function TicketList({
     data: tickets.data?.items ?? [],
     getRowId: (row) => row.id,
     columnResizeMode: "onChange",
-    enableRowSelection: access.canWrite,
-    state: { columnVisibility: { ...visibility, title: true, select: access.canWrite } },
+    enableRowSelection: canWrite,
+    state: { columnVisibility: { ...visibility, title: true, select: canWrite } },
     onColumnVisibilityChange: (change) =>
       setVisibility(typeof change === "function" ? change(visibility) : change),
   });
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
+  const sectionRows = (section: Section) =>
+    table.getRowModel().rows.filter((row) => section.has(row.original));
   // Rows in the order they render: sections top to bottom, skipping collapsed ones.
-  const orderedIds = groups
-    .filter((group) => group.data.total > 0)
-    .flatMap(({ status }) =>
-      status && collapsed.has(status)
-        ? []
-        : table
-            .getRowModel()
-            .rows.filter((row) => !status || row.original.status === status)
-            .map((row) => row.id),
-    );
+  const orderedIds = sections.flatMap((section) =>
+    grouped && collapsed.has(section.id) ? [] : sectionRows(section).map((row) => row.id),
+  );
   const orderKey = orderedIds.join("\n");
   useEffect(() => {
-    if (!loading) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
-  }, [loading, project.id, orderKey]);
+    if (!loading && project) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
+  }, [loading, project, orderKey]);
   // Keyboard highlight: J/K or arrows move it, Enter opens, X selects, S/P/A edit a property.
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
@@ -494,7 +597,7 @@ export function TicketList({
   useShortcut(
     "x",
     () => {
-      if (active && access.canWrite) table.getRowModel().rowsById[active]?.toggleSelected();
+      if (active && canWrite) table.getRowModel().rowsById[active]?.toggleSelected();
     },
     rowKeys,
   );
@@ -509,12 +612,12 @@ export function TicketList({
   useShortcut("s", () => openProperty("status"), rowKeys);
   useShortcut("p", () => openProperty("priority"), rowKeys);
   useShortcut("a", () => openProperty("assigneeId"), rowKeys);
-  const toggleStatus = (status: Ticket["status"]) => {
+  const toggleSection = (id: string) => {
     table.resetRowSelection();
     setCollapsed((previous) => {
       const next = new Set(previous);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -526,7 +629,7 @@ export function TicketList({
   useShortcut(
     "c",
     () => {
-      if (access.canWrite) setCreating(true);
+      if (canWrite) setCreating(true);
     },
     { enabled: !creating },
   );
@@ -544,76 +647,80 @@ export function TicketList({
   return (
     <>
       <TicketListControls
-        projectId={project.id}
+        projectId={project?.id}
         search={search}
         onSearch={changeSearch}
         view={
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  aria-label="Ticket views"
-                  title={viewLabel}
-                  className="max-w-full min-w-0 justify-start"
-                />
-              }
-            >
-              <span className="truncate">{viewLabel}</span>
-              <ChevronDown className="size-3 shrink-0" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-[70dvh] w-60 overflow-y-auto">
-              <DropdownMenuGroup>
-                <DropdownMenuRadioGroup
-                  value={activeView?.id ?? (isDefault ? "all" : "custom")}
-                  onValueChange={(id) => {
-                    const chosen = views.data?.find((view) => view.id === id);
-                    if (id === "all") changeSearch(searchSchema.parse({}));
-                    else if (chosen) changeSearch({ ...chosen.filters, offset: 0 });
-                  }}
-                >
-                  {[{ id: "all", name: "All tickets" }, ...(views.data ?? [])].map((view) => (
-                    <DropdownMenuRadioItem key={view.id} value={view.id} closeOnClick>
-                      {view.name}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                {access.canWrite && (
-                  <DropdownMenuItem
-                    onClick={() => table.toggleAllRowsSelected(!table.getIsAllRowsSelected())}
+          !project ? null : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    aria-label="Ticket views"
+                    title={viewLabel}
+                    className="max-w-full min-w-0 justify-start"
+                  />
+                }
+              >
+                <span className="truncate">{viewLabel}</span>
+                <ChevronDown className="size-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-[70dvh] w-60 overflow-y-auto">
+                <DropdownMenuGroup>
+                  <DropdownMenuRadioGroup
+                    value={activeView?.id ?? (isDefault ? "all" : "custom")}
+                    onValueChange={(id) => {
+                      const chosen = views.data?.find((view) => view.id === id);
+                      if (id === "all") changeSearch(searchSchema.parse({}));
+                      else if (chosen) changeSearch({ ...chosen.filters, offset: 0 });
+                    }}
                   >
-                    {table.getIsAllRowsSelected()
-                      ? "Clear selection"
-                      : "Select all displayed tickets"}
+                    {[{ id: "all", name: "All tickets" }, ...(views.data ?? [])].map((view) => (
+                      <DropdownMenuRadioItem key={view.id} value={view.id} closeOnClick>
+                        {view.name}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {canWrite && (
+                    <DropdownMenuItem
+                      onClick={() => table.toggleAllRowsSelected(!table.getIsAllRowsSelected())}
+                    >
+                      {table.getIsAllRowsSelected()
+                        ? "Clear selection"
+                        : "Select all displayed tickets"}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setSavingView(true)}>
+                    <BookmarkPlus />
+                    Save current view
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => setSavingView(true)}>
-                  <BookmarkPlus />
-                  Save current view
-                </DropdownMenuItem>
-                {activeView && (
-                  <DropdownMenuItem onClick={() => setDeletingView(activeView)}>
-                    <Trash2 />
-                    Delete view {activeView.name}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  {activeView && (
+                    <DropdownMenuItem onClick={() => setDeletingView(activeView)}>
+                      <Trash2 />
+                      Delete view {activeView.name}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
         }
         actions={
-          <IconButton
-            label="New ticket"
-            title="New ticket (C)"
-            variant="default"
-            disabled={!access.canWrite}
-            onClick={() => setCreating(true)}
-          >
-            <Plus />
-          </IconButton>
+          project && (
+            <IconButton
+              label="New ticket"
+              title="New ticket (C)"
+              variant="default"
+              disabled={!canWrite}
+              onClick={() => setCreating(true)}
+            >
+              <Plus />
+            </IconButton>
+          )
         }
         onReset={() => {
           resetPreferences(identity.id, ticketDisplayPreferences);
@@ -629,20 +736,21 @@ export function TicketList({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void saveView
-              .mutateAsync({
-                projectId: project.id,
-                name: viewName,
-                filters: ticketFilter.parse(
-                  Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
-                ),
-              })
-              .then(() => {
-                setSavingView(false);
-                setViewName("");
-                toast.success("View saved");
-              })
-              .catch(() => {});
+            if (project)
+              void saveView
+                .mutateAsync({
+                  projectId: project.id,
+                  name: viewName,
+                  filters: ticketFilter.parse(
+                    Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
+                  ),
+                })
+                .then(() => {
+                  setSavingView(false);
+                  setViewName("");
+                  toast.success("View saved");
+                })
+                .catch(() => {});
           }}
         >
           <Input
@@ -670,13 +778,14 @@ export function TicketList({
             if (!open) setDeletingView(null);
           }}
           onConfirm={async () => {
-            await deleteView.mutateAsync({ projectId: project.id, viewId: deletingView.id });
+            if (project)
+              await deleteView.mutateAsync({ projectId: project.id, viewId: deletingView.id });
             setDeletingView(null);
           }}
         />
       )}
       <ErrorNotice error={tickets.error ?? deleteView.error} />
-      {selected.length > 0 && (
+      {canWrite && selected.length > 0 && (
         <TicketSelectionToolbar selected={selected} onClear={() => table.resetRowSelection()} />
       )}
       {tickets.isPending ? (
@@ -789,84 +898,85 @@ export function TicketList({
                 </TableHeader>
               </Table>
             </div>
-            {groups
-              .filter((group) => group.data && group.data.total > 0)
-              .map(({ status, data }) => (
-                <Table key={pageKey(status)} role="presentation" className={tableClass}>
-                  <ColumnGroup leaves={table.getVisibleLeafColumns()} />
-                  <TableBody
-                    role="rowgroup"
-                    aria-label={status ? `${stateLabels[status]} tickets` : "Tickets"}
-                  >
-                    {status && (
-                      <TableRow
-                        className="ticket-status-heading hover:bg-transparent"
-                        data-status={status}
+            {sections.map((section) => (
+              <Table key={section.id} role="presentation" className={tableClass}>
+                <ColumnGroup leaves={table.getVisibleLeafColumns()} />
+                <TableBody
+                  role="rowgroup"
+                  aria-label={grouped ? `${section.label} tickets` : "Tickets"}
+                >
+                  {grouped && (
+                    <TableRow
+                      className="ticket-status-heading hover:bg-transparent"
+                      data-status={grouping === "status" ? section.id : undefined}
+                    >
+                      <TableHead
+                        scope="rowgroup"
+                        className="sticky top-8 z-10 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))] p-0"
+                        colSpan={
+                          table.getAllLeafColumns().filter((column) => column.getIsVisible()).length
+                        }
                       >
-                        <TableHead
-                          scope="rowgroup"
-                          className="sticky top-8 z-10 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))] p-0"
-                          colSpan={
-                            table.getAllLeafColumns().filter((column) => column.getIsVisible())
-                              .length
-                          }
+                        <TicketSectionHeader
+                          section={section}
+                          collapsed={collapsed.has(section.id)}
+                          onToggle={() => toggleSection(section.id)}
+                        />
+                      </TableHead>
+                    </TableRow>
+                  )}
+                  {(!grouped || !collapsed.has(section.id)) &&
+                    sectionRows(section).map((row) => (
+                      <TicketContextMenu key={row.id} ticket={row.original}>
+                        <TableRow
+                          className="ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60 data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]"
+                          role="row"
+                          data-id={row.id}
+                          data-selected={row.getIsSelected()}
+                          data-active={active === row.id || undefined}
+                          data-fresh={seen.fresh.has(row.id) || undefined}
+                          onClick={(event) => openRow(row.original, event)}
                         >
-                          <TicketStatusHeader
-                            status={status}
-                            count={data.total}
-                            collapsed={collapsed.has(status)}
-                            onToggle={() => toggleStatus(status)}
-                          />
-                        </TableHead>
-                      </TableRow>
-                    )}
-                    {(!status || !collapsed.has(status)) &&
-                      table
-                        .getRowModel()
-                        .rows.filter((row) => !status || row.original.status === status)
-                        .map((row) => (
-                          <TicketContextMenu key={row.id} ticket={row.original}>
-                            <TableRow
-                              className="ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60 data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]"
-                              role="row"
-                              data-id={row.id}
-                              data-selected={row.getIsSelected()}
-                              data-active={active === row.id || undefined}
-                              data-fresh={seen.fresh.has(row.id) || undefined}
-                              onClick={(event) => openRow(row.original, event)}
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell
+                              className={cn(
+                                "px-3 py-2 align-middle text-xs whitespace-normal in-data-[density=comfortable]:py-4",
+                                cell.column.id === "key" &&
+                                  "font-mono text-[11px] text-muted-foreground",
+                              )}
+                              key={cell.id}
+                              role="cell"
+                              data-column={cell.column.id}
+                              data-label={
+                                typeof cell.column.columnDef.header === "string"
+                                  ? cell.column.columnDef.header
+                                  : undefined
+                              }
                             >
-                              {row.getVisibleCells().map((cell) => (
-                                <TableCell
-                                  className={cn(
-                                    "px-3 py-2 align-middle text-xs whitespace-normal in-data-[density=comfortable]:py-4",
-                                    cell.column.id === "key" &&
-                                      "font-mono text-[11px] text-muted-foreground",
-                                  )}
-                                  key={cell.id}
-                                  role="cell"
-                                  data-column={cell.column.id}
-                                  data-label={
-                                    typeof cell.column.columnDef.header === "string"
-                                      ? cell.column.columnDef.header
-                                      : undefined
-                                  }
-                                >
-                                  <table.FlexRender cell={cell} />
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          </TicketContextMenu>
-                        ))}
-                  </TableBody>
-                </Table>
-              ))}
+                              <table.FlexRender cell={cell} />
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </TicketContextMenu>
+                    ))}
+                </TableBody>
+              </Table>
+            ))}
           </div>
           {!tickets.error && tickets.data.total === 0 && (
-            <EmptyState title={isDefault && !search.q ? "No tickets yet" : "No matching tickets"}>
+            <EmptyState
+              title={
+                !isDefault || search.q
+                  ? "No matching tickets"
+                  : project
+                    ? "No tickets yet"
+                    : "No open tickets assigned to you"
+              }
+            >
               {!isDefault ? (
                 <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
               ) : (
-                access.canWrite && (
+                canWrite && (
                   <Button variant="default" onClick={() => setCreating(true)}>
                     <Plus />
                     Create the first ticket
@@ -883,7 +993,9 @@ export function TicketList({
         </footer>
       )}
       <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
-        {creating && <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />}
+        {creating && project && (
+          <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />
+        )}
       </Modal>
     </>
   );

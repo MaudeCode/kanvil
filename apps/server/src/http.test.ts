@@ -146,6 +146,12 @@ describe("HTTP, realtime, and MCP", () => {
       .object({ paths: z.record(z.string(), z.unknown()) })
       .parse(await (await request("/api/openapi.json")).json());
     expect(document.paths["/api/v1/projects/{projectId}/tickets"]).toBeDefined();
+    const work = await request(`/api/v1/my-work?workspaceId=${project.workspaceId}&activity=5`, {
+      headers: sessionHeaders(),
+    });
+    expect(work.status).toBe(200);
+    expect(z.object({ total: z.number() }).parse(await work.json()).total).toBe(0);
+    expect(document.paths["/api/v1/my-work"]).toBeDefined();
   });
   it("enforces project and operation scopes on credentials and allows revocation", async () => {
     const project = await newProject(),

@@ -254,8 +254,13 @@ export const projectHandlers: Pick<
     const counts = await ctx.db
       .select({
         projectId: tickets.projectId,
-        open: count(),
-        overdue: count(sql`CASE WHEN ${overdueTicket} THEN 1 END`),
+        open: count(sql`CASE WHEN ${openTicket} THEN 1 END`),
+        overdue: count(sql`CASE WHEN ${openTicket} AND ${overdueTicket} THEN 1 END`),
+        closed: count(sql`CASE WHEN NOT ${openTicket} THEN 1 END`),
+        nextDue:
+          sql<Date | null>`min(CASE WHEN ${openTicket} AND ${tickets.dueAt} >= now() THEN ${tickets.dueAt} END)`.mapWith(
+            tickets.dueAt,
+          ),
       })
       .from(tickets)
       .where(
@@ -265,7 +270,6 @@ export const projectHandlers: Pick<
             rows.map((row) => row.id),
           ),
           eq(tickets.archived, false),
-          openTicket,
         ),
       )
       .groupBy(tickets.projectId);
@@ -288,6 +292,8 @@ export const projectHandlers: Pick<
         ...toProject(row),
         openTickets: stats?.open ?? 0,
         overdueTickets: stats?.overdue ?? 0,
+        closedTickets: stats?.closed ?? 0,
+        nextDueAt: stats?.nextDue ?? null,
         role: ctx.actor.admin
           ? ("admin" as const)
           : z.enum(roles).parse(access.find((entry) => entry.id === row.id)?.role),

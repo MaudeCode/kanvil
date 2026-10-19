@@ -4,12 +4,20 @@ export const searchSchema = ticketFilter.extend({
   offset: z.coerce.number().int().min(0).catch(0).default(0),
 });
 export type TicketSearch = z.output<typeof searchSchema>;
+// My work spans projects, so only search and ordering apply; project filters are dropped.
+export const workSearchSchema = searchSchema.transform(({ q, sort, order }): TicketSearch =>
+  searchSchema.parse({ q, sort, order }),
+);
 export const ticketDensitySchema = z.enum(["compact", "comfortable"]);
 export type TicketDensity = z.output<typeof ticketDensitySchema>;
 export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
 export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 export const ticketGroupingSchema = z.enum(["status", "none"]);
-export type TicketGrouping = z.output<typeof ticketGroupingSchema>;
+// My work spans projects, so it groups by due date or project instead of status.
+export const workGroupingSchema = z.enum(["due", "project", "none"]);
+export type TicketGrouping =
+  | z.output<typeof ticketGroupingSchema>
+  | z.output<typeof workGroupingSchema>;
 // Ticket list columns a person can show or hide, in table order.
 export const ticketColumnLabels = {
   key: "Ticket",

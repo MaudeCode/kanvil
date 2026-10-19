@@ -7,7 +7,7 @@ import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-ro
 import {
   Bell,
   ChevronsUpDown,
-  Layers,
+  House,
   LogOut,
   Moon,
   Plus,
@@ -119,11 +119,21 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname === "/"}
-                    tooltip="All projects"
+                    tooltip="Home"
                     render={<Link to="/" activeOptions={{ exact: true }} />}
                   >
-                    <Layers />
-                    <span>All projects</span>
+                    <House />
+                    <span>Home</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname === "/my-work"}
+                    tooltip="My work"
+                    render={<Link to="/my-work" />}
+                  >
+                    <UserCheck />
+                    <span>My work</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
@@ -426,9 +436,15 @@ function CommandPalette() {
             </CommandGroup>
             <CommandGroup heading="Pages">
               {
-                <CommandItem value="all projects home" onSelect={() => go("/")}>
-                  <Layers />
-                  All projects
+                <CommandItem value="home overview all projects" onSelect={() => go("/")}>
+                  <House />
+                  Home
+                </CommandItem>
+              }
+              {
+                <CommandItem value="my work assigned tickets" onSelect={() => go("/my-work")}>
+                  <UserCheck />
+                  My work
                 </CommandItem>
               }
               {
@@ -521,15 +537,17 @@ export function WorkspaceHeader() {
       ? "Administration"
       : pathname === "/inbox"
         ? "Inbox"
-        : pathname === "/settings"
-          ? "Settings"
-          : pathname.startsWith("/workspaces/")
-            ? "Workspace settings"
-            : pathname.endsWith("/settings")
-              ? "Project settings"
-              : ticketId
-                ? (ticket.data?.ticket.key ?? "Ticket")
-                : "Tickets";
+        : pathname === "/my-work"
+          ? "My work"
+          : pathname === "/settings"
+            ? "Settings"
+            : pathname.startsWith("/workspaces/")
+              ? "Workspace settings"
+              : pathname.endsWith("/settings")
+                ? "Project settings"
+                : ticketId
+                  ? (ticket.data?.ticket.key ?? "Ticket")
+                  : "Tickets";
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />
@@ -537,9 +555,9 @@ export function WorkspaceHeader() {
         <BreadcrumbList className={projectList ? "min-w-0 flex-nowrap overflow-hidden" : undefined}>
           <BreadcrumbItem>
             {pathname === "/" ? (
-              <BreadcrumbPage>All projects</BreadcrumbPage>
+              <BreadcrumbPage>Home</BreadcrumbPage>
             ) : (
-              <BreadcrumbLink render={<Link to="/" />}>Projects</BreadcrumbLink>
+              <BreadcrumbLink render={<Link to="/" />}>Home</BreadcrumbLink>
             )}
           </BreadcrumbItem>
           {project && (
@@ -567,9 +585,16 @@ export function WorkspaceHeader() {
             <>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
-                <BreadcrumbPage className={ticketId ? "font-mono text-xs" : undefined}>
-                  {page}
-                </BreadcrumbPage>
+                {pathname === "/my-work" ? (
+                  // My work's list controls have no title of their own, like a project list.
+                  <h1 className="m-0 text-[13px] font-medium tracking-normal">
+                    <BreadcrumbPage>{page}</BreadcrumbPage>
+                  </h1>
+                ) : (
+                  <BreadcrumbPage className={ticketId ? "font-mono text-xs" : undefined}>
+                    {page}
+                  </BreadcrumbPage>
+                )}
               </BreadcrumbItem>
             </>
           )}

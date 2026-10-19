@@ -1,7 +1,12 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { z } from "zod";
 import { useIdentity } from "../data.tsx";
-import { ticketDensitySchema, ticketGroupingSchema, ticketLabelDisplaySchema } from "../search.ts";
+import {
+  ticketDensitySchema,
+  ticketGroupingSchema,
+  ticketLabelDisplaySchema,
+  workGroupingSchema,
+} from "../search.ts";
 
 type Preference<T> = { name: string; schema: z.ZodType<T> };
 const preference = <T>(name: string, schema: z.ZodType<T>): Preference<T> => ({ name, schema });
@@ -18,6 +23,7 @@ export const preferences = {
   density: preference("ticket-density", ticketDensitySchema.catch("compact")),
   labelDisplay: preference("ticket-label-display", ticketLabelDisplaySchema.catch("compact")),
   grouping: preference("ticket-grouping", ticketGroupingSchema.catch("status")),
+  workGrouping: preference("work-grouping", workGroupingSchema.catch("due")),
   columns: preference(
     "ticket-columns",
     z
@@ -34,6 +40,7 @@ export const ticketDisplayPreferences = [
   preferences.density,
   preferences.labelDisplay,
   preferences.grouping,
+  preferences.workGrouping,
   preferences.columns,
 ];
 

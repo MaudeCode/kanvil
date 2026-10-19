@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signIn, ownerPassword, useEmailLogin } from "./auth.ts";
-import { addAcceptanceCriteria, choose, openSearch } from "./controls.ts";
+import { addAcceptanceCriteria, choose, openSearch, toggleDisplay } from "./controls.ts";
 
 test("ticket writing, parent selection, inline properties, and contextual actions work without raw IDs", async ({
   page,
@@ -621,4 +621,98 @@ test("create more keeps one composer open across projects without mixing their d
   await page.goto(`/projects/${beta.id}`);
   await page.getByRole("button", { name: "New ticket", exact: true }).click();
   await expect(title).toHaveValue("Private beta draft");
+});
+
+test("home summarizes assigned work and activity, and My work lists every assigned ticket", async ({
+  page,
+}) => {
+  await signIn(page);
+  const session = await (await page.request.get("/api/auth/get-session")).json();
+  const create = async (key: string, name: string) =>
+    (await page.request.post("/api/v1/projects", { data: { key, name } })).json();
+  const ticket = async (projectId: string, data: Record<string, unknown>) =>
+    (
+      await page.request.post(`/api/v1/projects/${projectId}/tickets`, {
+        data: { assigneeId: session.user.id, ...data },
+      })
+    ).json();
+  const alpha = await create("WORKALPHA", "Assigned alpha"),
+    beta = await create("WORKBETA", "Assigned beta");
+  // More than one 100-ticket batch, so My work must fetch every page.
+  for (let index = 1; index <= 101; index++)
+    await ticket(alpha.id, { title: `Alpha assignment ${index}` });
+  const overdue = await ticket(beta.id, {
+    title: "Beta overdue assignment",
+    dueAt: new Date(Date.now() - 86_400_000).toISOString(),
+  });
+  await ticket(beta.id, {
+    title: "Beta upcoming assignment",
+    dueAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+  });
+  await ticket(beta.id, { title: "Beta finished assignment", status: "done" });
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  const assigned = page.getByRole("region", { name: "Assigned to you" });
+  await expect(assigned.getByRole("link", { name: new RegExp(overdue.title) })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recent activity" })).toContainText(
+    "Ticket created",
+  );
+  const betaRow = page
+    .locator(".project-list")
+    .getByRole("listitem")
+    .filter({ hasText: "Assigned beta" });
+  await expect(betaRow).toContainText("2 open · 1 overdue · 33% done · next due");
+  await expect(
+    page.locator(".project-list").getByRole("listitem").filter({ hasText: "Assigned alpha" }),
+  ).toContainText("101 open · 0% done");
+
+  await assigned.getByRole("link", { name: /in My work$/ }).click();
+  await expect(page).toHaveURL(/\/my-work(\?|$)/);
+  await expect(page.getByRole("heading", { name: "My work", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Collapse Overdue tickets", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("rowgroup", { name: "Overdue tickets" }).getByText(overdue.title),
+  ).toBeVisible();
+  await expect(page.getByText("Beta finished assignment")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await toggleDisplay(page, "Project");
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("rowgroup", { name: "Assigned alpha tickets" }).locator("tr.ticket-row"),
+  ).toHaveCount(101);
+  await expect(
+    page.getByRole("rowgroup", { name: "Assigned beta tickets" }).locator("tr.ticket-row"),
+  ).toHaveCount(2);
+});
+
+test("My work moves a ticket into Overdue when its due time passes while the page is open", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date() });
+  await signIn(page);
+  const session = await (await page.request.get("/api/auth/get-session")).json();
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "WORKCLOCK", name: "Clock" } })
+  ).json();
+  const soon = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: {
+        title: "Due within minutes",
+        assigneeId: session.user.id,
+        dueAt: new Date(Date.now() + 2 * 60_000).toISOString(),
+      },
+    })
+  ).json();
+  await page.goto("/my-work");
+  await expect(
+    page.getByRole("rowgroup", { name: "Due today tickets" }).getByText(soon.title),
+  ).toBeVisible();
+  await page.clock.fastForward("05:00");
+  await expect(
+    page.getByRole("rowgroup", { name: "Overdue tickets" }).getByText(soon.title),
+  ).toBeVisible();
 });
