@@ -116,7 +116,8 @@ async function blockers(db: Reader, person: typeof user.$inferSelect): Promise<B
         isNull(workspaces.deletedAt),
         // The ownership blocker already names the workspaces it owns.
         sql`${workspaces.ownerId} IS DISTINCT FROM ${person.id}`,
-        sql`NOT EXISTS (SELECT 1 FROM ${workspaceMembers} other WHERE other.workspace_id = ${workspaces.id} AND other.role = 'admin' AND other.user_id <> ${person.id})`,
+        // Only an active administrator can still run the workspace.
+        sql`NOT EXISTS (SELECT 1 FROM ${workspaceMembers} other JOIN ${user} u ON u.id = other.user_id WHERE other.workspace_id = ${workspaces.id} AND other.role = 'admin' AND other.user_id <> ${person.id} AND NOT coalesce(u.banned, false) AND u.deleted_at IS NULL)`,
       ),
     )
     .orderBy(asc(workspaces.name));
@@ -261,9 +262,10 @@ export const accountHandlers: Pick<
     await ctx.db.delete(oauthConsent).where(eq(oauthConsent.userId, id));
     await ctx.db.delete(apikey).where(eq(apikey.referenceId, id));
     await ctx.db.delete(account).where(eq(account.userId, id));
-    // Push devices hang off sessions and leave with them.
+    // Push devices hang off sessions and leave with them. Sessions the account opened while
+    // impersonating someone else go too.
     await ctx.db.delete(pushDevices).where(eq(pushDevices.userId, id));
-    await ctx.db.delete(session).where(eq(session.userId, id));
+    await ctx.db.delete(session).where(or(eq(session.userId, id), eq(session.impersonatedBy, id)));
     await ctx.db.delete(notificationChannels).where(eq(notificationChannels.userId, id));
     await ctx.db.delete(notificationPreferences).where(eq(notificationPreferences.userId, id));
     await ctx.db.delete(notifications).where(eq(notifications.userId, id));

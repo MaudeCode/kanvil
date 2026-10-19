@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { account, apikey, session, user } from "./auth-schema.ts";
-import { claims, events, importRuns, members, workspaceMembers } from "./schema.ts";
+import { claims, events, importRuns, members, workspaceMembers, workspaces } from "./schema.ts";
 import { requireRow } from "./domain.ts";
 import { recoverLocalPassword } from "./recover-account.ts";
 
@@ -335,6 +335,72 @@ describe("account deletion", () => {
       .from(user)
       .where(and(eq(user.role, "admin"), isNull(user.deletedAt)));
     expect(remaining).toHaveLength(1);
+  });
+
+  it("never treats an impersonated session as a fresh sign-in and revokes it with its administrator", async () => {
+    const peerCookie = await login(peer.email);
+    const impersonate = async (cookie: string) => {
+      const result = await request(
+        "/api/auth/admin/impersonate-user",
+        "POST",
+        { userId: person.id },
+        cookie,
+      );
+      expect(result.status).toBe(200);
+      // The response clears the administrator's cookie before setting the impersonated one.
+      const jar = new Map(
+        result.headers.getSetCookie().map((value) => {
+          const [pair = ""] = value.split(";");
+          return [pair.slice(0, pair.indexOf("=")), pair] as const;
+        }),
+      );
+      return [...jar.values()].join("; ");
+    };
+    // A brand-new impersonation session cannot stand in for the person's own recent sign-in.
+    const asPerson = await impersonate(ownerCookie);
+    const refused = await remove(person.id, person.email, asPerson);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error: { code: "reauthentication_required" } });
+    expect(await row(person.id)).toMatchObject({ deletedAt: null });
+
+    // Deleting an administrator ends the sessions it opened as someone else.
+    const borrowed = await impersonate(peerCookie);
+    expect((await request("/api/v1/workspaces", "GET", undefined, borrowed)).status).toBe(200);
+    expect((await remove(peer.id, peer.email)).status).toBe(200);
+    expect((await request("/api/v1/workspaces", "GET", undefined, borrowed)).status).toBe(401);
+    expect(
+      await fixture.database.db.select().from(session).where(eq(session.impersonatedBy, peer.id)),
+    ).toHaveLength(0);
+  });
+
+  it("does not count a disabled administrator as another workspace administrator", async () => {
+    const personCookie = await login(person.email);
+    const space = await parsed(
+      request("/api/v1/workspaces", "POST", { name: "Unowned", slug: "unowned" }, personCookie),
+    );
+    expect(
+      (
+        await request(
+          `/api/v1/workspaces/${space.id}/members`,
+          "POST",
+          { email: peer.email, role: "admin" },
+          personCookie,
+        )
+      ).status,
+    ).toBe(200);
+    // A workspace from before ownership, whose other administrator is disabled.
+    await fixture.database.db
+      .update(workspaces)
+      .set({ ownerId: null })
+      .where(eq(workspaces.id, space.id));
+    expect((await request("/api/auth/admin/ban-user", "POST", { userId: peer.id })).status).toBe(
+      200,
+    );
+    const refused = await remove(person.id, person.email);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: { code: "last_administrator", message: expect.stringContaining("Unowned") },
+    });
   });
 
   it("asks for a recent sign-in before deleting", async () => {

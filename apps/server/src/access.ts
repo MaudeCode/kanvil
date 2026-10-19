@@ -77,7 +77,13 @@ export function createAccess(auth: Auth, domain: Domain, config: Config, databas
     }
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) fail(401, "unauthorized", "Sign in to continue");
-    return domain.actor(session.user.id, undefined, session.session.createdAt);
+    // An impersonated session never counts as the person's own sign-in, so it cannot pass the
+    // recent sign-in check that account and workspace deletion require.
+    return domain.actor(
+      session.user.id,
+      undefined,
+      session.session.impersonatedBy ? undefined : session.session.createdAt,
+    );
   }
   async function revalidate(request: Request, identity: Actor) {
     if (!identity.machine) return authenticate(request);
