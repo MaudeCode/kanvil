@@ -66,6 +66,7 @@ import { customFieldHandlers } from "./custom-field-operations.ts";
 import { repositoryHandlers } from "./repository-operations.ts";
 import { importHandlers } from "./import-operations.ts";
 import { issueSyncHandlers, queueIssueSync } from "./issue-sync.ts";
+import { accountHandlers } from "./account-operations.ts";
 
 export interface Actor {
   id: string;
@@ -77,6 +78,13 @@ export interface Actor {
   // When the session signed in; credentials have none. Destructive account-level writes need a
   // recent one.
   signedInAt?: Date;
+}
+// Deleting a workspace or an account asks for a sign-in this recent, so an unattended session
+// cannot do it.
+const recentSignIn = 15 * 60_000;
+export function requireRecentSignIn(actor: Actor, message: string) {
+  if (!actor.signedInAt || Date.now() - actor.signedInAt.getTime() > recentSignIn)
+    fail(403, "reauthentication_required", message);
 }
 export interface Context {
   blobs: BlobWriter;
@@ -132,7 +140,11 @@ export function toProject(row: typeof projects.$inferSelect): Project {
 }
 export async function accountByEmail(db: Context["db"], email: string) {
   const found = (
-    await db.select().from(user).where(eq(user.email, email.toLowerCase())).limit(1)
+    await db
+      .select()
+      .from(user)
+      .where(and(eq(user.email, email.toLowerCase()), isNull(user.deletedAt)))
+      .limit(1)
   )[0];
   if (!found)
     fail(
@@ -594,6 +606,7 @@ export function createDomain(
     ...repositoryHandlers,
     ...importHandlers,
     ...issueSyncHandlers,
+    ...accountHandlers,
   };
   // The writes an archived project still accepts: its lifecycle, details, order, and access, and
   // removing what reaches outside it. Everything else waits for a restore.
@@ -621,6 +634,8 @@ export function createDomain(
     "get_import",
     "start_import",
     "cancel_import",
+    "get_account_impact",
+    "delete_account",
   ]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([

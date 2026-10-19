@@ -10,7 +10,7 @@ import {
   type NotificationPreferences,
 } from "@kanvil/contracts";
 import { notificationCategoryIcons } from "./lib/notification-categories.ts";
-import { api, auth, useIdentity, useInfo } from "./data.tsx";
+import { api, auth, signOut, useIdentity, useInfo } from "./data.tsx";
 import {
   Button,
   ErrorNotice,
@@ -28,6 +28,7 @@ import { SettingsLayout, SettingsPanel, SettingRow } from "./components/settings
 import { Credentials } from "./components/credentials-settings.tsx";
 import { NotificationChannels } from "./components/delivery-settings.tsx";
 import { ProfileSettings } from "./components/profile-settings.tsx";
+import { DeleteAccountRow } from "./components/project-lifecycle.tsx";
 import { AppearanceSettings } from "./components/appearance.tsx";
 import { TicketDisplayPreferences } from "./components/ticket-list-controls.tsx";
 import {
@@ -39,7 +40,8 @@ import type { accountSections } from "./search.ts";
 import { formText } from "./forms.ts";
 export function AccountSettings({ section }: { section: (typeof accountSections)[number] }) {
   const [error, setError] = useAuthError();
-  const info = useInfo(),
+  const identity = useIdentity(),
+    info = useInfo(),
     accounts = useQuery({
       queryKey: ["accounts"],
       refetchOnMount: "always",
@@ -129,6 +131,16 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
               )}
             </SettingRow>
           )}
+          <DeleteAccountRow
+            account={identity}
+            // The deletion ended every session; leave with the private data cleared.
+            onDeleted={() =>
+              signOut(identity).catch(() => {
+                identity.clearPrivateData();
+                window.location.assign("/login");
+              })
+            }
+          />
           {!passwordOpen && <ErrorNotice error={error} />}
           <ErrorNotice error={accounts.error ?? info.error} />
         </section>

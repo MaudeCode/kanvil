@@ -39,6 +39,7 @@ import {
   project,
   publish,
   publishMany,
+  requireRecentSignIn,
   requireRow,
   toProject,
   workspace,
@@ -332,8 +333,6 @@ async function workspaceImpact(ctx: Context, scoped: Context[]): Promise<Workspa
   }
   return totals;
 }
-// Deleting a workspace asks for a sign-in this recent, so an unattended session cannot do it.
-const recentSignIn = 15 * 60_000;
 const changed = async (ctx: Context, values: PgUpdateSetSource<typeof projects>) =>
   one(
     await ctx.db
@@ -450,8 +449,7 @@ export const lifecycleHandlers: Pick<
   // workspace row stays as a tombstone that keeps its URL key; accounts are never touched.
   async delete_workspace(ctx, input) {
     const current = requireOwner(ctx);
-    if (!ctx.actor.signedInAt || Date.now() - ctx.actor.signedInAt.getTime() > recentSignIn)
-      fail(403, "reauthentication_required", "Sign in again to delete this workspace");
+    requireRecentSignIn(ctx.actor, "Sign in again to delete this workspace");
     assertVersion(current, input.expectedVersion, "workspace", "deleting it");
     if (input.confirmSlug.trim().toLowerCase() !== current.slug)
       fail(400, "validation_error", "Type the workspace URL key to confirm deletion");

@@ -586,6 +586,45 @@ export const workspaceImpactSchema = projectImpactSchema.omit({ transfer: true }
   labels: count,
 });
 export type WorkspaceImpact = z.output<typeof workspaceImpactSchema>;
+// Deleted accounts keep their ID on the history they wrote and show under this name.
+export const deletedAccountName = "Deleted account";
+// The name every client shows for an account ID on tickets and activity: a current member's name,
+// `Deleted account` for an ID from list_deleted_accounts, and otherwise someone who left.
+export function memberName(
+  people: readonly { userId: string; name: string }[] | undefined,
+  deleted: readonly string[] | undefined,
+  userId: string,
+) {
+  return (
+    people?.find((person) => person.userId === userId)?.name ??
+    (deleted?.includes(userId) ? deletedAccountName : "Former member")
+  );
+}
+// What deleting an account removes, and the history that stays attributed to its tombstone.
+// `blockers` must be empty before the deletion proceeds.
+export const accountImpactSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  // Sign-in methods such as `credential` (local password) and `oidc`.
+  providers: z.array(z.string()),
+  sessions: count,
+  // API keys and OAuth (MCP) grants.
+  credentials: count,
+  // Push devices and notification channels.
+  devices: count,
+  workspaces: count,
+  projects: count,
+  // Claims the deletion releases.
+  claims: count,
+  // Imports the deletion cancels.
+  imports: count,
+  tickets: count,
+  comments: count,
+  events: count,
+  blockers: projectImpactSchema.shape.blockers,
+});
+export type AccountImpact = z.output<typeof accountImpactSchema>;
 // Not strict like the editable fields: unknown fields, and storage-only columns such as the manual
 // order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
@@ -1604,6 +1643,36 @@ export const operations = {
     "/workspaces/{workspaceId}",
     "admin",
     "Permanently delete a workspace and every project in it as `delete_project` does, with its memberships, invitations, and shared labels. Only the owner or an instance administrator, signed in within the last 15 minutes, can delete; `confirmSlug` must repeat the workspace URL key. Fails with `claim_conflict` while any ticket is claimed. Accounts, the URL key, and the activity history are kept.",
+  ),
+  list_deleted_accounts: op(
+    z.object({}),
+    z.array(z.string()),
+    "GET",
+    "/accounts/deleted",
+    "read",
+    "List the IDs of deleted accounts. Tickets, comments, evidence, and activity they wrote keep the ID; show it as `Deleted account`.",
+  ),
+  get_account_impact: op(
+    z.object({ userId: z.string().min(1) }),
+    accountImpactSchema,
+    "GET",
+    "/accounts/{userId}/impact",
+    "read",
+    "Preview deleting an account: its sign-in methods, sessions, credentials, devices, memberships, claims, and open imports, the history that stays, and blockers such as an owned workspace or the last instance administrator. Only the account itself or an instance administrator can read it.",
+  ),
+  delete_account: op(
+    z
+      .object({
+        ...mutation,
+        userId: z.string().min(1),
+        confirmEmail: z.string().trim().max(320),
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/accounts/{userId}",
+    "write",
+    "Delete an account: remove its sign-in methods, sessions, API keys, OAuth grants, devices, notification settings, memberships, and photo, release its claims, cancel its imports, and replace its name and email with a `Deleted account` tombstone. Tickets, comments, evidence, and activity keep the account ID. Only the account itself or an instance administrator, signed in within the last 15 minutes, can delete; `confirmEmail` must repeat the account's email. Fails with `workspace_owner` while it owns a workspace and `last_administrator` for the last active instance or workspace administrator.",
   ),
   list_workspace_labels: op(
     z.object({ workspaceId: z.uuid() }),

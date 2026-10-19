@@ -5,6 +5,8 @@ import { Archive, ArchiveRestore, ArrowRightLeft, Download, LogIn, Trash2 } from
 import { toast } from "sonner";
 import {
   ApiError,
+  deletedAccountName,
+  type AccountImpact,
   type Project,
   type ProjectImpact,
   type Workspace,
@@ -102,6 +104,8 @@ export function ArchiveProjectRow({ project }: { project: Project }) {
   );
 }
 const names = (people: { name: string }[]) => people.map((person) => person.name).join(", ");
+const counted = (value: number, one: string, many = `${one}s`) =>
+  `${value} ${value === 1 ? one : many}`;
 type ImpactRows = [string, ReactNode][];
 // What a deletion or move changes, as its impact preview reports it; blockers come first.
 function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
@@ -118,8 +122,15 @@ function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
     <>
       {impact.blockers.map((blocker) => (
         <ErrorNotice
-          key={blocker.code}
-          error={new Error(`${blocker.message}: ${blocker.tickets.join(", ")}`)}
+          // One code can block for several reasons, such as two administrator checks.
+          key={`${blocker.code}:${blocker.message}`}
+          error={
+            new Error(
+              blocker.tickets.length
+                ? `${blocker.message}: ${blocker.tickets.join(", ")}`
+                : blocker.message,
+            )
+          }
         />
       ))}
       <SummaryList rows={describe(impact)} />
@@ -389,7 +400,7 @@ const workspaceRows =
               {project.name} <span className="font-mono text-muted-foreground">{project.key}</span>
               <span className="text-muted-foreground">
                 {" "}
-                · {project.tickets} {project.tickets === 1 ? "ticket" : "tickets"}
+                · {counted(project.tickets, "ticket")}
                 {project.archived && " · archived"}
               </span>
             </li>
@@ -407,19 +418,32 @@ const workspaceRows =
     ["Shared labels", impact.labels ? String(impact.labels) : ""],
     ["Kept", `${impact.events} activity entries and the ${workspace.slug} URL key`],
   ];
-// Offered to the workspace owner and instance administrators. The server asks for a sign-in
-// within the last 15 minutes; an older session signs in again and returns here.
+// Workspace and account deletion ask for a sign-in within the last 15 minutes; an older session
+// signs in again and returns to the same page.
+function SignInAgain({ error }: { error: unknown }) {
+  const identity = useIdentity();
+  if (!(error instanceof ApiError && error.code === "reauthentication_required")) return null;
+  return (
+    <Button
+      className="mb-3"
+      onClick={() =>
+        void signOut(identity, window.location.pathname + window.location.search).catch(reportError)
+      }
+    >
+      <LogIn />
+      Sign in again
+    </Button>
+  );
+}
+// Offered to the workspace owner and instance administrators.
 export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate(),
-    identity = useIdentity(),
     [open, setOpen] = useState(false),
     remove = useOperation("delete_workspace", () => navigate({ to: "/" }));
   const impact = useQuery({
     ...api.query("get_workspace_impact", { workspaceId: workspace.id }),
     enabled: open,
   });
-  const stale =
-    remove.error instanceof ApiError && remove.error.code === "reauthentication_required";
   return (
     <DeletionRow
       description="Permanently deletes every project in the workspace with its tickets, comments, and files, and removes its members. Accounts and activity history stay."
@@ -435,21 +459,7 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
       ready={!!impact.data && !impact.data.blockers.length}
       pending={remove.isPending}
       error={remove.error}
-      footer={
-        stale && (
-          <Button
-            className="mb-3"
-            onClick={() =>
-              void signOut(identity, window.location.pathname + window.location.search).catch(
-                reportError,
-              )
-            }
-          >
-            <LogIn />
-            Sign in again
-          </Button>
-        )
-      }
+      footer={<SignInAgain error={remove.error} />}
       onDelete={(typed) =>
         remove.mutateAsync({
           workspaceId: workspace.id,
@@ -457,6 +467,72 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
           confirmSlug: typed,
         })
       }
+    />
+  );
+}
+export const signInMethods = (providers: readonly string[]) =>
+  providers
+    .map((provider) =>
+      provider === "credential" ? "Local password" : provider === "oidc" ? "OIDC" : provider,
+    )
+    .join(", ") || "No linked sign-in methods";
+const accountRows = (impact: AccountImpact): ImpactRows => [
+  ["Sign-in", signInMethods(impact.providers)],
+  ["Sessions", `${counted(impact.sessions, "session")} signed out`],
+  [
+    "Credentials",
+    impact.credentials ? `${counted(impact.credentials, "API key or app connection")} revoked` : "",
+  ],
+  [
+    "Devices",
+    impact.devices ? `${counted(impact.devices, "device or notification channel")} removed` : "",
+  ],
+  [
+    "Access",
+    `${counted(impact.workspaces, "workspace")}${impact.projects ? ` and ${counted(impact.projects, "direct project")}` : ""} removed`,
+  ],
+  ["Claims", impact.claims ? `${counted(impact.claims, "claim")} released` : ""],
+  ["Imports", impact.imports ? `${counted(impact.imports, "import")} cancelled` : ""],
+  ["Profile", "Name, email, and photo erased"],
+  [
+    "Kept",
+    `${counted(impact.tickets, "ticket")}, ${counted(impact.comments, "comment")}, and ${counted(impact.events, "activity entry", "activity entries")} shown as ${deletedAccountName}`,
+  ],
+];
+// One flow for deleting your own account and for an instance administrator deleting someone
+// else's; the server applies the same checks to both.
+export function DeleteAccountRow({
+  account,
+  onDeleted,
+}: {
+  account: { id: string; name: string; email: string };
+  onDeleted: () => Promise<unknown>;
+}) {
+  const identity = useIdentity(),
+    own = account.id === identity.id,
+    [open, setOpen] = useState(false),
+    remove = useOperation("delete_account", onDeleted);
+  const impact = useQuery({
+    ...api.query("get_account_impact", { userId: account.id }),
+    enabled: open,
+  });
+  return (
+    <DeletionRow
+      description={`Permanently removes ${own ? "your" : "this account's"} sign-in, sessions, keys, devices, memberships, and personal details. Tickets, comments, and activity stay and show as ${deletedAccountName}.`}
+      label="Delete account"
+      name={account.name}
+      confirm={account.email}
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) remove.reset();
+      }}
+      summary={<ImpactSummary query={impact} rows={accountRows} />}
+      ready={!!impact.data && !impact.data.blockers.length}
+      pending={remove.isPending}
+      error={remove.error}
+      footer={<SignInAgain error={remove.error} />}
+      onDelete={(typed) => remove.mutateAsync({ userId: account.id, confirmEmail: typed })}
     />
   );
 }

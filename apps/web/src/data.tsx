@@ -4,7 +4,13 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
-import { infoSchema, type ChangeEvent, type Operation, type Workspace } from "@kanvil/contracts";
+import {
+  infoSchema,
+  memberName,
+  type ChangeEvent,
+  type Operation,
+  type Workspace,
+} from "@kanvil/contracts";
 import type { Query } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -91,6 +97,8 @@ const settledBy: Record<string, string[]> = {
   // Personal; running imports poll them instead of refreshing on each record they write.
   list_imports: [],
   get_import: [],
+  // An account deletion announces itself as a membership change in every project it reached.
+  list_deleted_accounts: ["membership."],
 };
 // Decides which cached queries a realtime event can have changed.
 export function affectedBy(event: ChangeEvent) {
@@ -153,6 +161,21 @@ export function useProjectAccess(projectId: string, enabled = true) {
     canManage: role === "admin",
   };
 }
+// The name and photo for an account ID in a project: you, a member, a deleted account, or someone
+// who left. The deleted-account list loads only for an ID no member has.
+export function usePerson(projectId: string, id: string | null) {
+  const identity = useIdentity(),
+    own = id === identity.id,
+    members = useQuery({ ...api.query("list_members", { projectId }), enabled: !!id && !own }),
+    member = members.data?.find((person) => person.userId === id),
+    deleted = useQuery({
+      ...api.query("list_deleted_accounts", {}),
+      enabled: !!id && !own && !!members.data && !member,
+    });
+  if (id === null) return { name: "Kanvil", image: undefined };
+  if (own) return { name: identity.name, image: identity.image };
+  return { name: memberName(members.data, deleted.data, id), image: member?.image };
+}
 export function ActorName({
   projectId,
   actorId,
@@ -164,15 +187,7 @@ export function ActorName({
   avatar?: boolean;
 }) {
   const identity = useIdentity(),
-    members = useQuery(api.query("list_members", { projectId })),
-    member = members.data?.find((person) => person.userId === actorId),
-    name =
-      actorId === null
-        ? "Kanvil"
-        : actorId === identity.id
-          ? identity.name
-          : (member?.name ?? "Former member"),
-    image = actorId === identity.id ? identity.image : member?.image;
+    { name, image } = usePerson(projectId, actorId);
   return (
     <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId ?? undefined}>
       {avatar && <UserAvatar name={name} image={image} className="size-7 text-[10px]" />}

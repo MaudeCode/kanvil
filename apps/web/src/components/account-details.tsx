@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { SettingRow } from "./settings-layout.tsx";
+import { DeleteAccountRow, signInMethods } from "./project-lifecycle.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { formText } from "../forms.ts";
 // One workspace or project grant: a link to its member settings and the role or access it carries.
@@ -145,20 +146,7 @@ export function AccountDetails({
                       Change role
                     </Button>
                   </SettingRow>
-                  <SettingRow
-                    title="Sign-in methods"
-                    description={
-                      person.providers
-                        .map((provider) =>
-                          provider === "credential"
-                            ? "Local password"
-                            : provider === "oidc"
-                              ? "OIDC"
-                              : provider,
-                        )
-                        .join(", ") || "No linked sign-in methods"
-                    }
-                  >
+                  <SettingRow title="Sign-in methods" description={signInMethods(person.providers)}>
                     <Button
                       onClick={() => {
                         setError(undefined);
@@ -215,6 +203,15 @@ export function AccountDetails({
                         }
                       />
                     </SettingRow>
+                  )}
+                  {person.id !== identity.id && (
+                    <DeleteAccountRow
+                      account={person}
+                      onDeleted={async () => {
+                        onClose();
+                        await onChanged();
+                      }}
+                    />
                   )}
                   <section className="pt-7">
                     <div className="mb-3 flex items-center justify-between gap-3">
