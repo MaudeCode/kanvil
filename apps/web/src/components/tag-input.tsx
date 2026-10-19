@@ -16,16 +16,22 @@ import {
   CommandItem,
   CommandEmpty,
 } from "@/components/ui/command";
+// `choicesOnly` limits the value to the provided catalog, as rules naming defined labels need;
+// `emptyText` then says what no labels means.
 export function TagInput({
   label,
   value,
   onChange,
   kind = "label",
+  choicesOnly = false,
+  emptyText,
 }: {
   label: string;
   value: string[];
   onChange: (tags: string[]) => void;
   kind?: "label" | "scope";
+  choicesOnly?: boolean;
+  emptyText?: string;
 }) {
   const labels = useProjectLabels();
   const [choosing, setChoosing] = useState(false);
@@ -47,7 +53,7 @@ export function TagInput({
   }
   return (
     <Field className={fieldClass}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel htmlFor={choicesOnly ? undefined : id}>{label}</FieldLabel>
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         {value.map((tag) => (
           <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">
@@ -63,33 +69,46 @@ export function TagInput({
             </Button>
           </TicketTag>
         ))}
-        <Input
-          id={id}
-          value={text}
-          placeholder={value.length ? "Add another…" : `Add ${label.toLowerCase()}…`}
-          className="h-7 min-w-20 flex-1 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-          onChange={(event) => setText(event.target.value)}
-          onBlur={() => commit()}
-          onPaste={(event) => {
-            const raw = event.clipboardData.getData("text");
-            if (raw.includes(",")) {
-              event.preventDefault();
-              setText(raw);
-              commit(raw);
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
-            if (event.key === "Enter" || event.key === ",") {
-              event.preventDefault();
-              commit();
-            } else if (event.key === "Backspace" && !text) onChange(value.slice(0, -1));
-          }}
-        />
-        {kind === "label" && !!labels.length && (
+        {choicesOnly ? (
+          !value.length && (
+            <span className="flex-1 px-1 text-sm text-muted-foreground">{emptyText}</span>
+          )
+        ) : (
+          <Input
+            id={id}
+            value={text}
+            placeholder={value.length ? "Add another…" : `Add ${label.toLowerCase()}…`}
+            className="h-7 min-w-20 flex-1 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            onChange={(event) => setText(event.target.value)}
+            onBlur={() => commit()}
+            onPaste={(event) => {
+              const raw = event.clipboardData.getData("text");
+              if (raw.includes(",")) {
+                event.preventDefault();
+                setText(raw);
+                commit(raw);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault();
+                commit();
+              } else if (event.key === "Backspace" && !text) onChange(value.slice(0, -1));
+            }}
+          />
+        )}
+        {kind === "label" && (choicesOnly || !!labels.length) && (
           <Popover open={choosing} onOpenChange={setChoosing}>
             <PopoverTrigger
-              render={<Button variant="ghost" size="icon" aria-label="Choose labels" />}
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={choicesOnly ? "ml-auto" : undefined}
+                  aria-label={choicesOnly ? `Choose ${label.toLowerCase()}` : "Choose labels"}
+                />
+              }
             >
               <Plus />
             </PopoverTrigger>

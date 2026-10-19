@@ -239,6 +239,13 @@
       "when": 1792406394884,
       "tag": "0033_import_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792406993313,
+      "tag": "0034_issue_sync",
+      "breakpoints": true
     }
   ]
 }

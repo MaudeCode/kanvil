@@ -52,6 +52,7 @@ export function isReservedAddress(address: string) {
   return family === 0 || reserved.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
+const responseLimit = 1_048_576;
 // Sends JSON to a configured endpoint. Every resolved address is checked and the connection uses
 // the checked address, so DNS rebinding cannot reach an internal host; redirects are not followed.
 export function createHttpSender({
@@ -74,14 +75,14 @@ export function createHttpSender({
     });
   };
   return (request: OutboundRequest) =>
-    new Promise<{ status: number }>((done, reject) => {
+    new Promise<{ status: number; body?: string }>((done, reject) => {
       const url = new URL(request.url),
         host = url.hostname.replace(/^\[|\]$/g, "");
       if (url.protocol !== "https:" && url.protocol !== "http:")
         return reject(new DeliveryError("invalid_endpoint", false));
       if (isIP(host) && !allowed(host)) return reject(new DeliveryError("blocked_address", false));
       const send = url.protocol === "https:" ? tlsRequest : plainRequest;
-      // One deadline covers DNS, connecting, and the response headers; the body is not read.
+      // One deadline covers DNS, connecting, and the response, including a body read for `read`.
       const deadline = setTimeout(() => call.destroy(new DeliveryError("timeout", true)), timeout);
       const call = send(
         url,
@@ -96,9 +97,24 @@ export function createHttpSender({
           },
         },
         (response) => {
-          clearTimeout(deadline);
-          response.destroy();
-          done({ status: response.statusCode ?? 0 });
+          const status = response.statusCode ?? 0;
+          if (!request.read) {
+            clearTimeout(deadline);
+            response.destroy();
+            return done({ status });
+          }
+          const chunks: Buffer[] = [];
+          let size = 0;
+          response.on("data", (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > responseLimit) call.destroy(new DeliveryError("response_too_large", false));
+            else chunks.push(chunk);
+          });
+          response.on("end", () => {
+            clearTimeout(deadline);
+            done({ status, body: Buffer.concat(chunks).toString("utf8") });
+          });
+          response.on("error", (error) => call.destroy(error));
         },
       );
       call.on("error", (error: Error & { code?: string }) => {

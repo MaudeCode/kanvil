@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { RepositoryTrigger } from "@kanvil/contracts";
-import type { RepositoryChange, RepositoryDriver } from "./ports.ts";
+import type { RemoteComment, RemoteIssue, RepositoryChange, RepositoryDriver } from "./ports.ts";
 
 // Compares a received secret or signature without leaking its length or content through timing.
 export const sameSecret = (received: string, expected: string) =>
@@ -35,7 +35,82 @@ const pullRequest = z.object({
   changes: z.object({ title: z.object({ from: z.string() }).optional() }).optional(),
   repository,
 });
-const issue = z.object({ action: z.string(), issue: z.object(item), repository });
+const issueFields = z.object({
+  ...item,
+  body: z.string().nullish(),
+  labels: z.array(z.object({ name: z.string() })).nullish(),
+  // Present on the issue side of a pull request.
+  pull_request: z.unknown().optional(),
+});
+const issue = z.object({ action: z.string(), issue: issueFields, repository });
+const issueComment = z.object({
+  action: z.string(),
+  issue: issueFields,
+  comment: z.object({
+    id: z.union([z.number(), z.string()]),
+    body: z.string().nullish(),
+    user: z.object({ login: z.string() }).nullish(),
+    created_at: z.iso.datetime({ offset: true }).nullish(),
+  }),
+  // Gitea marks comments on pull requests here.
+  is_pull: z.boolean().optional(),
+  repository,
+});
+// An issue in GitHub's format, from a webhook or an API response; Gitea sends the same shape.
+export const githubIssue = (found: z.output<typeof issueFields>): RemoteIssue => ({
+  number: found.number,
+  url: found.html_url,
+  title: found.title,
+  description: found.body ?? "",
+  open: found.state === "open",
+  labels: (found.labels ?? []).map((label) => label.name),
+  updatedAt: new Date(found.updated_at),
+});
+// Issue actions that change what sync reads; Gitea reports label edits as `label_updated` and
+// `label_cleared`.
+const issueActions = [
+  "opened",
+  "edited",
+  "closed",
+  "reopened",
+  "labeled",
+  "unlabeled",
+  "label_updated",
+  "label_cleared",
+];
+// The issue an `issues` event reports, or null for pull requests and other actions.
+export function githubIssueEvent(event: string, payload: unknown): RemoteIssue | null {
+  if (event !== "issues") return null;
+  const parsed = issue.parse(payload);
+  return parsed.issue.pull_request || !issueActions.includes(parsed.action)
+    ? null
+    : githubIssue(parsed.issue);
+}
+// A comment an `issue_comment` event creates on an issue.
+export function githubComment(event: string, payload: unknown): RemoteComment | null {
+  if (event !== "issue_comment") return null;
+  const parsed = issueComment.parse(payload);
+  if (parsed.action !== "created" || parsed.issue.pull_request || parsed.is_pull) return null;
+  return {
+    id: String(parsed.comment.id),
+    issue: parsed.issue.number,
+    body: parsed.comment.body ?? "",
+    author: parsed.comment.user?.login ?? "",
+    createdAt: parsed.comment.created_at ? new Date(parsed.comment.created_at) : null,
+  };
+}
+export const readGitHubIssue = (body: string) => githubIssue(issueFields.parse(JSON.parse(body)));
+// Issue writes in GitHub's format; Gitea's API takes the same fields.
+export const githubIssueBody = (changes: {
+  title?: string;
+  description?: string;
+  open?: boolean;
+}) =>
+  JSON.stringify({
+    ...(changes.title !== undefined && { title: changes.title }),
+    ...(changes.description !== undefined && { body: changes.description }),
+    ...(changes.open !== undefined && { state: changes.open ? "open" : "closed" }),
+  });
 const pullRequestTriggers: Record<string, (draft: boolean) => RepositoryTrigger> = {
   opened: (draft) => (draft ? "pull_request_draft" : "pull_request_opened"),
   reopened: (draft) => (draft ? "pull_request_draft" : "pull_request_opened"),
@@ -105,7 +180,7 @@ export function githubChange(
   }
   if (event === "issues") {
     const { action, issue: found } = issue.parse(payload);
-    if (!["opened", "edited", "closed", "reopened"].includes(action)) return null;
+    if (!issueActions.includes(action)) return null;
     return {
       kind: "issue",
       url: found.html_url,
@@ -137,7 +212,14 @@ export function createGitHubDriver(apiUrl: string): RepositoryDriver {
         event = received.get("x-github-event");
       if (!id || !event) throw new Error("Missing GitHub delivery headers");
       const payload: unknown = JSON.parse(body);
-      return { id, event, repository: githubNamed(payload), change: githubChange(event, payload) };
+      return {
+        id,
+        event,
+        repository: githubNamed(payload),
+        change: githubChange(event, payload),
+        issue: githubIssueEvent(event, payload),
+        comment: githubComment(event, payload),
+      };
     },
     access: ({ repository: name }, token) => ({
       method: "GET",
@@ -149,6 +231,21 @@ export function createGitHubDriver(apiUrl: string): RepositoryDriver {
       url: api(`repos/${name}/issues/${number}/comments`),
       headers: headers(token),
       body: JSON.stringify({ body: text }),
+      read: true,
     }),
+    createIssue: ({ repository: name }, token, content) => ({
+      url: api(`repos/${name}/issues`),
+      headers: headers(token),
+      body: githubIssueBody(content),
+      read: true,
+    }),
+    updateIssue: ({ repository: name }, token, number, changes) => ({
+      method: "PATCH",
+      url: api(`repos/${name}/issues/${number}`),
+      headers: headers(token),
+      body: githubIssueBody(changes),
+      read: true,
+    }),
+    issue: readGitHubIssue,
   };
 }

@@ -1,5 +1,14 @@
 import { DeliveryError } from "./outbound.ts";
-import { githubChange, githubNamed, hmacHex, sameSecret } from "./github.ts";
+import {
+  githubChange,
+  githubComment,
+  githubIssueBody,
+  githubIssueEvent,
+  githubNamed,
+  hmacHex,
+  readGitHubIssue,
+  sameSecret,
+} from "./github.ts";
 import type { RepositoryDriver, RepositoryTarget } from "./ports.ts";
 
 // The instance URL is the connection's own; the outbox's sender refuses private addresses unless
@@ -20,14 +29,18 @@ export function createGiteaDriver(): RepositoryDriver {
       sameSecret(received.get("x-gitea-signature") ?? "", hmacHex(secret, body)),
     read(received, body) {
       const id = received.get("x-gitea-delivery"),
-        event = received.get("x-gitea-event");
-      if (!id || !event) throw new Error("Missing Gitea delivery headers");
+        sent = received.get("x-gitea-event");
+      if (!id || !sent) throw new Error("Missing Gitea delivery headers");
+      // Label edits arrive as their own event with the `issues` payload.
+      const event = sent === "issue_label" ? "issues" : sent;
       const payload: unknown = JSON.parse(body);
       return {
         id,
         event,
         repository: githubNamed(payload),
         change: githubChange(event, payload, { branchPath: "src/branch", titleDrafts: true }),
+        issue: githubIssueEvent(event, payload),
+        comment: githubComment(event, payload),
       };
     },
     access: (target, token) => ({
@@ -41,6 +54,21 @@ export function createGiteaDriver(): RepositoryDriver {
       url: instanceApi(target, `api/v1/repos/${target.repository}/issues/${number}/comments`),
       headers: headers(token),
       body: JSON.stringify({ body: text }),
+      read: true,
     }),
+    createIssue: (target, token, content) => ({
+      url: instanceApi(target, `api/v1/repos/${target.repository}/issues`),
+      headers: headers(token),
+      body: githubIssueBody(content),
+      read: true,
+    }),
+    updateIssue: (target, token, number, changes) => ({
+      method: "PATCH",
+      url: instanceApi(target, `api/v1/repos/${target.repository}/issues/${number}`),
+      headers: headers(token),
+      body: githubIssueBody(changes),
+      read: true,
+    }),
+    issue: readGitHubIssue,
   };
 }

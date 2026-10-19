@@ -9,6 +9,7 @@ import {
 } from "@kanvil/contracts";
 import {
   deliveries,
+  issueLinks,
   receivedWebhooks,
   repositoryConnections,
   resources,
@@ -29,6 +30,13 @@ import {
 } from "./domain.ts";
 import { changedHealth, healthOf, pendingFor } from "./delivery-operations.ts";
 import { updateTicketRow } from "./ticket-operations.ts";
+import {
+  linkCounts,
+  receiveComment,
+  receiveIssue,
+  recordPausedIssue,
+  requeueLinks,
+} from "./issue-sync.ts";
 import type { RepositoryChange, RepositoryDrivers } from "./adapters/ports.ts";
 import type { Sealer } from "./sealing.ts";
 
@@ -37,25 +45,36 @@ const repositorySettings = z.object({ token: z.string(), webhookSecret: z.string
 export const readRepositorySettings = (secrets: Pick<Sealer, "unseal">, sealed: string) =>
   repositorySettings.parse(secrets.unseal(sealed));
 const sameRepository = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-const providerOf = (row: Pick<Connection, "provider">) =>
+export const providerOf = (row: Pick<Connection, "provider">) =>
   z.enum(repositoryProviders).parse(row.provider);
 export const driverFor = (drivers: RepositoryDrivers, row: Pick<Connection, "provider">) =>
   drivers[providerOf(row)];
 // Handled deliveries are kept this long; a redelivery inside the window applies nothing twice.
 const replayWindowMs = 30 * 86_400_000;
 
-function present(ctx: Context, row: Connection, pending: Map<string, number>) {
+function present(
+  ctx: Context,
+  row: Connection,
+  pending: Map<string, number>,
+  links: Map<string, Record<string, number>>,
+) {
   const settings = readRepositorySettings(ctx.secrets, row.settings);
   return {
     ...row,
     webhookUrl: new URL(`/api/repository-hooks/${row.id}`, ctx.publicUrl).href,
     secrets: repositorySecretFields.filter((field) => settings[field]),
     health: healthOf(row, pending),
+    issueLinks: links.get(row.id) ?? {},
   };
 }
-const presentOne = async (ctx: Context, row: Connection) =>
-  present(ctx, row, await pendingFor(ctx, deliveries.connectionId, [row.id]));
-async function ownConnection(ctx: Context, connectionId: string, expectedVersion?: number) {
+export const presentOne = async (ctx: Context, row: Connection) =>
+  present(
+    ctx,
+    row,
+    await pendingFor(ctx, deliveries.connectionId, [row.id]),
+    await linkCounts(ctx.db, [row.id]),
+  );
+export async function ownConnection(ctx: Context, connectionId: string, expectedVersion?: number) {
   const row = one(
     await ctx.db
       .select()
@@ -116,7 +135,7 @@ async function assertAvailable(
   if (taken.some((row) => row.id !== except))
     fail(409, "repository_connected", "This repository is already connected to the project");
 }
-const connectionEvent = (row: Connection) => ({
+export const connectionEvent = (row: Connection) => ({
   connectionId: row.id,
   provider: row.provider,
   baseUrl: row.baseUrl,
@@ -159,12 +178,10 @@ export const repositoryHandlers: Pick<
       .from(repositoryConnections)
       .where(eq(repositoryConnections.projectId, project(ctx).id))
       .orderBy(desc(repositoryConnections.createdAt));
-    const pending = await pendingFor(
-      ctx,
-      deliveries.connectionId,
-      rows.map((row) => row.id),
-    );
-    return rows.map((row) => present(ctx, row, pending));
+    const ids = rows.map((row) => row.id);
+    const pending = await pendingFor(ctx, deliveries.connectionId, ids),
+      links = await linkCounts(ctx.db, ids);
+    return rows.map((row) => present(ctx, row, pending, links));
   },
   async create_repository_connection(ctx, input) {
     const baseUrl = assertTarget(input.provider, input.repository, input.baseUrl);
@@ -223,7 +240,7 @@ export const repositoryHandlers: Pick<
         .where(eq(repositoryConnections.id, current.id))
         .returning(),
     );
-    if (moved)
+    if (moved) {
       // Queued comments name issues of the old repository; never send them to the new one.
       await ctx.db
         .update(deliveries)
@@ -235,6 +252,10 @@ export const repositoryHandlers: Pick<
             isNull(deliveries.finishedAt),
           ),
         );
+      // Issue numbers belong to the old repository; its tickets and issues both stay.
+      await ctx.db.delete(issueLinks).where(eq(issueLinks.connectionId, row.id));
+    }
+    if (current.paused && !row.paused) await requeueLinks(ctx.db, row.id);
     if (recheck) await ctx.db.insert(deliveries).values({ connectionId: row.id });
     await publish(ctx, "repository.updated", null, connectionEvent(row));
     return presentOne(ctx, row);
@@ -264,7 +285,7 @@ const ticketKeys = (references: readonly string[]) =>
 // Records the change on the ticket's link to it, then applies the mapped transition. A change older
 // than the state already recorded for that link applies nothing, so a late or replayed delivery
 // cannot undo a newer one.
-async function linkTicket(
+export async function linkTicket(
   ctx: Context,
   connection: Connection,
   ticket: typeof tickets.$inferSelect,
@@ -457,11 +478,15 @@ export async function receiveRepositoryWebhook(
 
     async function apply(): Promise<WebhookResult> {
       if (!connection) return gone();
-      const { change } = delivery;
-      if (connection.paused) return done("paused");
-      if (!change) return done("ignored");
-      if (!delivery.repository || !sameRepository(delivery.repository, connection.repository))
-        return done("repository_mismatch");
+      const { change, issue, comment } = delivery;
+      const ours =
+        !!delivery.repository && sameRepository(delivery.repository, connection.repository);
+      if (connection.paused) {
+        if (issue && ours) await recordPausedIssue(tx, connection, issue);
+        return done("paused");
+      }
+      if (!change && !comment) return done("ignored");
+      if (!ours) return done("repository_mismatch");
       // Writes act as the administrator who connected the repository and stop with their access.
       let ctx: Context;
       try {
@@ -477,7 +502,13 @@ export async function receiveRepositoryWebhook(
           return done(error.code === "project_archived" ? error.code : "access_revoked");
         throw error;
       }
+      if (comment) {
+        const copied = await receiveComment(ctx, connection, comment);
+        return copied ? { outcome: "processed", tickets: [copied] } : done("no_ticket");
+      }
+      if (!change) return done("ignored");
       // Tickets the change names, plus tickets already linked to it: a later edit can drop the key.
+      // A ticket synced with the issue is linked to it too.
       const linked = await tx
         .select()
         .from(tickets)
@@ -498,10 +529,23 @@ export async function receiveRepositoryWebhook(
                     ),
                   ),
               ),
+              issue
+                ? inArray(
+                    tickets.id,
+                    tx
+                      .select({ id: issueLinks.ticketId })
+                      .from(issueLinks)
+                      .where(
+                        and(
+                          eq(issueLinks.connectionId, connection.id),
+                          eq(issueLinks.number, issue.number),
+                        ),
+                      ),
+                  )
+                : undefined,
             ),
           ),
         );
-      if (!linked.length) return done("no_ticket");
       const occurredAt = change.occurredAt ?? new Date();
       const results = [];
       for (const ticket of linked)
@@ -509,6 +553,9 @@ export async function receiveRepositoryWebhook(
           key: ticket.key,
           result: await linkTicket(ctx, connection, ticket, change, occurredAt),
         });
+      const synced = issue && (await receiveIssue(ctx, connection, issue, change, occurredAt));
+      if (synced) results.push({ key: synced.key, result: `sync_${synced.result}` });
+      if (!results.length) return done("no_ticket");
       return { outcome: "processed", tickets: results };
     }
   });

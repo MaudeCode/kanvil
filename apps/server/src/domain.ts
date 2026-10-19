@@ -65,6 +65,7 @@ import { publicHandlers } from "./public-operations.ts";
 import { customFieldHandlers } from "./custom-field-operations.ts";
 import { repositoryHandlers } from "./repository-operations.ts";
 import { importHandlers } from "./import-operations.ts";
+import { issueSyncHandlers, queueIssueSync } from "./issue-sync.ts";
 
 export interface Actor {
   id: string;
@@ -302,6 +303,7 @@ export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
   );
   await db.execute(sql`SELECT pg_notify('kanvil_events', ${clock.value.toString()})`);
   await queueDestinations(db, rows);
+  await queueIssueSync(db, rows);
   return rows;
 }
 // Queues each ticket event for the project's active destinations that carry its kind of activity.
@@ -591,6 +593,7 @@ export function createDomain(
     ...customFieldHandlers,
     ...repositoryHandlers,
     ...importHandlers,
+    ...issueSyncHandlers,
   };
   // The writes an archived project still accepts: its lifecycle, details, order, and access, and
   // removing what reaches outside it. Everything else waits for a restore.

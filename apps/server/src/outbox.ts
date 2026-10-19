@@ -29,7 +29,8 @@ import {
   subscriptions,
   tickets,
 } from "./schema.ts";
-import { json } from "./domain.ts";
+import { json, type Context } from "./domain.ts";
+import { sendIssueSync } from "./issue-sync.ts";
 import { readSettings } from "./delivery-operations.ts";
 import { driverFor, readRepositorySettings } from "./repository-operations.ts";
 import { createHttpSender, createMailSender, DeliveryError } from "./adapters/outbound.ts";
@@ -45,7 +46,12 @@ import type { Sealer } from "./sealing.ts";
 
 const delay = (attempt: number) => Math.min(60_000 * 2 ** attempt, 3_600_000);
 const eventActor = alias(user, "event_actor");
-type Job = typeof deliveries.$inferSelect;
+export type Job = typeof deliveries.$inferSelect;
+// Whether the administrator a repository connection acts as can still write to its project.
+export const connectionWriter = sql<boolean>`coalesce((SELECT true FROM "user" cu
+  WHERE cu.id = ${repositoryConnections.createdBy} AND NOT coalesce(cu.banned, false)
+  AND ('admin' = any(string_to_array(cu.role, ','))
+    OR ${projectRoleSQL(repositoryConnections.createdBy, repositoryConnections.projectId)} IN ('writer', 'admin'))), false)`;
 type Row = NonNullable<Awaited<ReturnType<typeof load>>>;
 
 // Everything one send needs, read fresh so access, routing, and pauses apply at send time.
@@ -70,11 +76,7 @@ async function load(database: Database, id: string) {
         account: user,
         preference: notificationPreferences,
         projectRole: projectRoleSQL(user.id, notifications.projectId),
-        // Whether the administrator a repository connection acts as can still write to its project.
-        connectionWriter: sql<boolean>`coalesce((SELECT true FROM "user" cu
-          WHERE cu.id = ${repositoryConnections.createdBy} AND NOT coalesce(cu.banned, false)
-          AND ('admin' = any(string_to_array(cu.role, ','))
-            OR ${projectRoleSQL(repositoryConnections.createdBy, repositoryConnections.projectId)} IN ('writer', 'admin'))), false)`,
+        connectionWriter,
         subscription: subscriptions,
         actorName: eventActor.name,
         ticket: {
@@ -206,7 +208,7 @@ function compose(config: Config, row: Row): Message {
   };
 }
 // Chat formats render mentions; a zero-width space keeps ticket text from pinging anyone.
-const quiet = (value: string) => value.replaceAll("@", "@​");
+export const quiet = (value: string) => value.replaceAll("@", "@​");
 const markdownText = (value: string) => quiet(value).replaceAll(/[[\]\\]/g, "\\$&");
 const slackText = (value: string) =>
   quiet(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -337,8 +339,12 @@ export async function deliverBatch(
     for (const pending of jobs) {
       const row = await load(database, pending.id);
       if (!row) continue;
+      if (row.job.issueLinkId) {
+        await sendIssueSync(database, senders, secrets, repositories, row.job, row.event);
+        continue;
+      }
       const skip = skipReason(row, config);
-      if (skip) await finish(database, row.job, skip);
+      if (skip) await finish(database.db, row.job, skip);
       else if (row.device) await sendPush(database, config, senders, row);
       else await send(database, config, senders, secrets, repositories, row);
     }
@@ -350,13 +356,10 @@ export async function deliverBatch(
     }
   }
 }
-const finish = (database: Database, job: Job, error: string | null) =>
-  database.db
-    .update(deliveries)
-    .set({ finishedAt: new Date(), error })
-    .where(eq(deliveries.id, job.id));
+export const finish = (db: Context["db"], job: Job, error: string | null) =>
+  db.update(deliveries).set({ finishedAt: new Date(), error }).where(eq(deliveries.id, job.id));
 // Five attempts with exponential backoff; Expo receipts are polled without using attempts up.
-const retry = (database: Database, job: Job, error: string) =>
+export const retry = (database: Database, job: Job, error: string) =>
   database.db
     .update(deliveries)
     .set({
@@ -367,7 +370,7 @@ const retry = (database: Database, job: Job, error: string) =>
     })
     .where(eq(deliveries.id, job.id));
 // The latest attempt's outcome, shown as the channel's or destination's health.
-async function recordHealth(database: Database, job: Job, error: string | null) {
+export async function recordHealth(database: Database, job: Job, error: string | null) {
   const now = new Date(),
     values = { lastAttemptAt: now, lastError: error, ...(error ? {} : { lastSuccessAt: now }) };
   if (job.channelId)
@@ -446,9 +449,9 @@ async function send(
   } catch (error) {
     failure = error instanceof DeliveryError ? error : new DeliveryError("delivery_failed", true);
   }
-  if (!failure) await finish(database, row.job, null);
+  if (!failure) await finish(database.db, row.job, null);
   else if (failure.retry) await retry(database, row.job, failure.code);
-  else await finish(database, row.job, failure.code);
+  else await finish(database.db, row.job, failure.code);
   await recordHealth(database, row.job, failure?.code ?? null);
 }
 async function sendPush(database: Database, config: Config, senders: OutboundSenders, row: Row) {
@@ -493,11 +496,11 @@ async function sendPush(database: Database, config: Config, senders: OutboundSen
             error: null,
           })
           .where(eq(deliveries.id, job.id));
-      } else await finish(database, job, null);
+      } else await finish(database.db, job, null);
     } else if (result?.status === "error" && result.details?.error !== "MessageRateExceeded") {
       if (result.details?.error === "DeviceNotRegistered")
         await database.db.delete(pushDevices).where(eq(pushDevices.id, device.id));
-      else await finish(database, job, result.details?.error ?? "delivery_rejected");
+      else await finish(database.db, job, result.details?.error ?? "delivery_rejected");
     } else {
       await retry(database, job, result ? "rate_limited" : "receipt_pending");
     }

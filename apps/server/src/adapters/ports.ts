@@ -57,10 +57,12 @@ export type WakeupBusFactory = (
 // Outbound delivery transports. The outbox owns retries, authorization, and health.
 export interface OutboundRequest {
   // POST unless set.
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH" | "PUT";
   url: string;
   headers?: Record<string, string> | undefined;
   body: string;
+  // Read the response body, as writes the outbox must verify need; it is discarded otherwise.
+  read?: boolean;
 }
 export interface MailMessage {
   to: string;
@@ -69,7 +71,7 @@ export interface MailMessage {
 }
 export interface OutboundSenders {
   push: Pick<Expo, "sendPushNotificationsAsync" | "getPushNotificationReceiptsAsync">;
-  http: (request: OutboundRequest) => Promise<{ status: number }>;
+  http: (request: OutboundRequest) => Promise<{ status: number; body?: string }>;
   // Absent when the instance has no SMTP relay.
   mail?: (message: MailMessage) => Promise<void>;
 }
@@ -91,12 +93,33 @@ export interface RepositoryChange {
   // Whether this change may create a link; a deleted branch only updates an existing one.
   creates: boolean;
 }
+// An issue as the host reports it, in a webhook or in the response to a write.
+export interface RemoteIssue {
+  number: number;
+  url: string;
+  title: string;
+  description: string;
+  open: boolean;
+  labels: string[];
+  updatedAt: Date | null;
+}
+// A new comment on an issue; comments on pull requests are not read.
+export interface RemoteComment {
+  id: string;
+  issue: number;
+  body: string;
+  author: string;
+  createdAt: Date | null;
+}
 export interface RepositoryDelivery {
   id: string;
   event: string;
   repository: string | null;
   // Null for events Kanvil does not use, such as the setup ping.
   change: RepositoryChange | null;
+  // Set for issue events and new issue comments, which issue sync reads.
+  issue?: RemoteIssue | null;
+  comment?: RemoteComment | null;
 }
 // The repository a request goes to: its path on the host and, for a self-managed host, the instance.
 export interface RepositoryTarget {
@@ -115,5 +138,19 @@ export interface RepositoryDriver {
     item: { kind: RepositoryChange["kind"]; number: number },
     text: string,
   ): OutboundRequest;
+  // Issue sync writes. Each request reads its response, which `issue` turns back into the issue.
+  createIssue(
+    target: RepositoryTarget,
+    token: string,
+    content: { title: string; description: string },
+  ): OutboundRequest;
+  updateIssue(
+    target: RepositoryTarget,
+    token: string,
+    number: number,
+    changes: { title?: string; description?: string; open?: boolean },
+  ): OutboundRequest;
+  // Throws on a response it cannot read.
+  issue(body: string): RemoteIssue;
 }
 export type RepositoryDrivers = Record<RepositoryProvider, RepositoryDriver>;
