@@ -3,7 +3,7 @@ import { TicketLink } from "./components/ticket-link.tsx";
 import { PropertyValue, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
 import { Unlink, Plus, GitBranchPlus, CornerLeftUp } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   relationReference,
   relationChoices,
@@ -59,6 +59,22 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       limit: 20,
       offset,
     }),
+  );
+  // Linked tickets arrive in bounded batches, not one read per relationship row.
+  const linked = useQueries({
+    queries: Array.from({ length: Math.ceil((relations.data?.length ?? 0) / 100) }, (_, page) =>
+      api.query("list_tickets", {
+        projectId: ticket.projectId,
+        relatedTo: ticket.id,
+        archived: "include",
+        sort: "number",
+        limit: 100,
+        offset: page * 100,
+      }),
+    ),
+  });
+  const linkedTickets = new Map(
+    linked.flatMap((page) => page.data?.items ?? []).map((item) => [item.id, item]),
   );
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
@@ -157,6 +173,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
               key={relation.id}
               projectId={ticket.projectId}
               ticketId={reference.id}
+              ticket={linkedTickets.get(reference.id)}
               canWrite={access.canWrite}
               label={reference.label}
               action={
@@ -240,7 +257,15 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           </Suspense>
         )}
       </Modal>
-      <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
+      <ErrorNotice
+        error={
+          relations.error ??
+          remove.error ??
+          parent.error ??
+          children.error ??
+          linked.find((page) => page.error)?.error
+        }
+      />
     </section>
   );
 }
@@ -249,7 +274,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
 function ReferenceRow({
   projectId,
   ticketId,
-  ticket,
+  ticket: current,
   canWrite,
   label,
   action,
@@ -257,18 +282,17 @@ function ReferenceRow({
 }: {
   projectId: string;
   ticketId: string;
-  ticket?: Ticket;
+  ticket: Ticket | undefined;
   canWrite: boolean;
   label?: string;
   action?: ReactNode;
   children: ReactNode;
 }) {
-  const loaded = useQuery({
-    ...api.query("get_ticket", { projectId, ticketId }),
-    enabled: !ticket,
+  const { change, pending } = useTicketChange({
+    id: ticketId,
+    projectId,
+    version: current?.version ?? 0,
   });
-  const current = ticket ?? loaded.data?.ticket;
-  const { change } = useTicketChange({ id: ticketId, projectId, version: current?.version ?? 0 });
   const editable = canWrite && current;
   return (
     <Item size="xs" className="px-0">
@@ -278,6 +302,7 @@ function ReferenceRow({
           value={current.status}
           onChange={(status) => void change({ status })}
           projectId={projectId}
+          disabled={pending}
           variant="cell"
           iconOnly
           ariaLabel={`Status of ${current.key}`}
@@ -298,6 +323,7 @@ function ReferenceRow({
               value={current.assigneeId}
               onChange={(assignee) => void change({ assignee })}
               projectId={projectId}
+              disabled={pending}
               variant="cell"
               iconOnly
               align="end"

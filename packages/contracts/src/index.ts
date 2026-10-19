@@ -597,7 +597,12 @@ export const operations = {
     "Add or update an existing user's membership, or remove it with a null role.",
   ),
   list_tickets: op(
-    projectInput.extend({ ...ticketFilter.shape, ...pagination }),
+    projectInput.extend({
+      ...ticketFilter.shape,
+      ...pagination,
+      // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
+      relatedTo: id.optional(),
+    }),
     page(ticketSchema),
     "GET",
     "/projects/{projectId}/tickets",
