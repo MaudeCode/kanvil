@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Plus,
   ChevronDown,
@@ -102,7 +102,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TicketSchedule, scheduleWindow } from "./components/ticket-schedule.tsx";
 import { TicketEditor } from "./ticket-editor.tsx";
-import { TicketPreviewSheet } from "./ticket-detail.tsx";
+import { usePreviewCollection, useTicketPreview } from "./components/ticket-preview.tsx";
 import { neighborFor, placeNear, writeListOrder } from "./lib/list-order.ts";
 import { moveCommandNames, type MoveCommand } from "./lib/actions.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
@@ -479,12 +479,12 @@ export function TicketList({
 }: {
   scope: TicketListScope;
   search: TicketSearch;
-  // Pushes a history entry when `push` is set; filter changes replace the current one.
-  onSearch: (next: TicketSearch, push?: boolean) => void;
+  // Filter changes replace the current history entry.
+  onSearch: (next: TicketSearch) => void;
 }) {
   // The previewed ticket and the calendar or timeline period ride in the URL beside the filters;
   // neither is part of a saved view.
-  const { peek, peekProject, period, ...search } = route;
+  const { peek, peekProject: _peekProject, period, ...search } = route;
   const project = "project" in scope ? scope.project : undefined;
   const projectAccess = useProjectAccess(project?.id ?? "", !!project);
   // My work spans projects: rows edit inline through their own project's access, and
@@ -803,31 +803,28 @@ export function TicketList({
   // Keyboard highlight: J/K or arrows move it, Enter opens, Space previews, X selects, S/P/A edit
   // a property.
   const [active, setActive] = useState<string | null>(peek ?? null);
-  // My work spans projects, so its URL also names the previewed ticket's project: an edit can drop
-  // the ticket from the list. The last preview stays rendered while the sheet closes.
-  const target = peek ? { id: peek, projectId: project?.id ?? peekProject } : undefined;
-  const [preview, setPreview] = useState(target);
-  if (target && (target.id !== preview?.id || target.projectId !== preview.projectId)) {
-    if (target.id !== preview?.id) setActive(target.id);
-    setPreview(target);
+  // The highlight follows the previewed ticket as J and K step through it in the sheet; the last
+  // one shown keeps its row for focus while the sheet closes.
+  const [peeked, setPeeked] = useState(peek);
+  if (peek && peek !== peeked) {
+    setPeeked(peek);
+    setActive(peek);
   }
-  const router = useRouter();
-  // Closing a preview this list opened steps back over its history entry, so Back and Escape agree.
-  const pushedPreview = useRef(false);
-  const showPreview = (id: string, push: boolean) => {
+  // The app's preview sheet steps through this list. My work spans projects, so its URL also
+  // names the previewed ticket's project: an edit can drop the ticket from the list.
+  const preview = useTicketPreview();
+  const showPreview = (id: string) => {
     setActive(id);
-    if (push) pushedPreview.current = true;
-    onSearch(
-      { ...route, peek: id, peekProject: project ? undefined : latest.get(id)?.projectId },
-      push,
-    );
+    preview?.open({ ticketId: id, projectId: project?.id ?? latest.get(id)?.projectId });
   };
-  const closePreview = () => {
-    if (pushedPreview.current) {
-      pushedPreview.current = false;
-      router.history.back();
-    } else onSearch({ ...route, peek: undefined, peekProject: undefined });
-  };
+  // Focus returns to the row of the ticket last shown.
+  usePreviewCollection(orderedIds, showPreview, () =>
+    peeked
+      ? document.querySelector<HTMLElement>(
+          `.ticket-row[data-id="${CSS.escape(peeked)}"] .ticket-title`,
+        )
+      : null,
+  );
   useEffect(() => {
     if (active)
       document
@@ -876,7 +873,7 @@ export function TicketList({
   useShortcut(
     " ",
     () => {
-      if (active && latest.has(active)) showPreview(active, true);
+      if (active && latest.has(active)) showPreview(active);
     },
     {
       ...rowKeys,
@@ -1378,7 +1375,7 @@ export function TicketList({
                         <TicketContextMenu
                           key={row.id}
                           ticket={row.original}
-                          onPreview={() => showPreview(row.id, true)}
+                          onPreview={() => showPreview(row.id)}
                           moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
                         >
                           <li
@@ -1608,7 +1605,7 @@ export function TicketList({
                       <TicketContextMenu
                         key={row.id}
                         ticket={row.original}
-                        onPreview={() => showPreview(row.id, true)}
+                        onPreview={() => showPreview(row.id)}
                         moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
                       >
                         <TableRow
@@ -1666,21 +1663,6 @@ export function TicketList({
       <span role="status" className="sr-only">
         {announcement}
       </span>
-      <TicketPreviewSheet
-        open={!!peek}
-        ticket={preview}
-        order={orderedIds}
-        onOpen={(id) => showPreview(id, false)}
-        onClose={closePreview}
-        // Focus returns to the row of the ticket last shown, which J and K may have changed.
-        returnFocus={() =>
-          preview
-            ? document.querySelector<HTMLElement>(
-                `.ticket-row[data-id="${CSS.escape(preview.id)}"] .ticket-title`,
-              )
-            : null
-        }
-      />
       <Modal
         size="composer"
         title={t("ticket.menu.newTicket")}

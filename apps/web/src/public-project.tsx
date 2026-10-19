@@ -30,8 +30,14 @@ import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import { PropertyRow, PropertyValue } from "./components/ticket-property.tsx";
 import { TicketTag } from "./components/ticket-tags.tsx";
 import { TicketLink } from "./components/ticket-link.tsx";
+import {
+  PreviewActions,
+  usePreviewClick,
+  type TicketPreview,
+} from "./components/ticket-preview.tsx";
 import { dayFormat } from "./components/date-picker.tsx";
 import { Badge } from "@/components/ui/badge";
+import { SheetTitle } from "@/components/ui/sheet";
 import { Item, ItemContent, ItemGroup } from "@/components/ui/item";
 
 // Read-only pages for a project its administrators shared by link. They read the public
@@ -87,21 +93,20 @@ function PublicFrame({ project, children }: { project?: Project; children: React
   );
 }
 // A shared project that was never shared, was revoked, or does not exist reads the same.
-function Unavailable() {
+function Unavailable({ children }: { children?: ReactNode }) {
   return (
-    <PublicFrame>
-      <EmptyState title={t("shell.public.notShared")}>
-        <p className="m-0 text-sm text-muted-foreground">{t("shell.public.notSharedHint")}</p>
-      </EmptyState>
-    </PublicFrame>
+    <EmptyState title={t("shell.public.notShared")}>
+      <p className="m-0 text-sm text-muted-foreground">{t("shell.public.notSharedHint")}</p>
+      {children}
+    </EmptyState>
   );
 }
 function Failed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <PublicFrame>
+    <>
       <ErrorNotice error={error} />
       <Button onClick={onRetry}>{t("common.action.retry")}</Button>
-    </PublicFrame>
+    </>
   );
 }
 // Every published ticket, fetched in bounded batches.
@@ -136,17 +141,26 @@ function usePublicTickets(projectId: string) {
 export function PublicProject({ projectId }: { projectId: string }) {
   const project = useQuery({ ...api.publicQuery("get_public_project", { projectId }), retry }),
     list = usePublicTickets(projectId);
+  // Public list rows open the layout's preview sheet over the list.
+  const openPreview = usePreviewClick(true);
   // A refetch that finds sharing revoked hides content already on screen.
-  if (unavailable(project.error) || unavailable(list.error)) return <Unavailable />;
+  if (unavailable(project.error) || unavailable(list.error))
+    return (
+      <PublicFrame>
+        <Unavailable />
+      </PublicFrame>
+    );
   if (project.error || list.error)
     return (
-      <Failed
-        error={project.error ?? list.error}
-        onRetry={() => {
-          void project.refetch();
-          list.refetch();
-        }}
-      />
+      <PublicFrame>
+        <Failed
+          error={project.error ?? list.error}
+          onRetry={() => {
+            void project.refetch();
+            list.refetch();
+          }}
+        />
+      </PublicFrame>
     );
   if (!project.data || list.pending)
     return (
@@ -200,6 +214,7 @@ export function PublicProject({ projectId }: { projectId: string }) {
                     <Link
                       to="/public/projects/$projectId/tickets/$ticketId"
                       params={{ projectId, ticketId: ticket.id }}
+                      onClick={(event) => openPreview(event, { projectId, ticketId: ticket.id })}
                       className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1 px-1 py-2.5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     >
                       <TicketIndicator property="priority" value={ticket.priority} iconOnly />
@@ -239,47 +254,65 @@ export function PublicProject({ projectId }: { projectId: string }) {
 }
 const day = (value: string | null) =>
   value ? dayFormat.format(new Date(value)) : t("common.state.none");
-export function PublicTicket({ projectId, ticketId }: { projectId: string; ticketId: string }) {
+// A shared ticket as its own page, or in the public layout's preview sheet. Both read only the
+// public projection.
+export function PublicTicket({
+  projectId,
+  ticketId,
+  preview,
+}: {
+  projectId: string;
+  ticketId: string;
+  preview?: TicketPreview;
+}) {
   const project = useQuery({ ...api.publicQuery("get_public_project", { projectId }), retry }),
     result = useQuery({ ...api.publicQuery("get_public_ticket", { projectId, ticketId }), retry });
-  if (unavailable(project.error)) return <Unavailable />;
+  // The page sits in the public frame; the sheet carries the project's label colors itself.
+  const frame = (children: ReactNode, shared?: Project) =>
+    preview ? (
+      <ProjectLabelProvider projectId={undefined} labels={shared?.labels ?? []}>
+        {children}
+      </ProjectLabelProvider>
+    ) : (
+      <PublicFrame {...(shared ? { project: shared } : {})}>{children}</PublicFrame>
+    );
+  const closeButton = preview && (
+    <Button onClick={preview.close}>{t("detail.page.closePreview")}</Button>
+  );
+  if (unavailable(project.error)) return frame(<Unavailable>{closeButton}</Unavailable>);
   if (unavailable(result.error))
-    return (
-      <PublicFrame {...(project.data ? { project: project.data } : {})}>
-        <EmptyState title={t("shell.public.ticketUnavailable")}>
+    return frame(
+      <EmptyState title={t("shell.public.ticketUnavailable")}>
+        {closeButton || (
           <Button render={<Link to="/public/projects/$projectId" params={{ projectId }} />}>
             {t("shell.public.backToTickets")}
           </Button>
-        </EmptyState>
-      </PublicFrame>
+        )}
+      </EmptyState>,
+      project.data,
     );
   if (project.error || result.error)
-    return (
+    return frame(
       <Failed
         error={project.error ?? result.error}
         onRetry={() => {
           void project.refetch();
           void result.refetch();
         }}
-      />
+      />,
     );
-  if (!project.data || !result.data)
-    return (
-      <PublicFrame>
-        <Loading />
-      </PublicFrame>
-    );
+  if (!project.data || !result.data) return frame(<Loading />);
   const shared = project.data,
     { ticket, parent, children, relations } = result.data;
   const reference = (target: { id: string; key: string; title: string }) => (
     <TicketLink projectId={projectId} ticketId={target.id} ticket={target} shared />
   );
-  return (
-    <PublicFrame project={shared}>
-      <article className="grid w-full grid-cols-[minmax(0,1fr)_280px] gap-x-10 animate-in fade-in-0 duration-200 @max-[850px]:flex @max-[850px]:flex-col [&_section]:border-t [&_section]:py-5">
-        <div className="min-w-0">
-          <PageHeader
-            title={
+  return frame(
+    <article className="grid w-full grid-cols-[minmax(0,1fr)_280px] gap-x-10 animate-in fade-in-0 duration-200 @max-[850px]:flex @max-[850px]:flex-col [&_section]:border-t [&_section]:py-5">
+      <div className="min-w-0">
+        <PageHeader
+          title={
+            !preview && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -289,134 +322,141 @@ export function PublicTicket({ projectId, ticketId }: { projectId: string; ticke
                 <ArrowLeft />
                 {shared.name}
               </Button>
-            }
-          />
-          <header>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-              <span className="font-mono">{ticket.key}</span>
-              <Status project={shared} ticket={ticket} />
+            )
+          }
+        >
+          {preview && (
+            <div className="ml-auto flex items-center gap-2">
+              <PreviewActions projectId={projectId} ticketId={ticket.id} shared preview={preview} />
             </div>
+          )}
+        </PageHeader>
+        <header>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+            <span className="font-mono">{ticket.key}</span>
+            <Status project={shared} ticket={ticket} />
+          </div>
+          {preview ? (
+            <SheetTitle render={<h1 dir="auto" />} className={ticketTitleClass}>
+              {ticket.title}
+            </SheetTitle>
+          ) : (
             <h1 dir="auto" className={ticketTitleClass}>
               {ticket.title}
             </h1>
-          </header>
-          <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
-            <section>
-              <h2>{t("shell.public.description")}</h2>
-              <Markdown>{ticket.description || t("shell.public.noDescription")}</Markdown>
-            </section>
-            <section>
-              <h2>{t("shell.public.acceptanceCriteria")}</h2>
-              <Markdown>
-                {ticket.acceptanceCriteria || t("shell.public.noAcceptanceCriteria")}
-              </Markdown>
-            </section>
-          </div>
+          )}
+        </header>
+        <div className="min-w-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0">
+          <section>
+            <h2>{t("shell.public.description")}</h2>
+            <Markdown>{ticket.description || t("shell.public.noDescription")}</Markdown>
+          </section>
+          <section>
+            <h2>{t("shell.public.acceptanceCriteria")}</h2>
+            <Markdown>
+              {ticket.acceptanceCriteria || t("shell.public.noAcceptanceCriteria")}
+            </Markdown>
+          </section>
         </div>
-        <aside
-          className="min-w-0 border-l pl-5 @max-[850px]:border-l-0 @max-[850px]:pl-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0 @max-[850px]:[&>section:first-child]:border-t @max-[850px]:[&>section:first-child]:pt-6"
-          aria-label={t("shell.public.ticketProperties")}
+      </div>
+      <aside
+        className="min-w-0 border-l pl-5 @max-[850px]:border-l-0 @max-[850px]:pl-0 [&>section:first-child]:border-0 [&>section:first-child]:pt-0 @max-[850px]:[&>section:first-child]:border-t @max-[850px]:[&>section:first-child]:pt-6"
+        aria-label={t("shell.public.ticketProperties")}
+      >
+        <section
+          aria-label={t("shell.public.properties")}
+          className="space-y-1.5 text-sm [&_[data-slot=badge]]:ml-0"
         >
-          <section
-            aria-label={t("shell.public.properties")}
-            className="space-y-1.5 text-sm [&_[data-slot=badge]]:ml-0"
-          >
-            <PropertyRow label={t("shell.public.status")}>
-              <Status project={shared} ticket={ticket} />
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.priority")}>
-              <TicketIndicator property="priority" value={ticket.priority} />
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.kind")}>
-              <PropertyValue property="kind" value={ticket.kind} projectId={projectId} />
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.difficulty")}>
-              <PropertyValue
-                property="difficulty"
-                value={ticket.difficulty}
-                projectId={projectId}
-              />
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.startDate")}>
-              <span className="text-xs">{day(ticket.startAt)}</span>
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.dueDate")}>
-              <span className="text-xs">{day(ticket.dueAt)}</span>
-            </PropertyRow>
-            <PropertyRow label={t("shell.public.labels")}>
-              <span className="flex flex-wrap gap-1 text-xs">
-                {ticket.labels.length
-                  ? ticket.labels.map((label) => <TicketTag key={label} tag={label} />)
-                  : t("common.state.none")}
+          <PropertyRow label={t("shell.public.status")}>
+            <Status project={shared} ticket={ticket} />
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.priority")}>
+            <TicketIndicator property="priority" value={ticket.priority} />
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.kind")}>
+            <PropertyValue property="kind" value={ticket.kind} projectId={projectId} />
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.difficulty")}>
+            <PropertyValue property="difficulty" value={ticket.difficulty} projectId={projectId} />
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.startDate")}>
+            <span className="text-xs">{day(ticket.startAt)}</span>
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.dueDate")}>
+            <span className="text-xs">{day(ticket.dueAt)}</span>
+          </PropertyRow>
+          <PropertyRow label={t("shell.public.labels")}>
+            <span className="flex flex-wrap gap-1 text-xs">
+              {ticket.labels.length
+                ? ticket.labels.map((label) => <TicketTag key={label} tag={label} />)
+                : t("common.state.none")}
+            </span>
+          </PropertyRow>
+          {ticket.scopes.length > 0 && (
+            <PropertyRow label={t("shell.public.scopes")}>
+              <span className="flex flex-wrap gap-1">
+                {ticket.scopes.map((scope) => (
+                  <TicketTag key={scope} tag={scope} kind="scope" variant="outline" />
+                ))}
               </span>
             </PropertyRow>
-            {ticket.scopes.length > 0 && (
-              <PropertyRow label={t("shell.public.scopes")}>
-                <span className="flex flex-wrap gap-1">
-                  {ticket.scopes.map((scope) => (
-                    <TicketTag key={scope} tag={scope} kind="scope" variant="outline" />
-                  ))}
-                </span>
-              </PropertyRow>
-            )}
-            <dl className="mt-4 grid grid-cols-[80px_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t pt-4 text-xs [&_dd]:m-0 [&_dt]:text-muted-foreground">
-              <dt>{t("shell.public.created")}</dt>
-              <dd>
-                <RelativeTime value={ticket.createdAt} />
-              </dd>
-              <dt>{t("shell.public.updated")}</dt>
-              <dd>
-                <RelativeTime value={ticket.updatedAt} />
-              </dd>
-            </dl>
-          </section>
-          {(parent || children.length > 0 || relations.length > 0) && (
-            <section>
-              <SectionHeading compact title={t("shell.public.relationships")} />
-              <ItemGroup className="gap-0">
-                {parent && (
-                  <Item size="xs" className="px-0">
-                    <CornerLeftUp
-                      className="size-3.5 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                    <ItemContent className="min-w-0 gap-0">
-                      <span className="text-xs text-muted-foreground">
-                        {t("shell.public.parent")}
-                      </span>
-                      {reference(parent)}
-                    </ItemContent>
-                  </Item>
-                )}
-                {children.map((child) => (
-                  <Item key={child.id} size="xs" className="px-0">
-                    <Status project={shared} ticket={child} iconOnly />
-                    <ItemContent className="min-w-0 gap-0">
-                      <span className="text-xs text-muted-foreground">
-                        {t("shell.public.child")}
-                      </span>
-                      {reference(child)}
-                    </ItemContent>
-                  </Item>
-                ))}
-                {relations.map((relation) => {
-                  const linked = relationReference({ ...relation, projectId }, ticket.id);
-                  return (
-                    <Item key={relation.id} size="xs" className="px-0">
-                      <ItemContent className="min-w-0 gap-0">
-                        <span className="text-xs text-muted-foreground">{linked.label}</span>
-                        <TicketLink projectId={projectId} ticketId={linked.id} shared>
-                          {linked.title}
-                        </TicketLink>
-                      </ItemContent>
-                    </Item>
-                  );
-                })}
-              </ItemGroup>
-            </section>
           )}
-        </aside>
-      </article>
-    </PublicFrame>
+          <dl className="mt-4 grid grid-cols-[80px_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t pt-4 text-xs [&_dd]:m-0 [&_dt]:text-muted-foreground">
+            <dt>{t("shell.public.created")}</dt>
+            <dd>
+              <RelativeTime value={ticket.createdAt} />
+            </dd>
+            <dt>{t("shell.public.updated")}</dt>
+            <dd>
+              <RelativeTime value={ticket.updatedAt} />
+            </dd>
+          </dl>
+        </section>
+        {(parent || children.length > 0 || relations.length > 0) && (
+          <section>
+            <SectionHeading compact title={t("shell.public.relationships")} />
+            <ItemGroup className="gap-0">
+              {parent && (
+                <Item size="xs" className="px-0">
+                  <CornerLeftUp
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <ItemContent className="min-w-0 gap-0">
+                    <span className="text-xs text-muted-foreground">
+                      {t("shell.public.parent")}
+                    </span>
+                    {reference(parent)}
+                  </ItemContent>
+                </Item>
+              )}
+              {children.map((child) => (
+                <Item key={child.id} size="xs" className="px-0">
+                  <Status project={shared} ticket={child} iconOnly />
+                  <ItemContent className="min-w-0 gap-0">
+                    <span className="text-xs text-muted-foreground">{t("shell.public.child")}</span>
+                    {reference(child)}
+                  </ItemContent>
+                </Item>
+              ))}
+              {relations.map((relation) => {
+                const linked = relationReference({ ...relation, projectId }, ticket.id);
+                return (
+                  <Item key={relation.id} size="xs" className="px-0">
+                    <ItemContent className="min-w-0 gap-0">
+                      <span className="text-xs text-muted-foreground">{linked.label}</span>
+                      <TicketLink projectId={projectId} ticketId={linked.id} shared>
+                        {linked.title}
+                      </TicketLink>
+                    </ItemContent>
+                  </Item>
+                );
+              })}
+            </ItemGroup>
+          </section>
+        )}
+      </aside>
+    </article>,
+    shared,
   );
 }

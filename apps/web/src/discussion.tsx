@@ -4,7 +4,6 @@ import { useInlineUpload } from "./ticket-resources.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
@@ -22,7 +21,8 @@ import { Kbd } from "@/components/ui/kbd";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { MessageSquare } from "lucide-react";
 
-export function Discussion({ ticket }: { ticket: Ticket }) {
+// `anchor` is the URL hash, which names a comment when a search result links one.
+export function Discussion({ ticket, anchor: hash }: { ticket: Ticket; anchor: string }) {
   const [offset, setOffset] = useState(0),
     [body, setBody] = useState("");
   const comments = useQuery(
@@ -30,8 +30,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
   );
   // A search result links a comment by anchor. Page forward until it loads, once per anchor;
   // paging after that stays with the reader.
-  const hash = useRouterState({ select: (state) => state.location.hash }),
-    anchored = hash.startsWith("comment-") ? hash.slice("comment-".length) : null;
+  const anchored = hash.startsWith("comment-") ? hash.slice("comment-".length) : null;
   const [anchor, setAnchor] = useState(anchored),
     [seeking, setSeeking] = useState(anchored !== null);
   if (anchored !== anchor) {

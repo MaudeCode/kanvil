@@ -52,8 +52,37 @@ test("workspace search finds tickets and comments and opens their context", asyn
   await expect(results.getByRole("listitem")).toHaveCount(1);
   await page.keyboard.press("j");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/tickets/${closed.id}#comment-${comment.id}$`));
-  await expect(page.locator(`#comment-${comment.id}`)).toHaveAttribute("data-linked", "true");
+  // A comment result opens its ticket in the preview sheet over the results, at the comment.
+  const sheet = page.getByRole("dialog", { name: "Closed work", exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(
+    new RegExp(`/search\\?q=${token}.*type=comment.*peek=${closed.id}.*#comment-${comment.id}$`),
+  );
+  await expect(sheet.locator(`#comment-${comment.id}`)).toHaveAttribute("data-linked", "true");
+  await page.reload();
+  await expect(sheet.locator(`#comment-${comment.id}`)).toHaveAttribute("data-linked", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/search\\?q=${token}.*type=comment$`));
+  await expect(results.getByRole("listitem")).toHaveCount(1);
+  // The full page stays one modified click away.
+  await results
+    .getByRole("link")
+    .first()
+    .click({ modifiers: ["Shift"] });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The palette closes before its ticket and comment results open the sheet.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("combobox").fill(token);
+  await page
+    .getByRole("option", { name: new RegExp(`fix shipped.*Comment · ${closed.key}`) })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(sheet.locator(`#comment-${comment.id}`)).toHaveAttribute("data-linked", "true");
+  await sheet.getByRole("link", { name: "Open in full page", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/tickets/${closed.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Closed work", exact: true })).toBeVisible();
   await page.goto(`/search?q=missing${token}`);
   await expect(page.getByText(`No results for “missing${token}”`, { exact: true })).toBeVisible();
 });

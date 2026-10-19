@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
 import { Bell, BellDot, Check, CheckCheck, ListX, X } from "lucide-react";
 import { formatEvent, notificationCategoryLabels } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
@@ -27,7 +26,7 @@ import {
   RelativeTime,
   reportError,
 } from "./ui.tsx";
-import { TicketPreviewSheet } from "./ticket-detail.tsx";
+import { usePreviewCollection, useTicketPreview } from "./components/ticket-preview.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { actions } from "./lib/actions.ts";
 import { inboxSearchSchema, type InboxSearch } from "./search.ts";
@@ -52,10 +51,9 @@ export function Inbox({
   onSearch,
 }: {
   search: InboxSearch;
-  onSearch: (next: InboxSearch, push: boolean) => void;
+  onSearch: (next: InboxSearch) => void;
 }) {
   const cache = useQueryClient(),
-    router = useRouter(),
     projects = useProjects(),
     notifications = api.notifications(),
     items = useQuery(notifications),
@@ -107,37 +105,33 @@ export function Inbox({
     });
   }
 
-  // The preview: the sheet keeps the last ticket while it closes, and closing a preview this
-  // page opened steps back over its history entry, so Back and Escape agree.
-  const target = search.peek ? { id: search.peek, projectId: search.peekProject } : undefined;
-  const [preview, setPreview] = useState(target);
-  if (target && (target.id !== preview?.id || target.projectId !== preview.projectId))
-    setPreview(target);
-  const pushed = useRef(false);
-  function show(ticketId: string, push: boolean) {
+  // Entries open in the app's preview sheet, which steps through them and marks them read.
+  const preview = useTicketPreview();
+  function show(ticketId: string) {
     const first = visible.find((entry) => ticketOf(entry) === ticketId);
     if (!first) return null;
-    if (push) pushed.current = true;
     void mark(
       entries
         .filter((entry) => !entry.readAt && ticketOf(entry) === ticketId)
         .map((entry) => entry.id),
       true,
     );
-    onSearch({ ...search, peek: ticketId, peekProject: first.event.projectId }, push);
+    preview?.open({ ticketId, projectId: first.event.projectId });
     return first;
   }
   function open(entry: Entry) {
     const ticketId = ticketOf(entry);
     setActive(entry.id);
-    if (ticketId) show(ticketId, true);
+    if (ticketId) show(ticketId);
   }
-  function close() {
-    if (pushed.current) {
-      pushed.current = false;
-      router.history.back();
-    } else onSearch({ ...search, peek: undefined, peekProject: undefined }, false);
-  }
+  usePreviewCollection(
+    order,
+    (id) => {
+      const first = show(id);
+      if (first) setActive(first.id);
+    },
+    () => openButton(active),
+  );
 
   useEffect(() => {
     if (active)
@@ -222,7 +216,7 @@ export function Inbox({
         value={search.view}
         onValueChange={(value) => {
           setKept(new Set());
-          onSearch({ ...search, view: inboxSearchSchema.shape.view.parse(value) }, false);
+          onSearch({ ...search, view: inboxSearchSchema.shape.view.parse(value) });
         }}
         className="inbox-tabs mb-5"
       >
@@ -271,17 +265,6 @@ export function Inbox({
           icon={Bell}
         />
       )}
-      <TicketPreviewSheet
-        open={!!search.peek}
-        ticket={preview}
-        order={order}
-        onOpen={(id) => {
-          const first = show(id, false);
-          if (first) setActive(first.id);
-        }}
-        onClose={close}
-        returnFocus={() => openButton(active)}
-      />
     </>
   );
 }

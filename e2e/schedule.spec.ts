@@ -57,6 +57,20 @@ test("calendar and timeline layouts show scheduled tickets with period navigatio
   await expect(dialog.getByRole("link", { name: /Spanning release work/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  // An entry opens the preview sheet over the calendar, which keeps its period.
+  await page.getByRole("button", { name: "Next month", exact: true }).click();
+  await page.getByRole("button", { name: "Previous month", exact: true }).click();
+  await expect(page).toHaveURL(/period=/);
+  const entry = calendar.getByRole("link", { name: /Spanning release work/ }).first();
+  await entry.click();
+  const sheet = page.getByRole("dialog", { name: spanning.title, exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`period=.*peek=${spanning.id}`));
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(page).toHaveURL(/period=/);
+  await expect(calendar).toBeVisible();
+  await expect(entry).toBeFocused();
 
   await page.getByRole("button", { name: "Next month", exact: true }).click();
   await expect(page).toHaveURL(/period=/);

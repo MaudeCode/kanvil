@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 export const searchResultLabels = labelTable(searchResultTypes, (type) =>
   t(`shell.search.type.${type}`),
 );
+// The anchor of a comment result within its ticket.
+export const searchResultAnchor = (result: SearchResult) =>
+  result.type === "comment" ? `comment-${result.id}` : undefined;
 // Where a result opens: its project, its ticket, or the comment within its ticket.
 export function searchResultLink(result: SearchResult) {
   if (!result.ticket)
@@ -18,7 +21,8 @@ export function searchResultLink(result: SearchResult) {
     to: "/projects/$projectId/tickets/$ticketId",
     params: { projectId: result.project.id, ticketId: result.ticket.id },
   } as const;
-  return result.type === "comment" ? { ...ticket, hash: `comment-${result.id}` } : ticket;
+  const hash = searchResultAnchor(result);
+  return hash ? { ...ticket, hash } : ticket;
 }
 // One presentation for a search result, shared by the command palette (`compact`, inside a
 // command item) and the results page.

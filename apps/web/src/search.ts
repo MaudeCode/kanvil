@@ -13,6 +13,8 @@ const previewFields = {
   peek: z.string().min(1).max(80).optional().catch(undefined),
   peekProject: z.string().min(1).max(80).optional().catch(undefined),
 };
+// Every page carries them, so a ticket reference anywhere opens the preview over it.
+export const previewSearchSchema = z.object(previewFields);
 // The day a calendar or timeline shows, as yyyy-MM-dd. Like the preview, it never changes which
 // tickets a saved view matches.
 const periodFields = {
