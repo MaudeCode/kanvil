@@ -224,7 +224,7 @@ export function TicketSelectionToolbar({
                 Archive selected
               </DropdownMenuItem>
             )}
-            {access.canAdmin && (
+            {access.canDelete && (
               <DropdownMenuItem
                 variant="destructive"
                 disabled={selected.length > batchSize}

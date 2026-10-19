@@ -11,6 +11,7 @@ import {
   Settings2,
   ShieldCheck,
   Tags,
+  UserCog,
   UserRound,
   Users,
   Webhook,
@@ -36,6 +37,7 @@ const account: Sections<typeof accountSections> = {
 const workspace: Sections<typeof workspaceSections> = {
   general: { label: "General", icon: Settings2 },
   members: { label: "Members", icon: Users },
+  roles: { label: "Roles", icon: UserCog },
   labels: { label: "Labels", icon: Tags },
 };
 const project: Sections<typeof projectSections> = {

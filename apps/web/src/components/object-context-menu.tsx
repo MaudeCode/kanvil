@@ -355,7 +355,7 @@ export function TicketContextMenu({
           </ContextMenuItem>
           <ContextMenuItem
             variant="destructive"
-            disabled={!access.canWrite}
+            disabled={!access.canDelete}
             onClick={() => setDeleting(true)}
           >
             <Trash2 />

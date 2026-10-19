@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  capabilitiesOf,
+  operationPermission,
+  roleCategory,
+  roleId,
+  workspaceSchema,
   customFieldFilterText,
   customFieldValueSchema,
   formatCustomFieldValue,
@@ -465,5 +470,47 @@ describe("custom fields", () => {
     };
     expect(operations.export_project.output.safeParse(big).success).toBe(true);
     expect(operations.preview_import.input.shape.bundle.safeParse(big).success).toBe(false);
+  });
+});
+
+describe("roles and permissions", () => {
+  it("reads workspaces from servers that predate custom roles", () => {
+    const legacy = workspaceSchema.parse({
+      id: "00000000-0000-4000-8000-000000000001",
+      slug: "legacy",
+      name: "Legacy",
+      description: "",
+      version: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      role: "writer",
+    });
+    expect(capabilitiesOf(legacy)).toEqual(["ticket.write"]);
+    expect(capabilitiesOf({ role: "writer", capabilities: ["ticket.delete"] })).toEqual([
+      "ticket.delete",
+    ]);
+    expect(capabilitiesOf({ role: null })).toEqual([]);
+  });
+  it("accepts seeded names and custom IDs as role IDs", () => {
+    expect(roleId.safeParse("admin").success).toBe(true);
+    expect(roleId.safeParse("00000000-0000-4000-8000-000000000001").success).toBe(true);
+    expect(roleId.safeParse("owner").success).toBe(false);
+  });
+  it("projects a custom role onto a seeded one that never administers", () => {
+    expect(roleCategory(["ticket.write", "member.manage"])).toBe("writer");
+    expect(roleCategory(["project.manage", "workspace.manage"])).toBe("reader");
+  });
+  it("names the action every operation needs", () => {
+    expect(operationPermission("get_ticket")).toBeNull();
+    expect(operationPermission("claim_ticket")).toBe("ticket.write");
+    expect(operationPermission("delete_ticket")).toBe("ticket.delete");
+    expect(operationPermission("update_workflow_state")).toBe("project.manage");
+    expect(operationPermission("set_member")).toBe("member.manage");
+    expect(operationPermission("create_invitation")).toBe("invitation.manage");
+    expect(operationPermission("create_calendar_feed")).toBe("sharing.manage");
+    expect(operationPermission("update_workspace_label")).toBe("workspace.manage");
+    expect(operationPermission("create_workspace_role")).toBe("workspace.manage");
+    // Checked in the handler, which sees what changed.
+    expect(operationPermission("update_project")).toBeNull();
   });
 });
