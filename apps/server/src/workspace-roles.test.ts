@@ -256,6 +256,100 @@ describe("custom workspace roles", () => {
     expect(people.find((person) => person.userId === other.id)).toMatchObject({ role: "admin" });
   });
 
+  it("refuses to remove a direct role that masks a stronger inherited one", async () => {
+    const shared = await project();
+    const manager = await role("Member manager", ["ticket.write", "member.manage"]);
+    const lead = await role("Lead", ["ticket.write", "project.manage"]);
+    await join("member", manager.id);
+    await join("other", lead.id);
+    await domain.execute(
+      "set_member",
+      { projectId: shared.id, email: email("other"), role: "reader" },
+      owner,
+    );
+    // Removing the direct Reader role would hand back the inherited Lead role's project.manage.
+    await expect(
+      domain.execute(
+        "set_member",
+        { projectId: shared.id, email: email("other"), role: null },
+        member,
+      ),
+    ).rejects.toMatchObject({ status: 403, code: "forbidden" });
+    expect((await projectAs(other, shared.id)).roleId).toBe("reader");
+  });
+
+  it("caps role actions a handler checks at the credential's scopes", async () => {
+    const shared = await project();
+    const lead = await role("Lead", ["ticket.write", "project.manage"]);
+    await join("member", lead.id);
+    const ticket = await domain.execute(
+      "create_ticket",
+      { projectId: shared.id, title: "Discussed" },
+      owner,
+    );
+    const comment = await domain.execute(
+      "add_comment",
+      { projectId: shared.id, ticketId: ticket.id, body: "Owner's words" },
+      owner,
+    );
+    const writeOnly = await domain.actor(member.id, {
+      ownerId: crypto.randomUUID(),
+      scopes: ["read", "write"],
+    });
+    await expect(
+      domain.execute(
+        "update_comment",
+        {
+          projectId: shared.id,
+          commentId: comment.id,
+          expectedVersion: comment.version,
+          body: "Rewritten",
+        },
+        writeOnly,
+      ),
+    ).rejects.toMatchObject({ status: 403, code: "forbidden" });
+    // The signed-in session holds the role's project.manage and may moderate.
+    await domain.execute(
+      "update_comment",
+      {
+        projectId: shared.id,
+        commentId: comment.id,
+        expectedVersion: comment.version,
+        body: "Moderated",
+      },
+      member,
+    );
+  });
+
+  it("keeps a custom role an invitation would not strictly raise", async () => {
+    const steward = await role("Steward", ["workspace.manage"]);
+    await join("member", steward.id);
+    const sent = await domain.execute(
+      "create_invitation",
+      { workspaceId: workspace.id, email: email("member"), role: "writer" },
+      owner,
+    );
+    await domain.execute(
+      "accept_invitation",
+      { token: requireRow(new URL(sent.url).pathname.split("/").at(-1)) },
+      member,
+    );
+    // Writer lacks workspace.manage, so accepting leaves the Steward role in place.
+    expect(await workspaceAs(member)).toMatchObject({ roleId: steward.id });
+    await join("member", "reader");
+    const again = await domain.execute(
+      "create_invitation",
+      { workspaceId: workspace.id, email: email("member"), role: "writer" },
+      owner,
+    );
+    await domain.execute(
+      "accept_invitation",
+      { token: requireRow(new URL(again.url).pathname.split("/").at(-1)) },
+      member,
+    );
+    expect(await workspaceAs(member)).toMatchObject({ roleId: "writer" });
+  });
+
   it("revokes a removed action at once and rewrites the seeded stand-in", async () => {
     const shared = await project();
     const editor = await role("Editor", ["ticket.write"]);

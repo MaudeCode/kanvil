@@ -25,7 +25,17 @@ import {
 
 type Row = typeof invitations.$inferSelect;
 type Role = (typeof roles)[number];
-const rank = (role: string | null | undefined) => roles.findIndex((item) => item === role);
+// Accepting replaces a role only when the invited one grants strictly more: everything the current
+// role does and something else, or Admin, which alone reaches private projects. A custom role that
+// grants anything the invited one lacks stays.
+async function raises(ctx: Context, current: string | null | undefined, invited: Role) {
+  if (!current) return true;
+  if (current === invited || current === "admin") return false;
+  if (invited === "admin") return true;
+  const held = (await permissionsOf(ctx.db, [current]))(current),
+    offered = seededPermissions[invited];
+  return held.every((permission) => offered.includes(permission)) && offered.length > held.length;
+}
 const digest = (token: string) => createHash("sha256").update(token).digest("hex");
 const statusOf = (row: Row): Invitation["status"] =>
   row.status === "pending" && row.expiresAt <= new Date()
@@ -313,11 +323,11 @@ export const invitationHandlers: Pick<
     const role = roleOf(row),
       userId = ctx.actor.id;
     let granted: string[] | null = null;
-    // Accepting only ever raises access: an existing role at or above the invited one stays.
+    // Accepting only ever raises access; see `raises`.
     if (!row.projectIds) {
       const current = (
         await ctx.db
-          .select({ role: workspaceMembers.role })
+          .select({ role: workspaceMembers.role, roleId: workspaceMembers.roleId })
           .from(workspaceMembers)
           .where(
             and(
@@ -326,7 +336,7 @@ export const invitationHandlers: Pick<
             ),
           )
       )[0];
-      if (rank(current?.role) < rank(role))
+      if (await raises(ctx, current && (current.roleId ?? current.role), role))
         await ctx.db
           .insert(workspaceMembers)
           .values({ workspaceId: row.workspaceId, userId, role })
@@ -350,7 +360,7 @@ export const invitationHandlers: Pick<
           reason: "projects_removed",
         });
       for (const target of targets)
-        if (rank((await projectAccess(ctx.db, ctx.actor, target))?.role) < rank(role))
+        if (await raises(ctx, (await projectAccess(ctx.db, ctx.actor, target))?.roleId, role))
           await ctx.db
             .insert(members)
             .values({ projectId: target.id, userId, role })

@@ -188,7 +188,9 @@ export const hasScope = (actor: Actor, scope: (typeof scopes)[number]) =>
 // caller can do, and the most the caller can grant to anyone else.
 export const capabilities = (actor: Actor, granted: readonly Permission[]) =>
   granted.filter((permission) => hasScope(actor, permissionScope(permission)));
-export const can = (ctx: Context, permission: Permission) => ctx.permissions.includes(permission);
+// What a handler may do beyond the operation's own action: the role's grant within the credential.
+export const can = (ctx: Context, permission: Permission) =>
+  capabilities(ctx.actor, ctx.permissions).includes(permission);
 // The stable codes and messages predate custom roles; the writer's and administrator's actions
 // keep them.
 export function requirePermission(
@@ -630,7 +632,7 @@ export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
     claim.ownerId === ctx.actor.ownerId &&
     claim.expiresAt > new Date() &&
     hasScope(ctx.actor, "claim") &&
-    can(ctx, "ticket.write")
+    ctx.permissions.includes("ticket.write")
   );
 }
 export async function assertWorkerClaim(

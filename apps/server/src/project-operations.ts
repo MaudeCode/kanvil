@@ -400,6 +400,22 @@ export const projectHandlers: Pick<
         .where(eq(projects.id, projectId)),
     ).roleId;
     await assertHeldGrantable(ctx, effective);
+    // Removing a direct role hands back the inherited one, which must be grantable as well.
+    if (!target) {
+      const inherited = (
+        await ctx.db
+          .select({ role: workspaceMembers.role, roleId: workspaceMembers.roleId })
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, project(ctx).workspaceId),
+              eq(workspaceMembers.userId, member.id),
+            ),
+          )
+      )[0];
+      if (inherited && project(ctx).visibility === "workspace")
+        await assertHeldGrantable(ctx, inherited.roleId ?? inherited.role);
+    }
     if (existing?.role === "admin" && input.role !== "admin") {
       const administrators = await ctx.db
         .select({ id: user.id })
