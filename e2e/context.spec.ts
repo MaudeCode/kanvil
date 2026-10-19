@@ -82,6 +82,22 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await expect(
     page.getByRole("row").filter({ hasText: "Contextual ticket actions" }).first(),
   ).toContainText("In progress");
+  const stored = async () =>
+    (await (await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)).json())
+      .ticket;
+  await link().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Difficulty", exact: true }).hover();
+  await page.getByRole("menuitemradio", { name: "Medium", exact: true }).click();
+  await expect.poll(async () => (await stored()).difficulty).toBe("med");
+  await link().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Due date", exact: true }).hover();
+  await page.getByRole("button", { name: /^Today/ }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect.poll(async () => (await stored()).dueAt).not.toBeNull();
+  await link().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Due date", exact: true }).hover();
+  await page.getByRole("button", { name: "Clear due date", exact: true }).click();
+  await expect.poll(async () => (await stored()).dueAt).toBeNull();
   await link().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Copy key and title", exact: true }).click();
   await expect(page.getByText("Ticket copied", { exact: true })).toBeVisible();

@@ -18,7 +18,9 @@ export function DatePicker({
   variant = "field",
   bounds,
   placeholder = "Choose a date",
+  mixed = false,
   disabled = false,
+  textClassName,
 }: {
   label: string;
   value: Date | null;
@@ -26,12 +28,14 @@ export function DatePicker({
   variant?: "field" | "pill" | "row";
   bounds?: { from?: Date; to?: Date };
   placeholder?: string;
+  // The selection's dates differ (pass a null value): clearing stays available.
+  mixed?: boolean;
   disabled?: boolean;
+  // Styles the trigger's text, e.g. to leave only the icon on narrow toolbars.
+  textClassName?: string;
 }) {
   const id = useId(),
-    [open, setOpen] = useState(false),
-    [weekStart] = usePreference(preferences.weekStart);
-  const clearable = variant !== "field" && !!value;
+    [open, setOpen] = useState(false);
   const trigger = (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -54,44 +58,19 @@ export function DatePicker({
         aria-label={label}
       >
         <CalendarDays className={cn(variant !== "field" && "size-3.5 text-muted-foreground")} />
-        {value ? format.format(value) : placeholder}
+        <span className={textClassName}>{value ? format.format(value) : placeholder}</span>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0">
-        <Calendar
-          mode="single"
-          weekStartsOn={weekStarts[weekStart]}
-          selected={value ?? undefined}
-          defaultMonth={value ?? bounds?.from ?? startOfToday()}
-          onSelect={(date) => {
-            if (date) {
-              onChange(date);
-              setOpen(false);
-            }
+        <DateCalendar
+          label={label}
+          value={value}
+          bounds={bounds}
+          clearable={variant !== "field" && (!!value || mixed)}
+          onChange={(date) => {
+            onChange(date);
+            setOpen(false);
           }}
-          disabled={[
-            ...(bounds?.from ? [{ before: bounds.from }] : []),
-            ...(bounds?.to ? [{ after: bounds.to }] : []),
-          ]}
-          captionLayout="dropdown"
-          {...(bounds?.from ? { startMonth: bounds.from } : {})}
-          {...(bounds?.to ? { endMonth: bounds.to } : {})}
         />
-        {clearable && (
-          <div className="border-t p-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground"
-              onClick={() => {
-                onChange(null);
-                setOpen(false);
-              }}
-            >
-              <X />
-              Clear {label.toLowerCase()}
-            </Button>
-          </div>
-        )}
       </PopoverContent>
     </Popover>
   );
@@ -108,6 +87,59 @@ export function DatePicker({
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {trigger}
     </Field>
+  );
+}
+// The calendar and its clear action, shared by the picker popover and menus.
+export function DateCalendar({
+  label,
+  value,
+  onChange,
+  bounds,
+  clearable,
+  autoFocus = false,
+}: {
+  label: string;
+  value: Date | null;
+  onChange: (date: Date | null) => void;
+  bounds?: { from?: Date; to?: Date } | undefined;
+  clearable: boolean;
+  // Focuses the chosen day, or today, when the calendar opens without its own focus handling.
+  autoFocus?: boolean;
+}) {
+  const [weekStart] = usePreference(preferences.weekStart);
+  return (
+    <>
+      <Calendar
+        mode="single"
+        weekStartsOn={weekStarts[weekStart]}
+        selected={value ?? undefined}
+        defaultMonth={value ?? bounds?.from ?? startOfToday()}
+        onSelect={(date) => {
+          if (date) onChange(date);
+        }}
+        disabled={[
+          ...(bounds?.from ? [{ before: bounds.from }] : []),
+          ...(bounds?.to ? [{ after: bounds.to }] : []),
+        ]}
+        captionLayout="dropdown"
+        autoFocus={autoFocus}
+        {...(bounds?.from ? { startMonth: bounds.from } : {})}
+        {...(bounds?.to ? { endMonth: bounds.to } : {})}
+      />
+      {clearable && (
+        <div className="border-t p-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground"
+            onClick={() => onChange(null)}
+          >
+            <X />
+            Clear {label.toLowerCase()}
+          </Button>
+        </div>
+      )}
+    </>
   );
 }
 export function credentialExpiry(date: Date, now = Date.now()) {
