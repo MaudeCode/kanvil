@@ -50,13 +50,18 @@ const envSchema = z
     // SMTP relay for email notification channels, such as smtp://user:pass@mail.example.com:587.
     SMTP_URL: optionalEnv(z.url({ protocol: /^smtps?$/ })),
     SMTP_FROM: optionalEnv(z.string().min(3)),
-    // Lets channels and destinations reach loopback and private networks, such as a LAN ntfy.
+    // Lets channels, destinations, and import sources reach loopback and private networks, such as
+    // a LAN ntfy or a Jira Data Center site.
     KANVIL_DELIVERY_ALLOW_PRIVATE: z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
     // The GitHub REST API that repository connections call; GitHub Enterprise Server uses its own.
     KANVIL_GITHUB_API_URL: z.url({ protocol: /^https?$/ }).default("https://api.github.com"),
+    // The Linear GraphQL API that imports read.
+    KANVIL_LINEAR_API_URL: z
+      .url({ protocol: /^https?$/ })
+      .default("https://api.linear.app/graphql"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {

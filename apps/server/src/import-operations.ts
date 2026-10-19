@@ -3,7 +3,7 @@
 // writes each record through `domain.execute` as the person who started it. A record's request ID
 // derives from the run and its place, so the mutation receipt answers a retry after a restart and
 // nothing is written twice. Every write carries the run as provenance, so it notifies no one and
-// reaches no destination. Sources from other trackers translate into the same bundle.
+// reaches no destination. Linear and Jira are read into the same bundle (adapters/import-sources.ts).
 import { createHash } from "node:crypto";
 import {
   and,
@@ -26,6 +26,7 @@ import {
   defaultWorkflow,
   stagedUploadLifetime,
   ticketExportFormat,
+  ticketImportSchema,
   type ImportRun,
   type Operation,
   type ParsedInput,
@@ -413,11 +414,15 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
   const byRef = new Map(bundle.tickets.map((ticket) => [ticket.ref, ticket]));
   for (const ticket of bundle.tickets) {
     if (!states.has(ticket.stateRef))
-      error("unknown_state", "Tickets name a workflow state the file does not define", ticket.key);
+      error(
+        "unknown_state",
+        "Tickets name a workflow state the import does not define",
+        ticket.key,
+      );
     if (ticket.assigneeRef && !assignee.get(ticket.assigneeRef))
       warn("unassigned", "Tickets lose an assignee who cannot open the new project", ticket.key);
     if (ticket.parentRef && !byRef.has(ticket.parentRef))
-      warn("missing_parent", "Tickets lose a parent the file does not include", ticket.key);
+      warn("missing_parent", "Tickets lose a parent the import does not include", ticket.key);
     // Values are judged as normalized: an empty text or choice list is no value.
     const filled = new Set<string>();
     for (const [ref, value] of Object.entries(ticket.customFields)) {
@@ -426,7 +431,7 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       if (!field)
         error(
           "unknown_field",
-          "Tickets hold values of a field the file does not define",
+          "Tickets hold values of a field the import does not define",
           ticket.key,
         );
       else if (!parsed?.success)
@@ -447,7 +452,7 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
     if (!byRef.has(relation.sourceRef) || !byRef.has(relation.targetRef)) {
       warn(
         "missing_relation",
-        "Relationships to tickets outside the file are left out",
+        "Relationships to tickets outside the import are left out",
         keyOf(relation.sourceRef),
       );
       continue;
@@ -521,7 +526,11 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
   const attached = <T extends { ticketRef: string }>(items: T[], subject: string) =>
     items.filter((item) => {
       if (byRef.has(item.ticketRef)) return true;
-      warn("missing_ticket", `${subject} on tickets outside the file are left out`, item.ticketRef);
+      warn(
+        "missing_ticket",
+        `${subject} on tickets outside the import are left out`,
+        item.ticketRef,
+      );
       return false;
     });
   const notes = attached(bundle.comments, "Comments"),
@@ -540,7 +549,7 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
   for (const item of bundle.completeness.omitted)
     warn(
       "omitted",
-      `Not in the file: ${item.content}${item.count === null ? "" : ` (${item.count})`}. ${item.reason}`,
+      `Not imported: ${item.content}${item.count === null ? "" : ` (${item.count})`}. ${item.reason}`,
     );
 
   const records = [
@@ -711,6 +720,8 @@ export const importHandlers: Pick<
   Handlers,
   | "export_project"
   | "preview_import"
+  | "list_import_source_projects"
+  | "preview_source_import"
   | "list_imports"
   | "get_import"
   | "start_import"
@@ -724,6 +735,23 @@ export const importHandlers: Pick<
     });
   },
   preview_import: previewImport,
+  async list_import_source_projects(ctx, input) {
+    return ctx.sources.projects(input.source);
+  },
+  // Reads the source outside the write lock, then stages what it read like a file. The source
+  // and its credentials never reach the run: it holds only the bundle's records.
+  async preview_source_import(ctx, { source, sourceProject, includeComments, ...target }) {
+    const read = ticketImportSchema.safeParse(
+      await ctx.sources.bundle(source, sourceProject, { includeComments }),
+    );
+    if (!read.success)
+      fail(400, "validation_error", "The source holds content an import cannot take", {
+        issues: read.error.issues.slice(0, 20).map(({ path, message }) => ({ path, message })),
+      });
+    return ctx.db.transaction((tx) =>
+      previewImport({ ...ctx, db: tx }, { ...target, bundle: read.data }),
+    );
+  },
   async list_imports(ctx) {
     const rows = await ctx.db
       .select()

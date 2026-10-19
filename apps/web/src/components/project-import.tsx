@@ -3,15 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import {
+  importProviderDefinitions,
+  importProviders,
   importStatusLabels,
+  jiraEditionLabels,
+  jiraEditions,
   ticketExportSchema,
   ticketImportSchema,
+  type ImportProvider,
   type ImportRun,
+  type ImportSource,
+  type ImportSourceProject,
   type TicketExport,
 } from "@kanvil/contracts";
 import { api, useOperation } from "../data.tsx";
 import {
   Button,
+  Check,
   ErrorNotice,
   FormActions,
   Input,
@@ -19,6 +27,8 @@ import {
   ModalActions,
   Modal,
   RelativeTime,
+  Select,
+  SelectItem,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
 import { PrefixInput, ProjectAccessField, suggestKey } from "./create-project.tsx";
@@ -56,7 +66,10 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
   };
   return (
     <>
-      <SettingRow title="Import" description="Creates a project from a Kanvil ticket export.">
+      <SettingRow
+        title="Import"
+        description="Creates a project from a Kanvil ticket export, a Linear team, or a Jira project."
+      >
         <Button onClick={() => show(null)}>
           <Upload />
           Import project
@@ -102,7 +115,26 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-// Choose a file, name the project, preview, then import. Any change discards the preview.
+type SourceKind = "file" | ImportProvider;
+const sourceKindLabels: Record<SourceKind, string> = {
+  file: "Kanvil export file",
+  linear: importProviderDefinitions.linear.label,
+  jira: importProviderDefinitions.jira.label,
+};
+type Credentials = {
+  token: string;
+  edition: (typeof jiraEditions)[number];
+  baseUrl: string;
+  email: string;
+};
+const noCredentials: Credentials = { token: "", edition: "cloud", baseUrl: "", email: "" };
+// A source prefix when it is a valid one, otherwise a prefix suggested from the name.
+const keyFrom = (key: string, name: string) =>
+  /^[A-Z][A-Z0-9]{1,9}$/.test(key) ? key : suggestKey(name);
+
+// Choose a file, or connect to Linear or Jira and pick a team or project; then name the project,
+// preview, and import. The submit moves through these steps, and any change discards the steps
+// after it. Credentials stay in this form and go out with the request that needs them.
 function ImportForm({
   workspaceId,
   onStarted,
@@ -112,20 +144,29 @@ function ImportForm({
   onStarted: (runId: string) => void;
   onCancel: () => void;
 }) {
-  const [bundle, setBundle] = useState<TicketExport>(),
+  const [kind, setKind] = useState<SourceKind>("file"),
+    [credentials, setCredentials] = useState(noCredentials),
+    [projects, setProjects] = useState<ImportSourceProject[]>(),
+    [sourceProject, setSourceProject] = useState(""),
+    [includeComments, setIncludeComments] = useState(true),
+    [bundle, setBundle] = useState<TicketExport>(),
     [fileError, setFileError] = useState<unknown>(),
     [name, setName] = useState(""),
     [key, setKey] = useState(""),
     [visibility, setVisibility] = useState<"workspace" | "private">("workspace"),
     [run, setRun] = useState<ImportRun>();
-  const preview = useOperation("preview_import"),
+  const connect = useOperation("list_import_source_projects"),
+    previewFile = useOperation("preview_import"),
+    previewSource = useOperation("preview_source_import"),
     start = useOperation("start_import"),
-    // Counts edits, so a preview answered after one is dropped rather than shown for new values.
+    // Counts edits, so an answer to a request made before one is dropped rather than shown for
+    // new values.
     edits = useRef(0);
   const discard = () => {
     edits.current += 1;
     setRun(undefined);
-    preview.reset();
+    previewFile.reset();
+    previewSource.reset();
   };
   const changed =
     <T,>(set: (value: T) => void) =>
@@ -133,65 +174,219 @@ function ImportForm({
       set(value);
       discard();
     };
-  const ready = !!run && !blocked(run);
+  // New credentials or another source drop the connection and what was chosen through it.
+  const disconnect = () => {
+    discard();
+    setProjects(undefined);
+    setSourceProject("");
+    connect.reset();
+  };
+  const pick = (picked: ImportSourceProject | undefined) => {
+    if (!picked) return;
+    setSourceProject(picked.ref);
+    setName(picked.name);
+    setKey(keyFrom(picked.key, picked.name));
+    discard();
+  };
+  const credential = (field: keyof Credentials) => (value: string) => {
+    setCredentials((current) => ({ ...current, [field]: value }));
+    disconnect();
+  };
+  const source: ImportSource | undefined =
+    kind === "linear"
+      ? { provider: "linear", token: credentials.token }
+      : kind === "jira"
+        ? { provider: "jira", ...credentials }
+        : undefined;
+  const chosen = kind === "file" ? !!bundle : !!sourceProject,
+    ready = !!run && !blocked(run),
+    connecting = !!source && !projects;
+  // An answer counts only if nothing changed since it was asked.
+  const unchanged = (asked: number) => edits.current === asked;
+  const preview = kind === "file" ? previewFile : previewSource;
+  const definition = kind === "file" ? undefined : importProviderDefinitions[kind];
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!bundle) return;
+        const asked = edits.current;
         if (ready)
           void start
             .mutateAsync({ workspaceId, importId: run.id, expectedVersion: run.version })
             .then((started) => onStarted(started.id))
             .catch(() => {});
-        else {
-          const asked = edits.current;
-          void preview
-            .mutateAsync({ workspaceId, key, name, visibility, bundle })
-            .then((staged) => {
-              if (edits.current === asked) setRun(staged);
+        else if (source && connecting)
+          void connect
+            .mutateAsync({ workspaceId, source })
+            .then((listed) => {
+              if (!unchanged(asked)) return;
+              setProjects(listed);
+              pick(listed[0]);
             })
             .catch(() => {});
-        }
+        else if (source)
+          void previewSource
+            .mutateAsync({
+              workspaceId,
+              key,
+              name,
+              visibility,
+              source,
+              sourceProject,
+              includeComments,
+            })
+            .then((staged) => {
+              if (unchanged(asked)) setRun(staged);
+            })
+            .catch(() => {});
+        else if (bundle)
+          void previewFile
+            .mutateAsync({ workspaceId, key, name, visibility, bundle })
+            .then((staged) => {
+              if (unchanged(asked)) setRun(staged);
+            })
+            .catch(() => {});
       }}
     >
-      <Input
-        label="Export file"
-        type="file"
-        accept="application/json,.json"
-        required
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
+      <Select
+        label="Source"
+        value={kind}
+        onValueChange={(value) => {
+          const next = (["file", ...importProviders] as const).find((item) => item === value);
+          if (!next) return;
+          setKind(next);
           setBundle(undefined);
-          discard();
           setFileError(undefined);
-          if (!file) return;
-          // A file chosen while an earlier one is still being read replaces it.
-          const chosen = edits.current;
-          void file
-            .text()
-            .then((text) => {
-              const data: unknown = JSON.parse(text);
-              if (!ticketExportSchema.pick({ format: true }).safeParse(data).success)
-                throw new Error(notExport);
-              const parsed = ticketImportSchema.parse(data);
-              if (edits.current !== chosen) return;
-              setBundle(parsed);
-              setName(parsed.project.name);
-              setKey(
-                /^[A-Z][A-Z0-9]{1,9}$/.test(parsed.project.key)
-                  ? parsed.project.key
-                  : suggestKey(parsed.project.name),
-              );
-            })
-            .catch((error: unknown) => {
-              if (edits.current === chosen)
-                setFileError(error instanceof SyntaxError ? new Error(notExport) : error);
-            });
+          setCredentials(noCredentials);
+          disconnect();
         }}
-      />
+      >
+        {(["file", ...importProviders] as const).map((item) => (
+          <SelectItem key={item} value={item}>
+            {sourceKindLabels[item]}
+          </SelectItem>
+        ))}
+      </Select>
+      {kind === "file" ? (
+        <Input
+          label="Export file"
+          type="file"
+          accept="application/json,.json"
+          required
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            setBundle(undefined);
+            discard();
+            setFileError(undefined);
+            if (!file) return;
+            // A file chosen while an earlier one is still being read replaces it.
+            const picked = edits.current;
+            void file
+              .text()
+              .then((text) => {
+                const data: unknown = JSON.parse(text);
+                if (!ticketExportSchema.pick({ format: true }).safeParse(data).success)
+                  throw new Error(notExport);
+                const parsed = ticketImportSchema.parse(data);
+                if (edits.current !== picked) return;
+                setBundle(parsed);
+                setName(parsed.project.name);
+                setKey(keyFrom(parsed.project.key, parsed.project.name));
+              })
+              .catch((error: unknown) => {
+                if (edits.current === picked)
+                  setFileError(error instanceof SyntaxError ? new Error(notExport) : error);
+              });
+          }}
+        />
+      ) : (
+        <>
+          {kind === "jira" && (
+            <>
+              <Select
+                label="Jira edition"
+                value={credentials.edition}
+                onValueChange={(value) => {
+                  const next = jiraEditions.find((item) => item === value);
+                  if (next) credential("edition")(next);
+                }}
+              >
+                {jiraEditions.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {jiraEditionLabels[item]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Input
+                label="Site URL"
+                type="url"
+                required
+                placeholder={
+                  credentials.edition === "cloud"
+                    ? "https://example.atlassian.net"
+                    : "https://jira.example.com"
+                }
+                value={credentials.baseUrl}
+                onChange={(event) => credential("baseUrl")(event.target.value)}
+              />
+              {credentials.edition === "cloud" && (
+                <Input
+                  label="Account email"
+                  type="email"
+                  required
+                  autoComplete="off"
+                  value={credentials.email}
+                  onChange={(event) => credential("email")(event.target.value)}
+                />
+              )}
+            </>
+          )}
+          <Input
+            label={
+              kind === "linear"
+                ? "API key"
+                : credentials.edition === "cloud"
+                  ? "API token"
+                  : "Personal access token"
+            }
+            type="password"
+            required
+            autoComplete="off"
+            value={credentials.token}
+            onChange={(event) => credential("token")(event.target.value)}
+          />
+          <p className="-mt-2 mb-4 text-xs text-muted-foreground">{definition?.setup}</p>
+          <ErrorNotice error={connect.error} />
+          {projects && definition && (
+            <>
+              <Select
+                label={definition.project}
+                value={sourceProject}
+                onValueChange={(value) => pick(projects.find((item) => item.ref === value))}
+              >
+                {projects.map((item) => (
+                  <SelectItem key={item.ref} value={item.ref}>
+                    {item.name}{" "}
+                    <span className="font-mono text-xs text-muted-foreground">{item.key}</span>
+                  </SelectItem>
+                ))}
+              </Select>
+              {projects.length === 0 && (
+                <p className="-mt-2 mb-4 text-sm text-muted-foreground">
+                  These credentials cannot read any {definition.project.toLowerCase()}.
+                </p>
+              )}
+              <Check
+                label="Include comments"
+                checked={includeComments}
+                onCheckedChange={changed(setIncludeComments)}
+              />
+            </>
+          )}
+        </>
+      )}
       <ErrorNotice error={fileError} />
-      {bundle && (
+      {chosen && (
         <>
           <Input
             label="Project name"
@@ -207,10 +402,10 @@ function ImportForm({
       {run && <ImportPreview run={run} />}
       <FormActions
         error={preview.error ?? start.error}
-        pending={preview.isPending || start.isPending}
-        submitLabel={ready ? "Import" : "Preview"}
-        pendingLabel={ready ? "Starting…" : "Checking…"}
-        submitDisabled={!bundle || (!!run && !ready)}
+        pending={connect.isPending || preview.isPending || start.isPending}
+        submitLabel={ready ? "Import" : connecting ? "Connect" : "Preview"}
+        pendingLabel={ready ? "Starting…" : connecting ? "Connecting…" : "Checking…"}
+        submitDisabled={connecting ? false : !chosen || (!!run && !ready)}
         onCancel={onCancel}
       />
     </form>

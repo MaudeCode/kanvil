@@ -1,5 +1,12 @@
 import type { Expo } from "expo-server-sdk";
-import type { RepositoryProvider, RepositoryTrigger, remoteKinds } from "@kanvil/contracts";
+import type {
+  ImportSource,
+  ImportSourceProject,
+  RepositoryProvider,
+  RepositoryTrigger,
+  TicketExport,
+  remoteKinds,
+} from "@kanvil/contracts";
 export interface ObjectStore {
   keyFor(id: string): string;
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
@@ -64,6 +71,12 @@ export interface OutboundRequest {
   // Read the response body, as writes the outbox must verify need; it is discarded otherwise.
   read?: boolean;
 }
+export interface OutboundResponse {
+  status: number;
+  body?: string;
+  // Lowercased names; only read responses carry them.
+  headers?: Record<string, string | string[] | undefined>;
+}
 export interface MailMessage {
   to: string;
   subject: string;
@@ -71,7 +84,7 @@ export interface MailMessage {
 }
 export interface OutboundSenders {
   push: Pick<Expo, "sendPushNotificationsAsync" | "getPushNotificationReceiptsAsync">;
-  http: (request: OutboundRequest) => Promise<{ status: number; body?: string }>;
+  http: (request: OutboundRequest) => Promise<OutboundResponse>;
   // Absent when the instance has no SMTP relay.
   mail?: (message: MailMessage) => Promise<void>;
 }
@@ -154,3 +167,13 @@ export interface RepositoryDriver {
   issue(body: string): RemoteIssue;
 }
 export type RepositoryDrivers = Record<RepositoryProvider, RepositoryDriver>;
+// Trackers an import reads. A reader only issues reads, with the credentials of the one request
+// that names them, and translates a team or project into a bundle; it never writes Kanvil state.
+export interface ImportSources {
+  projects(source: ImportSource): Promise<ImportSourceProject[]>;
+  bundle(
+    source: ImportSource,
+    project: string,
+    options: { includeComments: boolean },
+  ): Promise<TicketExport>;
+}

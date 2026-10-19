@@ -7,7 +7,10 @@ import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createGitHubDriver } from "./adapters/github.ts";
 import { createGiteaDriver } from "./adapters/gitea.ts";
 import { createGitLabDriver } from "./adapters/gitlab.ts";
+import { createImportSources } from "./adapters/import-sources.ts";
+import { createHttpSender } from "./adapters/outbound.ts";
 import type {
+  ImportSources,
   JobScheduler,
   ObjectStoreFactory,
   RepositoryDrivers,
@@ -23,6 +26,7 @@ export interface RuntimeAdapters {
   ticketIndex: TicketIndexFactory;
   jobs: JobScheduler;
   repositories: (config: Config) => RepositoryDrivers;
+  importSources: (config: Config) => ImportSources;
 }
 export const defaultAdapters: RuntimeAdapters = {
   auth: createAuth,
@@ -36,4 +40,15 @@ export const defaultAdapters: RuntimeAdapters = {
     gitea: createGiteaDriver(),
     gitlab: createGitLabDriver(),
   }),
+  // A Jira site is the importer's own address, so private networks stay closed unless the operator
+  // opens them for deliveries too. Source pages are larger than delivery answers.
+  importSources: (config) =>
+    createImportSources(
+      createHttpSender({
+        allowPrivate: config.KANVIL_DELIVERY_ALLOW_PRIVATE,
+        timeout: 30_000,
+        responseLimit: 16_777_216,
+      }),
+      config.KANVIL_LINEAR_API_URL,
+    ),
 };

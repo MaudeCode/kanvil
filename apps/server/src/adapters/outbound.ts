@@ -3,7 +3,7 @@ import { request as plainRequest } from "node:http";
 import { request as tlsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import nodemailer from "nodemailer";
-import type { MailMessage, OutboundRequest } from "./ports.ts";
+import type { MailMessage, OutboundRequest, OutboundResponse } from "./ports.ts";
 
 // A failed send; `retry` says whether a later attempt can succeed.
 export class DeliveryError extends Error {
@@ -52,15 +52,17 @@ export function isReservedAddress(address: string) {
   return family === 0 || reserved.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
-const responseLimit = 1_048_576;
 // Sends JSON to a configured endpoint. Every resolved address is checked and the connection uses
 // the checked address, so DNS rebinding cannot reach an internal host; redirects are not followed.
 export function createHttpSender({
   allowPrivate,
   timeout = 10_000,
+  responseLimit = 1_048_576,
 }: {
   allowPrivate: boolean;
   timeout?: number;
+  // The most a read response body may hold.
+  responseLimit?: number;
 }) {
   const allowed = (address: string) => allowPrivate || !isReservedAddress(address);
   const lookup: LookupFunction = (hostname, options, callback) => {
@@ -75,7 +77,7 @@ export function createHttpSender({
     });
   };
   return (request: OutboundRequest) =>
-    new Promise<{ status: number; body?: string }>((done, reject) => {
+    new Promise<OutboundResponse>((done, reject) => {
       const url = new URL(request.url),
         host = url.hostname.replace(/^\[|\]$/g, "");
       if (url.protocol !== "https:" && url.protocol !== "http:")
@@ -112,7 +114,11 @@ export function createHttpSender({
           });
           response.on("end", () => {
             clearTimeout(deadline);
-            done({ status, body: Buffer.concat(chunks).toString("utf8") });
+            done({
+              status,
+              body: Buffer.concat(chunks).toString("utf8"),
+              headers: response.headers,
+            });
           });
           response.on("error", (error) => call.destroy(error));
         },

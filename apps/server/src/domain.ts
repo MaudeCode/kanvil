@@ -30,7 +30,7 @@ import {
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
 import type { Sealer } from "./sealing.ts";
-import type { MailMessage } from "./adapters/ports.ts";
+import type { ImportSources, MailMessage } from "./adapters/ports.ts";
 import {
   claims,
   deliveries,
@@ -94,6 +94,8 @@ export interface Context {
   mail?: (message: MailMessage) => void;
   // The import run this write belongs to. Its events carry the provenance and notify no one.
   importRun?: string;
+  // Trackers an import reads; see adapters/import-sources.ts.
+  sources: ImportSources;
 }
 export type Handler<K extends Operation> = (
   ctx: Context,
@@ -165,6 +167,10 @@ const noSecrets: Sealer = {
   seal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
   unseal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
 };
+const noSources: ImportSources = {
+  projects: () => fail(503, "source_unavailable", "Import sources are not configured"),
+  bundle: () => fail(503, "source_unavailable", "Import sources are not configured"),
+};
 const baseContext = (db: Context["db"], actor: Actor): Context => ({
   db,
   actor,
@@ -175,6 +181,7 @@ const baseContext = (db: Context["db"], actor: Actor): Context => ({
   search: builtinSearch,
   secrets: noSecrets,
   publicUrl: "http://localhost",
+  sources: noSources,
 });
 // Public reads hold no identity, scope, or project grant: nothing they reach can authorize by actor.
 const publicActor: Actor = {
@@ -577,6 +584,7 @@ export function createDomain(
     secrets?: Sealer;
     publicUrl?: string;
     mail?: ((message: MailMessage) => Promise<void>) | undefined;
+    sources?: ImportSources;
   } = {},
 ) {
   const handlers: Handlers = {
@@ -617,6 +625,8 @@ export function createDomain(
     "accept_invitation",
     "delete_workspace",
     "preview_import",
+    "list_import_source_projects",
+    "preview_source_import",
     "list_imports",
     "get_import",
     "start_import",
@@ -629,11 +639,18 @@ export function createDomain(
     "search_tickets",
     "search_workspace",
   ]);
+  // Writes that read another tracker first. They run outside the write lock, like reads, so a slow
+  // source holds up no one, and keep their own local writes in one transaction.
+  const readsSource: ReadonlySet<Operation> = new Set([
+    "list_import_source_projects",
+    "preview_source_import",
+  ]);
   const withServices = (ctx: Context) => {
     if (services.blobs) ctx.blobs = services.blobs;
     if (services.search) ctx.search = services.search;
     if (services.secrets) ctx.secrets = services.secrets;
     if (services.publicUrl) ctx.publicUrl = services.publicUrl;
+    if (services.sources) ctx.sources = services.sources;
     return ctx;
   };
   // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
@@ -685,7 +702,7 @@ export function createDomain(
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
     };
-    if (spec.method === "GET")
+    if (spec.method === "GET" || readsSource.has(name))
       return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
     const committed = await locked(async (tx) => {
       const requestId = "requestId" in input ? input.requestId : undefined;

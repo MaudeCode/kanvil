@@ -230,13 +230,20 @@ it("reads tickets and drafts from before start dates and workflows and keeps edi
     }),
   ).toThrow();
 });
-it("takes a requestId on every write except those returning a one-time secret", () => {
-  // A replay receipt would store the secret, so these writes are the only ones without one.
+it("takes a requestId on every write except those holding a one-time secret", () => {
+  // A replay receipt would store the secret, so these writes are the only ones without one:
+  // three return a secret, and the source reads carry the credentials of another tracker.
   const unreplayable = Object.entries(operations)
     .filter(([, spec]) => spec.method !== "GET" && !("requestId" in spec.input.shape))
     .map(([name]) => name);
   expect(new Set(unreplayable)).toEqual(
-    new Set(["create_calendar_feed", "create_invitation", "resend_invitation"]),
+    new Set([
+      "create_calendar_feed",
+      "create_invitation",
+      "resend_invitation",
+      "list_import_source_projects",
+      "preview_source_import",
+    ]),
   );
 });
 it("defaults legacy public authentication capabilities for web and native clients", () => {
