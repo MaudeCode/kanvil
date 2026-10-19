@@ -34,7 +34,8 @@ import { toast } from "sonner";
 import { formatDistanceToNowStrict, isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
-import ReactMarkdown from "react-markdown";
+import { toggleTask } from "./lib/markdown.ts";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   errorMessage,
@@ -56,6 +57,7 @@ import { Input as TextInput } from "@/components/ui/input";
 import { Textarea as TextareaInput } from "@/components/ui/textarea";
 import { Field, FieldLabel, FieldContent, FieldDescription } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Select as SelectRoot,
   SelectContent,
@@ -115,15 +117,25 @@ export const fieldClass =
 export const reportError = (error: unknown) => toast.error(errorMessage(error));
 export function IconButton({
   label,
+  shortcut,
   children,
   ...props
-}: ComponentProps<typeof Button> & { label: string }) {
+}: ComponentProps<typeof Button> & { label: string; shortcut?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={label} {...props} />}>
         {children}
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>
+        {label}
+        {shortcut && (
+          <KbdGroup>
+            {shortcut.split(" ").map((key) => (
+              <Kbd key={key}>{key}</Kbd>
+            ))}
+          </KbdGroup>
+        )}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -365,19 +377,74 @@ export function TicketIndicator({
     </Badge>
   );
 }
-const markdownComponents = {
-  a: ({ children, ...props }: ComponentProps<"a">) => (
+type MarkdownNode = NonNullable<ExtraProps["node"]>;
+const nodeText = (node: MarkdownNode | MarkdownNode["children"][number]): string =>
+  node.type === "text"
+    ? node.value
+    : node.type === "element" && !["ul", "ol"].includes(node.tagName)
+      ? node.children.map(nodeText).join("")
+      : "";
+// The rendered source and its writer, plus the checklist item each checkbox belongs to.
+const MarkdownSource = createContext<{ source: string; onChange?: (next: string) => void }>({
+  source: "",
+});
+const MarkdownTask = createContext<{ offset: number | undefined; label: string } | null>(null);
+function MarkdownCheckbox({ checked }: { checked: boolean }) {
+  const { source, onChange } = useContext(MarkdownSource),
+    task = useContext(MarkdownTask),
+    offset = task?.offset;
+  return (
+    <Checkbox
+      checked={checked}
+      aria-label={task?.label}
+      disabled={!onChange || offset === undefined}
+      onCheckedChange={(next) => {
+        if (onChange && offset !== undefined) onChange(toggleTask(source, offset, next));
+      }}
+      className="relative top-0.5 -ml-6 mr-2 inline-flex"
+    />
+  );
+}
+const markdownComponents: Components = {
+  a: ({ children, node: _node, ...props }) => (
     <a {...props} target="_blank" rel="noreferrer">
       {children}
     </a>
   ),
+  li: ({ children, node, className, ...props }) =>
+    className?.includes("task-list-item") && node ? (
+      <li {...props} className={cn(className, "list-none")}>
+        <MarkdownTask value={{ offset: node.position?.start.offset, label: nodeText(node).trim() }}>
+          {children}
+        </MarkdownTask>
+      </li>
+    ) : (
+      <li {...props} className={className}>
+        {children}
+      </li>
+    ),
+  input: ({ node: _node, ...props }) =>
+    props.type === "checkbox" ? (
+      <MarkdownCheckbox checked={!!props.checked} />
+    ) : (
+      <input {...props} />
+    ),
 };
-export function Markdown({ children }: { children: string }) {
+// `onChange` makes checklist items toggleable; without it the rendering stays read-only.
+export function Markdown({
+  children,
+  onChange,
+}: {
+  children: string;
+  onChange?: (next: string) => void;
+}) {
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {children}
-      </ReactMarkdown>
+      <MarkdownSource value={{ source: children, ...(onChange ? { onChange } : {}) }}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {children}
+        </ReactMarkdown>
+      </MarkdownSource>
     </div>
   );
 }
