@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-test("sidebar resizing and contextual ticket and project actions work", async ({ page }) => {
+test("sidebar resizing and contextual ticket and project actions work", async ({
+  page,
+  context,
+}) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -39,7 +42,12 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   ).json();
   const ticket = await (
     await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
-      data: { title: "Contextual ticket actions", status: "todo" },
+      data: {
+        title: "Contextual ticket actions",
+        status: "todo",
+        description: "Keep **Markdown**",
+        acceptanceCriteria: "- [ ] Copied",
+      },
     })
   ).json();
   await page.goto(`/projects/${project.id}`);
@@ -77,12 +85,41 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await link().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Copy key and title", exact: true }).click();
   await expect(page.getByText("Ticket copied", { exact: true })).toBeVisible();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const copied = async (item: string, expected: string) => {
+    await link().click({ button: "right" });
+    await page.getByRole("menuitem", { name: item, exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
+  };
+  await copied("Copy title", "Contextual ticket actions");
+  await copied(
+    "Copy as Markdown",
+    `# ${ticket.key}: Contextual ticket actions\n\n## Description\n\nKeep **Markdown**\n\n## Acceptance criteria\n\n- [ ] Copied\n`,
+  );
+  await copied("Copy branch name", `${ticket.key}-contextual-ticket-actions`);
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  await page.getByRole("button", { name: "Ticket actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Copy branch name", exact: true }).click();
+  await expect(page.getByText("Branch name copied", { exact: true })).toBeVisible();
+  await page.goto(`/projects/${project.id}`);
   await link().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit ticket", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Edited from the context menu");
   await page.getByRole("button", { name: "Save ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const edited = page.getByRole("link", { name: "Edited from the context menu", exact: true });
+  // The menu's earlier ticket read is still cached; copies must use the refreshed row.
+  const ticketPath = `/api/v1/projects/${project.id}/tickets/${ticket.id}`;
+  await page.route(`**${ticketPath}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await route.fallback();
+  });
+  await edited.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy title", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("Edited from the context menu");
+  await page.unroute(`**${ticketPath}`);
   await edited.click({ button: "right" });
   await page.screenshot({ path: "test-results/ticket-context-menu.png", fullPage: true });
   await page.getByRole("menuitem", { name: "Delete ticket", exact: true }).click();
