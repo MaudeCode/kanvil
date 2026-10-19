@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   NotebookTabs,
 } from "lucide-react";
+import { format, isValid, parseISO, startOfToday } from "date-fns";
 import {
   useTable,
   tableFeatures,
@@ -86,6 +87,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
+import { TicketSchedule, scheduleWindow } from "./components/ticket-schedule.tsx";
 import { TicketEditor } from "./ticket-editor.tsx";
 import { TicketPreviewSheet } from "./ticket-detail.tsx";
 import { writeListOrder } from "./lib/list-order.ts";
@@ -105,6 +107,7 @@ import {
   resetPreferences,
   ticketDisplayPreferences,
   usePreference,
+  weekStarts,
 } from "./hooks/use-preference.ts";
 const features = tableFeatures({
   columnSizingFeature,
@@ -304,6 +307,13 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     ),
   },
   {
+    accessorKey: "startAt",
+    header: ticketColumnLabels.startAt,
+    size: 100,
+    minSize: 90,
+    cell: ({ row }) => <DueDate value={row.original.startAt} open={false} />,
+  },
+  {
     accessorKey: "dueAt",
     header: ticketColumnLabels.dueAt,
     size: 100,
@@ -337,6 +347,7 @@ const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
   difficulty: "difficulty",
   kind: "kind",
   assigneeId: "assignee",
+  startAt: "start",
   dueAt: "due",
   createdAt: "created",
   updatedAt: "updated",
@@ -397,8 +408,9 @@ export function TicketList({
   // Pushes a history entry when `push` is set; filter changes replace the current one.
   onSearch: (next: TicketSearch, push?: boolean) => void;
 }) {
-  // The previewed ticket rides in the URL beside the filters but never changes what the list loads.
-  const { peek, peekProject, ...search } = route;
+  // The previewed ticket and the calendar or timeline period ride in the URL beside the filters;
+  // neither is part of a saved view.
+  const { peek, peekProject, period, ...search } = route;
   const project = "project" in scope ? scope.project : undefined;
   const projectAccess = useProjectAccess(project?.id ?? "", !!project);
   // My work spans projects: rows edit inline through their own project's access, and
@@ -414,17 +426,27 @@ export function TicketList({
   const planning = "project" in scope && !!scope.planning;
   // The board shows a project's active work in status lanes; planning and My work stay lists.
   const board = !!project && !planning && layout === "board";
+  // A project's active work can show as a calendar or timeline of one ungrouped, date-bounded fetch.
+  const schedule =
+    !!project && !planning && (layout === "calendar" || layout === "timeline") ? layout : undefined;
+  const [weekStart] = usePreference(preferences.weekStart);
+  // A day that does not exist, such as 2026-02-31, falls back to today.
+  const periodDay = period ? parseISO(period) : undefined,
+    anchor = periodDay && isValid(periodDay) ? periodDay : startOfToday(),
+    range = schedule ? scheduleWindow(schedule, anchor, weekStarts[weekStart]) : undefined;
   const grouping: TicketGrouping | "planning" = planning
     ? "planning"
     : board
       ? "status"
-      : project
-        ? projectGrouping
-        : workGrouping;
+      : schedule
+        ? "none"
+        : project
+          ? projectGrouping
+          : workGrouping;
   const [labelDisplay] = usePreference(preferences.labelDisplay),
     [density] = usePreference(preferences.density),
     [visibility, setVisibility] = usePreference(preferences.columns);
-  const filterKey = JSON.stringify({ ...search, offset: 0, grouping });
+  const filterKey = JSON.stringify({ ...search, offset: 0, grouping, range });
   const [paging, setPaging] = useState<{ filterKey: string; pages: Record<string, number> }>({
     filterKey,
     pages: {},
@@ -462,6 +484,14 @@ export function TicketList({
             projectId: project.id,
             ...search,
             ...(entry.status ? { status: entry.status, statusNot: undefined } : {}),
+            ...(range
+              ? {
+                  scheduledFrom: range.from.toISOString(),
+                  scheduledTo: range.to.toISOString(),
+                  sort: "start" as const,
+                  order: "asc" as const,
+                }
+              : {}),
             archived: entry.archived ?? search.archived,
             offset,
             limit: pageSize,
@@ -688,7 +718,7 @@ export function TicketList({
         : Math.min(orderedIds.length - 1, Math.max(0, index + delta));
     setActive(orderedIds[next] ?? null);
   };
-  const rowKeys = { enabled: !creating && !peek };
+  const rowKeys = { enabled: !creating && !peek && !schedule };
   // Enter and the arrows keep their default on focused links, buttons, and pickers, except
   // inside the highlighted row, where a closed picker still has focus after Escape.
   const navKeys = {
@@ -758,10 +788,11 @@ export function TicketList({
       return next;
     });
   };
+  // Filter changes keep the layout and its period.
   const changeSearch = (next: TicketSearch) => {
     table.resetRowSelection();
-    setPaging({ filterKey: JSON.stringify({ ...next, offset: 0, grouping }), pages: {} });
-    onSearch(next);
+    setPaging({ filterKey: JSON.stringify({ ...next, offset: 0, grouping, range }), pages: {} });
+    onSearch({ ...next, period });
   };
   useShortcut(
     "c",
@@ -877,7 +908,7 @@ export function TicketList({
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  {canWrite && (
+                  {canWrite && !schedule && (
                     <DropdownMenuItem
                       onClick={() => table.toggleAllRowsSelected(!table.getIsAllRowsSelected())}
                     >
@@ -1139,6 +1170,16 @@ export function TicketList({
             </div>
           )}
         </div>
+      ) : schedule && range ? (
+        <TicketSchedule
+          layout={schedule}
+          tickets={all}
+          anchor={anchor}
+          range={range}
+          onAnchor={(next) =>
+            onSearch({ ...route, period: next ? format(next, "yyyy-MM-dd") : undefined })
+          }
+        />
       ) : (
         <div className="table-scroll min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [&_[data-slot=table-container]]:overflow-visible">
           {/* One table per section lets each sticky heading be pushed away by the next one; the
@@ -1319,7 +1360,7 @@ export function TicketList({
       )}
       {!tickets.isPending && !tickets.error && (
         <footer className="shrink-0 py-2 text-xs text-muted-foreground">
-          {tickets.data.total} tickets
+          {tickets.data.total} {schedule ? "scheduled tickets" : "tickets"}
         </footer>
       )}
       <TicketPreviewSheet

@@ -71,10 +71,10 @@ export const stateTones: Record<(typeof states)[number], keyof typeof palettes.l
 
 const id = z.string().min(1).max(80);
 const timestamp = z.iso.datetime();
-// PostgreSQL rejects year 0, which the ISO grammar allows.
+// PostgreSQL rejects year 0, which the ISO grammar allows. Start and due dates share it.
 export const dueDate = z.iso
   .datetime()
-  .refine((value) => new Date(value).getUTCFullYear() >= 1, "Due date must be in year 1 or later");
+  .refine((value) => new Date(value).getUTCFullYear() >= 1, "Use a date in year 1 or later");
 const version = z.number().int().positive();
 const text = z.string().trim().min(1);
 const tags = z
@@ -199,6 +199,7 @@ export const ticketFilter = z
         "title",
         "labels",
         "due",
+        "start",
         "number",
         "status",
         "difficulty",
@@ -217,6 +218,7 @@ export const sortLabels: Record<z.output<typeof ticketFilter>["sort"], string> =
   title: "Title",
   labels: "Labels",
   due: "Due date",
+  start: "Start date",
   number: "Ticket number",
   status: "Status",
   difficulty: "Difficulty",
@@ -231,6 +233,7 @@ export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" |
   title: "asc",
   labels: "asc",
   due: "asc",
+  start: "asc",
   number: "asc",
   status: "asc",
   difficulty: "asc",
@@ -259,6 +262,9 @@ export const ticketFields = z
     parentId: z.uuid().nullable(),
     automationReady: z.boolean(),
     holdReason: z.string().trim().max(2000).nullable(),
+    // Clients store a start as the beginning of the chosen day and a due date as its end, both in
+    // the author's zone, so either date is a whole day. A start may not follow the due date.
+    startAt: dueDate.nullable(),
     dueAt: dueDate.nullable(),
     archived: z.boolean(),
   })
@@ -302,6 +308,8 @@ export const projectSchema = z.object({
   updatedAt: timestamp,
 });
 export const ticketSchema = ticketFields.extend({
+  // Servers that predate start dates omit the field.
+  startAt: dueDate.nullable().default(null),
   claimRequired: z.boolean(),
   id: z.uuid(),
   projectId: z.uuid(),
@@ -464,6 +472,22 @@ export const resourceSchema = resourceFields.extend({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
+// A read-only iCalendar subscription to a project's scheduled open tickets. The secret token is
+// returned once at creation; the server keeps only its hash.
+export const calendarFeedSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  name: text.max(80),
+  // Only tickets with any of these labels; empty means every label.
+  labels: tags,
+  // The IANA zone whose calendar days the feed's all-day events use.
+  timeZone: z.string(),
+  createdBy: z.string(),
+  createdAt: timestamp,
+  // False once the creator can no longer read the project; the link then stops working.
+  active: z.boolean(),
+});
+export type CalendarFeed = z.output<typeof calendarFeedSchema>;
 export const eventSchema = z.object({
   id: z.string().regex(/^\d+$/),
   projectId: z.uuid(),
@@ -784,6 +808,8 @@ export const eventLabels: Record<string, string> = {
   "resource.added": "Link added",
   "resource.updated": "Link edited",
   "resource.removed": "Link removed",
+  "calendar_feed.created": "Calendar feed created",
+  "calendar_feed.revoked": "Calendar feed revoked",
   "project.created": "Project created",
   "project.updated": "Project updated",
   "membership.updated": "Project access changed",
@@ -1011,6 +1037,10 @@ export const operations = {
         ...pagination,
         // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
         relatedTo: id.optional(),
+        // Only tickets whose span, from the start (or due) date to the due (or start) date,
+        // overlaps [scheduledFrom, scheduledTo). Either bound alone also excludes undated tickets.
+        scheduledFrom: timestamp.optional(),
+        scheduledTo: timestamp.optional(),
       })
       .superRefine(rejectConflicts),
     page(ticketSchema),
@@ -1114,6 +1144,7 @@ export const operations = {
         priority: z.enum(priorities).default("medium"),
         kind: z.enum(kinds).default("feature"),
         difficulty: z.enum(difficulties).nullable().default(null),
+        startAt: dueDate.nullable().default(null),
         dueAt: dueDate.nullable().default(null),
         labels: tags.default([]),
         scopes: tags.default([]),
@@ -1503,6 +1534,38 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/subscription",
     "read",
     "Subscribe to ticket updates or unsubscribe.",
+  ),
+  list_calendar_feeds: op(
+    projectInput,
+    z.array(calendarFeedSchema),
+    "GET",
+    "/projects/{projectId}/calendar-feeds",
+    "admin",
+    "List the project's calendar feeds. Tokens are never returned after creation.",
+  ),
+  create_calendar_feed: op(
+    // No requestId: the response carries the only copy of the token, so it is never stored in a
+    // replay receipt.
+    projectInput
+      .extend({
+        name: text.max(80),
+        labels: tags.default([]),
+        timeZone: z.string().min(1).max(64),
+      })
+      .strict(),
+    calendarFeedSchema.extend({ token: z.string(), path: z.string() }),
+    "POST",
+    "/projects/{projectId}/calendar-feeds",
+    "admin",
+    "Share the project's open, unarchived tickets that have a start or due date, optionally only those with any of the given labels, as an iCalendar feed of all-day events in the given IANA time zone. Anyone with the returned path can read the feed's ticket keys, titles, statuses, and dates; the token is shown only in this response.",
+  ),
+  revoke_calendar_feed: op(
+    projectInput.extend({ ...mutation, feedId: z.uuid() }).strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/calendar-feeds/{feedId}",
+    "admin",
+    "Revoke a calendar feed. Its link stops working immediately.",
   ),
   list_views: op(
     projectInput,

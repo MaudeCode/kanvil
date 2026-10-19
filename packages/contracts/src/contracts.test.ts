@@ -13,7 +13,10 @@ import {
   resourceProvider,
   ticketFilter,
   ticketPredicates,
+  ticketFields,
+  ticketSchema,
 } from "./index.ts";
+import { ticketDraftSchema } from "./drafts.ts";
 
 describe("agent write contracts", () => {
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
@@ -139,6 +142,60 @@ describe("agent write contracts", () => {
   });
 });
 
+it("reads tickets and drafts from before start dates and keeps edits partial", () => {
+  const legacy = ticketSchema.parse({
+    title: "Older server",
+    description: "",
+    acceptanceCriteria: "",
+    status: "todo",
+    priority: "none",
+    kind: "feature",
+    difficulty: null,
+    labels: [],
+    scopes: [],
+    assigneeId: null,
+    parentId: null,
+    automationReady: false,
+    holdReason: null,
+    dueAt: null,
+    archived: false,
+    claimRequired: false,
+    id: "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+    projectId: "7f9619ff-8b86-4011-b42d-00c04fc964ff",
+    key: "OLD-1",
+    number: 1,
+    version: 1,
+    createdBy: "user",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  expect(legacy.startAt).toBeNull();
+  // A draft saved before start dates existed still opens.
+  const draft = ticketDraftSchema.parse({
+    fields: ticketFields.strip().omit({ startAt: true }).parse(legacy),
+  });
+  expect(draft.fields.startAt).toBeNull();
+  // A change that names only the due date never clears the start date.
+  const update = operations.update_ticket.input.parse({
+    projectId: "p",
+    ticketId: "t",
+    expectedVersion: 1,
+    changes: { dueAt: "2026-03-09T03:59:59.999Z" },
+  });
+  expect(update.changes).toEqual({ dueAt: "2026-03-09T03:59:59.999Z" });
+  expect(() =>
+    operations.list_tickets.input.parse({ projectId: "p", scheduledFrom: "next week" }),
+  ).toThrow();
+  // The secret is never replayable, so feed creation takes no requestId.
+  expect(() =>
+    operations.create_calendar_feed.input.parse({
+      projectId: "p",
+      name: "Feed",
+      timeZone: "UTC",
+      requestId: "8f9619ff-8b86-4011-b42d-00c04fc964ff",
+    }),
+  ).toThrow();
+});
 it("defaults legacy public authentication capabilities for web and native clients", () => {
   const legacy = {
     name: "Kanvil",

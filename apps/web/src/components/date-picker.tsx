@@ -147,9 +147,53 @@ export function credentialExpiry(date: Date, now = Date.now()) {
   end.setHours(23, 59, 59, 999);
   return Math.min(365 * 86400, Math.floor((end.getTime() - now) / 1000));
 }
-// Due dates are stored as the end of the chosen day in the user's zone.
+// Due dates are stored as the end of the chosen day in the user's zone, start dates as its
+// beginning, so both name whole days and a start on the due day still precedes it.
 export function endOfDay(date: Date) {
   const end = new Date(date);
   end.setHours(23, 59, 59, 999);
   return end.toISOString();
+}
+export function startOfDay(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
+}
+type Schedule = { startAt: string | null; dueAt: string | null };
+// A ticket's start and due pickers. Each bounds the other, so the start never follows the due date.
+export function ScheduleDates({
+  value,
+  onChange,
+  variant,
+  disabled = false,
+}: {
+  value: Schedule;
+  onChange: (change: Partial<Schedule>) => void;
+  variant: "pill" | "row";
+  disabled?: boolean;
+}) {
+  const start = value.startAt ? new Date(value.startAt) : null,
+    due = value.dueAt ? new Date(value.dueAt) : null;
+  return (
+    <>
+      <DatePicker
+        variant={variant}
+        label="Start date"
+        placeholder={variant === "pill" ? "Start" : "No start date"}
+        value={start}
+        disabled={disabled}
+        {...(due ? { bounds: { to: due } } : {})}
+        onChange={(date) => onChange({ startAt: date ? startOfDay(date) : null })}
+      />
+      <DatePicker
+        variant={variant}
+        label="Due date"
+        placeholder={variant === "pill" ? "Due" : "No due date"}
+        value={due}
+        disabled={disabled}
+        {...(start ? { bounds: { from: start } } : {})}
+        onChange={(date) => onChange({ dueAt: date ? endOfDay(date) : null })}
+      />
+    </>
+  );
 }

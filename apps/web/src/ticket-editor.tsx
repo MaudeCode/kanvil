@@ -24,7 +24,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MarkdownField } from "./components/markdown-field.tsx";
 import { TicketPicker } from "./components/ticket-picker.tsx";
-import { DatePicker, endOfDay } from "./components/date-picker.tsx";
+import { ScheduleDates } from "./components/date-picker.tsx";
 import { TagInput } from "./components/tag-input.tsx";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import { ProjectProperty, TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
@@ -123,8 +123,9 @@ export function TicketEditor({
     setDraft(base);
     setSavedLocally(false);
   }
-  const set = <K extends keyof Fields>(key: K, value: Fields[K]) =>
-    changeDraft({ ...latest.current, fields: { ...latest.current.fields, [key]: value } });
+  const setFields = (change: Partial<Fields>) =>
+    changeDraft({ ...latest.current, fields: { ...latest.current.fields, ...change } });
+  const set = <K extends keyof Fields>(key: K, value: Fields[K]) => setFields({ [key]: value });
   // A new ticket may target another writable project; its parent and assignee must belong there.
   // The target applies at once, and submitting waits until the assignee is checked against the
   // latest choice, so a ticket never goes to the previous project or with a stale assignee.
@@ -256,13 +257,7 @@ export function TicketEditor({
         onChange={(difficulty) => set("difficulty", difficulty)}
       />
       <TagsProperty value={fields.labels} onChange={(value) => set("labels", value)} />
-      <DatePicker
-        variant="pill"
-        label="Due date"
-        placeholder="Due"
-        value={fields.dueAt ? new Date(fields.dueAt) : null}
-        onChange={(date) => set("dueAt", date ? endOfDay(date) : null)}
-      />
+      <ScheduleDates variant="pill" value={fields} onChange={setFields} />
       <TicketPicker
         variant="pill"
         label="Parent ticket"
@@ -473,13 +468,7 @@ export function TicketEditor({
                 value={fields.difficulty}
                 onChange={(difficulty) => set("difficulty", difficulty)}
               />
-              <DatePicker
-                variant="row"
-                label="Due date"
-                placeholder="No due date"
-                value={fields.dueAt ? new Date(fields.dueAt) : null}
-                onChange={(date) => set("dueAt", date ? endOfDay(date) : null)}
-              />
+              <ScheduleDates variant="row" value={fields} onChange={setFields} />
               <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
                 <span className="text-xs text-muted-foreground">Agents</span>
                 <Toggle

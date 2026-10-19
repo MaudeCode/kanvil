@@ -1,7 +1,8 @@
-import { and, eq, inArray, isNotNull, sql, type SQLWrapper } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or, sql, type SQLWrapper } from "drizzle-orm";
 import { z } from "zod";
 import { roles } from "@kanvil/contracts";
 import { projects } from "./schema.ts";
+import { user } from "./auth-schema.ts";
 import type { Actor, Context } from "./domain.ts";
 // One effective-role rule serves requests, discovery, notifications, and delivery revalidation.
 export function projectRoleSQL(userId: string | SQLWrapper, projectId: string | SQLWrapper) {
@@ -13,6 +14,15 @@ export function projectRoleSQL(userId: string | SQLWrapper, projectId: string | 
     LEFT JOIN workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ${userId}
     WHERE p.id = ${projectId})`;
 }
+// A joined user who is active and can read the project, directly or as an instance administrator.
+export const readsProject = (projectId: SQLWrapper) =>
+  and(
+    or(
+      isNotNull(projectRoleSQL(user.id, projectId)),
+      sql`'admin' = any(string_to_array(${user.role}, ','))`,
+    ),
+    sql`not coalesce(${user.banned}, false)`,
+  );
 export async function projectRole(
   db: Context["db"],
   actor: Actor,

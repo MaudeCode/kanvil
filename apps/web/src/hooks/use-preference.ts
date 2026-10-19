@@ -15,6 +15,7 @@ const defaultColumns: Record<string, boolean> = {
   kind: false,
   scopes: false,
   assigneeId: false,
+  startAt: false,
   createdAt: false,
   updatedAt: false,
 };

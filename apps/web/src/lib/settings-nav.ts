@@ -1,6 +1,7 @@
 import {
   Bell,
   Building2,
+  CalendarSync,
   HardDrive,
   KeyRound,
   Network,
@@ -38,6 +39,7 @@ const project: Sections<typeof projectSections> = {
   ...workspace,
   labels: { label: "Labels", icon: Tags },
   integrations: { label: "Integrations", icon: Webhook },
+  calendar: { label: "Calendar feeds", icon: CalendarSync },
 };
 const admin: Sections<typeof adminSections> = {
   general: { label: "General", icon: Settings2 },

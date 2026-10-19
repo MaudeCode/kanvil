@@ -1,7 +1,7 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import {
   closedStates,
   eventCategories,
@@ -41,12 +41,13 @@ import {
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
-import { projectRole, projectRoleSQL } from "./project-access.ts";
+import { projectRole, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
+import { calendarHandlers } from "./calendar-operations.ts";
 
 export interface Actor {
   id: string;
@@ -288,11 +289,7 @@ export type Recipient = {
 // A joined user who can still read the project, is active, and has a delivery channel on.
 export const reachable = (projectId: SQLWrapper) =>
   and(
-    or(
-      isNotNull(projectRoleSQL(user.id, projectId)),
-      sql`'admin' = any(string_to_array(${user.role}, ','))`,
-    ),
-    sql`not coalesce(${user.banned}, false)`,
+    readsProject(projectId),
     or(
       sql`coalesce(${notificationPreferences.inApp}, true)`,
       eq(notificationPreferences.push, true),
@@ -510,6 +507,7 @@ export function createDomain(
     ...ticketHandlers,
     ...collaborationHandlers,
     ...deliveryHandlers,
+    ...calendarHandlers,
   };
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([

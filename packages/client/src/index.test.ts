@@ -27,3 +27,41 @@ it("creates valid, retry-stable write IDs when an HTTP browser has no randomUUID
     vi.unstubAllGlobals();
   }
 });
+it("sends no requestId to writes that do not accept one", async () => {
+  const bodies: unknown[] = [];
+  const client = createClient({
+    baseUrl: "http://localhost:5180",
+    fetch: async (_input, init) => {
+      if (typeof init?.body !== "string") throw new Error("Expected a JSON request body");
+      bodies.push(JSON.parse(init.body));
+      return Response.json({
+        id: "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+        projectId: "7f9619ff-8b86-4011-b42d-00c04fc964ff",
+        name: "Feed",
+        labels: [],
+        timeZone: "UTC",
+        createdBy: "user",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        active: true,
+        token: "kvcal_secret",
+        path: "/api/calendar/kvcal_secret.ics",
+      });
+    },
+  });
+  await client.call("create_calendar_feed", { projectId: "p", name: "Feed", timeZone: "UTC" });
+  expect(bodies).toEqual([{ name: "Feed", labels: [], timeZone: "UTC" }]);
+});
+it("does not repeat a write without a requestId when its response is lost", async () => {
+  let attempts = 0;
+  const client = createClient({
+    baseUrl: "http://localhost:5180",
+    fetch: async () => {
+      attempts += 1;
+      throw new TypeError("Lost response");
+    },
+  });
+  await expect(
+    client.call("create_calendar_feed", { projectId: "p", name: "Feed", timeZone: "UTC" }),
+  ).rejects.toThrow("Lost response");
+  expect(attempts).toBe(1);
+});

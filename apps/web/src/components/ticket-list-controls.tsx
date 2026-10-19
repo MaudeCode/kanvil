@@ -504,9 +504,12 @@ export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
             options={[
               ["list", "List"],
               ["board", "Board"],
+              ["calendar", "Calendar"],
+              ["timeline", "Timeline"],
             ]}
           />
-          {/* The board always has a lane per status. */}
+          {/* Only the list groups: the board has a lane per status, and the calendar and timeline
+              place tickets by date. */}
           {layout === "list" && (
             <DisplayToggle
               label="Group by"
