@@ -36,9 +36,6 @@ function unavailable(row: Row) {
   if (status !== "pending")
     fail(410, "invitation_unavailable", `This invitation is ${status}`, { reason: status });
 }
-function requireSession(ctx: Context) {
-  if (ctx.actor.machine) fail(403, "session_required", "Open invitations from a signed-in account");
-}
 async function projectsOf(ctx: Context, rows: Row[]) {
   const ids = [...new Set(rows.flatMap((row) => row.projectIds ?? []))];
   return ids.length
@@ -131,7 +128,6 @@ async function assertNoLiveInvitation(ctx: Context, email: string, except?: stri
     fail(409, "invitation_pending", "This email already has a pending invitation; resend it");
 }
 async function byToken(ctx: Context, token: string) {
-  requireSession(ctx);
   const row = (
     await ctx.db
       .select({ invitation: invitations, workspace: { id: workspaces.id, name: workspaces.name } })

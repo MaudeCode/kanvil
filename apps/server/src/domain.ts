@@ -523,6 +523,8 @@ export function createDomain(
     ...calendarHandlers,
     ...invitationHandlers,
   };
+  // Operations that act for the person signed in, never for a credential.
+  const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([
     "list_projects",
@@ -540,6 +542,9 @@ export function createDomain(
     const projectId = "projectId" in input ? input.projectId : undefined;
     const workspaceId =
       "workspaceId" in input && !workspaceIsFilter.has(name) ? input.workspaceId : undefined;
+    // Checked first: every credential is project-bound and would otherwise get a scope error.
+    if (actor.machine && sessionOnly.has(name))
+      fail(403, "session_required", "Use a signed-in account for this action");
     if (actor.projectIds && spec.method !== "GET" && !projectId)
       fail(
         403,

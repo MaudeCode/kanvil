@@ -150,7 +150,13 @@ describe("workspace invitations", () => {
       code: "invitation_email_mismatch",
     });
     await expect(accept(`${token}x`)).rejects.toMatchObject({ status: 404 });
-    await expect(accept(token, { ...guest, machine: true })).rejects.toMatchObject({
+    // Every API credential is bound to projects; it still gets the session-only answer.
+    const credential = { ...guest, machine: true, projectIds: [] };
+    await expect(accept(token, credential)).rejects.toMatchObject({
+      status: 403,
+      code: "session_required",
+    });
+    await expect(domain.execute("get_invitation", { token }, credential)).rejects.toMatchObject({
       status: 403,
       code: "session_required",
     });
