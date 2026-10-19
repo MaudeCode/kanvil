@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { type Ticket, type Project, type Output } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, projectsQuery, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { Confirm, Modal, Loading, reportError } from "../ui.tsx";
@@ -121,7 +122,7 @@ function PropertyMenu({
 async function copy(value: string, label: string) {
   try {
     await copyText(value);
-    toast.success(`${label} copied`);
+    toast.success(t("ticket.menu.copied", { label }));
   } catch (error) {
     reportError(error);
   }
@@ -235,17 +236,17 @@ export function TicketContextMenu({
               }
             >
               <FolderOpen />
-              Open ticket
+              {t("ticket.menu.open")}
             </ContextMenuItem>
             {onPreview && (
               <ContextMenuItem onClick={onPreview}>
                 <PanelRight />
-                Preview
+                {t("ticket.menu.preview")}
               </ContextMenuItem>
             )}
             <ContextMenuItem render={<a href={href} target="_blank" rel="noreferrer" />}>
               <ExternalLink />
-              Open in new tab
+              {t("ticket.menu.newTab")}
             </ContextMenuItem>
             {ticketCopyActions.map((action) => (
               <ContextMenuItem key={action.label} onClick={() => void copyTicket(action, current)}>
@@ -260,7 +261,7 @@ export function TicketContextMenu({
             onClick={() => (onEdit ? onEdit() : setEditing(true))}
           >
             <Pencil />
-            Edit ticket
+            {t("ticket.menu.edit")}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={!access.canWrite || duplicate.isPending}
@@ -268,7 +269,7 @@ export function TicketContextMenu({
               void duplicate
                 .mutateAsync({ projectId: current.projectId, ticketId: current.id })
                 .then(async (created) => {
-                  toast.success(`Created ${created.key}`);
+                  toast.success(t("ticket.menu.created", { key: created.key }));
                   await navigate({
                     to: "/projects/$projectId/tickets/$ticketId",
                     params: { projectId: created.projectId, ticketId: created.id },
@@ -278,7 +279,7 @@ export function TicketContextMenu({
             }}
           >
             <CopyPlus />
-            Duplicate ticket
+            {t("ticket.menu.duplicate")}
           </ContextMenuItem>
           {propertyOrder.map((name) => (
             <PropertyMenu
@@ -294,7 +295,7 @@ export function TicketContextMenu({
             <ContextMenuSub>
               <ContextMenuSubTrigger>
                 <ArrowUp />
-                Move
+                {t("ticket.menu.move")}
               </ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-60">
                 <MoveItems moves={moves()} />
@@ -303,12 +304,12 @@ export function TicketContextMenu({
           )}
           <ContextMenuItem disabled={!access.canWrite} onClick={() => setRelocating(true)}>
             <FolderInput />
-            Move to project…
+            {t("ticket.menu.moveToProject")}
           </ContextMenuItem>
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={!access.canWrite || update.pending}>
               <CalendarDays />
-              Due date
+              {t("ticket.date.due")}
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-auto p-0">
               {/* The calendar keeps its own arrow-key grid; the menu still closes on Escape. */}
@@ -318,7 +319,7 @@ export function TicketContextMenu({
                 }}
               >
                 <DateCalendar
-                  label="Due date"
+                  label={t("ticket.date.due")}
                   value={current.dueAt ? new Date(current.dueAt) : null}
                   clearable={!!current.dueAt}
                   autoFocus
@@ -343,7 +344,7 @@ export function TicketContextMenu({
             }}
           >
             {read.data?.subscribed ? <BellOff /> : <Bell />}
-            {read.data?.subscribed ? "Unfollow ticket" : "Follow ticket"}
+            {read.data?.subscribed ? t("ticket.menu.unfollow") : t("ticket.menu.follow")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
@@ -351,7 +352,7 @@ export function TicketContextMenu({
             onClick={() => change({ archived: !current.archived })}
           >
             <Archive />
-            {current.archived ? "Unarchive ticket" : "Archive ticket"}
+            {current.archived ? t("ticket.menu.unarchive") : t("ticket.menu.archive")}
           </ContextMenuItem>
           <ContextMenuItem
             variant="destructive"
@@ -359,11 +360,16 @@ export function TicketContextMenu({
             onClick={() => setDeleting(true)}
           >
             <Trash2 />
-            Delete ticket
+            {t("ticket.menu.delete")}
           </ContextMenuItem>
         </Content>
       </Root>
-      <Modal size="composer" title={`Edit ${ticket.key}`} open={editing} onOpenChange={setEditing}>
+      <Modal
+        size="composer"
+        title={t("ticket.menu.editTitle", { key: ticket.key })}
+        open={editing}
+        onOpenChange={setEditing}
+      >
         {editing && (
           <Suspense fallback={<Loading />}>
             <TicketEditor
@@ -374,14 +380,18 @@ export function TicketContextMenu({
           </Suspense>
         )}
       </Modal>
-      <Modal title={`Move ${ticket.key}`} open={relocating} onOpenChange={setRelocating}>
+      <Modal
+        title={t("ticket.menu.moveTitle", { key: ticket.key })}
+        open={relocating}
+        onOpenChange={setRelocating}
+      >
         {relocating && (
           <TicketMoveForm
             ticket={current}
             onCancel={() => setRelocating(false)}
             onMoved={(moved) => {
               setRelocating(false);
-              toast.success(`Moved to ${moved.key}`);
+              toast.success(t("ticket.menu.moved", { key: moved.key }));
               if (location.pathname === href)
                 void navigate({
                   to: "/projects/$projectId/tickets/$ticketId",
@@ -393,12 +403,12 @@ export function TicketContextMenu({
         )}
       </Modal>
       <Confirm
-        label="Delete ticket"
+        label={t("ticket.menu.delete")}
         danger
         trigger={false}
         open={deleting}
         onOpenChange={setDeleting}
-        description={`Permanently delete ${ticket.key}, its comments, relationships, and attachments?`}
+        description={t("ticket.menu.deleteConfirm", { key: ticket.key })}
         onConfirm={async () => {
           await remove.mutateAsync({
             projectId: current.projectId,
@@ -442,45 +452,53 @@ export function ProjectContextMenu({
         <ContextMenuTrigger render={children} className="select-text" />
         <ContextMenuContent className="w-56">
           <ContextMenuGroup>
-            <ContextMenuLabel>{project.name}</ContextMenuLabel>
+            <ContextMenuLabel dir="auto">{project.name}</ContextMenuLabel>
             <ContextMenuItem
               render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
             >
               <FolderOpen />
-              Open project
+              {t("ticket.menu.openProject")}
             </ContextMenuItem>
             <ContextMenuItem
               render={<a href={`/projects/${project.id}`} target="_blank" rel="noreferrer" />}
             >
               <ExternalLink />
-              Open in new tab
+              {t("ticket.menu.newTab")}
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => {
-                void copy(new URL(`/projects/${project.id}`, location.origin).href, "Project link");
+                void copy(
+                  new URL(`/projects/${project.id}`, location.origin).href,
+                  t("ticket.menu.projectLink"),
+                );
               }}
             >
               <Link2 />
-              Copy link
+              {t("ticket.menu.copyLink")}
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuItem disabled={!access.canWrite} onClick={() => setCreating(true)}>
             <Plus />
-            New ticket
+            {t("ticket.menu.newTicket")}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={!access.canManage}
             render={<Link to="/projects/$projectId/settings" params={{ projectId: project.id }} />}
           >
             <Settings />
-            Project settings
+            {t("ticket.menu.projectSettings")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <MoveItems moves={moves} keys={false} />
         </ContextMenuContent>
       </ContextMenu>
-      <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
+      <Modal
+        size="composer"
+        title={t("ticket.menu.newTicket")}
+        open={creating}
+        onOpenChange={setCreating}
+      >
         {creating && (
           <Suspense fallback={<Loading />}>
             <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />
@@ -507,18 +525,18 @@ export function UserContextMenu({
       <ContextMenuTrigger render={children} className="select-text" />
       <ContextMenuContent className="w-56">
         <ContextMenuGroup>
-          <ContextMenuLabel>{name}</ContextMenuLabel>
+          <ContextMenuLabel dir="auto">{name}</ContextMenuLabel>
           <ContextMenuItem onClick={onOpen}>
             <Settings />
-            Manage account
+            {t("ticket.menu.manageAccount")}
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => {
-              void copy(email, "Email");
+              void copy(email, t("ticket.menu.email"));
             }}
           >
             <Copy />
-            Copy email
+            {t("ticket.menu.copyEmail")}
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>

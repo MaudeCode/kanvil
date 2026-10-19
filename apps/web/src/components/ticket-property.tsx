@@ -24,7 +24,9 @@ import {
 } from "lucide-react";
 import {
   difficulties,
+  difficultyLabels,
   formatCustomFieldValue,
+  kindLabels,
   kinds,
   priorities,
   priorityLabels,
@@ -38,6 +40,7 @@ import {
   type WorkflowState,
 } from "@kanvil/contracts";
 import { format, parseISO } from "date-fns";
+import { labelTable, t } from "@kanvil/contracts/i18n";
 import {
   api,
   useIdentity,
@@ -88,13 +91,6 @@ export type PropertyValues = {
   assignee: string | null;
 };
 export type PropertyName = keyof PropertyValues;
-export const propertyLabels: Record<PropertyName, string> = {
-  status: "Status",
-  priority: "Priority",
-  kind: "Kind",
-  difficulty: "Difficulty",
-  assignee: "Assignee",
-};
 // The order every property toolbar and menu lists them in.
 export const propertyOrder = [
   "status",
@@ -103,6 +99,9 @@ export const propertyOrder = [
   "kind",
   "difficulty",
 ] as const satisfies PropertyName[];
+export const propertyLabels = labelTable<PropertyName>(propertyOrder, (property) =>
+  t(`ticket.property.${property}`),
+);
 export const propertyIcons: Record<PropertyName, typeof Bug> = {
   status: CircleDot,
   priority: Flag,
@@ -142,24 +141,12 @@ const writers: {
 export function propertyChange<P extends PropertyName>(property: P, value: PropertyValues[P]) {
   return writers[property](value);
 }
-export const kindLabels: Record<Ticket["kind"], string> = {
-  feature: "Feature",
-  bug: "Bug",
-  chore: "Chore",
-  research: "Research",
-  documentation: "Documentation",
-};
 const kindIcons: Record<Ticket["kind"], typeof Bug> = {
   feature: Sparkles,
   bug: Bug,
   chore: Wrench,
   research: FlaskConical,
   documentation: BookOpen,
-};
-export const difficultyLabels: Record<NonNullable<Ticket["difficulty"]>, string> = {
-  low: "Low",
-  med: "Medium",
-  high: "High",
 };
 // Three bars filled to the level read at a glance, like Linear's estimate bars.
 function DifficultyBars({ level, className }: { level: Ticket["difficulty"]; className?: string }) {
@@ -227,7 +214,7 @@ export function PropertyValue({
           className={cn("inline-flex items-center gap-1.5", !difficulty && "text-muted-foreground")}
         >
           <DifficultyBars level={difficulty} className={cn(difficulty && "text-foreground")} />
-          {!iconOnly && (difficulty ? difficultyLabels[difficulty] : "No difficulty")}
+          {!iconOnly && (difficulty ? difficultyLabels[difficulty] : t("common.difficulty.none"))}
         </span>
       );
     }
@@ -237,7 +224,7 @@ export function PropertyValue({
         return (
           <span className="inline-flex items-center gap-1.5 text-muted-foreground">
             <CircleUserRound className="size-3.5" aria-hidden="true" />
-            {!iconOnly && "Unassigned"}
+            {!iconOnly && t("common.state.unassigned")}
           </span>
         );
       const { name, image } = person;
@@ -245,7 +232,9 @@ export function PropertyValue({
         <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
           <UserAvatar name={name} image={image} className="size-4 text-[8px]" />
           {!iconOnly && (
-            <span className="truncate">{id === identity.id ? `${name} (you)` : name}</span>
+            <span className="truncate">
+              {id === identity.id ? t("ticket.property.you", { name }) : name}
+            </span>
           )}
         </span>
       );
@@ -274,14 +263,14 @@ const optionsFor: {
     priorities.map((priority) => ({ value: priority, label: priorityLabels[priority] })),
   kind: () => kinds.map((kind) => ({ value: kind, label: kindLabels[kind] })),
   difficulty: () => [
-    { value: null, label: "No difficulty" },
+    { value: null, label: t("common.difficulty.none") },
     ...difficulties.map((difficulty) => ({
       value: difficulty,
       label: difficultyLabels[difficulty],
     })),
   ],
   assignee: (members) => [
-    { value: null, label: "Unassigned" },
+    { value: null, label: t("common.state.unassigned") },
     ...members.map((member) => ({
       value: member.userId,
       label: member.name,
@@ -383,8 +372,12 @@ export function TicketProperty<P extends PropertyName>({
       {variant === "row" ? <PropertyRow label={label}>{trigger}</PropertyRow> : trigger}
       <PopoverContent align={align} className="w-60 p-0">
         <ChoiceList
-          placeholder={`${property === "assignee" ? "Assign to" : `Set ${label.toLowerCase()}`}…`}
-          searchLabel={`Search ${label.toLowerCase()}`}
+          placeholder={
+            property === "assignee"
+              ? t("ticket.property.assignTo")
+              : t("ticket.property.set", { label })
+          }
+          searchLabel={t("ticket.property.search", { label })}
           choices={options.map((option) => ({
             ...option,
             node: <PropertyValue {...pair(property, option.value)} projectId={projectId} />,
@@ -442,7 +435,7 @@ function ChoiceList<V>({
             {choice.checked && <Check className={numbered ? "" : "ml-auto"} />}
           </CommandItem>
         ))}
-        <CommandEmpty>No matches</CommandEmpty>
+        <CommandEmpty>{t("ticket.property.noMatches")}</CommandEmpty>
       </CommandList>
     </Command>
   );
@@ -538,7 +531,7 @@ export function TagsProperty({
 }) {
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState<string[]>([]);
-  const label = kind === "label" ? "Labels" : "Scopes",
+  const label = kind === "label" ? t("ticket.tags.labels") : t("ticket.tags.scopes"),
     current = mixed ? [] : value,
     shown = variant === "pill" ? current.slice(0, 3) : current,
     hidden = current.length - shown.length;
@@ -557,10 +550,10 @@ export function TagsProperty({
           )}
           aria-label={
             mixed
-              ? `Edit ${label.toLowerCase()}: mixed`
+              ? t("ticket.tags.editMixed", { label })
               : current.length
-                ? `Edit ${label.toLowerCase()}: ${current.join(", ")}`
-                : `Edit ${label.toLowerCase()}`
+                ? t("ticket.tags.editValues", { label, tags: current.join(", ") })
+                : t("ticket.tags.edit", { label })
           }
         />
       }
@@ -571,16 +564,18 @@ export function TagsProperty({
       {current.length === 0 ? (
         <span className={cn("text-muted-foreground", textClassName)}>
           {mixed
-            ? `Mixed ${label.toLowerCase()}`
+            ? t("ticket.tags.mixed", { label })
             : variant === "pill"
               ? label
-              : `No ${label.toLowerCase()}`}
+              : t("ticket.tags.none", { label })}
         </span>
       ) : (
         <span className={cn("flex min-w-0 flex-wrap items-center gap-1", textClassName)}>
           {shown.map((tag) => (
             <TicketTag key={tag} tag={tag} kind={kind} className="max-w-28">
-              <span className="truncate">{tag}</span>
+              <span dir="auto" className="truncate">
+                {tag}
+              </span>
             </TicketTag>
           ))}
           {hidden > 0 && <span className="text-xs text-muted-foreground">+{hidden}</span>}
@@ -613,7 +608,7 @@ export function TagsProperty({
           <>
             {mixed && (
               <p className="mb-2 text-xs text-muted-foreground">
-                The selected tickets have different {label.toLowerCase()}.
+                {t("ticket.tags.mixedNote", { label })}
               </p>
             )}
             <TagInput label={label} kind={kind} value={draft} onChange={setDraft} />
@@ -624,14 +619,14 @@ export function TagsProperty({
                 disabled={!mixed && !value.length}
                 onClick={() => apply([])}
               >
-                Clear {label.toLowerCase()}
+                {t("ticket.tags.clear", { label })}
               </Button>
               <Button
                 size="sm"
                 disabled={!draft.length || (!mixed && draft.join("\n") === value.join("\n"))}
                 onClick={() => apply(draft)}
               >
-                Replace {label.toLowerCase()}
+                {t("ticket.tags.replace", { label })}
               </Button>
             </div>
           </>
@@ -666,7 +661,7 @@ export function FieldValue({ field, value }: { field: CustomField; value: Stored
       <span className="flex min-w-0 flex-wrap items-center gap-1">
         {(Array.isArray(value) ? value : [String(value)]).map((optionId) => {
           const option = field.options.find((choice) => choice.id === optionId),
-            name = option?.name ?? "Removed option";
+            name = option?.name ?? t("common.customField.removedOption");
           return (
             <TicketTag
               key={optionId}
@@ -674,7 +669,9 @@ export function FieldValue({ field, value }: { field: CustomField; value: Stored
               color={option?.color ?? "gray"}
               className="max-w-40"
             >
-              <span className="truncate">{name}</span>
+              <span dir="auto" className="truncate">
+                {name}
+              </span>
             </TicketTag>
           );
         })}
@@ -684,7 +681,7 @@ export function FieldValue({ field, value }: { field: CustomField; value: Stored
     return (
       <span className="inline-flex items-center gap-1.5">
         <SquareCheck className="size-3.5 text-primary" aria-hidden="true" />
-        Yes
+        {t("common.customField.checked")}
       </span>
     );
   // Wraps rather than truncates, so a trigger sized to its content keeps the text.
@@ -735,11 +732,20 @@ export function CustomFieldProperty({
           aria-hidden="true"
         />
       )}
-      {variant === "pill" && <span className="truncate">{field.name}</span>}
+      {variant === "pill" && (
+        <span dir="auto" className="truncate">
+          {field.name}
+        </span>
+      )}
       {field.type === "checkbox" ? (
-        variant === "row" && (mixed ? "Mixed" : checked ? "Yes" : "No")
+        variant === "row" &&
+        (mixed
+          ? t("ticket.field.mixed")
+          : checked
+            ? t("common.customField.checked")
+            : t("ticket.field.unchecked"))
       ) : empty ? (
-        variant === "row" && (mixed ? "Mixed" : "No value")
+        variant === "row" && (mixed ? t("ticket.field.mixed") : t("ticket.field.noValue"))
       ) : (
         <FieldValue field={field} value={current} />
       )}
@@ -753,7 +759,13 @@ export function CustomFieldProperty({
         variant={variant === "row" ? "row" : "pill"}
         label={field.name}
         placeholder={
-          variant === "row" ? (mixed ? "Mixed" : "No value") : variant === "pill" ? field.name : ""
+          variant === "row"
+            ? mixed
+              ? t("ticket.field.mixed")
+              : t("ticket.field.noValue")
+            : variant === "pill"
+              ? field.name
+              : ""
         }
         value={toDay(current)}
         mixed={mixed}
@@ -824,13 +836,13 @@ export function CustomFieldProperty({
       >
         {choices ? (
           <ChoiceList
-            placeholder={`Set ${field.name.toLowerCase()}…`}
-            searchLabel={`Search ${field.name.toLowerCase()}`}
+            placeholder={t("ticket.property.set", { label: field.name })}
+            searchLabel={t("ticket.property.search", { label: field.name })}
             choices={[
               {
                 value: "",
-                label: "No value",
-                node: <span className="text-muted-foreground">No value</span>,
+                label: t("ticket.field.noValue"),
+                node: <span className="text-muted-foreground">{t("ticket.field.noValue")}</span>,
                 checked: !mixed && current === null,
               },
               ...field.options.map((option) => ({
@@ -883,11 +895,11 @@ export function CustomFieldProperty({
                     onChange(null);
                   }}
                 >
-                  Clear
+                  {t("common.action.clear")}
                 </Button>
               )}
               <Button size="sm" onClick={save}>
-                Save
+                {t("common.action.save")}
               </Button>
             </div>
           </div>
@@ -935,7 +947,7 @@ export function ProjectProperty({
   variant = "pill",
   disabled = false,
   exclude,
-  placeholder = "Create in project…",
+  placeholder = t("ticket.project.placeholder"),
 }: {
   value: string;
   onChange: (projectId: string) => void;
@@ -956,22 +968,30 @@ export function ProjectProperty({
           variant="ghost"
           size="sm"
           role="combobox"
-          aria-label="Project"
+          aria-label={t("ticket.project.label")}
           aria-expanded={open}
           className={triggerClass[variant]}
         />
       }
     >
       {project && <ProjectIcon project={project} className="size-4 rounded" />}
-      <span className="truncate">{project?.name ?? "Project"}</span>
+      <span className="truncate">{project?.name ?? t("ticket.project.label")}</span>
     </PopoverTrigger>
   );
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      {variant === "row" ? <PropertyRow label="Project">{trigger}</PropertyRow> : trigger}
+      {variant === "row" ? (
+        <PropertyRow label={t("ticket.project.label")}>{trigger}</PropertyRow>
+      ) : (
+        trigger
+      )}
       <PopoverContent align="start" className="w-64 p-0">
         <Command>
-          <CommandInput placeholder={placeholder} aria-label="Search projects" autoFocus />
+          <CommandInput
+            placeholder={placeholder}
+            aria-label={t("ticket.project.search")}
+            autoFocus
+          />
           <CommandList>
             {projects.data
               ?.filter((item) => item.id !== exclude)
@@ -986,7 +1006,7 @@ export function ProjectProperty({
                   }}
                 />
               ))}
-            <CommandEmpty>No matches</CommandEmpty>
+            <CommandEmpty>{t("ticket.property.noMatches")}</CommandEmpty>
           </CommandList>
         </Command>
       </PopoverContent>
@@ -1006,7 +1026,9 @@ function WritableProject({
   return (
     <CommandItem value={`${project.name} ${project.key}`} onSelect={onSelect}>
       <ProjectIcon project={project} className="size-4 rounded" />
-      <span className="truncate">{project.name}</span>
+      <span dir="auto" className="truncate">
+        {project.name}
+      </span>
       {selected && <Check className="ml-auto" />}
     </CommandItem>
   );
