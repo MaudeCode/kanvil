@@ -389,3 +389,74 @@ it("serves private uploaded project icons and protects referenced bytes from cle
     ).rows[0]?.icon_object_id,
   ).toBeNull();
 });
+
+it("serves private project backgrounds, keeps them through cleanup, and removes them", async () => {
+  const project = await readJson(projectSchema, "/api/v1/projects", "POST", {
+    key: "BACK",
+    name: "Background storage",
+  });
+  const path = `/api/v1/projects/${project.id}/background`;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXpUAAAAASUVORK5CYII=",
+    "base64",
+  );
+  expect(
+    (
+      await request(path, "POST", {
+        expectedVersion: project.version,
+        background: {
+          contentType: "image/png",
+          data: Buffer.from("not an image").toString("base64"),
+        },
+      })
+    ).status,
+  ).toBe(400);
+  const saved = await readJson(projectSchema, path, "POST", {
+    expectedVersion: project.version,
+    background: { contentType: "image/png", data: png.toString("base64") },
+  });
+  expect(saved.background).toContain(path);
+  expect(saved.image).toBeNull();
+  expect(Buffer.from(await (await request(saved.background!)).arrayBuffer())).toEqual(png);
+  expect(
+    (
+      await request(path, "POST", {
+        expectedVersion: project.version,
+        background: null,
+      })
+    ).status,
+  ).toBe(409);
+  const person = await fixture.auth.api.createUser({
+    body: {
+      name: "Background outsider",
+      email: "background-outsider@example.test",
+      password: "Isolated outsider password 42!",
+      role: "user",
+    },
+  });
+  const outsider = cookieOf(
+    await request(
+      "/api/auth/sign-in/email",
+      "POST",
+      { email: person.user.email, password: "Isolated outsider password 42!" },
+      "",
+    ),
+  );
+  expect((await request(saved.background!, "GET", undefined, outsider)).status).toBe(404);
+  expect(
+    (await request(path, "POST", { expectedVersion: saved.version, background: null }, outsider))
+      .status,
+  ).toBe(404);
+  await fixture.database.pool.query(
+    "UPDATE blob_objects SET created_at = now() - interval '2 days' WHERE id = (SELECT background_object_id FROM projects WHERE id = $1)",
+    [project.id],
+  );
+  await request("/api/v1/admin/storage/cleanup", "POST");
+  expect((await request(saved.background!)).status).toBe(200);
+  const removed = await readJson(projectSchema, path, "POST", {
+    expectedVersion: saved.version,
+    background: null,
+  });
+  expect(removed.background).toBeNull();
+  expect((await request(path)).status).toBe(404);
+});

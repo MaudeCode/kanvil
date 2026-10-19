@@ -121,10 +121,18 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
   }
 }
 
+// Stores an uploaded project image; the previous one becomes an orphan for blob cleanup.
+async function storeImage(ctx: Context, image: { data: string; contentType: string }) {
+  const objectId = crypto.randomUUID();
+  await ctx.blobs.put(ctx.db, objectId, decodeImage(image), image.contentType);
+  return objectId;
+}
+
 export const projectHandlers: Pick<
   Handlers,
   | "get_project"
   | "set_project_icon"
+  | "set_project_background"
   | "list_projects"
   | "create_project"
   | "update_project"
@@ -244,11 +252,7 @@ export const projectHandlers: Pick<
     const icon = input.icon;
     if (icon?.kind === "library" && !icons.icons[icon.name])
       fail(400, "invalid_icon", "Choose an icon from the installed library");
-    let objectId: string | null = null;
-    if (icon?.kind === "image") {
-      objectId = crypto.randomUUID();
-      await ctx.blobs.put(ctx.db, objectId, decodeImage(icon), icon.contentType);
-    }
+    const objectId = icon?.kind === "image" ? await storeImage(ctx, icon) : null;
     const row = one(
       await ctx.db
         .update(projects)
@@ -257,6 +261,25 @@ export const projectHandlers: Pick<
           iconColor: icon?.kind === "library" ? icon.color : "default",
           image: objectId ? `/api/v1/projects/${current.id}/icon?v=${objectId}` : null,
           iconObjectId: objectId,
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, current.id))
+        .returning(),
+    );
+    await publish(ctx, "project.updated", null, { version: row.version });
+    return row;
+  },
+  async set_project_background(ctx, input) {
+    const current = project(ctx);
+    assertVersion(current, input.expectedVersion, "project background", "saving");
+    const objectId = input.background ? await storeImage(ctx, input.background) : null;
+    const row = one(
+      await ctx.db
+        .update(projects)
+        .set({
+          background: objectId ? `/api/v1/projects/${current.id}/background?v=${objectId}` : null,
+          backgroundObjectId: objectId,
           version: current.version + 1,
           updatedAt: new Date(),
         })

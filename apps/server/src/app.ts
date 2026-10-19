@@ -267,38 +267,44 @@ export async function createApplication(
   });
   registerInstanceRoutes(app, database, instance, blobs, search, realtime, auth);
   accounts.register(app);
-  app.openAPIRegistry.registerPath({
-    method: "get",
-    path: "/api/v1/projects/{projectId}/icon",
-    security: [{ sessionCookie: [] }],
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: {
-      200: {
-        description: "Private project icon",
-        content: {
-          "image/png": { schema: z.string() },
-          "image/jpeg": { schema: z.string() },
-          "image/webp": { schema: z.string() },
+  // Uploaded project images: the icon and the background behind its ticket views.
+  for (const [image, column, description] of [
+    ["icon", projects.iconObjectId, "Private project icon"],
+    ["background", projects.backgroundObjectId, "Private project background"],
+  ] as const) {
+    app.openAPIRegistry.registerPath({
+      method: "get",
+      path: `/api/v1/projects/{projectId}/${image}`,
+      security: [{ sessionCookie: [] }],
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: {
+          description,
+          content: {
+            "image/png": { schema: z.string() },
+            "image/jpeg": { schema: z.string() },
+            "image/webp": { schema: z.string() },
+          },
         },
+        404: { description: `Project ${image} unavailable` },
       },
-      404: { description: "Project icon unavailable" },
-    },
-  });
-  app.get("/api/v1/projects/:projectId/icon", async (c) => {
-    const project = await domain.execute(
-      "get_project",
-      { projectId: c.req.param("projectId") },
-      c.get("actor"),
-    );
-    const row = one(
-      await database.db
-        .select({ objectId: projects.iconObjectId })
-        .from(projects)
-        .where(eq(projects.id, project.id)),
-    );
-    if (!row.objectId) fail(404, "not_found", "This project has no uploaded icon");
-    return imageResponse(await blobs.get(row.objectId));
-  });
+    });
+    app.get(`/api/v1/projects/:projectId/${image}`, async (c) => {
+      const project = await domain.execute(
+        "get_project",
+        { projectId: c.req.param("projectId") },
+        c.get("actor"),
+      );
+      const row = one(
+        await database.db
+          .select({ objectId: column })
+          .from(projects)
+          .where(eq(projects.id, project.id)),
+      );
+      if (!row.objectId) fail(404, "not_found", `This project has no uploaded ${image}`);
+      return imageResponse(await blobs.get(row.objectId));
+    });
+  }
 
   app.get("/api/v1/credentials", async (c) => {
     const identity = c.get("actor");
