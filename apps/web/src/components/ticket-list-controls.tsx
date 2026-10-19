@@ -25,14 +25,13 @@ import {
 } from "../ui.tsx";
 import {
   searchSchema,
+  ticketColumnLabels,
   ticketDensitySchema,
   ticketLabelDisplaySchema,
   ticketGroupingSchema,
-  type TicketGrouping,
   type TicketSearch,
-  type TicketDensity,
-  type TicketLabelDisplay,
 } from "../search.ts";
+import { preferences, usePreference } from "../hooks/use-preference.ts";
 import { Popover, PopoverTrigger, PopoverContent, PopoverTitle } from "@/components/ui/popover";
 import {
   Command,
@@ -52,30 +51,14 @@ export function TicketListControls({
   projectId,
   search,
   onSearch,
-  columns,
-  onColumnChange,
   onReset,
-  density,
-  onDensityChange,
-  labelDisplay,
-  onLabelDisplayChange,
-  grouping,
-  onGroupingChange,
   view,
   actions,
 }: {
   projectId: string;
   search: TicketSearch;
   onSearch: (search: TicketSearch) => void;
-  columns: { id: string; label: string; visible: boolean }[];
-  onColumnChange: (id: string, visible: boolean) => void;
   onReset: () => void;
-  density: TicketDensity;
-  onDensityChange: (density: TicketDensity) => void;
-  labelDisplay: TicketLabelDisplay;
-  onLabelDisplayChange: (display: TicketLabelDisplay) => void;
-  grouping: TicketGrouping;
-  onGroupingChange: (grouping: TicketGrouping) => void;
   view: ReactNode;
   actions: ReactNode;
 }) {
@@ -300,47 +283,7 @@ export function TicketListControls({
                 ["desc", "Descending"],
               ]}
             />
-            <DisplayToggle
-              label="Group by"
-              value={grouping}
-              onChange={(value) => onGroupingChange(ticketGroupingSchema.parse(value))}
-              options={[
-                ["status", "Status"],
-                ["none", "None"],
-              ]}
-            />
-            <Separator />
-            <DisplayToggle
-              label="Row spacing"
-              value={density}
-              onChange={(value) => onDensityChange(ticketDensitySchema.parse(value))}
-              options={[
-                ["compact", "Compact"],
-                ["comfortable", "Comfortable"],
-              ]}
-            />
-            <DisplayToggle
-              label="Label display"
-              value={labelDisplay}
-              onChange={(value) => onLabelDisplayChange(ticketLabelDisplaySchema.parse(value))}
-              options={[
-                ["compact", "Compact preview"],
-                ["all", "All labels"],
-              ]}
-            />
-            <fieldset>
-              <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>
-              <div className="grid grid-cols-2 gap-x-3">
-                {columns.map((column) => (
-                  <Check
-                    key={column.id}
-                    label={column.label}
-                    checked={column.visible}
-                    onCheckedChange={(checked) => onColumnChange(column.id, checked)}
-                  />
-                ))}
-              </div>
-            </fieldset>
+            <TicketDisplayPreferences />
             <Separator />
             <Button variant="ghost" onClick={onReset}>
               Reset display
@@ -413,6 +356,59 @@ export function TicketListControls({
           </Button>
         </div>
       )}
+    </>
+  );
+}
+
+// The personal list preferences, shared by the Display popover and Settings.
+export function TicketDisplayPreferences() {
+  const [grouping, setGrouping] = usePreference(preferences.grouping),
+    [density, setDensity] = usePreference(preferences.density),
+    [labelDisplay, setLabelDisplay] = usePreference(preferences.labelDisplay),
+    [columns, setColumns] = usePreference(preferences.columns);
+  return (
+    <>
+      <DisplayToggle
+        label="Group by"
+        value={grouping}
+        onChange={(value) => setGrouping(ticketGroupingSchema.parse(value))}
+        options={[
+          ["status", "Status"],
+          ["none", "None"],
+        ]}
+      />
+      <Separator />
+      <DisplayToggle
+        label="Row spacing"
+        value={density}
+        onChange={(value) => setDensity(ticketDensitySchema.parse(value))}
+        options={[
+          ["compact", "Compact"],
+          ["comfortable", "Comfortable"],
+        ]}
+      />
+      <DisplayToggle
+        label="Label display"
+        value={labelDisplay}
+        onChange={(value) => setLabelDisplay(ticketLabelDisplaySchema.parse(value))}
+        options={[
+          ["compact", "Compact preview"],
+          ["all", "All labels"],
+        ]}
+      />
+      <fieldset>
+        <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>
+        <div className="grid grid-cols-2 gap-x-3">
+          {Object.entries(ticketColumnLabels).map(([id, label]) => (
+            <Check
+              key={id}
+              label={label}
+              checked={columns[id] ?? true}
+              onCheckedChange={(checked) => setColumns({ ...columns, [id]: checked })}
+            />
+          ))}
+        </div>
+      </fieldset>
     </>
   );
 }

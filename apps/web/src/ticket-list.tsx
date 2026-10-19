@@ -13,7 +13,6 @@ import {
   columnVisibilityFeature,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { z } from "zod";
 import {
   ticketFilter,
   closedStates,
@@ -74,16 +73,13 @@ import { writeListOrder } from "./lib/list-order.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { cn } from "@/lib/utils";
 
+import { searchSchema, ticketColumnLabels, type TicketSearch } from "./search.ts";
 import {
-  searchSchema,
-  ticketDensitySchema,
-  ticketLabelDisplaySchema,
-  ticketGroupingSchema,
-  type TicketGrouping,
-  type TicketSearch,
-  type TicketDensity,
-  type TicketLabelDisplay,
-} from "./search.ts";
+  preferences,
+  resetPreferences,
+  ticketDisplayPreferences,
+  usePreference,
+} from "./hooks/use-preference.ts";
 const features = tableFeatures({
   columnSizingFeature,
   columnResizingFeature,
@@ -91,13 +87,6 @@ const features = tableFeatures({
   columnVisibilityFeature,
 });
 const pageSize = 100;
-const defaultVisibility = {
-  kind: false,
-  scopes: false,
-  assigneeId: false,
-  createdAt: false,
-  updatedAt: false,
-};
 function TicketStatusHeader({
   status,
   count,
@@ -126,14 +115,6 @@ function TicketStatusHeader({
       </Button>
     </div>
   );
-}
-function readDisplayPreference<T>(key: string, schema: z.ZodType<T>, fallback: T): T {
-  try {
-    const result = schema.safeParse(localStorage.getItem(key));
-    return result.success ? result.data : fallback;
-  } catch {
-    return fallback;
-  }
 }
 // Inline property editing on a row; readers see the plain value.
 function PropertyCell<P extends PropertyName>({
@@ -189,7 +170,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       />
     ),
   },
-  { accessorKey: "key", header: "Ticket", size: 100, minSize: 90 },
+  { accessorKey: "key", header: ticketColumnLabels.key, size: 100, minSize: 90 },
   {
     accessorKey: "title",
     header: "Title",
@@ -210,7 +191,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     (key) =>
       ({
         accessorKey: key,
-        header: key === "labels" ? "Labels" : "Scopes",
+        header: ticketColumnLabels[key],
         size: 180,
         minSize: 120,
         cell: ({ row }) => (
@@ -224,7 +205,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   ),
   {
     accessorKey: "status",
-    header: "Status",
+    header: ticketColumnLabels.status,
     size: 115,
     minSize: 105,
     cell: ({ row }) => (
@@ -233,7 +214,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   },
   {
     accessorKey: "priority",
-    header: "Priority",
+    header: ticketColumnLabels.priority,
     size: 72,
     minSize: 64,
     cell: ({ row }) => (
@@ -247,7 +228,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   },
   {
     accessorKey: "difficulty",
-    header: "Difficulty",
+    header: ticketColumnLabels.difficulty,
     size: 90,
     minSize: 85,
     cell: ({ row }) => (
@@ -256,7 +237,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   },
   {
     accessorKey: "kind",
-    header: "Kind",
+    header: ticketColumnLabels.kind,
     size: 110,
     cell: ({ row }) => (
       <PropertyCell ticket={row.original} property="kind" value={row.original.kind} />
@@ -264,7 +245,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   },
   {
     accessorKey: "assigneeId",
-    header: "Assignee",
+    header: ticketColumnLabels.assigneeId,
     size: 160,
     cell: ({ row }) => (
       <PropertyCell ticket={row.original} property="assignee" value={row.original.assigneeId} />
@@ -272,7 +253,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
   },
   {
     accessorKey: "dueAt",
-    header: "Due",
+    header: ticketColumnLabels.dueAt,
     size: 100,
     minSize: 90,
     cell: ({ row }) => (
@@ -286,7 +267,7 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
     (key) =>
       ({
         accessorKey: key,
-        header: key === "createdAt" ? "Created" : "Updated",
+        header: ticketColumnLabels[key],
         size: 130,
         cell: ({ row }) => (
           <RelativeTime value={row.original[key]} className="text-muted-foreground" />
@@ -333,50 +314,10 @@ export function TicketList({
   const access = useProjectAccess(project.id);
   const identity = useIdentity();
   const navigate = useNavigate();
-  const storageKey = `kanvil:${identity.id}:ticket-columns`;
-  const densityKey = `kanvil:${identity.id}:ticket-density`;
-  const labelDisplayKey = `kanvil:${identity.id}:ticket-label-display`;
-  const groupingKey = `kanvil:${identity.id}:ticket-grouping`;
-  const [labelDisplay, setLabelDisplay] = useState<TicketLabelDisplay>(() =>
-    readDisplayPreference(labelDisplayKey, ticketLabelDisplaySchema, "compact"),
-  );
-  const [grouping, setGrouping] = useState<TicketGrouping>(() =>
-    readDisplayPreference(groupingKey, ticketGroupingSchema, "status"),
-  );
-  const [density, setDensity] = useState<TicketDensity>(() =>
-    readDisplayPreference(densityKey, ticketDensitySchema, "compact"),
-  );
-  const [visibility, setVisibility] = useState<Record<string, boolean>>(() => {
-    try {
-      return {
-        ...defaultVisibility,
-        ...z
-          .record(z.string(), z.boolean())
-          .parse(JSON.parse(localStorage.getItem(storageKey) ?? "{}")),
-      };
-    } catch {
-      return defaultVisibility;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(visibility));
-      localStorage.setItem(densityKey, density);
-      localStorage.setItem(labelDisplayKey, labelDisplay);
-      localStorage.setItem(groupingKey, grouping);
-    } catch {
-      /* Display controls work without storage. */
-    }
-  }, [
-    storageKey,
-    visibility,
-    densityKey,
-    density,
-    labelDisplayKey,
-    labelDisplay,
-    groupingKey,
-    grouping,
-  ]);
+  const [labelDisplay] = usePreference(preferences.labelDisplay),
+    [grouping] = usePreference(preferences.grouping),
+    [density] = usePreference(preferences.density),
+    [visibility, setVisibility] = usePreference(preferences.columns);
   const filterKey = JSON.stringify({ ...search, offset: 0, grouping });
   const [paging, setPaging] = useState<{ filterKey: string; pages: Record<string, number> }>({
     filterKey,
@@ -484,7 +425,8 @@ export function TicketList({
     columnResizeMode: "onChange",
     enableRowSelection: access.canWrite,
     state: { columnVisibility: { ...visibility, title: true, select: access.canWrite } },
-    onColumnVisibilityChange: setVisibility,
+    onColumnVisibilityChange: (change) =>
+      setVisibility(typeof change === "function" ? change(visibility) : change),
   });
   const selected = table.getSelectedRowModel().rows.map((row) => row.original);
   // Rows in the order they render: sections top to bottom, skipping collapsed ones.
@@ -673,26 +615,8 @@ export function TicketList({
             <Plus />
           </IconButton>
         }
-        density={density}
-        onDensityChange={setDensity}
-        labelDisplay={labelDisplay}
-        onLabelDisplayChange={setLabelDisplay}
-        grouping={grouping}
-        onGroupingChange={setGrouping}
-        columns={table
-          .getAllLeafColumns()
-          .filter((column) => column.getCanHide())
-          .map((column) => ({
-            id: column.id,
-            label: String(column.columnDef.header),
-            visible: column.getIsVisible(),
-          }))}
-        onColumnChange={(id, visible) => table.getColumn(id)?.toggleVisibility(visible)}
         onReset={() => {
-          setVisibility(defaultVisibility);
-          setDensity("compact");
-          setLabelDisplay("compact");
-          setGrouping("status");
+          resetPreferences(identity.id, ticketDisplayPreferences);
           changeSearch({ ...search, sort: "priority", order: undefined, offset: 0 });
         }}
       />

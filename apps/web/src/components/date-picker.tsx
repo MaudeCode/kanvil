@@ -6,6 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { fieldClass } from "../ui.tsx";
+import { preferences, usePreference, weekStarts } from "../hooks/use-preference.ts";
 import { cn } from "@/lib/utils";
 
 const format = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -28,7 +29,8 @@ export function DatePicker({
   disabled?: boolean;
 }) {
   const id = useId(),
-    [open, setOpen] = useState(false);
+    [open, setOpen] = useState(false),
+    [weekStart] = usePreference(preferences.weekStart);
   const clearable = variant !== "field" && !!value;
   const trigger = (
     <Popover open={open} onOpenChange={setOpen}>
@@ -57,6 +59,7 @@ export function DatePicker({
       <PopoverContent align="start" className="w-auto p-0">
         <Calendar
           mode="single"
+          weekStartsOn={weekStarts[weekStart]}
           selected={value ?? undefined}
           defaultMonth={value ?? bounds?.from ?? startOfToday()}
           onSelect={(date) => {

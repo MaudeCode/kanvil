@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { choose, signOut, toggleDisplay } from "./controls.ts";
 import { builtInThemes, encodeThemeFile } from "../apps/web/src/lib/themes.ts";
 
 test("profile avatar opens photo selection and supports replacement, errors, and retry", async ({
@@ -181,6 +181,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("button", { name: "Create API key", exact: true }).click();
   await page.getByLabel("Key name", { exact: true }).fill("Calendar fixture");
   await page.getByRole("checkbox", { name: "Preferences fixture", exact: true }).check();
+  await choose(page, "Expires", "Custom date");
   await page.getByRole("button", { name: "Expires on", exact: true }).click();
   const calendar = page.locator('[data-slot="calendar"]');
   await expect(calendar).toBeVisible();
@@ -251,5 +252,94 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
     new URL("/mcp", page.url()).href,
   );
   expect(project.id).toBeTruthy();
+  expect(errors).toEqual([]);
+});
+
+test("personal preferences agree with Display, set the week start, and reset or clear on sign-out", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "PRFS", name: "Personal preference fixture" },
+    })
+  ).json();
+  expect(
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: "Preference row" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.goto("/settings?section=preferences");
+  await choose(page, "Week starts on", "Monday");
+  await toggleDisplay(page, "Comfortable");
+  await page.getByRole("checkbox", { name: "Kind", exact: true }).check();
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Week starts on", exact: true })).toContainText(
+    "Monday",
+  );
+  await page.goto(`/projects/${project.id}`);
+  const table = page.getByRole("table", { name: "Tickets" });
+  await expect(table).toHaveAttribute("data-density", "comfortable");
+  await expect(page.getByRole("columnheader", { name: "Kind" })).toBeVisible();
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Comfortable", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await toggleDisplay(page, "Compact");
+  await page.keyboard.press("Escape");
+  await expect(table).toHaveAttribute("data-density", "compact");
+  await page.goto("/settings?section=preferences");
+  await expect(page.getByRole("button", { name: "Compact", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("tab", { name: "API keys", exact: true }).click();
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  await page.getByLabel("Key name", { exact: true }).fill("Permanent fixture");
+  await page.getByRole("checkbox", { name: "Personal preference fixture", exact: true }).check();
+  await expect(page.getByRole("combobox", { name: "Expires", exact: true })).toContainText(
+    "90 days",
+  );
+  await choose(page, "Expires", "Custom date");
+  await page.getByRole("button", { name: "Expires on", exact: true }).click();
+  await expect(page.locator('[data-slot="calendar"] .rdp-weekday').first()).toHaveText("Mo");
+  await page.keyboard.press("Escape");
+  await choose(page, "Expires", "No expiry");
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  await expect(page.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  const credential = (await (await page.request.get("/api/v1/credentials")).json()).find(
+    (value: { name: string }) => value.name === "Permanent fixture",
+  );
+  try {
+    expect(credential.expiresAt).toBeNull();
+    await expect(page.getByRole("row").filter({ hasText: "Permanent fixture" })).toContainText(
+      "Never",
+    );
+  } finally {
+    expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
+  }
+  await page.getByRole("tab", { name: "Preferences", exact: true }).click();
+  await page.getByRole("button", { name: "Reset preferences", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Week starts on", exact: true })).toContainText(
+    "Sunday",
+  );
+  await expect(page.getByRole("checkbox", { name: "Kind", exact: true })).not.toBeChecked();
+  await choose(page, "Sidebar on launch", "Collapsed");
+  await page.reload();
+  await expect(page.locator('[data-slot="sidebar"][data-state="collapsed"]')).toHaveCount(1);
+  await signOut(page);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).some(
+        (key) => key.endsWith(":sidebar") || key.endsWith(":week-start"),
+      ),
+    ),
+  ).toBe(false);
   expect(errors).toEqual([]);
 });

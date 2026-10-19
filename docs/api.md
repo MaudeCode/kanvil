@@ -8,7 +8,7 @@ Runnable MCP and durable realtime examples, plus the worker ownership sequence, 
 
 Browser and native clients use Better Auth sessions with local login or configured OIDC. Public registration is closed. Initial owner setup requires `KANVIL_SETUP_TOKEN` and is available only before any account exists.
 
-Unattended consumers use revocable, project-scoped API credentials in `Authorization: Bearer <key>`. Create credentials through an authenticated account at `POST /api/v1/credentials`, with a name, project IDs, and `read`, `write`, `claim`, or `admin` scopes. A scope never grants more access than the owning account has. The secret is returned only on creation. Delete a credential at `/api/v1/credentials/{id}` to revoke it.
+Unattended consumers use revocable, project-scoped API credentials in `Authorization: Bearer <key>`. Create credentials through an authenticated account at `POST /api/v1/credentials`, with a name, project IDs, `read`, `write`, `claim`, or `admin` scopes, and an optional `expiresIn` in seconds (one hour to one year). An omitted `expiresIn` expires the key after 90 days; `null` creates a key that never expires. A scope never grants more access than the owning account has. The secret is returned only on creation. Delete a credential at `/api/v1/credentials/{id}` to revoke it.
 
 ## Writes and ownership
 

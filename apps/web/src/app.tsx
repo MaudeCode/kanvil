@@ -83,6 +83,7 @@ import {
 } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
+import { preferences, usePreference } from "./hooks/use-preference.ts";
 
 const TicketList = lazy(() =>
   import("./ticket-list.tsx").then((module) => ({ default: module.TicketList })),
@@ -232,7 +233,8 @@ function useConnectionToast(connection: string) {
 function Shell() {
   const { projectId } = useParams({ strict: false });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const connection = useLive();
+  const connection = useLive(),
+    [sidebar] = usePreference(preferences.sidebar);
   useConnectionToast(connection);
   const info = useQuery({
     queryKey: ["info"],
@@ -245,7 +247,13 @@ function Shell() {
 
   return (
     <WorkspaceProvider>
-      <SidebarProvider defaultOpen={!document.cookie.split("; ").includes("sidebar_state=false")}>
+      <SidebarProvider
+        defaultOpen={
+          sidebar === "last"
+            ? !document.cookie.split("; ").includes("sidebar_state=false")
+            : sidebar === "expanded"
+        }
+      >
         <a
           className="fixed top-3 left-3 z-50 -translate-y-24 rounded-md bg-popover p-3 text-foreground shadow-md focus:translate-y-0"
           href="#main"

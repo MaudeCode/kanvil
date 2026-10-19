@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Check as CheckIcon, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 import {
+  credentialInput,
   credentialsSchema,
   createdCredentialSchema,
   okSchema,
@@ -47,6 +48,17 @@ import {
 } from "@/components/ui/table";
 import { DatePicker, credentialExpiry } from "./date-picker.tsx";
 import { copyText } from "../lib/browser.ts";
+import { formText } from "../forms.ts";
+
+// Key lifetimes in days; 90 matches the server default. No expiry is only an explicit choice.
+const expiryChoices = {
+  "7": "7 days",
+  "30": "30 days",
+  "90": "90 days",
+  "365": "1 year",
+  custom: "Custom date",
+  never: "No expiry",
+};
 const permissionText = {
   read: { name: "Read tickets", description: "View projects, tickets, comments, and attachments." },
   write: {
@@ -319,6 +331,7 @@ function CreateKey({
       expiry.setDate(expiry.getDate() + 90);
       return expiry;
     }),
+    [expiry, setExpiry] = useState("90"),
     [error, setError] = useState<unknown>(),
     [preset, setPreset] = useState("read"),
     [query, setQuery] = useState("");
@@ -337,11 +350,16 @@ function CreateKey({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: new FormData(event.currentTarget).get("name"),
+            name: formText(new FormData(event.currentTarget), "name"),
             projectIds,
             scopes: permissions,
-            expiresIn: credentialExpiry(expiresAt),
-          }),
+            expiresIn:
+              expiry === "never"
+                ? null
+                : expiry === "custom"
+                  ? credentialExpiry(expiresAt)
+                  : Number(expiry) * 86400,
+          } satisfies z.input<typeof credentialInput>),
         }),
       );
     } catch (cause) {
@@ -437,14 +455,26 @@ function CreateKey({
             ))}
           </FieldSet>
         )}
-        <DatePicker
-          label="Expires on"
-          value={expiresAt}
-          onChange={(chosen) => {
-            if (chosen) setExpiresAt(chosen);
-          }}
-          bounds={{ from: tomorrow, to: lastDay }}
-        />
+        <Select label="Expires" value={expiry} onValueChange={(value) => setExpiry(value ?? "90")}>
+          {Object.entries(expiryChoices).map(([value, label]) => (
+            <SelectItem key={value} value={value}>
+              {label}
+            </SelectItem>
+          ))}
+        </Select>
+        {expiry === "custom" && (
+          <DatePicker
+            label="Expires on"
+            value={expiresAt}
+            onChange={(chosen) => {
+              if (chosen) setExpiresAt(chosen);
+            }}
+            bounds={{ from: tomorrow, to: lastDay }}
+          />
+        )}
+        {expiry === "never" && (
+          <FieldDescription>The key works until you delete it.</FieldDescription>
+        )}
         <FormActions
           error={error}
           pending={pending}

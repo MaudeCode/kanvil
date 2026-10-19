@@ -1,11 +1,21 @@
 import { useAuthError } from "./hooks/use-auth-error.ts";
-import { UserRound, Palette, KeyRound, Bell } from "lucide-react";
+import { UserRound, Palette, KeyRound, Bell, Settings2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { infoSchema } from "@kanvil/contracts";
-import { api, auth } from "./data.tsx";
-import { Button, ErrorNotice, Input, Modal, SectionHeading, Loading, FormActions } from "./ui.tsx";
+import { api, auth, useIdentity } from "./data.tsx";
+import {
+  Button,
+  ErrorNotice,
+  Input,
+  Modal,
+  SectionHeading,
+  Loading,
+  FormActions,
+  Select,
+  SelectItem,
+} from "./ui.tsx";
 import { TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -13,11 +23,18 @@ import { SettingsLayout, SettingRow } from "./components/settings-layout.tsx";
 import { Credentials } from "./components/credentials-settings.tsx";
 import { ProfileSettings } from "./components/profile-settings.tsx";
 import { AppearanceSettings } from "./components/appearance.tsx";
+import { TicketDisplayPreferences } from "./components/ticket-list-controls.tsx";
+import {
+  preferences as browserPreferences,
+  resetPreferences,
+  usePreference,
+} from "./hooks/use-preference.ts";
 import { accountSections } from "./search.ts";
 import { formText } from "./forms.ts";
 const personalSections = [
   { id: "account", label: "Profile & security", icon: UserRound },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "preferences", label: "Preferences", icon: Settings2 },
   { id: "credentials", label: "API keys", icon: KeyRound },
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
@@ -178,6 +195,9 @@ export function AccountSettings({
       <TabsContent value="appearance">
         <AppearanceSettings />
       </TabsContent>
+      <TabsContent value="preferences">
+        <PreferenceSettings />
+      </TabsContent>
       <TabsContent value="credentials">
         <Credentials />
       </TabsContent>
@@ -185,6 +205,71 @@ export function AccountSettings({
         <NotificationPreferences pushAvailable={info.data?.push ?? false} />
       </TabsContent>
     </SettingsLayout>
+  );
+}
+function PreferenceSettings() {
+  const identity = useIdentity(),
+    [weekStart, setWeekStart] = usePreference(browserPreferences.weekStart),
+    [sidebar, setSidebar] = usePreference(browserPreferences.sidebar);
+  return (
+    <>
+      <section className="[&>.setting-row:last-child]:border-b-0">
+        <SectionHeading title="Behavior" />
+        <SettingRow title="Week starts on" description="Applies to every date picker.">
+          <Select
+            label="Week starts on"
+            labelHidden
+            className="mb-0 w-44"
+            value={weekStart}
+            onValueChange={(value) =>
+              setWeekStart(browserPreferences.weekStart.schema.parse(value))
+            }
+          >
+            <SelectItem value="sunday">Sunday</SelectItem>
+            <SelectItem value="monday">Monday</SelectItem>
+            <SelectItem value="saturday">Saturday</SelectItem>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Sidebar on launch"
+          description="Takes effect the next time Kanvil opens."
+        >
+          <Select
+            label="Sidebar on launch"
+            labelHidden
+            className="mb-0 w-44"
+            value={sidebar}
+            onValueChange={(value) => setSidebar(browserPreferences.sidebar.schema.parse(value))}
+          >
+            <SelectItem value="last">As last left</SelectItem>
+            <SelectItem value="expanded">Expanded</SelectItem>
+            <SelectItem value="collapsed">Collapsed</SelectItem>
+          </Select>
+        </SettingRow>
+      </section>
+      <section>
+        <SectionHeading title="Ticket lists" />
+        <div className="grid max-w-sm gap-3">
+          <TicketDisplayPreferences />
+        </div>
+      </section>
+      <section className="[&>.setting-row:last-child]:border-b-0">
+        <SettingRow
+          title="Reset preferences"
+          description="Restores these choices to their defaults in this browser."
+        >
+          <Button
+            variant="outline"
+            onClick={() => {
+              resetPreferences(identity.id, Object.values(browserPreferences));
+              toast.success("Preferences reset");
+            }}
+          >
+            Reset preferences
+          </Button>
+        </SettingRow>
+      </section>
+    </>
   );
 }
 function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) {

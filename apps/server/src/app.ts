@@ -20,7 +20,7 @@ import {
   errorSchema,
   operations,
   isOperation,
-  scopes,
+  credentialInput,
   notificationPreferencesSchema,
   notificationPreferencesInput,
   pushDeviceInput,
@@ -58,14 +58,6 @@ const setupInput = z
     email: z.email(),
     name: z.string().trim().min(1).max(120),
     password: z.string().min(12).max(128),
-  })
-  .strict();
-const keyInput = z
-  .object({
-    name: z.string().trim().min(1).max(100),
-    projectIds: z.array(z.uuid()).min(1).max(1000),
-    scopes: z.array(z.enum(scopes)).min(1),
-    expiresIn: z.number().int().min(3600).max(31_536_000).default(7_776_000),
   })
   .strict();
 const digest = (value: string) => createHash("sha256").update(value).digest();
@@ -315,7 +307,7 @@ export async function createApplication(
   app.post("/api/v1/credentials", async (c) => {
     const identity = c.get("actor");
     if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
-    const input = keyInput.parse(await c.req.json()),
+    const input = credentialInput.parse(await c.req.json()),
       allowed = await domain.accessibleProjects(identity);
     if (input.projectIds.some((id) => !allowed.some((row) => row.id === id)))
       fail(403, "forbidden", "Choose projects you can access");
