@@ -138,6 +138,16 @@ test("the visual editor keeps canonical Markdown across modes, menus, and submis
   // The comment editor opens in the same mode, mentions members, and clears after posting.
   const comment = visual(page, "Comment");
   await comment.click();
+  // Like the textarea's maxLength, Visual mode refuses text past the field's limit.
+  const paste = (text: string) =>
+    comment.evaluate((element, value) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", value);
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    }, text);
+  await paste("x".repeat(50_001));
+  await expect(comment).toHaveText("");
+
   await page.keyboard.type("Thanks @Test");
   const people = page.getByRole("listbox", { name: "Mention a member", exact: true });
   await expect(people.getByRole("option", { name: /Test Owner/ })).toBeVisible();
@@ -220,6 +230,9 @@ test("inline uploads stage before the ticket exists and attach exactly once", as
   expect((await page.request.get(url)).status()).toBe(200);
   // Staged files belong to the project the draft opened in.
   await expect(page.getByRole("combobox", { name: "Project", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Expand composer", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Restore composer size", exact: true }).click();
 
   // A file the text no longer embeds is discarded when the ticket is created.
   await page

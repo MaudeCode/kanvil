@@ -1,6 +1,8 @@
 // The visual editor's document model. Markdown stays canonical: the editor reads and writes the same
 // string, and `canEditVisually` keeps text the model cannot represent in the raw editor.
-import type { AnyExtension } from "@tiptap/core";
+import { Extension, type AnyExtension, type Editor } from "@tiptap/core";
+import { Plugin } from "@tiptap/pm/state";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { MarkdownManager, Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 import { HardBreak } from "@tiptap/extension-hard-break";
@@ -71,6 +73,34 @@ export function canEditVisually(markdown: string) {
   verdicts.set(markdown, verdict);
   return verdict;
 }
-// The editor's Markdown without the blank lines its trailing empty paragraph and leading tables add.
-export const editorMarkdown = (editor: { getMarkdown: () => string }) =>
-  editor.getMarkdown().replace(/^\n+/, "").replace(/\n+$/, "");
+// The Markdown for an editor document, without the blank lines its trailing empty paragraph and
+// leading tables add. Documents are immutable, so each one is serialized once.
+const serialized = new WeakMap<ProseMirrorNode, string>();
+export function editorMarkdown(editor: Editor, doc: ProseMirrorNode = editor.state.doc) {
+  let markdown = serialized.get(doc);
+  if (markdown === undefined) {
+    markdown = (editor.markdown?.serialize(doc.toJSON()) ?? "")
+      .replace(/^\n+/, "")
+      .replace(/\n+$/, "");
+    serialized.set(doc, markdown);
+  }
+  return markdown;
+}
+// Refuses edits that would make the Markdown longer than `limit`, like a textarea's maxLength. Edits
+// that shorten text already over the limit still apply.
+export const markdownLimit = (limit: number) =>
+  Extension.create({
+    name: "markdownLimit",
+    addProseMirrorPlugins() {
+      const { editor } = this;
+      return [
+        new Plugin({
+          filterTransaction: (transaction, state) => {
+            if (!transaction.docChanged) return true;
+            const length = editorMarkdown(editor, transaction.doc).length;
+            return length <= limit || length <= editorMarkdown(editor, state.doc).length;
+          },
+        }),
+      ];
+    },
+  });

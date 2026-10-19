@@ -506,6 +506,7 @@ export function MarkdownField({
               onChange={onChange}
               placeholder={placeholder ?? ""}
               rows={rows}
+              maxLength={maxLength}
               flush={variant === "document"}
               groupClassName={groupClass}
               footer={footerAddon}

@@ -260,13 +260,14 @@ export function TicketEditor({
         uploads: latest.current.uploads.filter((id) => !missing.includes(id)),
       });
   }
+  // Staged files belong to the target project, so it stays while the draft has any.
+  const projectLocked = pending || draft.uploads.length > 0;
   const pills = (
     <div className="-mt-3 flex flex-wrap items-center gap-1" aria-label="Ticket properties">
       {!ticket && (
         <ProjectProperty
           value={target}
-          // Staged files belong to this project, so the target stays while the draft has any.
-          disabled={pending || draft.uploads.length > 0}
+          disabled={projectLocked}
           onChange={(next) => void changeProject(next).catch(reportError)}
         />
       )}
@@ -475,7 +476,7 @@ export function TicketEditor({
                 <ProjectProperty
                   variant="row"
                   value={target}
-                  disabled={pending}
+                  disabled={projectLocked}
                   onChange={(next) => void changeProject(next).catch(reportError)}
                 />
               )}

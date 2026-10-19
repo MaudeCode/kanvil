@@ -19,7 +19,12 @@ import {
 import { InputGroup } from "@/components/ui/input-group";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { IconButton, Input } from "../ui.tsx";
-import { canEditVisually, editorMarkdown, richTextExtensions } from "../lib/rich-text.ts";
+import {
+  canEditVisually,
+  editorMarkdown,
+  markdownLimit,
+  richTextExtensions,
+} from "../lib/rich-text.ts";
 import { formats, markdownFormats, shortcutFormat, type MarkdownFormat } from "../lib/markdown.ts";
 import {
   FormatToolbar,
@@ -43,6 +48,7 @@ type Props = {
   onChange: (value: string) => void;
   placeholder: string;
   rows: number;
+  maxLength: number;
   flush: boolean;
   groupClassName: string | undefined;
   footer: ReactNode;
@@ -149,6 +155,7 @@ function VisualEditorBody({
   onChange,
   placeholder,
   rows,
+  maxLength,
   flush,
   groupClassName,
   footer,
@@ -192,7 +199,7 @@ function VisualEditorBody({
         });
       },
     });
-    return richTextExtensions({ placeholder, extra: [suggestions] });
+    return richTextExtensions({ placeholder, extra: [suggestions, markdownLimit(maxLength)] });
   });
   const editor = useEditor({
     extensions,
