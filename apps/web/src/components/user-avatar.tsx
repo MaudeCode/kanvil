@@ -41,7 +41,9 @@ export function UserIdentity({
     <span className="flex min-w-0 items-center gap-3">
       <UserAvatar name={name} image={image} />
       <span className="min-w-0">
-        <span className="block wrap-anywhere whitespace-normal font-medium">{name}</span>
+        <span dir="auto" className="block wrap-anywhere whitespace-normal font-medium">
+          {name}
+        </span>
         <span className="block break-all whitespace-normal text-xs text-muted-foreground">
           {email}
         </span>

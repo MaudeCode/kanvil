@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "@tanstack/react-router";
 import { Building2, ChevronsUpDown, Plus, Settings } from "lucide-react";
+import { t } from "@kanvil/contracts/i18n";
 import { useOperation, useWorkspace } from "../data.tsx";
 import { Input, Modal, FormActions, IconButton } from "../ui.tsx";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
@@ -23,7 +24,12 @@ function WorkspaceCreateDialog({ onOpenChange }: { onOpenChange: (open: boolean)
     [slug, setSlug] = useState(""),
     [customKey, setCustomKey] = useState(false);
   return (
-    <Modal title="New workspace" open onOpenChange={onOpenChange} busy={create.isPending}>
+    <Modal
+      title={t("shell.workspace.new")}
+      open
+      onOpenChange={onOpenChange}
+      busy={create.isPending}
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -38,7 +44,7 @@ function WorkspaceCreateDialog({ onOpenChange }: { onOpenChange: (open: boolean)
         }}
       >
         <Input
-          label="Workspace name"
+          label={t("shell.workspace.name")}
           value={name}
           onChange={(event) => {
             const next = event.target.value;
@@ -57,7 +63,7 @@ function WorkspaceCreateDialog({ onOpenChange }: { onOpenChange: (open: boolean)
           autoFocus
         />
         <Input
-          label="Workspace key"
+          label={t("shell.workspace.key")}
           value={slug}
           onChange={(event) => {
             setCustomKey(true);
@@ -72,7 +78,7 @@ function WorkspaceCreateDialog({ onOpenChange }: { onOpenChange: (open: boolean)
         <FormActions
           error={create.error}
           pending={create.isPending}
-          submitLabel="Create workspace"
+          submitLabel={t("shell.workspace.create")}
           onCancel={() => onOpenChange(false)}
         />
       </form>
@@ -83,7 +89,7 @@ export function CreateWorkspace() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <IconButton label="New workspace" variant="default" onClick={() => setOpen(true)}>
+      <IconButton label={t("shell.workspace.new")} variant="default" onClick={() => setOpen(true)}>
         <Plus />
       </IconButton>
       {open && <WorkspaceCreateDialog onOpenChange={setOpen} />}
@@ -102,18 +108,20 @@ export function WorkspaceSwitcher() {
             <DropdownMenuTrigger
               render={
                 <SidebarMenuButton
-                  tooltip={workspace.active?.name ?? "Workspaces"}
-                  aria-label="Switch workspace"
+                  tooltip={workspace.active?.name ?? t("shell.workspace.workspaces")}
+                  aria-label={t("shell.workspace.switch")}
                 />
               }
             >
               <Building2 />
-              <span className="truncate">{workspace.active?.name ?? "Workspaces"}</span>
+              <span className="truncate">
+                {workspace.active?.name ?? t("shell.workspace.workspaces")}
+              </span>
               <ChevronsUpDown className="ml-auto" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="start" className="min-w-64">
               <DropdownMenuGroup>
-                <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("shell.workspace.workspaces")}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={workspace.active?.id ?? ""}
                   onValueChange={(id) => {
@@ -139,12 +147,12 @@ export function WorkspaceSwitcher() {
                   }
                 >
                   <Settings />
-                  Workspace settings
+                  {t("shell.workspace.settings")}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => setCreating(true)}>
                 <Plus />
-                New workspace
+                {t("shell.workspace.new")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

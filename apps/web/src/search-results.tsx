@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { searchResultTypes } from "@kanvil/contracts";
+import { formatNumber, labelTable, t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
 import { api, useWorkspace } from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading, PageHeader, SearchField } from "./ui.tsx";
@@ -18,13 +19,7 @@ const pageSize = 25;
 const rowClass =
   "flex min-w-0 px-2 py-2.5 outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/60 focus-visible:shadow-[inset_2px_0_0_var(--primary)]";
 const tabSchema = z.enum(["all", ...searchResultTypes]);
-const tabLabels: Record<z.output<typeof tabSchema>, string> = {
-  all: "All",
-  project: "Projects",
-  ticket: "Tickets",
-  comment: "Comments",
-  activity: "Activity",
-};
+const tabLabels = labelTable(tabSchema.options, (tab) => t(`shell.search.tab.${tab}`));
 // Workspace search across tickets, projects, comments, and activity, with its query in the URL.
 export function SearchResults({
   search,
@@ -66,10 +61,10 @@ export function SearchResults({
     shown = data?.items.length ?? 0;
   return (
     <div className="animate-in fade-in-0">
-      <PageHeader title="Search" />
+      <PageHeader title={t("shell.page.search")} />
       <SearchField
-        label="Search workspace"
-        placeholder="Search tickets, projects, comments, activity…"
+        label={t("shell.search.field")}
+        placeholder={t("shell.search.placeholder")}
         shortcut="/"
         defaultOpen
         wide
@@ -114,22 +109,22 @@ export function SearchResults({
       )}
       {data?.indexing && (
         <p role="status" className="my-2 text-xs text-muted-foreground">
-          External search is catching up, so ticket matches come from PostgreSQL.
+          {t("shell.search.indexing")}
         </p>
       )}
       <ErrorNotice error={results.error} />
       {!q ? (
-        <EmptyState title="Search tickets, projects, comments, and activity" icon={Search} />
+        <EmptyState title={t("shell.search.empty")} icon={Search} />
       ) : results.isPending ? (
         <Loading />
       ) : data && data.total === 0 ? (
-        <EmptyState title={`No results for “${q}”`} icon={Search} />
+        <EmptyState title={t("shell.search.noResults", { query: q })} icon={Search} />
       ) : (
         data && (
           <>
             <ol
               ref={list}
-              aria-label="Search results"
+              aria-label={t("shell.search.results")}
               aria-busy={results.isFetching}
               className="m-0 list-none divide-y border-y p-0"
             >
@@ -155,11 +150,15 @@ export function SearchResults({
             </ol>
             {data.total > pageSize && (
               <nav
-                aria-label="Search pages"
+                aria-label={t("shell.search.pages")}
                 className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground"
               >
                 <span className="tabular-nums">
-                  {search.offset + 1}–{search.offset + shown} of {data.total}
+                  {t("shell.ui.pageRange", {
+                    from: formatNumber(search.offset + 1),
+                    to: formatNumber(search.offset + shown),
+                    total: formatNumber(data.total),
+                  })}
                 </span>
                 <span className="flex gap-2">
                   <Button
@@ -170,7 +169,7 @@ export function SearchResults({
                       onSearch({ ...search, offset: Math.max(0, search.offset - pageSize) })
                     }
                   >
-                    Previous
+                    {t("shell.search.previous")}
                   </Button>
                   <Button
                     variant="outline"
@@ -181,7 +180,7 @@ export function SearchResults({
                     }
                     onClick={() => onSearch({ ...search, offset: search.offset + pageSize })}
                   >
-                    Next
+                    {t("shell.search.next")}
                   </Button>
                 </span>
               </nav>

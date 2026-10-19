@@ -1,17 +1,15 @@
 import { FolderOpen, History, MessageSquare } from "lucide-react";
-import type { SearchResult, SearchResultType } from "@kanvil/contracts";
+import { searchResultTypes, type SearchResult } from "@kanvil/contracts";
+import { labelTable, t } from "@kanvil/contracts/i18n";
 import { ActorName, useProjects } from "../data.tsx";
 import { RelativeTime, TicketIndicator } from "../ui.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
 import { CommandShortcut } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
-export const searchResultLabels: Record<SearchResultType, string> = {
-  project: "Project",
-  ticket: "Ticket",
-  comment: "Comment",
-  activity: "Activity",
-};
+export const searchResultLabels = labelTable(searchResultTypes, (type) =>
+  t(`shell.search.type.${type}`),
+);
 // Where a result opens: its project, its ticket, or the comment within its ticket.
 export function searchResultLink(result: SearchResult) {
   if (!result.ticket)
@@ -58,7 +56,7 @@ export function SearchResultContent({
           {result.type === "comment" ? result.excerpt || result.title : result.title}
         </span>
         <CommandShortcut className="shrink-0 font-mono whitespace-nowrap">
-          {result.type === "comment" ? `Comment · ${reference}` : reference}
+          {result.type === "comment" ? `${searchResultLabels.comment} · ${reference}` : reference}
         </CommandShortcut>
       </>
     );

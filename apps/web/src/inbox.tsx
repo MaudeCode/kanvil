@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { Bell, BellDot, Check, CheckCheck, ListX, X } from "lucide-react";
 import { formatEvent, notificationCategoryLabels } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { notificationCategoryIcons } from "./lib/notification-categories.ts";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -186,10 +187,10 @@ export function Inbox({
 
   return (
     <>
-      <PageHeader title="Inbox">
+      <PageHeader title={t("shell.page.inbox")}>
         <div className="flex items-center gap-1">
           <IconButton
-            label="Mark all read"
+            label={t("shell.inbox.markAllRead")}
             disabled={pending || !unread.length}
             onClick={() => {
               void mark(
@@ -202,17 +203,14 @@ export function Inbox({
             <CheckCheck />
           </IconButton>
           <IconButton
-            label="Clear read"
+            label={t("shell.inbox.clearRead")}
             disabled={pending || !read.length}
             onClick={() => {
               void write(() =>
                 api.dismissNotifications({ ids: read.map((entry) => entry.id) }),
               ).then((done) => {
                 // Unread hides read entries, so say what went.
-                if (done)
-                  toast.success(
-                    `Cleared ${read.length} read ${read.length === 1 ? "notification" : "notifications"}`,
-                  );
+                if (done) toast.success(t("shell.inbox.cleared", { count: read.length }));
               });
             }}
           >
@@ -230,15 +228,15 @@ export function Inbox({
       >
         <TabsList variant="line">
           <TabsTrigger value="unread">
-            Unread
+            {t("shell.inbox.unread")}
             {unread.length > 0 && (
               <Badge variant="secondary" className="ml-1">
                 {unread.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="mentions">Mentions</TabsTrigger>
-          <TabsTrigger value="all">All notifications</TabsTrigger>
+          <TabsTrigger value="mentions">{t("shell.inbox.mentions")}</TabsTrigger>
+          <TabsTrigger value="all">{t("shell.inbox.all")}</TabsTrigger>
         </TabsList>
       </Tabs>
       <ErrorNotice error={items.error} />
@@ -265,9 +263,9 @@ export function Inbox({
         <EmptyState
           title={
             {
-              unread: "No unread notifications",
-              mentions: "No mentions",
-              all: "No notifications",
+              unread: t("shell.inbox.noUnread"),
+              mentions: t("shell.inbox.noMentions"),
+              all: t("shell.inbox.noNotifications"),
             }[search.view]
           }
           icon={Bell}
@@ -357,7 +355,7 @@ function InboxEntry({
       )}
       <ItemActions className="gap-1 self-start">
         <IconButton
-          label={entry.readAt ? "Mark unread" : "Mark read"}
+          label={entry.readAt ? t("shell.inbox.markUnread") : t("shell.inbox.markRead")}
           shortcut={actions.inboxRead.keys}
           size="icon-sm"
           onClick={onMark}
@@ -365,7 +363,7 @@ function InboxEntry({
           {entry.readAt ? <BellDot /> : <Check />}
         </IconButton>
         <IconButton
-          label="Dismiss"
+          label={t("shell.inbox.dismiss")}
           shortcut={actions.inboxDismiss.keys}
           size="icon-sm"
           onClick={onDismiss}

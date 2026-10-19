@@ -7,6 +7,7 @@ import {
   ticketPredicates,
   type FilterField,
 } from "@kanvil/contracts";
+import { labelTable, t } from "@kanvil/contracts/i18n";
 // The ticket open in a preview sheet, and its project on pages that span projects.
 const previewFields = {
   peek: z.string().min(1).max(80).optional().catch(undefined),
@@ -80,20 +81,23 @@ export type TicketGrouping =
   | z.output<typeof ticketGroupingSchema>
   | z.output<typeof workGroupingSchema>;
 // Ticket list columns a person can show or hide, in table order.
-export const ticketColumnLabels = {
-  key: "Ticket",
-  labels: "Labels",
-  scopes: "Scopes",
-  status: "Status",
-  priority: "Priority",
-  difficulty: "Difficulty",
-  kind: "Kind",
-  assigneeId: "Assignee",
-  startAt: "Start",
-  dueAt: "Due",
-  createdAt: "Created",
-  updatedAt: "Updated",
-};
+export const ticketColumnLabels = labelTable(
+  [
+    "key",
+    "labels",
+    "scopes",
+    "status",
+    "priority",
+    "difficulty",
+    "kind",
+    "assigneeId",
+    "startAt",
+    "dueAt",
+    "createdAt",
+    "updatedAt",
+  ] as const,
+  (column) => t(`shell.column.${column}`),
+);
 
 // A custom field's list column; its visibility is kept with the built-in columns.
 export const customFieldColumn = (fieldId: string) => `field:${fieldId}`;
