@@ -1100,9 +1100,11 @@ const repositoryName = z
     (value) => value.split("/").every((segment) => segment !== "." && segment !== ".."),
     "Use owner/repository",
   );
-// A self-managed instance's web address, without credentials, query, or a trailing slash.
+// A self-managed instance's web address, without credentials, query, or a trailing slash. The host
+// is lowercased and a default port dropped, so one instance has one spelling.
 const repositoryBaseUrl = endpoint
   .refine((value) => !/[?#]/.test(value), "Use the server address without a query or fragment")
+  .pipe(z.url({ normalize: true }))
   .transform((value) => value.replace(/\/+$/, ""));
 const repositorySecret = z.string().trim().min(1).max(500);
 // A trigger left out moves nothing.

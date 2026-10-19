@@ -926,10 +926,11 @@ describe("repository connections", () => {
     expect(gitea).toMatchObject({ baseUrl: "https://git.example.test/forge" });
     await forgeConnection({ provider: "github", baseUrl: undefined });
     await forgeConnection({ provider: "gitea", baseUrl: "https://other.example.test" });
+    // Host case and the default port do not make another instance.
     await expect(
       forgeConnection({
         provider: "gitea",
-        baseUrl: "https://git.example.test/forge",
+        baseUrl: "https://GIT.example.test:443/forge",
         repository: "ACME/widgets",
       }),
     ).rejects.toMatchObject({ code: "repository_connected" });
