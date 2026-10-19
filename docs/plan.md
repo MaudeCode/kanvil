@@ -80,6 +80,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 ## Web and mobile
 
 - Web list with readable wrapping titles, adjustable columns, filters, selection, keyboard navigation, a preview sheet that shows the full ticket detail over the list, and atomic bulk actions for status, priority, assignee, kind, difficulty, labels (replace or clear), due date (set or clear), archiving or restoring, and deletion. Mixed selections show as mixed, never as the first row's value. Each status section selects as a whole.
+- A server-kept manual order for tickets within a project and projects within a workspace: an explicit Manual sort in the URL and saved views, with drag and drop, keyboard moves, and menu commands across the list, board, and planning views.
 - Project planning view with complete Planned (backlog) and Archived groups, moving planned work to To do, restoring archived tickets, and a way back to active work.
 - Start and due dates on tickets, with read-only Calendar (month) and Timeline (six-week) layouts of a project's filtered tickets, period navigation and Today, and project calendar feeds that administrators share and revoke as iCalendar links. Drag-to-reschedule and dependency editing on the timeline stay out of scope.
 - Ticket detail view containing requirements, relationships, editable links, discussion, attachments, activity, and supplied evidence.

@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Plus,
@@ -57,6 +57,7 @@ import {
   TicketIndicator,
   FormActions,
   IconButton,
+  reportError,
 } from "./ui.tsx";
 import {
   Table,
@@ -90,8 +91,10 @@ import {
 import { TicketSchedule, scheduleWindow } from "./components/ticket-schedule.tsx";
 import { TicketEditor } from "./ticket-editor.tsx";
 import { TicketPreviewSheet } from "./ticket-detail.tsx";
-import { writeListOrder } from "./lib/list-order.ts";
+import { neighborFor, placeNear, writeListOrder } from "./lib/list-order.ts";
+import { moveCommandNames, type MoveCommand } from "./lib/actions.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
+import { useReorderDrag } from "./hooks/use-reorder-drag.ts";
 import { cn } from "@/lib/utils";
 
 import {
@@ -352,6 +355,12 @@ const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
   createdAt: "created",
   updatedAt: "updated",
 };
+// Where a move puts a ticket: next to a neighbor as displayed, into a status, or both.
+interface Placement {
+  anchor?: string;
+  below?: boolean;
+  status?: Ticket["status"];
+}
 // One server query series: a status section, a planning group, or the whole list. `status` and
 // `archived` override the page's filters for that series.
 interface Fetch extends Omit<Section, "total"> {
@@ -452,6 +461,8 @@ export function TicketList({
     pages: {},
   });
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // A move in flight shows at once: the ticket in its new status, next to its new neighbor.
+  const [placing, setPlacing] = useState<Placement & { id: string }>();
   const pages = paging.filterKey === filterKey ? paging.pages : {};
   // Status sections and planning groups fetch one series of pages each; other lists fetch one
   // series and group it here.
@@ -530,6 +541,8 @@ export function TicketList({
       const previous = latest.get(ticket.id);
       if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
     }
+  const placed = placing && latest.get(placing.id);
+  if (placing?.status && placed) latest.set(placed.id, { ...placed, status: placing.status });
   // Rows that arrive through realtime after the first load get a short highlight.
   const loading = missingPages || queries.some((query) => query.isPending);
   const currentIds = [...latest.keys()].join("\n");
@@ -549,7 +562,9 @@ export function TicketList({
       fresh: new Set([...latest.keys()].filter((id) => !known.has(id))),
     });
   }
-  const all = [...latest.values()];
+  const all = placing?.anchor
+    ? placeNear([...latest.values()], placing.id, placing.anchor, !!placing.below)
+    : [...latest.values()];
   const total = groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0);
   // Due windows move with the clock, so a ticket passes into Overdue while the list stays open.
   const [now, setNow] = useState(() => Date.now());
@@ -801,17 +816,133 @@ export function TicketList({
     },
     { enabled: !creating },
   );
-  // Board drag and drop: the dragged ticket and the lane under it. A drop is the same versioned,
-  // optimistic status edit as the row's status picker.
-  const [dragging, setDragging] = useState<string | null>(null),
-    [dropLane, setDropLane] = useState<string | null>(null),
-    moveTicket = useTicketChange();
-  const dropOn = (lane: string) => {
-    const ticket = dragging ? latest.get(dragging) : undefined,
-      status = states.find((state) => state === lane);
-    setDragging(null);
+  // Moves: the manual order (`sort: manual`) and status steps are one versioned write. Keys, the
+  // ticket menu, and drag and drop all resolve to a placement and go through `place`.
+  const manual = search.sort === "manual",
+    reorderable = canWrite && manual,
+    descending = (search.order ?? defaultOrder[search.sort]) === "desc";
+  const moveTicket = useOperation("move_ticket"),
+    cache = useQueryClient(),
+    [announcement, setAnnouncement] = useState(""),
+    followActive = useRef(false);
+  // Moves made before the previous one is saved wait their turn and use the version it returned,
+  // so quick repeated keys are neither dropped nor rejected as stale.
+  const queue = useRef(Promise.resolve()),
+    savedVersions = useRef(new Map<string, number>());
+  const place = (ticket: Ticket, { anchor: neighborId, below = false, status }: Placement) => {
+    const changed = status && status !== ticket.status ? status : undefined,
+      neighbor = neighborId ? latest.get(neighborId) : undefined;
+    if (!neighbor && !changed) return;
+    const shown = {
+      id: ticket.id,
+      below,
+      ...(neighbor ? { anchor: neighbor.id } : {}),
+      ...(changed ? { status: changed } : {}),
+    };
+    setPlacing(shown);
+    setAnnouncement(
+      `${ticket.key} moved${changed ? ` to ${stateLabels[changed]}` : ""}${neighbor ? ` ${below ? "below" : "above"} ${neighbor.key}` : ""}`,
+    );
+    // A descending list shows the manual order reversed.
+    const after = below !== descending;
+    queue.current = queue.current
+      .then(async () => {
+        const saved = await moveTicket.mutateAsync({
+          projectId: ticket.projectId,
+          ticketId: ticket.id,
+          expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
+          ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
+          ...(changed ? { status: changed } : {}),
+        });
+        savedVersions.current.set(saved.id, saved.version);
+      })
+      .catch((error: unknown) => {
+        void cache.invalidateQueries({ queryKey: ["kanvil"] });
+        reportError(error);
+      })
+      .finally(() => setPlacing((current) => (current === shown ? undefined : current)));
+  };
+  const sectionOf = (ticket: Ticket) => sections.find((section) => section.has(ticket));
+  // Status steps work in any order; in the manual order the ticket arrives on top of its new
+  // section. Top, up, down, and bottom need the manual order.
+  const targetFor = (ticket: Ticket, command: MoveCommand): Placement | undefined => {
+    if (command === "previous" || command === "next") {
+      const status = states[states.indexOf(ticket.status) + (command === "next" ? 1 : -1)];
+      if (!status) return undefined;
+      const lane = sectionOf({ ...ticket, status }),
+        first =
+          manual && lane ? sectionRows(lane).find((row) => row.id !== ticket.id)?.id : undefined;
+      return { status, ...(first ? { anchor: first } : {}) };
+    }
+    const section = sectionOf(ticket);
+    return reorderable && section
+      ? neighborFor(
+          sectionRows(section).map((row) => row.id),
+          ticket.id,
+          command,
+        )
+      : undefined;
+  };
+  const runMove = (ticket: Ticket, placement: Placement) => {
+    followActive.current = true;
+    place(ticket, placement);
+  };
+  const moveActive = (command: MoveCommand) => {
+    const ticket = active && canWrite ? latest.get(active) : undefined,
+      placement = ticket && targetFor(ticket, command);
+    if (ticket && placement) runMove(ticket, placement);
+  };
+  // The ticket menu lists the moves this list offers, disabled where there is nowhere to go.
+  const menuMoves = (ticket: Ticket) =>
+    moveCommandNames
+      .filter((command) => manual || command === "previous" || command === "next")
+      .map((command) => {
+        const placement = targetFor(ticket, command);
+        return { command, run: placement && (() => runMove(ticket, placement)) };
+      });
+  useShortcut("ArrowUp", () => moveActive("up"), { ...rowKeys, alt: true, shift: false });
+  useShortcut("ArrowDown", () => moveActive("down"), { ...rowKeys, alt: true, shift: false });
+  useShortcut("ArrowUp", () => moveActive("top"), { ...rowKeys, alt: true, shift: true });
+  useShortcut("ArrowDown", () => moveActive("bottom"), { ...rowKeys, alt: true, shift: true });
+  useShortcut("[", () => moveActive("previous"), rowKeys);
+  useShortcut("]", () => moveActive("next"), rowKeys);
+  // A row moved from the keyboard stays in view.
+  useEffect(() => {
+    // Waits for the moved row to render in its new place.
+    if (!followActive.current || !active || !orderKey.includes(active)) return;
+    followActive.current = false;
+    document
+      .querySelector(`.ticket-row[data-id="${CSS.escape(active)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [orderKey, active]);
+  // Dropping on a row places the ticket beside it, taking that row's status on a status grouping.
+  const drag = useReorderDrag((id, neighborId, below) => {
+    const ticket = latest.get(id),
+      neighbor = latest.get(neighborId);
+    if (ticket && neighbor)
+      place(ticket, {
+        anchor: neighborId,
+        below,
+        ...(grouping === "status" && { status: neighbor.status }),
+      });
+  });
+  // Rows take drops in the manual order, except across planning groups.
+  const accepts = (section: Section) => {
+    const dragged = drag.dragging ? latest.get(drag.dragging) : undefined;
+    return manual && (grouping === "status" || !dragged || section.has(dragged));
+  };
+  // Dropping on a board lane outside its cards sets the status, and in the manual order places the
+  // ticket at the end of the lane.
+  const [dropLane, setDropLane] = useState<string | null>(null);
+  const dropOn = (section: Section) => {
+    const ticket = drag.dragging ? latest.get(drag.dragging) : undefined,
+      status = states.find((state) => state === section.id);
+    drag.end();
     setDropLane(null);
-    if (ticket && status && ticket.status !== status) void moveTicket.change({ status }, ticket);
+    const last = manual
+      ? sectionRows(section).findLast((row) => row.id !== ticket?.id)?.id
+      : undefined;
+    if (ticket && status) place(ticket, { status, ...(last ? { anchor: last, below: true } : {}) });
   };
   const openRow = (ticket: Ticket, event: MouseEvent<HTMLElement>) => {
     if (event.defaultPrevented) return;
@@ -1061,7 +1192,7 @@ export function TicketList({
                   data-drop={dropLane === section.id || undefined}
                   className="flex w-[min(19rem,calc(100vw-3.5rem))] shrink-0 flex-col transition-colors data-[drop=true]:bg-primary/5"
                   onDragOver={(event) => {
-                    if (!dragging) return;
+                    if (!drag.dragging) return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                     setDropLane(section.id);
@@ -1075,7 +1206,7 @@ export function TicketList({
                   }}
                   onDrop={(event) => {
                     event.preventDefault();
-                    dropOn(section.id);
+                    dropOn(section);
                   }}
                 >
                   <h2 className="sticky top-0 z-10 mb-0 flex h-9 items-center gap-2 border-b bg-background px-2 text-xs font-normal">
@@ -1101,25 +1232,23 @@ export function TicketList({
                           key={row.id}
                           ticket={row.original}
                           onPreview={() => showPreview(row.id, true)}
+                          moves={canWrite ? () => menuMoves(row.original) : undefined}
                         >
                           <li
                             className={cn(
                               rowClass,
-                              "flex flex-col gap-1.5 border-b px-2 py-2.5 transition-colors hover:bg-muted/40 data-[active=true]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 in-data-[density=comfortable]:gap-2.5 in-data-[density=comfortable]:py-4",
+                              "flex flex-col gap-1.5 border-b px-2 py-2.5 transition-colors hover:bg-muted/40 data-[active=true]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:shadow-[inset_0_2px_0_var(--primary)] in-data-[density=comfortable]:gap-2.5 in-data-[density=comfortable]:py-4",
                             )}
                             data-id={row.id}
                             data-selected={row.getIsSelected()}
                             data-active={active === row.id || undefined}
                             data-fresh={seen.fresh.has(row.id) || undefined}
-                            data-dragging={dragging === row.id || undefined}
-                            draggable={canWrite}
-                            onDragStart={(event) => {
-                              event.dataTransfer.effectAllowed = "move";
-                              event.dataTransfer.setData("text/plain", row.original.key);
-                              setDragging(row.id);
-                            }}
+                            {...drag.item(row.id, {
+                              draggable: canWrite,
+                              accepts: accepts(section),
+                            })}
                             onDragEnd={() => {
-                              setDragging(null);
+                              drag.end();
                               setDropLane(null);
                             }}
                             onClick={(event) => openRow(row.original, event)}
@@ -1316,17 +1445,22 @@ export function TicketList({
                         key={row.id}
                         ticket={row.original}
                         onPreview={() => showPreview(row.id, true)}
+                        moves={canWrite ? () => menuMoves(row.original) : undefined}
                       >
                         <TableRow
                           className={cn(
                             rowClass,
-                            "data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]",
+                            "data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:[&>td]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:[&>td]:shadow-[inset_0_2px_0_var(--primary)]",
                           )}
                           role="row"
                           data-id={row.id}
                           data-selected={row.getIsSelected()}
                           data-active={active === row.id || undefined}
                           data-fresh={seen.fresh.has(row.id) || undefined}
+                          {...drag.item(row.id, {
+                            draggable: reorderable,
+                            accepts: accepts(section),
+                          })}
                           onClick={(event) => openRow(row.original, event)}
                         >
                           {row.getVisibleCells().map((cell) => (
@@ -1363,6 +1497,9 @@ export function TicketList({
           {tickets.data.total} {schedule ? "scheduled tickets" : "tickets"}
         </footer>
       )}
+      <span role="status" className="sr-only">
+        {announcement}
+      </span>
       <TicketPreviewSheet
         open={!!peek}
         ticket={preview}

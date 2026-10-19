@@ -1,6 +1,6 @@
 import { ProjectIcon } from "./project-icon.tsx";
 import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
-import { ProjectContextMenu } from "./object-context-menu.tsx";
+import { ProjectContextMenu, useProjectMove } from "./object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
@@ -24,6 +24,7 @@ import { CreateProject } from "./create-project.tsx";
 import { SearchResultContent, searchResultLink } from "./search-result.tsx";
 import { useTheme } from "./theme-provider.tsx";
 import { useShortcut } from "../hooks/use-shortcut.ts";
+import { useReorderDrag } from "../hooks/use-reorder-drag.ts";
 import {
   Sidebar,
   SidebarHeader,
@@ -92,6 +93,12 @@ export function AppSidebar() {
     pathname = useRouterState({ select: (state) => state.location.pathname }),
     { setOpenMobile } = useSidebar(),
     unread = useUnreadNotifications();
+  // Project administrators drag their projects into the workspace's shared order.
+  const reorder = useProjectMove(),
+    drag = useReorderDrag((id, anchor, below) => {
+      const project = projects.data?.find((item) => item.id === id);
+      if (project) reorder.place(project, anchor, below);
+    });
   const router = useRouter();
   useEffect(
     () => router.subscribe("onBeforeNavigate", () => setOpenMobile(false)),
@@ -163,7 +170,11 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {projects.data?.map((project) => (
-                  <SidebarMenuItem key={project.id}>
+                  <SidebarMenuItem
+                    key={project.id}
+                    className="data-[dragging=true]:opacity-50 data-[drop=after]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:shadow-[inset_0_2px_0_var(--primary)]"
+                    {...drag.item(project.id, { draggable: project.role === "admin" })}
+                  >
                     <ProjectContextMenu project={project}>
                       <SidebarMenuButton
                         isActive={pathname.startsWith(`/projects/${project.id}`)}

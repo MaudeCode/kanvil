@@ -253,11 +253,14 @@ export function TicketListControls({
                 filter({ sort: ticketFilter.shape.sort.parse(value), order: undefined })
               }
             >
-              {Object.entries(sortLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
+              {Object.entries(sortLabels)
+                // The manual order belongs to one project.
+                .filter(([value]) => projectId || value !== "manual")
+                .map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
             </Select>
             <DisplayToggle
               label="Direction"
