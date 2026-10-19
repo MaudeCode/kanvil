@@ -20,7 +20,7 @@ import {
   type Ticket,
   type Output,
 } from "@kanvil/contracts";
-import { accessOf, api, useIdentity, useOperation, useProjects } from "../data.tsx";
+import { api, useIdentity, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { TicketIndicator, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
@@ -468,26 +468,39 @@ export function ProjectProperty({
         <Command>
           <CommandInput placeholder="Create in project…" aria-label="Search projects" autoFocus />
           <CommandList>
-            {projects.data
-              ?.filter((item) => accessOf(item.role).canWrite)
-              .map((item) => (
-                <CommandItem
-                  key={item.id}
-                  value={`${item.name} ${item.key}`}
-                  onSelect={() => {
-                    setOpen(false);
-                    if (item.id !== value) onChange(item.id);
-                  }}
-                >
-                  <ProjectIcon project={item} className="size-4 rounded" />
-                  <span className="truncate">{item.name}</span>
-                  {item.id === value && <Check className="ml-auto" />}
-                </CommandItem>
-              ))}
+            {projects.data?.map((item) => (
+              <WritableProject
+                key={item.id}
+                project={item}
+                selected={item.id === value}
+                onSelect={() => {
+                  setOpen(false);
+                  if (item.id !== value) onChange(item.id);
+                }}
+              />
+            ))}
             <CommandEmpty>No matches</CommandEmpty>
           </CommandList>
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+function WritableProject({
+  project,
+  selected,
+  onSelect,
+}: {
+  project: Output<"list_projects">[number];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  if (!useProjectAccess(project.id).canWrite) return null;
+  return (
+    <CommandItem value={`${project.name} ${project.key}`} onSelect={onSelect}>
+      <ProjectIcon project={project} className="size-4 rounded" />
+      <span className="truncate">{project.name}</span>
+      {selected && <Check className="ml-auto" />}
+    </CommandItem>
   );
 }

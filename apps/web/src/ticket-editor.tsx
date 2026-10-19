@@ -102,6 +102,7 @@ export function TicketEditor({
     [switching, setSwitching] = useState(false);
   function changeDraft(next: typeof draft) {
     setDraft(next);
+    setCreated(undefined);
     try {
       localStorage.setItem(draftKey, JSON.stringify(next));
       setStorageError(undefined);
@@ -182,16 +183,32 @@ export function TicketEditor({
         toast.success(ticket ? `${result.key} saved` : `${result.key} created`);
         return onSaved(result);
       }
-      // Keep the project and reusable properties; the next ticket starts with a clean text. The
-      // footer status announces the key, so no toast covers the footer on narrow screens.
-      const next = {
-        ...latest.current,
-        fields: { ...latest.current.fields, title: "", description: "", acceptanceCriteria: "" },
-      };
-      setBase(next);
-      setDraft(next);
-      setSavedLocally(false);
-      setCriteriaOpen(false);
+      // Keep the project and reusable properties; the next ticket starts with a clean text. Text
+      // already typed for it while this one saved stays and is saved as its draft. The footer
+      // status announces the key, so no toast covers the footer on narrow screens.
+      const current = latest.current.fields,
+        typed = (key: "title" | "description" | "acceptanceCriteria") =>
+          current[key] === fields[key] ? "" : current[key],
+        next = {
+          ...latest.current,
+          fields: {
+            ...current,
+            title: typed("title"),
+            description: typed("description"),
+            acceptanceCriteria: typed("acceptanceCriteria"),
+          },
+        };
+      setBase({
+        ...next,
+        fields: { ...next.fields, title: "", description: "", acceptanceCriteria: "" },
+      });
+      if (next.fields.title || next.fields.description || next.fields.acceptanceCriteria)
+        changeDraft(next);
+      else {
+        setDraft(next);
+        setSavedLocally(false);
+      }
+      setCriteriaOpen(!!next.fields.acceptanceCriteria);
       setCreated(result.key);
       titleField.current?.focus();
     } finally {
@@ -509,12 +526,12 @@ export function TicketEditor({
       </div>
       <footer className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
         <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-          {savedLocally
-            ? "Draft saved on this device"
-            : storageError
-              ? "Draft could not be saved"
-              : created
-                ? `${created} created`
+          {created
+            ? `${created} created`
+            : savedLocally
+              ? "Draft saved on this device"
+              : storageError
+                ? "Draft could not be saved"
                 : ""}
           {dirty && !stale && (
             <Button variant="ghost" size="xs" disabled={pending} onClick={discardDraft}>

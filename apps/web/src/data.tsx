@@ -94,22 +94,18 @@ export function clearPrivateStorage(userId: string) {
 }
 export { formatTimestamp as date } from "@kanvil/contracts";
 
+// Reads the server's effective role from the shared list_projects cache, so checking many
+// projects costs one request.
 export function useProjectAccess(projectId: string, enabled = true) {
   const identity = useIdentity(),
-    members = useQuery({
-      ...api.query("list_members", { projectId }),
+    projects = useQuery({
+      ...api.query("list_projects", {}),
       enabled: enabled && !identity.admin,
+      select: (rows) => rows.find((project) => project.id === projectId)?.role,
     });
-  const role = identity.admin
-    ? "admin"
-    : members.data?.find((member) => member.userId === identity.id)?.role;
-  return { role, ...accessOf(role) };
+  const role = identity.admin ? "admin" : projects.data;
+  return { role, canWrite: role === "writer" || role === "admin", canAdmin: role === "admin" };
 }
-// The one rule turning a project role into UI permissions, shared with list_projects rows.
-export const accessOf = (role: string | undefined) => ({
-  canWrite: role === "writer" || role === "admin",
-  canAdmin: role === "admin",
-});
 export function ActorName({
   projectId,
   actorId,

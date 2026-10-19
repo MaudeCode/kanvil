@@ -553,6 +553,24 @@ test("create more keeps one composer open across projects without mixing their d
   await expect(dialog.getByRole("status")).toContainText("BATCHB-2 created");
   await page.unrouteAll({ behavior: "wait" });
 
+  // Text typed for the next ticket while a create is still saving survives its success.
+  let releaseCreate: (() => void) | undefined;
+  const createGate = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
+  await page.route(`**/api/v1/projects/${beta.id}/tickets`, async (route) => {
+    if (route.request().method() === "POST") await createGate;
+    await route.continue();
+  });
+  await title.fill("Third batch ticket");
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await title.fill("Typed while saving");
+  releaseCreate?.();
+  await expect(dialog.getByRole("status")).toContainText("BATCHB-3 created");
+  await expect(title).toHaveValue("Typed while saving");
+  await page.unrouteAll({ behavior: "wait" });
+
   // Ordinary create still closes the composer.
   await page.getByRole("switch", { name: "Create more", exact: true }).click();
   await title.fill("Last batch ticket");
@@ -564,6 +582,7 @@ test("create more keeps one composer open across projects without mixing their d
   expect(betaRows.map((ticket: { title: string }) => ticket.title).toSorted()).toEqual([
     "Last batch ticket",
     "Second batch ticket",
+    "Third batch ticket",
   ]);
   expect(betaRows.every((ticket: { priority: string }) => ticket.priority === "high")).toBe(true);
   expect(betaRows.every((ticket: { parentId: string | null }) => !ticket.parentId)).toBe(true);
