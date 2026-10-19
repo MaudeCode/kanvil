@@ -672,6 +672,22 @@ describe("imports from other trackers", () => {
     ]);
   });
 
+  it("reads Plane work items that embed their state, people, and labels", async () => {
+    source.data.plane.embedded = true;
+    const staged = await preview(plane(), "pp-web");
+    expect(staged.counts).toMatchObject({ tickets: 3, labels: 2, relations: 2, comments: 2 });
+    const result = await imported((await run(staged)).projectId!);
+    const home = result.byTitle("Redesign the homepage"),
+      footer = result.byTitle("Fix the footer");
+    expect(home).toMatchObject({ labels: ["ui"], assigneeId: owner.id, createdBy: owner.id });
+    expect(footer).toMatchObject({ parentId: home.id, labels: ["bug"] });
+    expect(result.states.find((state) => state.id === home.stateId)?.category).toBe("in_progress");
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by owner on 2026-04-23.\n\nFirst _pass_",
+      "Originally by dev on 2026-04-24.\n\nShipped to staging",
+    ]);
+  });
+
   it("reads Plane releases before work items through their issue routes", async () => {
     source.data.plane.legacy = true;
     const staged = await preview(plane(), "pp-web");

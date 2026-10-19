@@ -162,6 +162,8 @@ export function seed() {
   const plane = {
     // Plane before 1.1 has no `work-items` or relations.
     legacy: false,
+    // Plane can embed what a work item names, such as its state, instead of giving IDs.
+    embedded: false,
     projects: [
       { id: "pp-web", identifier: "WEB", name: "Website", description: "Site work" },
       { id: "pp-app", identifier: "APP", name: "App", description: "" },
@@ -531,6 +533,8 @@ const trello: Serve = (data, method, url, headers) => {
   return missing;
 };
 
+// What an embedding Plane answers in place of an ID.
+const embed = (ref: string | null) => (ref ? { id: ref, name: `Named ${ref}` } : null);
 // Plane pages with `per_page` and a cursor; this fake answers two items a page whatever is asked.
 const plane: Serve = (data, method, url, headers) => {
   if (value(headers, "x-api-key") !== fakeCredentials.plane)
@@ -551,11 +555,29 @@ const plane: Serve = (data, method, url, headers) => {
   if (rest === "members/") return ok(data.plane.members);
   if (rest === "modules/") return ok({ ...page([], cursor), total_count: data.plane.modules });
   const kind = data.plane.legacy ? "issues" : "work-items";
-  if (rest === `${kind}/`) return ok(page(data.plane.items, cursor));
+  if (rest === `${kind}/`) {
+    const items: object[] = data.plane.embedded
+      ? data.plane.items.map((found) => ({
+          ...found,
+          state: data.plane.states.find((state) => state.id === found.state),
+          parent: embed(found.parent),
+          created_by: embed(found.created_by),
+          estimate_point: embed(found.estimate_point),
+          assignees: found.assignees.map(embed),
+          labels: found.labels.map(embed),
+        }))
+      : data.plane.items;
+    return ok(page(items, cursor));
+  }
   const [, item, child] = /^(?:work-items|issues)\/([^/]+)\/([a-z]+)\/$/.exec(rest) ?? [];
   if (!rest.startsWith(`${kind}/`) || !item) return missing;
   if (child === "relations" && !data.plane.legacy) return ok(data.plane.relations[item] ?? {});
-  if (child === "comments") return ok(page(data.plane.comments[item] ?? [], cursor));
+  if (child === "comments") {
+    const notes = (data.plane.comments[item] ?? []).map((note) =>
+      data.plane.embedded ? { ...note, actor: { id: note.actor, display_name: "x" } } : note,
+    );
+    return ok(page(notes, cursor));
+  }
   return missing;
 };
 

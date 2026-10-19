@@ -62,21 +62,23 @@ const member = z.object({
   last_name: z.string().nullish(),
   email: z.string().nullish(),
 });
+// Plane gives what a work item names as an ID, or embeds it as an object holding one.
+const named = z.union([z.string(), z.object({ id: z.string() }).transform(({ id }) => id)]);
 const item = z.object({
   id: z.string(),
   sequence_id: z.number(),
   name: z.string(),
   description_html: z.string().nullish(),
   priority: z.string().nullish(),
-  state: z.string().nullish(),
-  parent: z.string().nullish(),
-  assignees: z.array(z.string()).default([]),
-  labels: z.array(z.string()).default([]),
+  state: named.nullish(),
+  parent: named.nullish(),
+  assignees: z.array(named).default([]),
+  labels: z.array(named).default([]),
   start_date: z.string().nullish(),
   target_date: z.string().nullish(),
   created_at: z.string(),
-  created_by: z.string().nullish(),
-  estimate_point: z.string().nullish(),
+  created_by: named.nullish(),
+  estimate_point: named.nullish(),
   cycle_id: z.string().nullish(),
   attachment_count: z.number().default(0),
   link_count: z.number().default(0),
@@ -84,8 +86,8 @@ const item = z.object({
 const comment = z.object({
   id: z.string(),
   comment_html: z.string().nullish(),
-  actor: z.string().nullish(),
-  created_by: z.string().nullish(),
+  actor: named.nullish(),
+  created_by: named.nullish(),
   created_at: z.string(),
 });
 const linked = z.array(z.object({ issue_id: z.string() })).default([]);
