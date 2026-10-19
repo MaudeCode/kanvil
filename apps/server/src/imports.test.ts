@@ -2,13 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { and, count, eq, inArray } from "drizzle-orm";
 import {
   mentionLink,
+  projectSchema,
   type Operation,
   type Output,
   type Project,
   type TicketExport,
 } from "@kanvil/contracts";
 import { createFixture } from "./test-fixture.ts";
-import { createDomain, type Actor, type Domain } from "./domain.ts";
+import { createDomain, one, type Actor, type Domain } from "./domain.ts";
 import { processImports } from "./import-operations.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { deliveries, events, importRecords, notifications, tickets } from "./schema.ts";
@@ -65,7 +66,11 @@ describe("ticket export and import runs", () => {
       { projectId, name: "Size", type: "select", options: [{ name: "Small" }, { name: "Large" }] },
       owner,
     );
-    await domain.execute("create_workspace_label", { workspaceId, name: "shared", color: "blue" }, owner);
+    await domain.execute(
+      "create_workspace_label",
+      { workspaceId, name: "shared", color: "blue" },
+      owner,
+    );
     await domain.execute(
       "create_project_label",
       { projectId, name: "local", color: "#123456" },
@@ -147,7 +152,13 @@ describe("ticket export and import runs", () => {
   const preview = (key: string, actor = owner, overrides: Partial<TicketExport> = {}) =>
     domain.execute(
       "preview_import",
-      { workspaceId, key, name: `Imported ${key}`, visibility: "workspace", bundle: { ...bundle, ...overrides } },
+      {
+        workspaceId,
+        key,
+        name: `Imported ${key}`,
+        visibility: "workspace",
+        bundle: { ...bundle, ...overrides },
+      },
       actor,
     );
   const start = (run: Output<"preview_import">, actor = owner) =>
@@ -159,8 +170,7 @@ describe("ticket export and import runs", () => {
   const drain = async (worker = domain) => {
     while (await processImports(worker));
   };
-  const read = (importId: string) =>
-    domain.execute("get_import", { workspaceId, importId }, owner);
+  const read = (importId: string) => domain.execute("get_import", { workspaceId, importId }, owner);
   const writerNotifications = async () =>
     one(
       await fixture.database.db
@@ -168,7 +178,14 @@ describe("ticket export and import runs", () => {
         .from(notifications)
         .where(eq(notifications.userId, writer.id)),
     ).count;
-  const one = <T>(rows: T[]) => rows[0]!;
+  const queued = async (ticketId: string) =>
+    (
+      await fixture.database.db
+        .select({ id: deliveries.id })
+        .from(deliveries)
+        .innerJoin(events, eq(events.id, deliveries.eventId))
+        .where(eq(events.ticketId, ticketId))
+    ).length;
 
   it("exports a versioned bundle whose records reference each other by source ID", async () => {
     expect(bundle).toMatchObject({
@@ -206,7 +223,10 @@ describe("ticket export and import runs", () => {
       expect.objectContaining({ ticketRef: ids.parent, outcome: "passed", title: "Suite" }),
     ]);
     expect(bundle.resources).toEqual([
-      expect.objectContaining({ ticketRef: ids.child, url: "https://github.com/example/repo/pull/1" }),
+      expect.objectContaining({
+        ticketRef: ids.child,
+        url: "https://github.com/example/repo/pull/1",
+      }),
     ]);
     expect(bundle.labels).toEqual(
       expect.arrayContaining([
@@ -236,15 +256,16 @@ describe("ticket export and import runs", () => {
       ],
     });
     expect(broken.status).toBe("previewed");
-    expect(broken.issues.filter((issue) => issue.severity === "error").map((issue) => issue.code))
-      .toEqual(
-        expect.arrayContaining([
-          "duplicate_prefix",
-          "unknown_state",
-          "invalid_field_value",
-          "dependency_cycle",
-        ]),
-      );
+    expect(
+      broken.issues.filter((issue) => issue.severity === "error").map((issue) => issue.code),
+    ).toEqual(
+      expect.arrayContaining([
+        "duplicate_prefix",
+        "unknown_state",
+        "invalid_field_value",
+        "dependency_cycle",
+      ]),
+    );
     expect(broken.progress.total).toBe(0);
     await expect(start(broken)).rejects.toMatchObject({ code: "import_blocked" });
     // In a private project only the importer and workspace administrators can be assigned.
@@ -253,9 +274,20 @@ describe("ticket export and import runs", () => {
       { workspaceId, key: prefix("H"), name: "Private", visibility: "private", bundle },
       owner,
     );
-    expect(hidden.members.find((person) => person.email === "writer@example.test")?.userId).toBeNull();
+    expect(
+      hidden.members.find((person) => person.email === "writer@example.test")?.userId,
+    ).toBeNull();
     expect(hidden.issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ severity: "warning", code: "unassigned" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ severity: "warning", code: "unassigned" }),
+      ]),
+    );
+    // A comment at the length limit loses its end to the attribution line, and the preview says so.
+    const long = await preview(prefix("L"), owner, {
+      comments: bundle.comments.map((comment) => ({ ...comment, body: "x".repeat(50_000) })),
+    });
+    expect(long.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ severity: "warning", code: "truncated" })]),
     );
   });
 
@@ -270,7 +302,13 @@ describe("ticket export and import runs", () => {
     expect(run.members.find((person) => person.email === "writer@example.test")?.userId).toBe(
       writer.id,
     );
-    expect(run.counts).toMatchObject({ tickets: 3, relations: 1, comments: 1, evidence: 1, links: 1 });
+    expect(run.counts).toMatchObject({
+      tickets: 3,
+      relations: 1,
+      comments: 1,
+      evidence: 1,
+      links: 1,
+    });
     expect((await start(run)).status).toBe("running");
     await drain();
     const finished = await read(run.id);
@@ -307,13 +345,26 @@ describe("ticket export and import runs", () => {
     });
     expect(child).toMatchObject({ parentId: parent!.id, archived: true });
     expect(blocker!.status).toBe("done");
-    expect(await domain.execute("list_relations", { projectId, ticketId: parent!.id }, owner)).toEqual(
-      [expect.objectContaining({ sourceId: blocker!.id, targetId: parent!.id, type: "blocks" })],
+    expect(
+      await domain.execute("list_relations", { projectId, ticketId: parent!.id }, owner),
+    ).toEqual([
+      expect.objectContaining({ sourceId: blocker!.id, targetId: parent!.id, type: "blocks" }),
+    ]);
+    const discussion = await domain.execute(
+      "list_comments",
+      { projectId, ticketId: parent!.id },
+      owner,
     );
-    const discussion = await domain.execute("list_comments", { projectId, ticketId: parent!.id }, owner);
-    expect(discussion.items[0]?.body).toMatch(/^Originally by Owner on \d{4}-\d{2}-\d{2}\.\n\nOver to/);
-    expect(await domain.execute("list_evidence", { projectId, ticketId: parent!.id }, owner)).toEqual([
-      expect.objectContaining({ outcome: "passed", note: expect.stringMatching(/^Originally by Owner/) }),
+    expect(discussion.items[0]?.body).toMatch(
+      /^Originally by Owner on \d{4}-\d{2}-\d{2}\.\n\nOver to/,
+    );
+    expect(
+      await domain.execute("list_evidence", { projectId, ticketId: parent!.id }, owner),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: "passed",
+        note: expect.stringMatching(/^Originally by Owner/),
+      }),
     ]);
     expect(
       (await domain.execute("list_resources", { projectId, ticketId: child!.id }, owner))[0]?.url,
@@ -324,8 +375,8 @@ describe("ticket export and import runs", () => {
       .from(events)
       .where(eq(events.projectId, projectId));
     expect(written.length).toBeGreaterThan(0);
-    expect(written.every((event) => (event.data.import as { runId?: string })?.runId === run.id)).toBe(
-      true,
+    expect(written.map((event) => event.data.import)).toEqual(
+      written.map(() => ({ runId: run.id })),
     );
     expect(await writerNotifications()).toBe(before);
     // Settled records drop their staged payloads.
@@ -369,9 +420,80 @@ describe("ticket export and import runs", () => {
       .select({ targetId: importRecords.targetId })
       .from(importRecords)
       .where(and(eq(importRecords.runId, run.id), eq(importRecords.kind, "ticket")));
-    expect(settled.map((record) => record.targetId).toSorted()).toEqual(
-      rows.map((row) => row.id).toSorted(),
+    expect(new Set(settled.map((record) => record.targetId))).toEqual(
+      new Set(rows.map((row) => row.id)),
     );
+  });
+
+  it("stops a run whose project stops accepting writes instead of failing every record", async () => {
+    // The project is archived right after the run creates it.
+    async function execute<K extends Operation>(
+      name: K,
+      value: unknown,
+      actor: Actor,
+      provenance?: { importRun: string },
+    ) {
+      const result = await domain.execute(name, value, actor, provenance);
+      if (name === "create_project") {
+        const created = projectSchema.parse(result);
+        await domain.execute(
+          "archive_project",
+          { projectId: created.id, expectedVersion: created.version, archived: true },
+          owner,
+        );
+      }
+      return result;
+    }
+    const run = await preview(prefix("A"));
+    await start(run);
+    while (await processImports({ ...domain, execute }));
+    const finished = await read(run.id);
+    expect(finished).toMatchObject({
+      status: "failed",
+      progress: { failed: 1 },
+      errors: [expect.objectContaining({ kind: "state", code: "project_archived" })],
+    });
+    expect(finished.progress.done + finished.progress.failed).toBeLessThan(finished.progress.total);
+  });
+
+  it("names former members in an export without their email", async () => {
+    const former = await fixture.auth.api.createUser({
+      body: {
+        name: "Former",
+        email: "former@example.test",
+        password: "Isolated fixture password 42!",
+        role: "user",
+      },
+    });
+    const leaving = await domain.actor(former.user.id);
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId, email: "former@example.test", role: "writer" },
+      owner,
+    );
+    const project = await domain.execute(
+      "create_project",
+      { key: prefix("F"), name: "Former", visibility: "workspace" },
+      owner,
+    );
+    const ticket = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Left" },
+      leaving,
+    );
+    await domain.execute(
+      "add_comment",
+      { projectId: project.id, ticketId: ticket.id, body: "Signing off" },
+      leaving,
+    );
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId, email: "former@example.test", role: null },
+      owner,
+    );
+    const exported = await domain.execute("export_project", { projectId: project.id }, owner);
+    expect(exported.members).toEqual([{ ref: leaving.id, name: "Former member", email: "" }]);
+    expect(exported.comments[0]?.authorRef).toBe(leaving.id);
   });
 
   it("stops a cancelled run and keeps runs private to the person who staged them", async () => {
@@ -396,6 +518,10 @@ describe("ticket export and import runs", () => {
       domain.execute("get_import", { workspaceId, importId: run.id }, writer),
     ).rejects.toMatchObject({ code: "not_found" });
     expect(await domain.execute("list_imports", { workspaceId }, writer)).toEqual([]);
+    // Unstarted previews stay out of the list.
+    const listed = await domain.execute("list_imports", { workspaceId }, owner);
+    expect(listed.map((item) => item.id)).toContain(run.id);
+    expect(listed.every((item) => item.status !== "previewed")).toBe(true);
     await expect(preview(prefix("D"), reader)).rejects.toMatchObject({ code: "forbidden" });
     const credential = await domain.actor(owner.id, {
       ownerId: owner.id,
@@ -418,14 +544,6 @@ describe("ticket export and import runs", () => {
       },
       owner,
     );
-    const queued = async (ticketId: string) =>
-      (
-        await fixture.database.db
-          .select({ id: deliveries.id })
-          .from(deliveries)
-          .innerJoin(events, eq(events.id, deliveries.eventId))
-          .where(eq(events.ticketId, ticketId))
-      ).length;
     const imported = await domain.execute(
       "create_ticket",
       { projectId: source.id, title: "Arrives by import" },

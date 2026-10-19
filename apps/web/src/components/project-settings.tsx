@@ -26,7 +26,12 @@ import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
 import { CustomFieldSettings } from "./custom-field-settings.tsx";
 import { ProjectDestinations, RepositoryConnections } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
-import { ArchiveProjectRow, DeleteProjectRow, MoveProject } from "./project-lifecycle.tsx";
+import {
+  ArchiveProjectRow,
+  DeleteProjectRow,
+  ExportProjectRow,
+  MoveProject,
+} from "./project-lifecycle.tsx";
 import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
@@ -158,6 +163,7 @@ export function ProjectSettings({
                 </Button>
               )}
             </SettingRow>
+            <ExportProjectRow project={project} />
             {access.canManage && (
               <>
                 <ArchiveProjectRow project={project} />

@@ -49,6 +49,51 @@ export function PrefixInput({
     </div>
   );
 }
+// Labels wrap instead of overflowing a narrow dialog.
+const wrapping = "h-auto min-h-8 min-w-0 py-1.5 whitespace-normal";
+// Who can open a new project; creation and import share it.
+export function ProjectAccessField({
+  value,
+  onChange,
+}: {
+  value: "workspace" | "private";
+  onChange: (value: "workspace" | "private") => void;
+}) {
+  return (
+    <Field className={fieldClass}>
+      <FieldLabel>Project access</FieldLabel>
+      <ToggleGroup
+        aria-label="Project access"
+        value={[value]}
+        onValueChange={(next) => {
+          const chosen = next[0];
+          if (chosen === "workspace" || chosen === "private") onChange(chosen);
+        }}
+        variant="outline"
+        spacing={0}
+        className="w-full *:flex-1"
+      >
+        <ToggleGroupItem
+          value="workspace"
+          aria-label="Everyone in this workspace"
+          className={wrapping}
+        >
+          <Users />
+          Everyone in the workspace
+        </ToggleGroupItem>
+        <ToggleGroupItem value="private" aria-label="Only project members" className={wrapping}>
+          <Lock />
+          Only project members
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <FieldDescription>
+        {value === "workspace"
+          ? "Workspace members inherit access from their workspace role."
+          : "Only members you add and workspace administrators can see this project."}
+      </FieldDescription>
+    </Field>
+  );
+}
 export function CreateProject({ sidebarAction = false }: { sidebarAction?: boolean }) {
   const { active: workspace } = useWorkspace();
   const canCreate = !!workspace && (workspace.role === "writer" || workspace.role === "admin");
@@ -136,34 +181,7 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             }}
           />
           <Textarea label="Description" name="description" maxLength={5000} rows={3} />
-          <Field className={fieldClass}>
-            <FieldLabel>Project access</FieldLabel>
-            <ToggleGroup
-              aria-label="Project access"
-              value={[visibility]}
-              onValueChange={(next) => {
-                const chosen = next[0];
-                if (chosen === "workspace" || chosen === "private") setVisibility(chosen);
-              }}
-              variant="outline"
-              spacing={0}
-              className="w-full *:flex-1"
-            >
-              <ToggleGroupItem value="workspace" aria-label="Everyone in this workspace">
-                <Users />
-                Everyone in the workspace
-              </ToggleGroupItem>
-              <ToggleGroupItem value="private" aria-label="Only project members">
-                <Lock />
-                Only project members
-              </ToggleGroupItem>
-            </ToggleGroup>
-            <FieldDescription>
-              {visibility === "workspace"
-                ? "Workspace members inherit access from their workspace role."
-                : "Only members you add and workspace administrators can see this project."}
-            </FieldDescription>
-          </Field>
+          <ProjectAccessField value={visibility} onChange={setVisibility} />
           <FormActions
             error={create.error}
             pending={create.isPending}

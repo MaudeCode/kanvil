@@ -5,7 +5,19 @@
 // nothing is written twice. Every write carries the run as provenance, so it notifies no one and
 // reaches no destination. Sources from other trackers translate into the same bundle.
 import { createHash } from "node:crypto";
-import { and, asc, count, desc, eq, inArray, lt, sql, type AnyColumn } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lt,
+  ne,
+  sql,
+  type AnyColumn,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   ApiError,
@@ -50,6 +62,7 @@ import {
   type Domain,
   type Handlers,
 } from "./domain.ts";
+import { projectRoleSQL } from "./project-access.ts";
 import { projectStates } from "./workflow-operations.ts";
 import { projectCustomFields } from "./custom-field-operations.ts";
 
@@ -117,7 +130,7 @@ async function exportBundle(ctx: Context) {
     {
       content: "attachments",
       count: await tally(attachments.ticketId),
-      reason: "Files stay in this project; text that embeds them keeps their old addresses.",
+      reason: "Files stay in the source project; text that embeds them keeps their old addresses.",
     },
     {
       content: "activity",
@@ -127,7 +140,7 @@ async function exportBundle(ctx: Context) {
           .from(events)
           .where(eq(events.projectId, current.id)),
       ).count,
-      reason: "Activity history stays with this project; an import never replays it.",
+      reason: "Activity history stays with the source project; an import never replays it.",
     },
     {
       content: "claims",
@@ -157,17 +170,11 @@ async function exportBundle(ctx: Context) {
           content: "project settings",
           count: null,
           reason:
-            "Access, saved views, calendar feeds, destinations, the public link, icon, and background belong to the project, not its tickets.",
+            "Access, saved views, calendar feeds, destinations, the public link, icon, and background stay with the source project.",
         },
       ],
     },
-    members: people.length
-      ? await ctx.db
-          .select({ ref: user.id, name: user.name, email: user.email })
-          .from(user)
-          .where(inArray(user.id, people))
-          .orderBy(asc(user.name))
-      : [],
+    members: await exportedPeople(ctx, people),
     workflow: (await projectStates(ctx)).map((state) => ({
       ref: state.id,
       name: state.name,
@@ -238,13 +245,34 @@ async function exportBundle(ctx: Context) {
   };
 }
 
+// The people records name. Like the member list, only current members show their name and
+// email; anyone else reads as a former member.
+async function exportedPeople(ctx: Context, ids: string[]) {
+  const current = ids.length
+    ? await ctx.db
+        .select({ ref: user.id, name: user.name, email: user.email })
+        .from(user)
+        .where(and(inArray(user.id, ids), isNotNull(projectRoleSQL(user.id, project(ctx).id))))
+        .orderBy(asc(user.name))
+    : [];
+  return [
+    ...current,
+    ...ids
+      .filter((id) => !current.some((person) => person.ref === id))
+      .map((ref) => ({ ref, name: "Former member", email: "" })),
+  ];
+}
 const list = (items: string[], limit = 5) =>
   items.length > limit
     ? `${items.slice(0, limit).join(", ")} and ${items.length - limit} more`
     : items.join(", ");
-const repeated = (values: string[]) => [
-  ...new Set(values.filter((value, index) => values.indexOf(value) !== index)),
-];
+// Values that occur more than once, in linear time for large bundles.
+function repeated(values: string[]) {
+  const seen = new Set<string>(),
+    again = new Set<string>();
+  for (const value of values) (seen.has(value) ? again : seen).add(value);
+  return [...again];
+}
 // Collects findings by subject and reports each once with the records it names.
 function findings() {
   const found = new Map<string, Issue & { items: string[] }>();
@@ -264,11 +292,8 @@ function findings() {
   };
 }
 // Comments and evidence are written as the importer and keep their source attribution in text.
-const attributed = (author: string | undefined, at: string, text: string, limit: number) =>
-  `Originally by ${author ?? "an unknown author"} on ${at.slice(0, 10)}.\n\n${text}`.slice(
-    0,
-    limit,
-  );
+const attribution = (author: string | undefined, at: string) =>
+  `Originally by ${author ?? "an unknown author"} on ${at.slice(0, 10)}.\n\n`;
 
 // The default state a source state of the same name lands on.
 const defaults = (state: { name: string }) =>
@@ -357,12 +382,29 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
   const members = bundle.members.map((person) => ({
     ...person,
     userId:
-      [me, ...reachable].find(
-        (account) => account.email.toLowerCase() === person.email.toLowerCase(),
-      )?.id ?? null,
+      (person.email &&
+        [me, ...reachable].find(
+          (account) => account.email.toLowerCase() === person.email.toLowerCase(),
+        )?.id) ||
+      null,
   }));
   const assignee = new Map(members.map((person) => [person.ref, person.userId]));
   const authors = new Map(bundle.members.map((person) => [person.ref, person.name]));
+  const attributed = (
+    item: { authorRef: string | null; createdAt: string; ticketRef: string },
+    text: string,
+    limit: number,
+  ) => {
+    const full =
+      attribution(item.authorRef ? authors.get(item.authorRef) : undefined, item.createdAt) + text;
+    if (full.length > limit)
+      warn(
+        "truncated",
+        "Long comments or evidence notes lose their end to the attribution line",
+        item.ticketRef,
+      );
+    return full.slice(0, limit);
+  };
 
   // Tickets: references, field values, and a parent order with no cycle.
   const byRef = new Map(bundle.tickets.map((ticket) => [ticket.ref, ticket]));
@@ -420,37 +462,45 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       });
   }
   // Parents and blockers form one dependency graph, as `assertNoCycle` checks it.
-  const edges = new Map<string, string[]>();
-  const edge = (from: string, to: string) => edges.set(from, [...(edges.get(from) ?? []), to]);
-  for (const ticket of bundle.tickets)
-    if (ticket.parentRef && byRef.has(ticket.parentRef)) edge(ticket.ref, ticket.parentRef);
-  for (const link of links.values())
-    if (link.type === "blocks") edge(link.sourceRef, link.targetRef);
-  const visiting = new Set<string>(),
-    done = new Set<string>();
-  const cyclic = (ref: string): boolean => {
-    if (done.has(ref)) return false;
-    if (visiting.has(ref)) return true;
-    visiting.add(ref);
-    const loop = (edges.get(ref) ?? []).some(cyclic);
-    visiting.delete(ref);
-    done.add(ref);
-    return loop;
+  // Iterative, so long chains cannot exhaust the stack: tickets left with an incoming edge after
+  // peeling every edge-free one lie on a cycle or after one.
+  const edges = new Map<string, string[]>(),
+    incoming = new Map(bundle.tickets.map((ticket) => [ticket.ref, 0]));
+  const connect = (from: string, to: string) => {
+    const targets = edges.get(from) ?? [];
+    targets.push(to);
+    edges.set(from, targets);
+    incoming.set(to, (incoming.get(to) ?? 0) + 1);
   };
   for (const ticket of bundle.tickets)
-    if (cyclic(ticket.ref))
-      error("dependency_cycle", "Parents or blockers form a cycle through", ticket.key);
+    if (ticket.parentRef && byRef.has(ticket.parentRef)) connect(ticket.ref, ticket.parentRef);
+  for (const link of links.values())
+    if (link.type === "blocks") connect(link.sourceRef, link.targetRef);
+  const free = [...incoming].flatMap(([ref, waiting]) => (waiting ? [] : [ref]));
+  for (let at = 0; at < free.length; at++)
+    for (const to of edges.get(free[at] ?? "") ?? []) {
+      const left = (incoming.get(to) ?? 0) - 1;
+      incoming.set(to, left);
+      if (!left) free.push(to);
+    }
+  for (const ticket of bundle.tickets)
+    if (incoming.get(ticket.ref))
+      error("dependency_cycle", "Parents or blockers form a cycle among", ticket.key);
   // Parents are written before their children.
   const ordered: TicketExport["tickets"] = [],
     placed = new Set<string>();
-  const place = (ticket: TicketExport["tickets"][number]) => {
-    if (placed.has(ticket.ref)) return;
-    placed.add(ticket.ref);
-    const parent = ticket.parentRef ? byRef.get(ticket.parentRef) : undefined;
-    if (parent) place(parent);
-    ordered.push(ticket);
-  };
-  bundle.tickets.forEach(place);
+  for (const ticket of bundle.tickets) {
+    const chain: TicketExport["tickets"] = [];
+    for (
+      let at: TicketExport["tickets"][number] | undefined = ticket;
+      at && !placed.has(at.ref);
+      at = at.parentRef ? byRef.get(at.parentRef) : undefined
+    ) {
+      placed.add(at.ref);
+      chain.push(at);
+    }
+    ordered.push(...chain.toReversed());
+  }
 
   // Labels the workspace already shares keep its color; the rest become project labels.
   const shared = new Set(
@@ -490,34 +540,6 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       `Not in the file: ${item.content}${item.count === null ? "" : ` (${item.count})`}. ${item.reason}`,
     );
 
-  const issues = found.issues();
-  const run = one(
-    await ctx.db
-      .insert(importRuns)
-      .values({
-        workspaceId: space.id,
-        actorId: ctx.actor.id,
-        key: input.key,
-        name: input.name,
-        visibility: input.visibility,
-        status: "previewed",
-        counts: {
-          tickets: ordered.length,
-          workflow: bundle.workflow.length,
-          fields: bundle.customFields.length,
-          labels: labels.length,
-          relations: links.size,
-          comments: notes.length,
-          evidence: reports.length,
-          links: sites.length,
-        },
-        members,
-        issues,
-      })
-      .returning(),
-  );
-  // A run with errors cannot start, so its records are never staged.
-  if (issues.some((issue) => issue.severity === "error")) return toRun(ctx.db, run);
   const records = [
     {
       kind: "project",
@@ -569,12 +591,7 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       label: keyOf(note.ticketRef),
       payload: {
         ticketRef: note.ticketRef,
-        body: attributed(
-          note.authorRef ? authors.get(note.authorRef) : undefined,
-          note.createdAt,
-          note.body,
-          50_000,
-        ),
+        body: attributed(note, note.body, 50_000),
       },
     })),
     ...reports.map(({ ref, authorRef, createdAt, ...report }) => ({
@@ -584,8 +601,7 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       payload: {
         ...report,
         note: attributed(
-          authorRef ? authors.get(authorRef) : undefined,
-          createdAt,
+          { authorRef, createdAt, ticketRef: report.ticketRef },
           report.note,
           20_000,
         ),
@@ -598,6 +614,34 @@ async function previewImport(ctx: Context, input: ParsedInput<"preview_import">)
       payload: site,
     })),
   ];
+  const issues = found.issues();
+  const run = one(
+    await ctx.db
+      .insert(importRuns)
+      .values({
+        workspaceId: space.id,
+        actorId: ctx.actor.id,
+        key: input.key,
+        name: input.name,
+        visibility: input.visibility,
+        status: "previewed",
+        counts: {
+          tickets: ordered.length,
+          workflow: bundle.workflow.length,
+          fields: bundle.customFields.length,
+          labels: labels.length,
+          relations: links.size,
+          comments: notes.length,
+          evidence: reports.length,
+          links: sites.length,
+        },
+        members,
+        issues,
+      })
+      .returning(),
+  );
+  // A run with errors cannot start, so its records are never staged.
+  if (issues.some((issue) => issue.severity === "error")) return toRun(ctx.db, run);
   await insertAll(
     records.map((record, seq) => ({ ...record, runId: run.id, seq })),
     (batch) => ctx.db.insert(importRecords).values(batch).returning({ seq: importRecords.seq }),
@@ -682,7 +726,11 @@ export const importHandlers: Pick<
       .select()
       .from(importRuns)
       .where(
-        and(eq(importRuns.workspaceId, workspace(ctx).id), eq(importRuns.actorId, ctx.actor.id)),
+        and(
+          eq(importRuns.workspaceId, workspace(ctx).id),
+          eq(importRuns.actorId, ctx.actor.id),
+          ne(importRuns.status, "previewed"),
+        ),
       )
       .orderBy(desc(importRuns.createdAt))
       .limit(20);
@@ -811,6 +859,16 @@ export async function processImports(domain: Domain) {
           ).map((row) => [row.ref, row.targetId])
         : [],
     );
+  const reachable = (id: string | null) =>
+    id
+      ? domain.execute("get_project", { projectId: id }, actor).then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof ApiError) return false;
+            throw error;
+          },
+        )
+      : Promise.resolve(false);
   const ticketOf = async (ref: string) =>
     (await targets("ticket", [ref])).get(ref) ??
     fail(404, "not_found", "Its ticket was not imported");
@@ -924,7 +982,13 @@ export async function processImports(domain: Domain) {
             : undefined;
       if (!rejection) throw error;
       await settle(record.seq, { status: "failed", error: rejection });
-      if (record.kind === "project") {
+      // Without its project, or once the importer can no longer write there, the run stops
+      // instead of failing every remaining record.
+      const stopped =
+        record.kind === "project" ||
+        ["forbidden", "project_archived"].includes(rejection.code) ||
+        (rejection.code === "not_found" && !(await reachable(projectId)));
+      if (stopped) {
         await finish("failed");
         return true;
       }

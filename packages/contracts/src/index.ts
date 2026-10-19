@@ -1852,7 +1852,7 @@ export const operations = {
     "GET",
     "/workspaces/{workspaceId}/imports",
     "read",
-    "List your 20 most recent imports into the workspace with their progress.",
+    "List your 20 most recently started imports into the workspace with their progress. Previews that were never started are left out.",
   ),
   get_import: op(
     importInput,

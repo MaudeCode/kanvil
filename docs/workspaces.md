@@ -20,6 +20,8 @@ Workspace operations use the same operation registry, authorization, transaction
 
 Workspace administrators can define labels every project in the workspace uses, beside each project's own labels. Projects show workspace labels read-only in their label settings; renaming or deleting one updates every project's tickets and saved views together. See [the API reference](api.md) for conflict and adoption rules.
 
+Anyone who can read a project can export its tickets as JSON from the project's settings. Workspace writers import such a file into a new project from the workspace's settings: the preview lists what maps, what changes, and what the file leaves out before anything is written, and the import continues in the background, resuming after a restart. See [Export and import](api.md#export-and-import).
+
 Project icons can use a bundled, searchable open-source icon collection or a normalized image upload. Uploaded bytes use the existing blob storage adapter and authenticated project access. Referenced icons must remain excluded from orphan cleanup, and backup/restore retains them with other blob objects.
 
 ## Verification

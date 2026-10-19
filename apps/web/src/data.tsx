@@ -88,6 +88,9 @@ const settledBy: Record<string, string[]> = {
   list_project_destinations: ["destination.", "project."],
   // Personal; writes invalidate it and pending sends poll it.
   list_notification_channels: [],
+  // Personal; running imports poll them instead of refreshing on each record they write.
+  list_imports: [],
+  get_import: [],
 };
 // Decides which cached queries a realtime event can have changed.
 export function affectedBy(event: ChangeEvent) {

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Archive, ArchiveRestore, ArrowRightLeft, LogIn, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRightLeft, Download, LogIn, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -11,6 +11,7 @@ import {
   type WorkspaceImpact,
 } from "@kanvil/contracts";
 import { api, signOut, useIdentity, useOperation, useProjectAccess } from "../data.tsx";
+import { downloadFile } from "../lib/browser.ts";
 import {
   Button,
   Confirm,
@@ -121,17 +122,23 @@ function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
           error={new Error(`${blocker.message}: ${blocker.tickets.join(", ")}`)}
         />
       ))}
-      <dl className="my-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-sm">
-        {describe(impact)
-          .filter(([, value]) => value !== "")
-          .map(([label, value]) => (
-            <div key={label} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="m-0 wrap-anywhere">{value}</dd>
-            </div>
-          ))}
-      </dl>
+      <SummaryList rows={describe(impact)} />
     </>
+  );
+}
+// Labeled values of a preview; empty values are left out.
+export function SummaryList({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <dl className="my-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-sm">
+      {rows
+        .filter(([, value]) => value !== "")
+        .map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="m-0 wrap-anywhere">{value}</dd>
+          </div>
+        ))}
+    </dl>
   );
 }
 const projectRows =
@@ -233,6 +240,33 @@ export function MoveProject({
         </form>
       </Modal>
     </>
+  );
+}
+// Anyone who can read the project can export what they read.
+export function ExportProjectRow({ project }: { project: Project }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <SettingRow
+      title="Export"
+      description="Tickets with their workflow, fields, labels, relationships, comments, evidence, and links as versioned JSON. Attachments and activity history stay here."
+    >
+      <Button
+        disabled={pending}
+        onClick={() => {
+          setPending(true);
+          void api
+            .call("export_project", { projectId: project.id })
+            .then((bundle) =>
+              downloadFile(`${project.key}.kanvil-tickets.json`, JSON.stringify(bundle, null, 2)),
+            )
+            .catch(reportError)
+            .finally(() => setPending(false));
+        }}
+      >
+        <Download />
+        {pending ? "Exporting…" : "Export JSON"}
+      </Button>
+    </SettingRow>
   );
 }
 // Deleting a project or a workspace: the preview, a typed confirmation, and the destructive submit.

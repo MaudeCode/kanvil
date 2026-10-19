@@ -21,6 +21,7 @@ import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./se
 import { MemberDirectory } from "./member-directory.tsx";
 import { InvitationList } from "./invitations.tsx";
 import { LabelSettings } from "./label-settings.tsx";
+import { ImportProjects } from "./project-import.tsx";
 import type { workspaceSections } from "../search.ts";
 type Member = z.output<typeof memberSchema>;
 // Only the owner and instance administrators see the transfer; it goes to another active
@@ -216,6 +217,7 @@ export function WorkspaceSettings({
                 Manage members
               </Button>
             </SettingRow>
+            {workspace.role !== "reader" && <ImportProjects workspaceId={workspaceId} />}
             {isOwner && <DeleteWorkspaceRow workspace={workspace} />}
           </section>
         </SettingsPanel>
