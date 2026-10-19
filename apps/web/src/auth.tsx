@@ -70,11 +70,20 @@ function AuthScreen({
 }
 
 // A sign-in that continues an OAuth authorization returns where to go next.
+// Keeps the page the person started on, such as an invitation, minus an emailed code.
+function dropEmailedCode() {
+  const page = new URL(window.location.href);
+  for (const key of ["email", "code", "reset"]) page.searchParams.delete(key);
+  window.history.replaceState(null, "", page);
+}
 function continueSignIn(data: unknown) {
   if (data && typeof data === "object" && "url" in data && typeof data.url === "string")
     window.location.assign(data.url);
   else if (window.location.pathname === "/login") window.location.assign("/");
+  else dropEmailedCode();
 }
+// An emailed code links back to the page that asked for it.
+const returnHere = () => ({ headers: { "X-Kanvil-Return": window.location.pathname } });
 export function Login() {
   const [error, setError] = useAuthError();
   // An emailed link opens this screen with its address and code filled in.
@@ -121,8 +130,8 @@ export function Login() {
   async function sendCode() {
     authResult(
       flow === "reset"
-        ? await auth.emailOtp.requestPasswordReset({ email })
-        : await auth.emailOtp.sendVerificationOtp({ email, type: "sign-in" }),
+        ? await auth.emailOtp.requestPasswordReset({ email }, returnHere())
+        : await auth.emailOtp.sendVerificationOtp({ email, type: "sign-in" }, returnHere()),
     );
     setSent(true);
   }
@@ -137,10 +146,7 @@ export function Login() {
       authResult(
         await auth.emailOtp.resetPassword({ email, otp, password: formText(values, "password") }),
       );
-      // Keep the page the person started on, such as an invitation, minus the emailed code.
-      const page = new URL(window.location.href);
-      for (const key of ["email", "code", "reset"]) page.searchParams.delete(key);
-      window.history.replaceState(null, "", page);
+      dropEmailedCode();
       setFlow(null);
       setSent(false);
       setEmailOpen(true);

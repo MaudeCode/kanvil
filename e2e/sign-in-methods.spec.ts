@@ -180,6 +180,38 @@ test("a password reset from an invitation link returns to the invitation", async
   });
 });
 
+test("an emailed sign-in link from an invitation returns to the invitation", async ({ page }) => {
+  await signIn(page);
+  const email = "invited-code@sign-in.test";
+  await createPerson(page, email);
+  const workspace = await (
+    await page.request.post("/api/v1/workspaces", {
+      data: { name: "Code invitations", slug: "code-invitations" },
+    })
+  ).json();
+  const { url } = await (
+    await page.request.post(`/api/v1/workspaces/${workspace.id}/invitations`, {
+      data: { email, role: "reader" },
+    })
+  ).json();
+  await signedOut(page, async (guest) => {
+    await guest.goto(url);
+    await useEmailLogin(guest);
+    await guest.getByLabel("Email", { exact: true }).fill(email);
+    await guest.getByRole("button", { name: "Email me a sign-in code", exact: true }).click();
+    const sent = mailTo(email).length;
+    await guest.getByRole("button", { name: "Email me a code", exact: true }).click();
+    const { link } = await codeFor(email, sent);
+    expect(new URL(link).pathname).toBe(new URL(url).pathname);
+    await guest.goto(link);
+    await guest.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      guest.getByRole("heading", { name: "Join Code invitations", exact: true }),
+    ).toBeVisible();
+    expect(new URL(guest.url()).search).toBe("");
+  });
+});
+
 test("links GitHub in settings, signs in with it, and refuses an unlinked identity", async ({
   page,
 }) => {

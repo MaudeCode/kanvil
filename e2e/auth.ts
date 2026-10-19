@@ -52,6 +52,6 @@ export async function codeFor(email: string, index: number) {
   const message = mailTo(email)[index] ?? "";
   return {
     code: /code is (\d{6})\./.exec(message)?.[1] ?? "",
-    link: /(https?:\/\/\S+\/login\?\S+)/.exec(message)?.[1] ?? "",
+    link: /(https?:\/\/\S+\?\S*code=\S+)/.exec(message)?.[1] ?? "",
   };
 }

@@ -52,7 +52,7 @@ async function nextCode(email: string, after: number) {
   expect(message).toContain(`To: ${email}`);
   return {
     code: /code is (\d{6})\./.exec(message)?.[1] ?? "",
-    link: /(http:\/\/localhost:5180\/login\?\S+)/.exec(message)?.[1] ?? "",
+    link: /(http:\/\/localhost:5180\/\S*\?\S*code=\S+)/.exec(message)?.[1] ?? "",
   };
 }
 // Lets a background send settle, then confirms none was made.
@@ -228,6 +228,44 @@ describe("email codes", () => {
     await createPerson("mover@sign-in.test");
     expect((await signInWithCode("leaver@sign-in.test", left.code)).ok).toBe(false);
     expect((await signInWithCode("mover@sign-in.test", moved.code)).ok).toBe(false);
+  });
+
+  it("drops a reset code when the account is disabled, so it cannot set a password", async () => {
+    const id = await createPerson("banned-reset@sign-in.test");
+    await request(
+      "/api/auth/email-otp/request-password-reset",
+      "POST",
+      { email: "banned-reset@sign-in.test" },
+      "",
+    );
+    const { code } = await nextCode("banned-reset@sign-in.test", 0);
+    expect((await request("/api/auth/admin/ban-user", "POST", { userId: id })).status).toBe(200);
+    const reset = await request(
+      "/api/auth/email-otp/reset-password",
+      "POST",
+      { email: "banned-reset@sign-in.test", otp: code, password: "Isolated-banned-password-89" },
+      "",
+    );
+    expect(reset.ok).toBe(false);
+  });
+
+  it("links back to the page the request started on, and only within Kanvil", async () => {
+    await createPerson("returning@sign-in.test");
+    const ask = (path: string) =>
+      application.app.fetch(
+        new Request(`${origin}/api/auth/email-otp/send-verification-otp`, {
+          method: "POST",
+          headers: { Origin: origin, "Content-Type": "application/json", "X-Kanvil-Return": path },
+          body: JSON.stringify({ email: "returning@sign-in.test", type: "sign-in" }),
+        }),
+      );
+    await ask("/invite/abc_DEF-123");
+    expect(new URL((await nextCode("returning@sign-in.test", 0)).link).pathname).toBe(
+      "/invite/abc_DEF-123",
+    );
+    await ask("//evil.example/steal");
+    const offsite = new URL((await nextCode("returning@sign-in.test", 1)).link);
+    expect(`${offsite.origin}${offsite.pathname}`).toBe(`${origin}/login`);
   });
 
   it("refuses a code issued before the account was disabled", async () => {

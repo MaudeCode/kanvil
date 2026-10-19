@@ -76,7 +76,7 @@ export function createAuth(database: Database, config: Config) {
   // Runs after the response, so neither the lookup nor SMTP latency tells a caller whether the
   // address has an account. Disabled and deleted accounts get nothing. A failed send gives its
   // throttle slot back; the code it carried is the one already mailed, if any, so that one stays.
-  async function sendCode(email: string, otp: string, type: string) {
+  async function sendCode(email: string, otp: string, type: string, page: string) {
     if (!mail || (type !== "sign-in" && type !== "forget-password")) return;
     const active = await database.pool.query(
       `SELECT 1 FROM "user" WHERE email = $1 AND deleted_at IS NULL
@@ -84,7 +84,7 @@ export function createAuth(database: Database, config: Config) {
       [email],
     );
     if (!active.rowCount) return;
-    const link = new URL("/login", config.KANVIL_URL);
+    const link = new URL(page, config.KANVIL_URL);
     link.search = new URLSearchParams({
       email,
       code: otp,
@@ -258,8 +258,16 @@ export function createAuth(database: Database, config: Config) {
         // it is stored encrypted with the server secret rather than hashed.
         resendStrategy: "reuse",
         storeOTP: "encrypted",
-        sendVerificationOTP: ({ email, otp, type }) => {
-          void sendCode(email, otp, type).catch(() => console.error("Kanvil email failed"));
+        sendVerificationOTP: ({ email, otp, type }, ctx) => {
+          // The emailed link opens the page the request started on, such as an invitation. Only a
+          // plain path on this instance qualifies; anything else opens the sign-in page.
+          const page = ctx?.headers?.get("x-kanvil-return") ?? "";
+          void sendCode(
+            email,
+            otp,
+            type,
+            /^\/[\w-]+(\/[\w-]+)*$/.test(page) ? page : "/login",
+          ).catch(() => console.error("Kanvil email failed"));
           return Promise.resolve();
         },
       }),
