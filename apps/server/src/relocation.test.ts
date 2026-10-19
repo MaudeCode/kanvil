@@ -255,6 +255,37 @@ describe("project prefixes and ticket moves", () => {
       );
   });
 
+  it("keeps keys from before a prefix change resolving after a move", async () => {
+    const original = prefix("O"),
+      source = await newProject(original),
+      destination = await newProject(),
+      ticket = await newTicket(source),
+      renamed = await rename(source, prefix("N"));
+    const moved = await domain.execute(
+      "relocate_ticket",
+      {
+        projectId: source.id,
+        ticketId: ticket.id,
+        expectedVersion: ticket.version,
+        destinationProjectId: destination.id,
+      },
+      owner,
+    );
+    for (const key of [ticket.key, `${renamed.key}-1`, moved.key])
+      expect((await domain.execute("resolve_ticket", { ticketId: key }, owner)).ticket.id).toBe(
+        ticket.id,
+      );
+    expect(
+      (
+        await domain.execute(
+          "get_ticket",
+          { projectId: destination.id, ticketId: ticket.key },
+          owner,
+        )
+      ).ticket.id,
+    ).toBe(ticket.id);
+  });
+
   it("checks versions, states, and the destination before moving", async () => {
     const source = await newProject(),
       destination = await newProject(),

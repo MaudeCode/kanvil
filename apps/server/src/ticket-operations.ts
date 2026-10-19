@@ -21,6 +21,7 @@ import {
   comments,
   events,
   evidence,
+  projectPrefixes,
   projects,
   projectLabels,
   workspaceLabels,
@@ -898,7 +899,18 @@ export const ticketHandlers: Pick<
         data: { ticketId: current.id, key: current.key },
       },
     ]);
-    await ctx.db.insert(ticketAliases).values({ key: current.key, ticketId: current.id });
+    // Every key it had here, under each prefix the project has used, keeps naming it.
+    const prefixes = await ctx.db
+      .select({ prefix: projectPrefixes.prefix })
+      .from(projectPrefixes)
+      .where(eq(projectPrefixes.projectId, current.projectId));
+    await ctx.db
+      .insert(ticketAliases)
+      .values(
+        [
+          ...new Set([current.key, ...prefixes.map((row) => `${row.prefix}-${current.number}`)]),
+        ].map((key) => ({ key, ticketId: current.id })),
+      );
     const row = one(
       await ctx.db
         .update(tickets)
