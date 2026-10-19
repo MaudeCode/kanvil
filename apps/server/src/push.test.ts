@@ -259,11 +259,6 @@ describe("durable optional native push", () => {
     );
   });
   it("pushes a mention to a member who does not follow the ticket", async () => {
-    await app.domain.execute(
-      "set_subscription",
-      { projectId: project.id, ticketId: ticket.id, enabled: false },
-      owner,
-    );
     const teammate = await fixture.auth.api.createUser({
       body: {
         name: "Push teammate",
@@ -285,6 +280,12 @@ describe("durable optional native push", () => {
         body: `[@Push owner](mention:${owner.id}) please look`,
       },
       await app.domain.actor(teammate.user.id),
+    );
+    // Unfollowing after the mention cancels the follower updates but keeps the mention's push.
+    await app.domain.execute(
+      "set_subscription",
+      { projectId: project.id, ticketId: ticket.id, enabled: false },
+      owner,
     );
     await tick();
     expect(sent.map((message) => message.body)).toEqual(["You were mentioned in a comment."]);

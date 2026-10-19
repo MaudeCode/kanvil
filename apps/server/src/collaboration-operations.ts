@@ -1,6 +1,6 @@
 import { decodeBlobData } from "./blob-storage.ts";
 import { attachmentLimit, resourceProvider } from "@kanvil/contracts";
-import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, ne, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   attachments,
@@ -367,7 +367,14 @@ export const collaborationHandlers: Pick<
                 .select({ id: notifications.id })
                 .from(notifications)
                 .innerJoin(events, eq(events.id, notifications.eventId))
-                .where(and(eq(notifications.userId, ctx.actor.id), eq(events.ticketId, ticket.id))),
+                .where(
+                  and(
+                    eq(notifications.userId, ctx.actor.id),
+                    eq(events.ticketId, ticket.id),
+                    // A mention reaches its member whether or not they follow the ticket.
+                    ne(notifications.category, "mention"),
+                  ),
+                ),
             ),
           ),
         );
