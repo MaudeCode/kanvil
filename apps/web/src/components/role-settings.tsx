@@ -24,8 +24,9 @@ import {
   SelectItem,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
+import { roleName } from "./member-directory.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
-const memberships = (count: number) => `${count} ${count === 1 ? "membership" : "memberships"}`;
 // Roles follow LabelSettings: SettingRow rows with a Modal editor, here a checklist of the action
 // catalog. The seeded roles are fixed; custom ones edit when they grant nothing beyond the viewer.
 export function RoleSettings({
@@ -78,7 +79,7 @@ export function RoleSettings({
       ...(reassignTo ? { reassignTo } : {}),
     });
     setDeleting(null);
-    toast.success("Role deleted");
+    toast.success(t("settings.roles.deleted"));
   }
   const targets = deleting
     ? rows.filter((role) => role.id !== deleting.role.id && grantable(role))
@@ -86,10 +87,14 @@ export function RoleSettings({
   return (
     <section>
       <SectionHeading
-        title="Roles"
+        title={t("settings.roles.title")}
         action={
           canEdit && (
-            <IconButton label="New role" variant="default" onClick={() => edit(null)}>
+            <IconButton
+              label={t("settings.roles.new")}
+              variant="default"
+              onClick={() => edit(null)}
+            >
               <Plus />
             </IconButton>
           )
@@ -107,10 +112,12 @@ export function RoleSettings({
               compact
               title={
                 <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="min-w-0">{role.name}</span>
+                  <span dir="auto" className="min-w-0">
+                    {roleName(role)}
+                  </span>
                   {role.seeded && (
                     <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                      Built in
+                      {t("settings.roles.builtIn")}
                     </span>
                   )}
                 </span>
@@ -120,20 +127,23 @@ export function RoleSettings({
                   ? role.permissions
                       .map((permission) => permissionLabels[permission].label)
                       .join(" · ")
-                  : "No actions beyond reading"
+                  : t("settings.roles.readOnly")
               }
             >
               <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-                {memberships(role.assigned)}
+                {t("settings.roles.memberships", { count: role.assigned })}
               </span>
               {editable && (
                 <>
-                  <IconButton label={`Edit role ${role.name}`} onClick={() => edit(role)}>
+                  <IconButton
+                    label={t("settings.roles.editNamed", { name: roleName(role) })}
+                    onClick={() => edit(role)}
+                  >
                     <Pencil />
                   </IconButton>
                   {role.assigned ? (
                     <IconButton
-                      label={`Delete role ${role.name}`}
+                      label={t("settings.roles.deleteNamed", { name: roleName(role) })}
                       onClick={() => {
                         remove.reset();
                         setDeleting({ role, reassignTo: "reader" });
@@ -143,10 +153,10 @@ export function RoleSettings({
                     </IconButton>
                   ) : (
                     <Confirm
-                      label={`Delete role ${role.name}`}
+                      label={t("settings.roles.deleteNamed", { name: roleName(role) })}
                       icon={<Trash2 />}
                       danger
-                      description={`Delete the unused role ${role.name}?`}
+                      description={t("settings.roles.deleteUnused", { name: roleName(role) })}
                       onConfirm={() => destroy(role)}
                     />
                   )}
@@ -156,10 +166,10 @@ export function RoleSettings({
           );
         })
       ) : (
-        !roles.error && <EmptyState title="No roles" />
+        !roles.error && <EmptyState title={t("settings.roles.empty")} />
       )}
       <Modal
-        title={draft?.role ? "Edit role" : "New role"}
+        title={draft?.role ? t("settings.roles.edit") : t("settings.roles.new")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -173,13 +183,13 @@ export function RoleSettings({
               void save(draft.role, draft.name.trim(), draft.permissions)
                 .then(() => {
                   setDraft(null);
-                  toast.success("Role saved");
+                  toast.success(t("settings.roles.saved"));
                 })
                 .catch(() => {});
             }}
           >
             <Input
-              label="Role name"
+              label={t("settings.roles.name")}
               value={draft.name}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               maxLength={40}
@@ -187,9 +197,9 @@ export function RoleSettings({
               autoFocus
             />
             <fieldset className="mb-4">
-              <legend className="mb-1 text-sm font-medium">Actions</legend>
+              <legend className="mb-1 text-sm font-medium">{t("settings.roles.actions")}</legend>
               <p className="mt-0 mb-1 text-xs text-muted-foreground">
-                Every member can read the projects they reach.
+                {t("settings.roles.everyoneReads")}
               </p>
               {permissions.map((permission) => (
                 <Check
@@ -211,13 +221,13 @@ export function RoleSettings({
             </fieldset>
             {draft.role && draft.role.assigned > 0 && (
               <p className="text-xs text-muted-foreground">
-                Changes apply at once to the {memberships(draft.role.assigned)} holding this role.
+                {t("settings.roles.changesApply", { count: draft.role.assigned })}
               </p>
             )}
             <FormActions
               error={create.error ?? update.error}
               pending={busy}
-              submitLabel="Save role"
+              submitLabel={t("settings.roles.save")}
               submitDisabled={!draft.name.trim()}
               onCancel={() => setDraft(null)}
             />
@@ -225,7 +235,7 @@ export function RoleSettings({
         )}
       </Modal>
       <Modal
-        title="Delete role"
+        title={t("settings.roles.delete")}
         open={!!deleting}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
@@ -240,18 +250,19 @@ export function RoleSettings({
             }}
           >
             <p className="mt-0 text-sm text-muted-foreground">
-              {memberships(deleting.role.assigned)}{" "}
-              {deleting.role.assigned === 1 ? "holds" : "hold"} {deleting.role.name}. Choose the
-              role they move to.
+              {t("settings.roles.reassignDescription", {
+                count: deleting.role.assigned,
+                name: roleName(deleting.role),
+              })}
             </p>
             <Select
-              label="Move members to"
+              label={t("settings.roles.moveTo")}
               value={deleting.reassignTo}
               onValueChange={(reassignTo) => reassignTo && setDeleting({ ...deleting, reassignTo })}
             >
               {targets.map((role) => (
                 <SelectItem key={role.id} value={role.id}>
-                  {role.name}
+                  {roleName(role)}
                 </SelectItem>
               ))}
             </Select>
@@ -259,8 +270,8 @@ export function RoleSettings({
               error={remove.error}
               pending={remove.isPending}
               danger
-              submitLabel="Delete role"
-              pendingLabel="Deleting…"
+              submitLabel={t("settings.roles.delete")}
+              pendingLabel={t("settings.lifecycle.deleting")}
               onCancel={() => setDeleting(null)}
             />
           </form>

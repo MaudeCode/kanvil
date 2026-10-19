@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { prepareImage } from "../lib/browser.ts";
 import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 import { ImageEditTrigger } from "./image-edit-trigger.tsx";
+import { t } from "@kanvil/contracts/i18n";
 export function ProjectIconPicker({
   project,
   disabled = false,
@@ -50,19 +51,19 @@ export function ProjectIconPicker({
   };
   return (
     <>
-      <ImageEditTrigger label="Change icon" disabled={disabled} onClick={start}>
+      <ImageEditTrigger label={t("settings.icon.change")} disabled={disabled} onClick={start}>
         <ProjectIcon project={project} className="size-16 rounded-xl bg-muted/50 p-1.5" />
       </ImageEditTrigger>
-      <Modal title="Project icon" open={open} onOpenChange={setOpen} busy={busy}>
+      <Modal title={t("settings.icon.title")} open={open} onOpenChange={setOpen} busy={busy}>
         <Tabs defaultValue="library">
           <TabsList variant="line">
-            <TabsTrigger value="library">Icon library</TabsTrigger>
-            <TabsTrigger value="upload">Upload image</TabsTrigger>
+            <TabsTrigger value="library">{t("settings.icon.library")}</TabsTrigger>
+            <TabsTrigger value="upload">{t("settings.icon.upload")}</TabsTrigger>
           </TabsList>
           <TabsContent value="library">
             <SearchField
-              label="Search icons"
-              placeholder="Search icons…"
+              label={t("settings.icon.search")}
+              placeholder={t("settings.icon.searchPlaceholder")}
               defaultOpen
               value={query}
               onChange={(value) => {
@@ -72,7 +73,7 @@ export function ProjectIconPicker({
               className="my-3"
             />
             <AccentColorPicker
-              label="Icon color"
+              label={t("settings.icon.color")}
               value={color}
               onChange={setColor}
               disabled={busy}
@@ -91,7 +92,9 @@ export function ProjectIconPicker({
                           variant={name === project.iconName ? "secondary" : "ghost"}
                           className={`aspect-square h-auto min-h-11 ${accentColorClasses[color]}`}
                           disabled={busy}
-                          aria-label={`Choose ${name.replaceAll("-", " ")}`}
+                          aria-label={t("settings.icon.choose", {
+                            name: name.replaceAll("-", " "),
+                          })}
                           title={name.replaceAll("-", " ")}
                           onClick={() => {
                             void save({ kind: "library", name, color });
@@ -104,11 +107,13 @@ export function ProjectIconPicker({
                   })}
                 </div>
                 {names.length === 0 && (
-                  <p className="py-8 text-center text-muted-foreground">No matching icons</p>
+                  <p className="py-8 text-center text-muted-foreground">
+                    {t("settings.icon.noMatches")}
+                  </p>
                 )}
                 {names.length > limit && (
                   <Button className="mt-3 w-full" onClick={() => setLimit((value) => value + 96)}>
-                    Show more icons
+                    {t("settings.icon.showMore")}
                   </Button>
                 )}
               </div>
@@ -119,9 +124,9 @@ export function ProjectIconPicker({
               <ProjectIcon project={project} className="size-20" />
               <Button disabled={busy} onClick={() => file.current?.click()}>
                 <Camera />
-                {busy ? "Uploading…" : "Choose image"}
+                {busy ? t("settings.icon.uploading") : t("settings.icon.chooseImage")}
               </Button>
-              <p className="mb-0 text-xs text-muted-foreground">PNG, JPEG, or WebP · up to 10 MB</p>
+              <p className="mb-0 text-xs text-muted-foreground">{t("settings.icon.formats")}</p>
             </div>
           </TabsContent>
         </Tabs>
@@ -130,7 +135,7 @@ export function ProjectIconPicker({
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="hidden"
-          aria-label="Project icon file"
+          aria-label={t("settings.icon.file")}
           onChange={(event) => {
             const selected = event.currentTarget.files?.[0];
             event.currentTarget.value = "";
@@ -152,10 +157,10 @@ export function ProjectIconPicker({
             }}
           >
             <RotateCcw />
-            Reset icon
+            {t("settings.icon.reset")}
           </Button>
           <Button disabled={busy} onClick={() => setOpen(false)}>
-            Cancel
+            {t("common.action.cancel")}
           </Button>
         </ModalActions>
       </Modal>

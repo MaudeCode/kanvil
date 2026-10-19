@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { AccessRow } from "./account-details.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { InvitationList } from "./invitations.tsx";
+import { t } from "@kanvil/contracts/i18n";
 const size = 25;
 export function WorkspacesSettings() {
   const [query, setQuery] = useState(""),
@@ -51,12 +52,12 @@ export function WorkspacesSettings() {
   return (
     <section>
       <SectionHeading
-        title="Workspaces"
+        title={t("settings.workspaces.title")}
         action={
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <SearchField
-              label="Search workspaces"
-              placeholder="Name or URL key…"
+              label={t("settings.workspaces.search")}
+              placeholder={t("settings.workspaces.searchPlaceholder")}
               value={query}
               onChange={(value) => {
                 setQuery(value);
@@ -70,19 +71,22 @@ export function WorkspacesSettings() {
       {spaces.isPending ? (
         <Loading />
       ) : !spaces.data?.workspaces.length ? (
-        <EmptyState title={query ? "No matching workspaces" : "No workspaces"} className="py-12" />
+        <EmptyState
+          title={query ? t("settings.workspaces.noMatches") : t("settings.workspaces.empty")}
+          className="py-12"
+        />
       ) : (
         <div aria-busy={spaces.isFetching}>
-          <Table mobileLayout="rows" aria-label="Workspaces">
+          <Table mobileLayout="rows" aria-label={t("settings.workspaces.title")}>
             <TableHeader>
               <TableRow>
-                <TableHead>Workspace</TableHead>
-                <TableHead>Administrators</TableHead>
-                <TableHead>Members</TableHead>
-                <TableHead>Projects</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>{t("settings.workspaces.workspace")}</TableHead>
+                <TableHead>{t("settings.workspaces.administrators")}</TableHead>
+                <TableHead>{t("settings.workspaces.members")}</TableHead>
+                <TableHead>{t("settings.workspaces.projects")}</TableHead>
+                <TableHead>{t("settings.workspaces.created")}</TableHead>
                 <TableHead>
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t("settings.workspaces.actions")}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -95,7 +99,7 @@ export function WorkspacesSettings() {
                       className="h-auto max-w-full flex-col items-start gap-0.5 p-0 text-left hover:bg-transparent"
                       onClick={() => setSelected(space)}
                     >
-                      <span className="font-medium wrap-anywhere whitespace-normal">
+                      <span dir="auto" className="font-medium wrap-anywhere whitespace-normal">
                         {space.name}
                       </span>
                       <span className="font-mono text-xs font-normal text-muted-foreground">
@@ -104,29 +108,37 @@ export function WorkspacesSettings() {
                     </Button>
                   </TableCell>
                   <TableCell
-                    data-label="Administrators"
+                    data-label={t("settings.workspaces.administrators")}
                     className="text-xs wrap-anywhere whitespace-normal"
                   >
                     {space.administrators.length ? (
                       space.administrators.map((admin) => admin.name).join(", ")
                     ) : (
-                      <Badge variant="destructive">No administrator</Badge>
+                      <Badge variant="destructive">
+                        {t("settings.workspaces.noAdministrator")}
+                      </Badge>
                     )}
                   </TableCell>
-                  <TableCell data-label="Members" className="tabular-nums">
+                  <TableCell data-label={t("settings.workspaces.members")} className="tabular-nums">
                     {space.memberCount}
                   </TableCell>
-                  <TableCell data-label="Projects" className="tabular-nums">
+                  <TableCell
+                    data-label={t("settings.workspaces.projects")}
+                    className="tabular-nums"
+                  >
                     {space.projectCount}
                   </TableCell>
-                  <TableCell data-label="Created" className="text-xs text-muted-foreground">
+                  <TableCell
+                    data-label={t("settings.workspaces.created")}
+                    className="text-xs text-muted-foreground"
+                  >
                     <RelativeTime value={space.createdAt} />
                   </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`Manage ${space.name}`}
+                      aria-label={t("settings.workspaces.manage", { name: space.name })}
                       onClick={() => setSelected(space)}
                     >
                       <MoreHorizontal />
@@ -139,7 +151,7 @@ export function WorkspacesSettings() {
         </div>
       )}
       <Pager
-        noun="workspaces"
+        noun={t("settings.workspaces.pagerNoun")}
         offset={offset}
         total={spaces.data?.total ?? 0}
         size={size}
@@ -185,7 +197,9 @@ function WorkspaceDetails({
     >
       <SheetContent className="w-full! sm:max-w-lg!">
         <SheetHeader className="shrink-0 border-b pr-14">
-          <SheetTitle className="mb-0">{workspace?.name ?? "Workspace"}</SheetTitle>
+          <SheetTitle className="mb-0">
+            {workspace?.name ?? t("settings.workspaces.workspace")}
+          </SheetTitle>
           <SheetDescription className="font-mono">{workspace?.slug}</SheetDescription>
         </SheetHeader>
         <div className="@container min-h-0 overflow-y-auto px-6 pb-8">
@@ -203,7 +217,7 @@ function WorkspaceDetails({
           />
           {workspace && <InvitationList workspaceId={workspace.id} />}
           <section className="pt-7">
-            <h3>Projects</h3>
+            <h3>{t("settings.workspaces.projects")}</h3>
             <ErrorNotice error={projects.error} />
             {projects.isPending ? (
               <Loading />
@@ -211,7 +225,11 @@ function WorkspaceDetails({
               projects.data.map((project) => (
                 <AccessRow
                   key={project.id}
-                  badge={project.visibility === "private" ? "Private" : "Workspace access"}
+                  badge={
+                    project.visibility === "private"
+                      ? t("settings.workspaces.private")
+                      : t("settings.members.workspaceAccess")
+                  }
                 >
                   <Link
                     to="/projects/$projectId/settings"
@@ -225,7 +243,7 @@ function WorkspaceDetails({
                 </AccessRow>
               ))
             ) : (
-              <EmptyState title="No projects" className="py-5" />
+              <EmptyState title={t("settings.workspaces.noProjects")} className="py-5" />
             )}
           </section>
         </div>
