@@ -391,6 +391,7 @@ describe("notification channels and project destinations", () => {
       `http://localhost:${http.port}`,
       "http://[::1]/",
       "http://169.254.169.254/",
+      "http://[64:ff9b:1::a00:1]/",
     ])
       await expect(send({ url, body: "{}" })).rejects.toMatchObject({ code: "blocked_address" });
     expect(http.state.received).toHaveLength(0);
@@ -592,6 +593,7 @@ describe("notification channels and project destinations", () => {
     expect("http" in telegram && JSON.parse(telegram.http.body)).toMatchObject({
       chat_id: "-100",
       message_thread_id: 7,
+      text: "KAN-1 Fix: Comment added by @\u200bana\nhttps://kanvil.test/x",
     });
     const discord = outbound({ kind: "discord", url: "https://discord.test/hook" }, message, row);
     expect("http" in discord && JSON.parse(discord.http.body)).toMatchObject({

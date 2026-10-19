@@ -15,7 +15,7 @@ export class DeliveryError extends Error {
     this.retry = retry;
   }
 }
-// Loopback, private, link-local, shared, documentation, multicast, and translated ranges.
+// Loopback, private, link-local, shared, documentation, multicast, and translated (NAT64, 6to4) ranges.
 const reserved = new BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
@@ -37,6 +37,7 @@ for (const [network, prefix] of [
   ["::", 127],
   ["::ffff:0:0", 96],
   ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
   ["100::", 64],
   ["2001:db8::", 32],
   ["2002::", 16],

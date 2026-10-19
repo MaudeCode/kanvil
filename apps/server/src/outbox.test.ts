@@ -59,10 +59,10 @@ describe("durable optional native push", () => {
       .map((value) => value.split(";")[0])
       .join("; ");
   }
-  const tick = () =>
+  const tick = (pushEnabled = true) =>
     deliverBatch(
       fixture.database,
-      fixture.config,
+      { ...fixture.config, KANVIL_PUSH_ENABLED: pushEnabled },
       { push: transport, http: async () => ({ status: 500 }) },
       deliverySecrets(fixture.config),
     );
@@ -298,6 +298,11 @@ describe("durable optional native push", () => {
     );
     await tick();
     expect(sent.map((message) => message.body)).toEqual(["You were mentioned in a comment."]);
+  });
+  it("stops sending to registered devices once push is turned off", async () => {
+    await tick(false);
+    expect(sent).toHaveLength(0);
+    expect((await fixture.database.db.select().from(deliveries))[0]?.error).toBe("push_disabled");
   });
   it("drops a queued notice whose category was turned off before sending", async () => {
     await request("/notifications/preferences", "PUT", {

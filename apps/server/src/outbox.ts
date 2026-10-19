@@ -114,8 +114,10 @@ function notificationSkip(row: Row, ownerId: string | undefined): string | null 
   if (notification.createdAt.getTime() < Date.now() - 86_400_000) return "expired";
   return null;
 }
-function skipReason(row: Row): string | null {
+function skipReason(row: Row, config: Config): string | null {
   const { job, device, channel, destination, event } = row;
+  // Turning push off stops sends to devices that registered while it was on.
+  if (device && !config.KANVIL_PUSH_ENABLED) return "push_disabled";
   if (device)
     return !row.session || row.session.expiresAt <= new Date() || !row.preference?.push
       ? "access_revoked"
@@ -165,7 +167,7 @@ function compose(config: Config, row: Row): Message {
     ).href,
   };
 }
-// Chat formats render mentions; a zero-width space keeps ticket text from pinging a channel.
+// Chat formats render mentions; a zero-width space keeps ticket text from pinging anyone.
 const quiet = (value: string) => value.replaceAll("@", "@​");
 const slackText = (value: string) =>
   quiet(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -261,7 +263,7 @@ export function outbound(
         http: post(`https://api.telegram.org/bot${settings.token}/sendMessage`, {
           chat_id: settings.chatId,
           ...(settings.topicId && { message_thread_id: settings.topicId }),
-          text: `${line}\n${message.url}`,
+          text: `${quiet(line)}\n${message.url}`,
           link_preview_options: { is_disabled: true },
         }),
       };
@@ -295,7 +297,7 @@ export async function deliverBatch(
     for (const pending of jobs) {
       const row = await load(database, pending.id);
       if (!row) continue;
-      const skip = skipReason(row);
+      const skip = skipReason(row, config);
       if (skip) await finish(database, row.job, skip);
       else if (row.device) await sendPush(database, config, senders, row);
       else await send(database, config, senders, secrets, row);
