@@ -182,6 +182,8 @@ const jiraIssues = [
     key: "OPS-3",
     fields: jiraFields({
       summary: "Retire the old cluster",
+      // A task labelled as a bug is a bug.
+      labels: ["bug"],
       status: { id: "4" },
       created: "2026-03-03T09:00:00.000+0000",
       issuelinks: [{ type: { name: "Blocks" }, inwardIssue: { id: "10001" } }],

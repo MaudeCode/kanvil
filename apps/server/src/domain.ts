@@ -64,7 +64,7 @@ import { workflowHandlers } from "./workflow-operations.ts";
 import { publicHandlers } from "./public-operations.ts";
 import { customFieldHandlers } from "./custom-field-operations.ts";
 import { repositoryHandlers } from "./repository-operations.ts";
-import { importHandlers } from "./import-operations.ts";
+import { importHandlers, sourceReads } from "./import-operations.ts";
 import { issueSyncHandlers, queueIssueSync } from "./issue-sync.ts";
 
 export interface Actor {
@@ -96,6 +96,8 @@ export interface Context {
   importRun?: string;
   // Trackers an import reads; see adapters/import-sources.ts.
   sources: ImportSources;
+  // What a write read from another tracker before the write lock; see `sourceReads`.
+  read?: unknown;
 }
 export type Handler<K extends Operation> = (
   ctx: Context,
@@ -639,12 +641,9 @@ export function createDomain(
     "search_tickets",
     "search_workspace",
   ]);
-  // Writes that read another tracker first. They run outside the write lock, like reads, so a slow
-  // source holds up no one, and keep their own local writes in one transaction.
-  const readsSource: ReadonlySet<Operation> = new Set([
-    "list_import_source_projects",
-    "preview_source_import",
-  ]);
+  // Reads another tracker and writes nothing here, so it runs outside the write lock like a read
+  // and a slow source holds up no one.
+  const remoteReads: ReadonlySet<Operation> = new Set(["list_import_source_projects"]);
   const withServices = (ctx: Context) => {
     if (services.blobs) ctx.blobs = services.blobs;
     if (services.search) ctx.search = services.search;
@@ -694,19 +693,50 @@ export function createDomain(
         "Project-bound credentials can only change their configured projects",
       );
     const outgoing: MailMessage[] = [];
+    // What a write read from another tracker before the lock.
+    let read: unknown;
     const invoke = async (ctx: Context) => {
       withServices(ctx);
       if (services.mail) ctx.mail = (message) => outgoing.push(message);
       if (provenance) ctx.importRun = provenance.importRun;
+      if (read !== undefined) ctx.read = read;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
     };
-    if (spec.method === "GET" || readsSource.has(name))
+    if (spec.method === "GET" || remoteReads.has(name))
       return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
+    const requestId = "requestId" in input ? input.requestId : undefined;
+    // A write that reads another tracker reads it first, outside the lock, unless a receipt
+    // already answers the request; it then commits like any other write.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `sourceReads` pairs each operation with its own input, as the handler map does.
+    const reader = sourceReads[name] as
+      | {
+          read: (ctx: Context, payload: typeof input) => Promise<unknown>;
+          receipt: (payload: typeof input) => unknown;
+        }
+      | undefined;
+    if (
+      reader &&
+      !(
+        requestId &&
+        (
+          await database.db
+            .select({ id: receipts.requestId })
+            .from(receipts)
+            .where(and(eq(receipts.actorId, actor.id), eq(receipts.requestId, requestId)))
+            .limit(1)
+        ).length
+      )
+    )
+      read = await reader.read(
+        withServices(await context(database.db, actor, spec.scope, projectId, workspaceId)),
+        input,
+      );
     const committed = await locked(async (tx) => {
-      const requestId = "requestId" in input ? input.requestId : undefined;
-      const hash = createHash("sha256").update(JSON.stringify({ name, input })).digest("hex");
+      const hash = createHash("sha256")
+        .update(JSON.stringify({ name, input: reader ? reader.receipt(input) : input }))
+        .digest("hex");
       const receipt = requestId
         ? (
             await tx

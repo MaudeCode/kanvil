@@ -1987,6 +1987,7 @@ export const operations = {
   preview_source_import: op(
     z
       .object({
+        ...mutation,
         workspaceId: z.uuid(),
         key: projectKey,
         name: text.max(120),
@@ -2001,7 +2002,7 @@ export const operations = {
     "POST",
     "/workspaces/{workspaceId}/imports/source",
     "write",
-    "Read a Linear team or Jira project with the given credentials, translate it into a `kanvil.tickets` bundle, and stage it like `preview_import`: workflow, issues with parents, priorities, labels, assignees, relationships, and optionally comments. What the source holds that Kanvil cannot, such as cycles, estimates, and milestones, is listed among the warnings. Only reads the source; the credentials serve this request alone and are never stored. Start the run with `start_import`. Signed-in accounts only.",
+    "Read a Linear team or Jira project with the given credentials, translate it into a `kanvil.tickets` bundle, and stage it like `preview_import`: workflow, issues with parents, priorities, labels, assignees, relationships, and optionally comments. What the source holds that Kanvil cannot, such as cycles, estimates, and milestones, is listed among the warnings. Only reads the source, before the write; the credentials serve this request alone and are never stored, and a retry with the same `requestId` returns the staged run without reading the source again. Start the run with `start_import`. Signed-in accounts only.",
   ),
   list_imports: op(
     z.object({ workspaceId: z.uuid() }),

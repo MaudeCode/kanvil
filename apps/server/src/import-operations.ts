@@ -738,19 +738,18 @@ export const importHandlers: Pick<
   async list_import_source_projects(ctx, input) {
     return ctx.sources.projects(input.source);
   },
-  // Reads the source outside the write lock, then stages what it read like a file. The source
-  // and its credentials never reach the run: it holds only the bundle's records.
-  async preview_source_import(ctx, { source, sourceProject, includeComments, ...target }) {
-    const read = ticketImportSchema.safeParse(
-      await ctx.sources.bundle(source, sourceProject, { includeComments }),
-    );
+  // Stages what `sourceReads` read before the write lock, like a file. The source and its
+  // credentials never reach the run: it holds only the bundle's records.
+  async preview_source_import(
+    ctx,
+    { source: _source, sourceProject: _project, includeComments: _comments, ...target },
+  ) {
+    const read = ticketImportSchema.safeParse(ctx.read);
     if (!read.success)
       fail(400, "validation_error", "The source holds content an import cannot take", {
         issues: read.error.issues.slice(0, 20).map(({ path, message }) => ({ path, message })),
       });
-    return ctx.db.transaction((tx) =>
-      previewImport({ ...ctx, db: tx }, { ...target, bundle: read.data }),
-    );
+    return previewImport(ctx, { ...target, bundle: read.data });
   },
   async list_imports(ctx) {
     const rows = await ctx.db
@@ -790,6 +789,22 @@ export const importHandlers: Pick<
       .set({ payload: null })
       .where(and(eq(importRecords.runId, run.id), eq(importRecords.status, "pending")));
     return toRun(ctx.db, await setStatus(ctx, run, "cancelled"));
+  },
+};
+
+// Writes that read another tracker first. `read` runs outside the write lock with the request's
+// credentials, so a slow source holds up no one; the handler then stages what it read under the
+// lock, with the request's receipt. Receipts compare the request without its token.
+export const sourceReads: {
+  [K in Operation]?: {
+    read: (ctx: Context, input: ParsedInput<K>) => Promise<unknown>;
+    receipt: (input: ParsedInput<K>) => unknown;
+  };
+} = {
+  preview_source_import: {
+    read: (ctx, { source, sourceProject, includeComments }) =>
+      ctx.sources.bundle(source, sourceProject, { includeComments }),
+    receipt: ({ source: { token: _token, ...source }, ...input }) => ({ ...input, source }),
   },
 };
 

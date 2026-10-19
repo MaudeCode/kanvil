@@ -6,7 +6,7 @@ import { createDomain, type Actor, type Domain } from "./domain.ts";
 import { processImports } from "./import-operations.ts";
 import { createImportSources } from "./adapters/import-sources.ts";
 import { createHttpSender } from "./adapters/outbound.ts";
-import { comments, importRecords, importRuns, relations, tickets } from "./schema.ts";
+import { comments, importRecords, importRuns, receipts, relations, tickets } from "./schema.ts";
 import { sourceOwnerEmail, startImportSources } from "./import-source-fixture.ts";
 
 const prefix = (letter: string) =>
@@ -136,6 +136,7 @@ describe("imports from Linear and Jira", () => {
     const stored = JSON.stringify([
       await fixture.database.db.select().from(importRuns),
       await fixture.database.db.select().from(importRecords),
+      await fixture.database.db.select().from(receipts),
       await fixture.database.db.select().from(comments),
       await fixture.database.db.select().from(tickets),
     ]);
@@ -255,6 +256,30 @@ describe("imports from Linear and Jira", () => {
     await leaves(linearToken, finished);
   });
 
+  it("answers a retried preview from its receipt without reading the source again", async () => {
+    const input = {
+      workspaceId,
+      key: prefix("R"),
+      name: "Retried",
+      visibility: "workspace" as const,
+      source: linear,
+      sourceProject: "lin-team",
+      includeComments: false,
+      requestId: crypto.randomUUID(),
+    };
+    const first = await domain.execute("preview_source_import", input, owner);
+    const reads = source.requests.length;
+    expect(reads).toBeGreaterThan(0);
+    // The response was lost and the client retries the same request.
+    const again = await domain.execute("preview_source_import", input, owner);
+    expect(again.id).toBe(first.id);
+    expect(source.requests).toHaveLength(reads);
+    await expect(
+      domain.execute("preview_source_import", { ...input, key: prefix("R") }, owner),
+    ).rejects.toMatchObject({ status: 409, code: "idempotency_conflict" });
+    await leaves(linearToken, again);
+  });
+
   it("leaves comments out on request and says so", async () => {
     const staged = await preview(linear, "lin-team", { includeComments: false });
     expect(staged.counts.comments).toBe(0);
@@ -306,6 +331,7 @@ describe("imports from Linear and Jira", () => {
     });
     expect(result.states.find((state) => state.id === drill.stateId)?.category).toBe("in_review");
     expect(result.states.find((state) => state.id === retire.stateId)?.category).toBe("done");
+    expect(retire).toMatchObject({ kind: "bug", labels: ["bug"] });
     // The link is on both issues in Jira and becomes one relationship.
     expect(result.relations).toEqual([
       expect.objectContaining({ sourceId: drill.id, targetId: retire.id, type: "blocks" }),

@@ -230,7 +230,7 @@ export function createJiraReader(http: SourceHttp) {
               title: out.clip(issue.summary.trim(), 500) || key,
               description: out.clip(issue.description ?? "", 100_000),
               priority: jiraPriority[issue.priority?.name.toLowerCase() ?? ""] ?? "none",
-              kind: kindOf([issue.issuetype?.name ?? ""]),
+              kind: kindOf([issue.issuetype?.name ?? "", ...labels]),
               labels,
               stateRef: issue.status.id,
               assigneeRef: person(issue.assignee),
