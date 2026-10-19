@@ -358,6 +358,8 @@ export const notifications = pgTable("notifications", {
     .references(() => projects.id, { onDelete: "cascade" }),
   eventId: bigint("event_id", { mode: "bigint" }).notNull(),
   readAt: timestamp("read_at", { withTimezone: true }),
+  // Dismissal hides the entry from the Inbox; the row and its event stay as recorded.
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
   inbox: boolean("inbox").notNull().default(true),
   createdAt: time("created_at"),
 });

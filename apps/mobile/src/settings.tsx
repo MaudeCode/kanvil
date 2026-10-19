@@ -4,7 +4,7 @@ import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import { infoSchema, notificationsSchema, okSchema } from "@kanvil/contracts";
+import { infoSchema } from "@kanvil/contracts";
 import { useConnection, useIdentity } from "./data.tsx";
 import {
   devicePushToken,
@@ -31,19 +31,13 @@ export function Inbox() {
     cache = useQueryClient(),
     navigation = useNavigation(),
     [error, setError] = useState<unknown>();
-  const items = useQuery({
-    queryKey: ["kanvil", "notifications"],
-    queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
-  });
+  const notifications = api.notifications(),
+    items = useQuery(notifications);
   async function read() {
     const ids = items.data?.filter((item) => !item.readAt).map((item) => item.id);
     if (!ids?.length) return;
-    await api.request("/api/v1/notifications/read", okSchema, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
-    await cache.invalidateQueries({ queryKey: ["kanvil", "notifications"] });
+    await api.markNotifications({ ids });
+    await cache.invalidateQueries({ queryKey: notifications.queryKey });
   }
   return (
     <Screen scroll={false}>

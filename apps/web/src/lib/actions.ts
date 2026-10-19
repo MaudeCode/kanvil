@@ -4,7 +4,14 @@ import { formats, markdownFormats } from "./markdown.ts";
 import { ticketBranch, ticketMarkdown } from "./ticket-copy.ts";
 // One catalog for command labels and their keys. The keyboard help, the command palette and the
 // ticket menus read it; `useShortcut` stays the owner of the key events.
-export const actionCategories = ["General", "Ticket list", "Ticket", "Search", "Markdown"] as const;
+export const actionCategories = [
+  "General",
+  "Ticket list",
+  "Inbox",
+  "Ticket",
+  "Search",
+  "Markdown",
+] as const;
 type Action = { label: string; keys: string; category: (typeof actionCategories)[number] };
 export const actions = {
   palette: { label: "Go to anything", keys: "⌘ K", category: "General" },
@@ -29,6 +36,22 @@ export const actions = {
     keys: "S P A",
     category: "Ticket list",
   },
+  inboxHighlight: {
+    label: "Highlight the next or previous notification",
+    keys: "J K",
+    category: "Inbox",
+  },
+  inboxOpen: {
+    label: "Read the highlighted notification's ticket beside the Inbox",
+    keys: "↵",
+    category: "Inbox",
+  },
+  inboxRead: {
+    label: "Mark the highlighted notification read or unread",
+    keys: "U",
+    category: "Inbox",
+  },
+  inboxDismiss: { label: "Dismiss the highlighted notification", keys: "⌫", category: "Inbox" },
   step: { label: "Open the next or previous ticket", keys: "J K", category: "Ticket" },
   edit: { label: "Edit ticket", keys: "E", category: "Ticket" },
   save: { label: "Save a ticket or comment", keys: "⌘ ↵", category: "Ticket" },

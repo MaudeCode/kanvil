@@ -6,8 +6,12 @@ import {
   streamErrorSchema,
   checkpointSchema,
   snapshotSchema,
+  notificationIdsInput,
   notificationPreferencesSchema,
   notificationPreferencesInput,
+  notificationReadInput,
+  notificationsSchema,
+  okSchema,
   type ChangeEvent,
   operations,
   parseOutput,
@@ -215,6 +219,27 @@ export function createClient(options: {
   };
   return {
     ...api,
+    notifications() {
+      return {
+        queryKey: ["kanvil", options.baseUrl, "notifications"] as const,
+        queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
+      };
+    },
+    markNotifications(this: void, input: { ids: string[]; read?: boolean }) {
+      return api.request("/api/v1/notifications/read", okSchema, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notificationReadInput.parse(input)),
+      });
+    },
+    // Hides entries from the Inbox; their events and provenance stay recorded.
+    dismissNotifications(this: void, input: { ids: string[] }) {
+      return api.request("/api/v1/notifications/dismiss", okSchema, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notificationIdsInput.parse(input)),
+      });
+    },
     notificationPreferences() {
       return {
         queryKey: ["kanvil", options.baseUrl, "notification-preferences"] as const,

@@ -10,7 +10,7 @@ import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -21,8 +21,10 @@ import {
   operations,
   isOperation,
   credentialInput,
+  notificationIdsInput,
   notificationPreferencesSchema,
   notificationPreferencesInput,
+  notificationReadInput,
   pushDeviceInput,
 } from "@kanvil/contracts";
 import { defaultAdapters, type RuntimeAdapters } from "./runtime-adapters.ts";
@@ -448,6 +450,7 @@ export async function createApplication(
             and(
               eq(notifications.userId, identity.id),
               eq(notifications.inbox, true),
+              isNull(notifications.dismissedAt),
               inArray(
                 notifications.projectId,
                 allowed.map((row) => row.id),
@@ -459,14 +462,28 @@ export async function createApplication(
       ),
     );
   });
+  // Inbox state is personal: only the account's own sessions change it, never its credentials.
   app.post("/api/v1/notifications/read", async (c) => {
-    requireSession(c.get("actor"));
-    const input = z.object({ ids: z.array(z.uuid()).min(1).max(100) }).parse(await c.req.json());
+    const identity = requireSession(c.get("actor")),
+      input = notificationReadInput.parse(await c.req.json());
     await database.db
       .update(notifications)
-      .set({ readAt: new Date() })
+      .set({ readAt: input.read ? sql`coalesce(${notifications.readAt}, now())` : null })
+      .where(and(eq(notifications.userId, identity.id), inArray(notifications.id, input.ids)));
+    return Response.json({ ok: true });
+  });
+  app.post("/api/v1/notifications/dismiss", async (c) => {
+    const identity = requireSession(c.get("actor")),
+      input = notificationIdsInput.parse(await c.req.json());
+    await database.db
+      .update(notifications)
+      .set({ dismissedAt: new Date() })
       .where(
-        and(eq(notifications.userId, c.get("actor").id), inArray(notifications.id, input.ids)),
+        and(
+          eq(notifications.userId, identity.id),
+          inArray(notifications.id, input.ids),
+          isNull(notifications.dismissedAt),
+        ),
       );
     return Response.json({ ok: true });
   });
