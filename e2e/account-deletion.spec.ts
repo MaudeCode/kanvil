@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn, useEmailLogin } from "./auth.ts";
 
 test("deletes accounts from settings and the admin panel while ticket history stays", async ({

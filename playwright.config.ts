@@ -6,6 +6,7 @@ export default defineConfig({
     process.env.KANVIL_TEST_POCKET_ID === "1" ? ["**/*.spec.ts", "**/*.pocket.ts"] : "**/*.spec.ts",
   fullyParallel: false,
   workers: 1,
+  reporter: [[process.env.CI ? "dot" : "list"], ["./scripts/testing/playwright-reporter.ts"]],
   use: {
     baseURL,
     trace: "retain-on-failure",

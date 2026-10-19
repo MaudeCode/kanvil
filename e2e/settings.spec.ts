@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 import { choose, settingsLink, signOut, toggleDisplay } from "./controls.ts";
 import { builtInThemes, encodeThemeFile } from "../apps/web/src/lib/themes.ts";

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { brandMark } from "../packages/contracts/src/theme.ts";
 
 test("approved branding and metadata are served by the self-hosted application", async ({

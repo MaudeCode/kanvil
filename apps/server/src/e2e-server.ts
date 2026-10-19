@@ -12,7 +12,15 @@ import { createImportSources } from "./adapters/import-sources.ts";
 import { createHttpSender } from "./adapters/outbound.ts";
 import { startImportSources } from "./import-source-fixture.ts";
 import { z } from "zod";
+import { watchBoundaries } from "../../../scripts/testing/boundaries.ts";
+import { serverAccountingFile } from "../../../scripts/testing/policy.ts";
 
+// Everything this server reaches is recorded for the browser suite's accounting report.
+const boundaries = watchBoundaries(["database", "loopback", "network", "process"]);
+const recordBoundaries = () =>
+  writeFileSync(serverAccountingFile, JSON.stringify(boundaries.peek()));
+recordBoundaries();
+setInterval(recordBoundaries, 200).unref();
 const fixture = await createFixture();
 // Imports read fake trackers on loopback; no real account is involved.
 const sources = await startImportSources();
@@ -103,6 +111,7 @@ async function stop() {
   await sources.close();
   await mailbox.close();
   await fixture.close();
+  recordBoundaries();
   if (oidc)
     await fetch(`${pocketUrl}/api/oidc/clients/${oidc.id}`, {
       method: "DELETE",

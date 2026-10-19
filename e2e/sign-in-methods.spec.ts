@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { type BrowserContext, type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { codeFor, mailTo, ownerEmail, signIn, useEmailLogin } from "./auth.ts";
 import { fakeOAuthCode } from "../apps/server/src/oauth-provider-fixture.ts";
 

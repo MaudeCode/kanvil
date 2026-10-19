@@ -4,6 +4,7 @@ import { createDatabase, type Database } from "./database.ts";
 import { migrateDatabase } from "./migrate.ts";
 import { readConfig } from "./config.ts";
 import { createAuth } from "./auth.ts";
+import { recordBoundary } from "../../../scripts/testing/boundaries.ts";
 
 export async function createFixture({
   beforeMigrate,
@@ -14,6 +15,7 @@ export async function createFixture({
   const admin = new pg.Pool({ connectionString: url.toString() });
   const name = `kanvil_test_${crypto.randomUUID().replaceAll("-", "")}`;
   await admin.query(`CREATE DATABASE "${name}"`);
+  recordBoundary("databases");
   url.pathname = `/${name}`;
   const database = createDatabase(url.toString());
   const config = readConfig({
@@ -28,6 +30,7 @@ export async function createFixture({
   try {
     await beforeMigrate?.(database);
     await migrateDatabase(database);
+    recordBoundary("migrations");
   } catch (error) {
     await database.pool.end();
     await admin.query(`DROP DATABASE "${name}"`);

@@ -1,5 +1,6 @@
 import { accountMenu, appearance, signOut } from "./controls.ts";
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { z } from "zod";
 import { signIn, ownerEmail, ownerPassword } from "./auth.ts";
 

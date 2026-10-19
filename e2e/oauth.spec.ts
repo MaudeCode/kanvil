@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 

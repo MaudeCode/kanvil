@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 import { setProperty } from "./controls.ts";
 import german from "../packages/contracts/src/i18n/de-DE/index.ts";
