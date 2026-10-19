@@ -137,7 +137,10 @@ export function Login() {
       authResult(
         await auth.emailOtp.resetPassword({ email, otp, password: formText(values, "password") }),
       );
-      window.history.replaceState(null, "", "/login");
+      // Keep the page the person started on, such as an invitation, minus the emailed code.
+      const page = new URL(window.location.href);
+      for (const key of ["email", "code", "reset"]) page.searchParams.delete(key);
+      window.history.replaceState(null, "", page);
       setFlow(null);
       setSent(false);
       setEmailOpen(true);

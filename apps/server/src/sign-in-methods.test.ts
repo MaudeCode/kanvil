@@ -205,6 +205,31 @@ describe("email codes", () => {
     expect(await userCount()).toBe(count);
   });
 
+  it("drops a code when its account is deleted or changes address", async () => {
+    const leaving = await createPerson("leaver@sign-in.test");
+    await send("leaver@sign-in.test");
+    const left = await nextCode("leaver@sign-in.test", 0);
+    expect(
+      (
+        await request(`/api/v1/accounts/${leaving}`, "DELETE", {
+          confirmEmail: "leaver@sign-in.test",
+        })
+      ).status,
+    ).toBe(200);
+    const moving = await createPerson("mover@sign-in.test");
+    await send("mover@sign-in.test");
+    const moved = await nextCode("mover@sign-in.test", 1);
+    await fixture.database.pool.query(
+      `UPDATE "user" SET email = 'moved@sign-in.test' WHERE id = $1`,
+      [moving],
+    );
+    // Each address now belongs to someone else, who must not inherit the earlier code.
+    await createPerson("leaver@sign-in.test");
+    await createPerson("mover@sign-in.test");
+    expect((await signInWithCode("leaver@sign-in.test", left.code)).ok).toBe(false);
+    expect((await signInWithCode("mover@sign-in.test", moved.code)).ok).toBe(false);
+  });
+
   it("refuses a code issued before the account was disabled", async () => {
     const id = await createPerson("later-banned@sign-in.test");
     await send("later-banned@sign-in.test");

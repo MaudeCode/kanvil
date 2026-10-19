@@ -145,6 +145,41 @@ test("resets a forgotten password with an emailed code", async ({ page }) => {
   });
 });
 
+test("a password reset from an invitation link returns to the invitation", async ({ page }) => {
+  await signIn(page);
+  const email = "invited-reset@sign-in.test",
+    next = "Sign-in methods invited password 567!";
+  await createPerson(page, email);
+  const workspace = await (
+    await page.request.post("/api/v1/workspaces", {
+      data: { name: "Reset invitations", slug: "reset-invitations" },
+    })
+  ).json();
+  const { url } = await (
+    await page.request.post(`/api/v1/workspaces/${workspace.id}/invitations`, {
+      data: { email, role: "reader" },
+    })
+  ).json();
+  await signedOut(page, async (guest) => {
+    await guest.goto(url);
+    await useEmailLogin(guest);
+    await guest.getByRole("button", { name: "Forgot password?", exact: true }).click();
+    await guest.getByLabel("Email", { exact: true }).fill(email);
+    const sent = mailTo(email).length;
+    await guest.getByRole("button", { name: "Email me a code", exact: true }).click();
+    await guest.getByLabel("Code", { exact: true }).fill((await codeFor(email, sent)).code);
+    await guest.getByLabel("New password", { exact: true }).fill(next);
+    await guest.getByRole("button", { name: "Reset password", exact: true }).click();
+    await expect(guest.getByText("Password reset. Sign in with the new password.")).toBeVisible();
+    expect(new URL(guest.url()).pathname).toBe(new URL(url).pathname);
+    await guest.getByLabel("Password", { exact: true }).fill(next);
+    await guest.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      guest.getByRole("heading", { name: "Join Reset invitations", exact: true }),
+    ).toBeVisible();
+  });
+});
+
 test("links GitHub in settings, signs in with it, and refuses an unlinked identity", async ({
   page,
 }) => {
