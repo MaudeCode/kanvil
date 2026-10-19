@@ -5,13 +5,16 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   difficulties,
+  difficultyLabels,
   kinds,
+  kindLabels,
   priorities,
   priorityLabels,
   stateLabels,
   states,
   type Ticket,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import {
   createTicketDraft,
   draftFields,
@@ -137,9 +140,9 @@ function Editor({
     <Screen>
       {stale && (
         <>
-          <Body>This ticket changed. Your saved draft still uses version {draft.version}.</Body>
+          <Body>{t("native.editor.stale", { version: draft.version ?? "" })}</Body>
           <Button
-            title="Discard draft and reload"
+            title={t("native.editor.discardDraft")}
             onPress={() => {
               const next = createTicketDraft(ticket);
               change(next);
@@ -151,14 +154,14 @@ function Editor({
       )}
       <ErrorNotice error={error ?? create.error ?? update.error} />
       <Field
-        label="Title"
+        label={t("native.editor.title")}
         value={fields.title}
         onChangeText={(value) => set("title", value)}
         maxLength={500}
         multiline
       />
       <Choice
-        label="Status"
+        label={t("common.filterField.status")}
         value={
           fields.stateId ??
           workflow.data?.find((state) => state.category === fields.status)?.id ??
@@ -183,37 +186,37 @@ function Editor({
         }}
       />
       <Choice
-        label="Priority"
+        label={t("common.filterField.priority")}
         value={fields.priority}
         options={priorities.map((value) => ({ value, label: priorityLabels[value] }))}
         onChange={(value) => set("priority", z.enum(priorities).parse(value))}
       />
       <Choice
-        label="Kind"
+        label={t("common.filterField.kind")}
         value={fields.kind}
-        options={kinds.map((value) => ({ value, label: value }))}
+        options={kinds.map((value) => ({ value, label: kindLabels[value] }))}
         onChange={(value) => set("kind", z.enum(kinds).parse(value))}
       />
       <Choice
-        label="Difficulty"
+        label={t("common.filterField.difficulty")}
         value={fields.difficulty ?? ""}
         options={[
-          { value: "", label: "Unspecified" },
-          ...difficulties.map((value) => ({ value, label: value })),
+          { value: "", label: t("native.editor.noDifficulty") },
+          ...difficulties.map((value) => ({ value, label: difficultyLabels[value] })),
         ]}
         onChange={(value) => set("difficulty", value ? z.enum(difficulties).parse(value) : null)}
       />
       <Choice
-        label="Assignee"
+        label={t("common.filterField.assigneeId")}
         value={fields.assigneeId ?? ""}
         options={[
-          { value: "", label: "Unassigned" },
+          { value: "", label: t("common.state.unassigned") },
           ...(members.data?.map((member) => ({ value: member.userId, label: member.name })) ?? []),
         ]}
         onChange={(value) => set("assigneeId", value || null)}
       />
       <Field
-        label="Labels (comma separated)"
+        label={t("native.editor.labels")}
         value={labels}
         onChangeText={(value) => {
           setLabels(value);
@@ -221,7 +224,7 @@ function Editor({
         }}
       />
       <Field
-        label="Scopes (comma separated)"
+        label={t("native.editor.scopes")}
         value={scopesText}
         onChangeText={(value) => {
           setScopesText(value);
@@ -229,7 +232,7 @@ function Editor({
         }}
       />
       <Button
-        title={preview ? "Edit Markdown" : "Preview Markdown"}
+        title={preview ? t("native.editor.editMarkdown") : t("native.editor.previewMarkdown")}
         onPress={() => setPreview(!preview)}
       />
       {preview ? (
@@ -240,14 +243,14 @@ function Editor({
       ) : (
         <>
           <Field
-            label="Description (Markdown)"
+            label={t("native.editor.description")}
             value={fields.description}
             onChangeText={(value) => set("description", value)}
             multiline
             maxLength={100000}
           />
           <Field
-            label="Acceptance criteria (Markdown)"
+            label={t("native.editor.acceptanceCriteria")}
             value={fields.acceptanceCriteria}
             onChangeText={(value) => set("acceptanceCriteria", value)}
             multiline
@@ -256,27 +259,27 @@ function Editor({
         </>
       )}
       <Field
-        label="Parent ticket ID"
+        label={t("native.editor.parent")}
         value={fields.parentId ?? ""}
         autoCapitalize="none"
         onChangeText={(value) => set("parentId", value || null)}
       />
       <Check
-        label="Ready for agents when requirements and dependencies permit"
+        label={t("native.editor.automationReady")}
         checked={fields.automationReady}
         onChange={(value) => set("automationReady", value)}
       />
       <Field
-        label="Hold reason"
+        label={t("native.editor.holdReason")}
         value={fields.holdReason ?? ""}
         onChangeText={(value) => set("holdReason", value || null)}
         maxLength={2000}
       />
       <View style={styles.actions}>
-        <Body muted>Draft saved on this device</Body>
+        <Body muted>{t("native.editor.draftSaved")}</Body>
       </View>
       <Button
-        title="Save ticket"
+        title={t("native.editor.save")}
         primary
         disabled={stale || create.isPending || update.isPending}
         onPress={() => {

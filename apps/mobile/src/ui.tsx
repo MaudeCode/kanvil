@@ -32,6 +32,7 @@ import {
   stateTones,
   type Ticket,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 
 export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
 export function Brand() {
@@ -157,7 +158,7 @@ export function Sheet({
         style={[styles.modal, { backgroundColor: color.backdrop }]}
       >
         <Pressable
-          accessibilityLabel="Dismiss"
+          accessibilityLabel={t("native.ui.dismiss")}
           accessibilityRole="button"
           style={StyleSheet.absoluteFill}
           onPress={onClose}
@@ -190,7 +191,7 @@ export function Sheet({
               <View style={{ flex: 1 }}>
                 <Heading>{title}</Heading>
               </View>
-              <Button title="Close" plain compact onPress={onClose} />
+              <Button title={t("common.action.close")} plain compact onPress={onClose} />
             </View>
             {children}
           </ScrollView>
@@ -211,14 +212,15 @@ export function Choice({
   onChange: (value: string) => void;
 }) {
   const color = usePalette(),
-    [open, setOpen] = useState(false);
+    [open, setOpen] = useState(false),
+    selected = options.find((option) => option.value === value)?.label ?? value;
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
       <Button
         disclosure
-        title={options.find((option) => option.value === value)?.label ?? value}
-        accessibilityLabel={`${label}: ${options.find((option) => option.value === value)?.label ?? value}`}
+        title={selected}
+        accessibilityLabel={t("native.labelValue", { label, value: selected })}
         onPress={() => setOpen(true)}
       />
       <Sheet title={label} open={open} onClose={() => setOpen(false)}>
@@ -284,7 +286,11 @@ export function ErrorNotice({ error }: { error: unknown }) {
 export function Loading() {
   const color = usePalette();
   return (
-    <ActivityIndicator accessibilityLabel="Loading" color={color.accent} style={{ margin: 24 }} />
+    <ActivityIndicator
+      accessibilityLabel={t("native.ui.loading")}
+      color={color.accent}
+      style={{ margin: 24 }}
+    />
   );
 }
 export function Body({

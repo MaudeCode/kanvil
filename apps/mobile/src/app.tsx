@@ -20,17 +20,20 @@ import {
   DarkTheme,
   DefaultTheme,
   useNavigationContainerRef,
+  type NavigationState,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { infoSchema, okSchema } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import {
   connect,
   type Connection,
   ConnectionContext,
   Identity,
   useConnection,
+  useIdentity,
   useLive,
 } from "./data.tsx";
 import {
@@ -59,6 +62,9 @@ const Tabs = createBottomTabNavigator<{
   Settings: undefined;
 }>();
 const publicCache = new QueryClient();
+// The language root remounts the app; the account's last navigation state brings it back to the
+// same screen instead of the first tab.
+const navigationStates = new Map<string, NavigationState>();
 export default function App() {
   const [connection, setConnection] = useState<Connection>(),
     [loaded, setLoaded] = useState(false),
@@ -133,7 +139,7 @@ function ServerSetup({
       <Screen>
         <Brand />
         <Field
-          label="Server URL"
+          label={t("native.server.url")}
           value={url}
           autoCapitalize="none"
           autoCorrect={false}
@@ -143,7 +149,7 @@ function ServerSetup({
         />
         <ErrorNotice error={failure ?? error} />
         <Button
-          title="Connect"
+          title={t("native.server.connect")}
           primary
           disabled={pending || !url.trim()}
           onPress={() => {
@@ -217,14 +223,21 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
         <Brand />
-        <Heading>{info.data?.setupRequired ? "Create your owner account" : "Sign in"}</Heading>
+        <Heading>
+          {info.data?.setupRequired ? t("native.login.setupTitle") : t("native.login.signIn")}
+        </Heading>
         <Body muted>{baseUrl}</Body>
         <ErrorNotice error={error ?? info.error} />
         {info.data?.setupRequired && (
           <>
-            <Field label="Name" value={name} onChangeText={setName} autoComplete="name" />
             <Field
-              label="Setup token"
+              label={t("native.login.name")}
+              value={name}
+              onChangeText={setName}
+              autoComplete="name"
+            />
+            <Field
+              label={t("native.login.setupToken")}
               autoComplete="off"
               textContentType="none"
               value={token}
@@ -238,7 +251,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
         {(info.data?.setupRequired || info.data?.authentication.emailPasswordEnabled) && (
           <>
             <Field
-              label="Email"
+              label={t("native.login.email")}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -248,7 +261,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
               textContentType="username"
             />
             <Field
-              label="Password"
+              label={t("native.login.password")}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -259,7 +272,11 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
             <Button
               title={
-                pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"
+                pending
+                  ? t("native.login.signingIn")
+                  : info.data?.setupRequired
+                    ? t("native.login.createAccount")
+                    : t("native.login.signIn")
               }
               primary
               disabled={pending || !email || password.length < 12}
@@ -271,7 +288,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
         )}
         {info.data?.oidc && !info.data.setupRequired && (
           <Button
-            title={`Sign in with ${info.data.oidc.name}`}
+            title={t("native.login.signInWith", { provider: info.data.oidc.name })}
             disabled={pending}
             onPress={() => {
               void login(true);
@@ -279,7 +296,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           />
         )}
         <Button
-          title="Change server"
+          title={t("native.server.change")}
           onPress={() => {
             void onDisconnect().catch(setError);
           }}
@@ -334,7 +351,9 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   const connection = useLive(),
     color = usePalette(),
     dark = useColorScheme() === "dark",
-    { baseUrl } = useConnection();
+    { baseUrl } = useConnection(),
+    owner = `${baseUrl}:${useIdentity().id}`;
+  const [initialState] = useState(() => navigationStates.get(owner));
   const theme = {
     ...(dark ? DarkTheme : DefaultTheme),
     colors: {
@@ -350,6 +369,11 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     <NavigationContainer
       ref={navigationRef}
       onReady={onReady}
+      {...(initialState ? { initialState } : {})}
+      onStateChange={(state) => {
+        navigationStates.clear();
+        if (state) navigationStates.set(owner, state);
+      }}
       theme={theme}
       linking={{
         prefixes: ["kanvil://", baseUrl],
@@ -372,17 +396,26 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             headerBackButtonDisplayMode: "minimal",
           }}
         >
-          <Stack.Screen name="Home" options={{ headerShown: false, title: "Projects" }}>
+          <Stack.Screen
+            name="Home"
+            options={{ headerShown: false, title: t("native.screen.projects") }}
+          >
             {() => <Home onDisconnect={onDisconnect} />}
           </Stack.Screen>
           <Stack.Screen name="Tickets" component={Tickets} />
-          <Stack.Screen name="Ticket" component={TicketDetail} options={{ title: "Ticket" }} />
+          <Stack.Screen
+            name="Ticket"
+            component={TicketDetail}
+            options={{ title: t("native.screen.ticket") }}
+          />
           <Stack.Screen
             name="Edit"
             component={EditTicket}
             options={({ route, navigation }) => ({
-              headerLeft: createHeaderAction("Cancel", () => navigation.goBack()),
-              title: route.params.ticketId ? "Edit ticket" : "New ticket",
+              headerLeft: createHeaderAction(t("common.action.cancel"), () => navigation.goBack()),
+              title: route.params.ticketId
+                ? t("native.screen.editTicket")
+                : t("native.screen.newTicket"),
               presentation: "modal",
             })}
           />
@@ -399,11 +432,7 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           }}
         >
           <Body muted small>
-            {connection === "connected"
-              ? "● Live"
-              : connection === "offline"
-                ? "Offline · cached data"
-                : connection}
+            {t(`native.connection.${connection}`)}
           </Body>
         </View>
       </SafeAreaView>
@@ -435,9 +464,15 @@ function tabIcon({ route }: { route: { name: string } }) {
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   return (
     <Tabs.Navigator screenOptions={tabIcon} safeAreaInsets={{ bottom: 0 }}>
-      <Tabs.Screen name="Projects" component={Projects} />
-      <Tabs.Screen name="Inbox" component={Inbox} />
-      <Tabs.Screen name="Settings">{() => <Settings onDisconnect={onDisconnect} />}</Tabs.Screen>
+      <Tabs.Screen
+        name="Projects"
+        component={Projects}
+        options={{ title: t("native.screen.projects") }}
+      />
+      <Tabs.Screen name="Inbox" component={Inbox} options={{ title: t("native.screen.inbox") }} />
+      <Tabs.Screen name="Settings" options={{ title: t("native.screen.settings") }}>
+        {() => <Settings onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
     </Tabs.Navigator>
   );
 }
