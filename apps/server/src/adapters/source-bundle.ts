@@ -78,12 +78,15 @@ export function readable<T extends z.ZodType>(
 
 // Reads one JSON response. Rate limits, server errors, and dropped connections wait and retry;
 // what is still failing after four attempts, and every refusal, ends the read with an error that
-// names the source but never repeats the credentials or what the source answered.
+// names the source but never repeats the credentials or what the source answered. A request that
+// creates something, such as a sign-in, sets `retry: false`: an answer lost on the way would
+// otherwise create it twice.
 export async function readSource(
   http: SourceHttp,
   provider: ImportProvider,
   request: OutboundRequest,
   judge: (status: number, data: unknown) => Outcome = byStatus,
+  { retry = true }: { retry?: boolean } = {},
 ): Promise<unknown> {
   const { label, project } = importProviderDefinitions[provider];
   for (let attempt = 1; ; attempt++) {
@@ -93,7 +96,7 @@ export async function readSource(
     } catch (error) {
       if (!(error instanceof DeliveryError)) throw error;
       // A host that does not answer or resolve would only make the person wait longer.
-      if (error.code === "network_error" && attempt < attempts) {
+      if (retry && error.code === "network_error" && attempt < attempts) {
         await wait(delay(provider, undefined, attempt));
         continue;
       }
@@ -114,7 +117,7 @@ export async function readSource(
       if (data === undefined) throw unreadable(provider);
       return data;
     }
-    if ((outcome === "limited" || outcome === "failing") && attempt < attempts) {
+    if (retry && (outcome === "limited" || outcome === "failing") && attempt < attempts) {
       await wait(delay(provider, response, attempt, outcome));
       continue;
     }

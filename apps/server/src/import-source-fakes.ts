@@ -324,6 +324,9 @@ export function seed() {
         customFieldValues: [],
       },
     },
+    // Some PLANKA versions ignore the archive cursor and answer the first page again.
+    ignoresCursor: false,
+    archiveReads: 0,
     archived: [
       {
         id: "4003",
@@ -594,9 +597,14 @@ const planka: Serve = (data, method, url, headers, body) => {
   if (path === "boards/2001") return ok(data.planka.modern);
   if (path === "boards/2002") return ok(data.planka.classic);
   if (path === "lists/3003/cards") {
-    const changed = url.searchParams.get("before[listChangedAt]");
+    // A reader that keeps asking for the same page is cut off.
+    if (++data.planka.archiveReads > 10) return { status: 400, body: { message: "Runaway" } };
+    const changed = data.planka.ignoresCursor
+      ? null
+      : url.searchParams.get("before[listChangedAt]");
     const items = data.planka.archived
       .filter((found) => !changed || found.listChangedAt < changed)
+      .toSorted((a, b) => b.listChangedAt.localeCompare(a.listChangedAt))
       .slice(0, 50);
     return ok({ items, included: empty });
   }

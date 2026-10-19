@@ -777,6 +777,42 @@ describe("imports from other trackers", () => {
     expect(source.requests).toHaveLength(1);
   });
 
+  it("pages archived PLANKA cards, and stops when PLANKA ignores the cursor", async () => {
+    const archived = (count: number) =>
+      Array.from({ length: count }, (_, n) => ({
+        ...source.data.planka.archived[0]!,
+        id: String(9000 + n),
+        name: `Archived ${n}`,
+        listChangedAt: new Date(Date.UTC(2026, 0, 5, 0, n)).toISOString(),
+      }));
+    source.data.planka.archived = archived(60);
+    expect((await preview(planka(), "2001")).counts.tickets).toBe(62);
+    const pages = source.requests.filter((request) =>
+      request.path.startsWith("/planka/api/lists/3003/cards"),
+    );
+    expect(pages).toHaveLength(2);
+    source.reset();
+    source.data.planka.archived = archived(60);
+    source.data.planka.ignoresCursor = true;
+    const staged = await preview(planka(), "2001");
+    expect(staged.counts.tickets).toBe(52);
+    warns(staged, "Not imported: archived cards past the first page.");
+    expect(
+      source.requests.filter((request) => request.path.startsWith("/planka/api/lists/3003/cards")),
+    ).toHaveLength(2);
+  });
+
+  it("signs in to PLANKA once, since a repeated sign-in can leave a session behind", async () => {
+    source.fail(1, 503);
+    await expect(preview(planka(), "2001")).rejects.toMatchObject({
+      status: 502,
+      code: "source_unavailable",
+    });
+    expect(source.requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      "POST /planka/api/access-tokens",
+    ]);
+  });
+
   it("imports a Kaneo project with every task and related page, subtasks, and comments", async () => {
     const staged = await preview(kaneo(), "kp-platform");
     expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);

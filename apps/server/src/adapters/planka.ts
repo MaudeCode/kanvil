@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ImportSource, ImportSourceProject } from "@kanvil/contracts";
 import {
   bundleBuilder,
+  byStatus,
   formerMember,
   category,
   isoTime,
@@ -111,6 +112,28 @@ const byPosition = (
   b: { position?: number | null | undefined },
 ) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER);
 
+// Every page of a PLANKA list, 50 at a time, each asked for after the last item of the one before.
+// A page with nothing new means PLANKA ignored the cursor: reading stops there instead of asking
+// for it again, and `stalled` is told.
+async function pages<P extends { items: { id: string }[] }>(
+  read: (last: P["items"][number] | undefined) => Promise<P>,
+  stalled: () => void,
+): Promise<P[]> {
+  const found: P[] = [],
+    seen = new Set<string>();
+  for (let last: P["items"][number] | undefined; ;) {
+    const page = await read(last);
+    const fresh = page.items.filter((item) => !seen.has(item.id));
+    if (!fresh.length && page.items.length) {
+      stalled();
+      return found;
+    }
+    for (const item of fresh) seen.add(item.id);
+    found.push({ ...page, items: fresh });
+    if (page.items.length < pageSize) return found;
+    last = page.items.at(-1);
+  }
+}
 // Records by the card they belong to.
 function grouped<T extends { cardId: string }>(items: T[]) {
   const map = new Map<string, T[]>();
@@ -143,12 +166,18 @@ export function createPlankaReader(http: SourceHttp) {
     const { item: token } = readable(
       "planka",
       z.object({ item: z.string() }),
-      await readSource(http, "planka", {
-        method: "POST",
-        url: `${source.baseUrl}/api/access-tokens`,
-        headers: { Accept: "application/json" },
-        body: JSON.stringify({ emailOrUsername: source.username, password: source.password }),
-      }),
+      await readSource(
+        http,
+        "planka",
+        {
+          method: "POST",
+          url: `${source.baseUrl}/api/access-tokens`,
+          headers: { Accept: "application/json" },
+          body: JSON.stringify({ emailOrUsername: source.username, password: source.password }),
+        },
+        byStatus,
+        { retry: false },
+      ),
     );
     const headers = { Authorization: `Bearer ${token}` };
     try {
@@ -215,16 +244,24 @@ export function createPlankaReader(http: SourceHttp) {
         }));
         const merged = { ...contents, cards: [...contents.cards], archived: new Set<string>() };
         for (const archive of lists.filter((list) => list.type === "archive"))
-          for (let before: { listChangedAt: string; id: string } | null = null; ;) {
-            const page: z.output<typeof cardPage> = await read(
-              source,
-              headers,
-              cardPage,
-              `lists/${encodeURIComponent(archive.id)}/cards`,
-              before
-                ? { "before[listChangedAt]": before.listChangedAt, "before[id]": before.id }
-                : {},
-            );
+          for (const page of await pages<z.output<typeof cardPage>>(
+            (last) =>
+              read(
+                source,
+                headers,
+                cardPage,
+                `lists/${encodeURIComponent(archive.id)}/cards`,
+                last?.listChangedAt
+                  ? { "before[listChangedAt]": last.listChangedAt, "before[id]": last.id }
+                  : {},
+              ),
+            () =>
+              out.note(
+                "archived cards past the first page",
+                "PLANKA answered the same page again; the archived cards it did not return are left out.",
+                null,
+              ),
+          )) {
             for (const found of page.items) merged.archived.add(found.id);
             merged.cards.push(...page.items);
             merged.users.push(...page.included.users);
@@ -234,9 +271,6 @@ export function createPlankaReader(http: SourceHttp) {
             merged.tasks.push(...page.included.tasks);
             merged.attachments.push(...page.included.attachments);
             merged.customFieldValues.push(...page.included.customFieldValues);
-            const last = page.items.at(-1);
-            if (page.items.length < pageSize || !last?.listChangedAt) break;
-            before = { listChangedAt: last.listChangedAt, id: last.id };
           }
         if (lists.some((list) => list.type === "trash"))
           out.note("deleted cards", "Cards in PLANKA's trash are left out.", null);
@@ -255,22 +289,27 @@ export function createPlankaReader(http: SourceHttp) {
         if (includeComments)
           for (const found of merged.cards) {
             if (found.commentsTotal === 0) continue;
-            const thread: z.output<typeof notes>["items"] = [];
-            for (let beforeId: string | null = null; ;) {
-              const page: z.output<typeof notes> = await read(
-                source,
-                headers,
-                notes,
-                `cards/${encodeURIComponent(found.id)}/${modern ? "comments" : "actions"}`,
-                beforeId ? { beforeId } : {},
-              );
-              know(page.included.users);
-              thread.push(...page.items);
-              const last = page.items.at(-1);
-              if (page.items.length < pageSize || !last) break;
-              beforeId = last.id;
-            }
-            threads.set(found.id, thread);
+            const thread = await pages<z.output<typeof notes>>(
+              (last) =>
+                read(
+                  source,
+                  headers,
+                  notes,
+                  `cards/${encodeURIComponent(found.id)}/${modern ? "comments" : "actions"}`,
+                  last ? { beforeId: last.id } : {},
+                ),
+              () =>
+                out.note(
+                  "comments past the first page",
+                  "PLANKA answered the same page again; older comments are left out.",
+                  null,
+                ),
+            );
+            for (const page of thread) know(page.included.users);
+            threads.set(
+              found.id,
+              thread.flatMap((page) => page.items),
+            );
           }
         const person = (id: string | null | undefined) =>
           id ? (people.get(id) ?? formerMember(id)) : null;
