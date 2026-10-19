@@ -4,10 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Matches pnpm's one-day minimumReleaseAge so proposed versions install.
+    cooldown:
+      default-days: 1
     groups:
+      # One PR per Expo SDK move, majors included.
+      expo:
+        patterns:
+          - "expo*"
+          - "@expo/*"
+          - "react-native*"
+          - "@react-native*"
       dependencies:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
     ignore:
       - dependency-name: "@types/node"
         versions: [">=25"]
