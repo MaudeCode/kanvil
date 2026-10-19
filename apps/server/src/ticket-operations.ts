@@ -385,6 +385,47 @@ function excerpt(body: string | null, query: string, radius = 80) {
     end = Math.min(text.length, at + query.length + radius);
   return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
 }
+// Checks every ticket's version and ownership before deleting any, so a selection is all or
+// nothing. Children outside the selection lose their parent; events publish before the rows go.
+async function deleteTicketRows(
+  ctx: Context,
+  selection: { ticketId: string; expectedVersion: number }[],
+) {
+  const selected = new Map<string, typeof tickets.$inferSelect>();
+  for (const item of selection) {
+    const ticket = await getTicket(ctx, item.ticketId);
+    assertVersion(ticket, item.expectedVersion, "ticket", "deleting");
+    selected.set(ticket.id, ticket);
+  }
+  const ids = [...selected.keys()];
+  const [claimed] = await ctx.db
+    .select({ ticketId: claims.ticketId })
+    .from(claims)
+    .where(inArray(claims.ticketId, ids))
+    .limit(1);
+  if (claimed)
+    fail(409, "claim_conflict", "Release ownership before deleting this ticket", {
+      ticketId: claimed.ticketId,
+    });
+  const children = await ctx.db
+    .update(tickets)
+    .set({ parentId: null, version: sql`${tickets.version} + 1`, updatedAt: new Date() })
+    .where(and(inArray(tickets.parentId, ids), notInArray(tickets.id, ids)))
+    .returning();
+  await publishMany(ctx, [
+    ...children.map((child) => ({
+      type: "ticket.updated",
+      ticketId: child.id,
+      data: { version: child.version, changedFields: ["parentId"] },
+    })),
+    ...[...selected.values()].map((ticket) => ({
+      type: "ticket.deleted",
+      ticketId: ticket.id,
+      data: { key: ticket.key, version: ticket.version },
+    })),
+  ]);
+  await ctx.db.delete(tickets).where(inArray(tickets.id, ids));
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -396,6 +437,7 @@ export const ticketHandlers: Pick<
   | "update_ticket"
   | "bulk_update_tickets"
   | "delete_ticket"
+  | "bulk_delete_tickets"
   | "search_tickets"
   | "search_workspace"
   | "list_eligible_tickets"
@@ -546,28 +588,11 @@ export const ticketHandlers: Pick<
     return result;
   },
   async delete_ticket(ctx, input) {
-    const ticket = await getTicket(ctx, input.ticketId);
-    assertVersion(ticket, input.expectedVersion, "ticket", "deleting");
-    if ((await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id))).length)
-      fail(409, "claim_conflict", "Release ownership before deleting this ticket");
-    const children = await ctx.db
-      .update(tickets)
-      .set({ parentId: null, version: sql`${tickets.version} + 1`, updatedAt: new Date() })
-      .where(eq(tickets.parentId, ticket.id))
-      .returning();
-    await publishMany(ctx, [
-      ...children.map((child) => ({
-        type: "ticket.updated",
-        ticketId: child.id,
-        data: { version: child.version, changedFields: ["parentId"] },
-      })),
-      {
-        type: "ticket.deleted",
-        ticketId: ticket.id,
-        data: { key: ticket.key, version: ticket.version },
-      },
-    ]);
-    await ctx.db.delete(tickets).where(eq(tickets.id, ticket.id));
+    await deleteTicketRows(ctx, [input]);
+    return { ok: true };
+  },
+  async bulk_delete_tickets(ctx, input) {
+    await deleteTicketRows(ctx, input.tickets);
     return { ok: true };
   },
   async list_eligible_tickets(ctx, input) {

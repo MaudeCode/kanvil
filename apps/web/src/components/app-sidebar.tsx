@@ -581,11 +581,13 @@ export function WorkspaceHeader() {
         ? "My work"
         : pathname === "/search"
           ? "Search"
-          : pathname === "/admin" || pathname.endsWith("/settings")
-            ? "Settings"
-            : ticketId
-              ? (ticket.data?.ticket.key ?? "Ticket")
-              : "Tickets";
+          : project && pathname === `/projects/${project.id}/planning`
+            ? "Planning"
+            : pathname === "/admin" || pathname.endsWith("/settings")
+              ? "Settings"
+              : ticketId
+                ? (ticket.data?.ticket.key ?? "Ticket")
+                : "Tickets";
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />
@@ -628,8 +630,8 @@ export function WorkspaceHeader() {
               <BreadcrumbItem className={place ? "max-[650px]:hidden" : undefined}>
                 {place ? (
                   <BreadcrumbLink render={<Link to={place.entry.to} />}>{page}</BreadcrumbLink>
-                ) : pathname === "/my-work" ? (
-                  // My work's list controls have no title of their own, like a project list.
+                ) : pathname === "/my-work" || page === "Planning" ? (
+                  // These lists' controls have no title of their own, like a project list.
                   <h1 className="m-0 text-[13px] font-medium tracking-normal">
                     <BreadcrumbPage>{page}</BreadcrumbPage>
                   </h1>

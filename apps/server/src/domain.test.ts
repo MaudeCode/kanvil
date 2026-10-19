@@ -848,6 +848,65 @@ describe("ticket operations on PostgreSQL", () => {
     expect(events[1]!.id - events[0]!.id).toBe(1n);
     expect(events.map((event) => event.data.key)).toEqual([first.key, second.key]);
   });
+  it("deletes a selection atomically after validating every ticket", async () => {
+    const parent = await ticket("Parent"),
+      stays = await ticket("Child that stays"),
+      leaves = await ticket("Child that leaves"),
+      claimed = await ticket("Claimed");
+    for (const child of [stays, leaves])
+      await domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: child.id,
+          expectedVersion: child.version,
+          changes: { parentId: parent.id },
+        },
+        owner,
+      );
+    const worker = await domain.actor(owner.id, { ownerId: "worker", scopes: ["read", "claim"] });
+    await domain.execute(
+      "claim_ticket",
+      { projectId: project.id, ticketId: claimed.id, workerId: "w1", expectedVersion: 1 },
+      worker,
+    );
+    const remaining = async () =>
+      (await domain.execute("list_tickets", { projectId: project.id }, owner)).total;
+    const selection = [
+      { ticketId: parent.id, expectedVersion: 1 },
+      { ticketId: leaves.key, expectedVersion: 2 },
+    ];
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    for (const [tickets, actor, code] of [
+      [[...selection, { ticketId: claimed.id, expectedVersion: 2 }], owner, "claim_conflict"],
+      [[...selection, { ticketId: stays.id, expectedVersion: 1 }], owner, "version_conflict"],
+      [[...selection, { ticketId: crypto.randomUUID(), expectedVersion: 1 }], owner, "not_found"],
+      [selection, writer, "forbidden"],
+    ] as const)
+      await expect(
+        domain.execute("bulk_delete_tickets", { projectId: project.id, tickets }, actor),
+      ).rejects.toMatchObject({ code });
+    expect(await remaining()).toBe(4);
+    const cursor = (await domain.readEvents(owner, 0n)).cursor;
+    const input = { projectId: project.id, tickets: selection, requestId: crypto.randomUUID() };
+    expect(await domain.execute("bulk_delete_tickets", input, owner)).toEqual({ ok: true });
+    expect(await domain.execute("bulk_delete_tickets", input, owner)).toEqual({ ok: true });
+    expect(await remaining()).toBe(2);
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: stays.id }, owner))
+        .ticket,
+    ).toMatchObject({ parentId: null, version: 3 });
+    const events = (await domain.readEvents(owner, cursor, project.id)).items;
+    expect(events.map((event) => [event.type, event.ticketId, event.data.key])).toEqual([
+      ["ticket.updated", stays.id, stays.key],
+      ["ticket.deleted", parent.id, parent.key],
+      ["ticket.deleted", leaves.id, leaves.key],
+    ]);
+  });
   it("searches tickets by key or text across accessible projects", async () => {
     const other = await domain.execute(
       "create_project",

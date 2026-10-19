@@ -349,6 +349,91 @@ test("selection floats without moving rows and retains selection on failed updat
   }
 });
 
+test("planning promotes, restores, and deletes complete selections with recovery", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "PLAN", name: "Planning project" },
+    })
+  ).json();
+  for (const data of [
+    { title: "First planned ticket", status: "backlog" },
+    { title: "Second planned ticket", status: "backlog" },
+    { title: "Active ticket", status: "todo" },
+    { title: "Put away ticket", status: "done", archived: true },
+  ])
+    expect((await page.request.post(`/api/v1/projects/${project.id}/tickets`, { data })).ok()).toBe(
+      true,
+    );
+  await page.goto(`/projects/${project.id}`);
+  await page.getByRole("link", { name: "Planning", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/planning`));
+  await expect(page.getByRole("heading", { name: "Planning", exact: true })).toBeVisible();
+  const planned = page.getByRole("rowgroup", { name: "Planned tickets", exact: true }),
+    archived = page.getByRole("rowgroup", { name: "Archived tickets", exact: true });
+  await expect(planned.locator(".ticket-row")).toHaveCount(2);
+  await expect(archived.locator(".ticket-row")).toHaveCount(1);
+  await expect(page.getByText("Active ticket", { exact: true })).toHaveCount(0);
+  const dock = page.getByRole("region", { name: "Selected tickets", exact: true }),
+    more = dock.getByRole("button", { name: "More actions", exact: true }),
+    action = (name: string) => page.getByRole("menuitem", { name, exact: true });
+  await page.getByRole("checkbox", { name: "Select PLAN-1", exact: true }).check();
+  await expect(dock.getByRole("status")).toHaveText("1 of 3 selected");
+  await more.click();
+  await action("Move to To do").click();
+  await expect(planned.locator(".ticket-row")).toHaveCount(1);
+  // A whole section selects from the keyboard.
+  await page.getByRole("checkbox", { name: "Select Archived tickets", exact: true }).focus();
+  await page.keyboard.press("Space");
+  await expect(dock.getByRole("status")).toHaveText("1 of 2 selected");
+  // The previous toast sits over the toolbar; the actions work from the keyboard.
+  await more.press("Enter");
+  await expect(action("Archive selected")).toHaveCount(0);
+  await expect(action("Move to To do")).toHaveCount(0);
+  await action("Restore selected").press("Enter");
+  await expect(archived).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Select Planned tickets", exact: true }).check();
+  await expect(dock.getByRole("status")).toHaveText("1 selected");
+  const remove = async () => {
+    await more.press("Enter");
+    await action("Delete selected").press("Enter");
+  };
+  await remove();
+  const confirm = page.getByRole("alertdialog", { name: "Delete selected", exact: true });
+  await expect(confirm).toContainText(
+    "Permanently delete 1 ticket from Planning project planning (1 Planned)",
+  );
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  await expect(dock.getByRole("status")).toHaveText("1 selected");
+  const deletePath = `**/api/v1/projects/${project.id}/tickets/bulk-delete`;
+  await page.route(deletePath, (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: { code: "version_conflict", message: "Reload changed tickets" } },
+    }),
+  );
+  await remove();
+  await confirm.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(confirm.getByText("Reload changed tickets", { exact: true })).toBeVisible();
+  // The open dialog hides the list from the accessibility tree; the row is still there.
+  await expect(
+    page.locator(".ticket-row").filter({ hasText: "Second planned ticket" }),
+  ).toHaveCount(1);
+  await page.unroute(deletePath);
+  await confirm.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(page.getByText("Deleted 1 ticket", { exact: true })).toBeVisible();
+  await expect(page.getByText("Nothing planned or archived", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Active work", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}(\\?|$)`));
+  for (const title of ["First planned ticket", "Active ticket", "Put away ticket"])
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+  await expect(page.getByText("Second planned ticket", { exact: true })).toHaveCount(0);
+});
+
 test("a mixed selection applies the first row's value to every ticket", async ({ page }) => {
   await signIn(page);
   const project = await (

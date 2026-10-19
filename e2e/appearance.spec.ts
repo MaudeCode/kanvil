@@ -87,7 +87,9 @@ test("themes and responsive ticket rows preserve complete titles and actions", a
       .toBe(mode);
   }
   await page.getByRole("checkbox", { name: "Select LOOK-1", exact: true }).check();
-  await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Selected tickets", exact: true }).getByRole("status"),
+  ).toHaveText("1 of 4 selected");
   await page.getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await choose(page, "Status", "To do");

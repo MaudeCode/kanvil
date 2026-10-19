@@ -1,12 +1,18 @@
 import { useState } from "react";
-import { Archive, X } from "lucide-react";
+import { Archive, ArchiveRestore, Ellipsis, ListTodo, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { type Ticket } from "@kanvil/contracts";
-import { useOperation } from "../data.tsx";
+import { useOperation, useProjectAccess } from "../data.tsx";
 import { IconButton, Confirm, reportError } from "../ui.tsx";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   TagsProperty,
   TicketProperty,
@@ -28,51 +34,71 @@ function shared<T>(selected: Ticket[], read: (ticket: Ticket) => T) {
 
 // Narrow screens keep only the icons; each control's accessible name still says what it edits.
 const wideText = "max-sm:hidden";
+// The server's per-request limit for bulk edits and deletion.
+const batchSize = 100;
+const ticketCount = (count: number) => `${count} ticket${count === 1 ? "" : "s"}`;
 
 // Floats above the list so selecting never shifts rows; every action applies immediately.
 export function TicketSelectionToolbar({
   selected,
+  total,
+  collection,
   onClear,
 }: {
   selected: Ticket[];
+  // How many tickets the list shows, so a partial selection reads as such.
+  total: number;
+  // Names where the selection comes from in confirmations, such as "Kanvil (2 Done)".
+  collection: string;
   onClear: () => void;
 }) {
   const bulk = useOperation("bulk_update_tickets"),
+    remove = useOperation("bulk_delete_tickets"),
     cache = useQueryClient(),
-    [recovering, setRecovering] = useState(false),
-    busy = bulk.isPending || recovering;
+    [busy, setBusy] = useState(false),
+    [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const projectId = selected[0]?.projectId;
+  const access = useProjectAccess(projectId ?? "", !!projectId);
   if (!projectId) return null;
+  const tickets = selected.map((ticket) => ({
+    ticketId: ticket.id,
+    expectedVersion: ticket.version,
+  }));
+  async function run(task: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await task();
+    } catch (error) {
+      // The server rolled the failed request back; reload so the selection carries current
+      // versions and a retry cannot resend stale ones.
+      await cache.invalidateQueries({ queryKey: ["kanvil"] });
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Larger selections go in consecutive batches; each batch is atomic on the server.
   const write = (changes: Partial<Ticket>) =>
-    bulk
-      .mutateAsync({
-        projectId,
-        tickets: selected.map((ticket) => ({
-          ticketId: ticket.id,
-          expectedVersion: ticket.version,
-        })),
-        changes,
-      })
-      .catch(async (error: unknown) => {
-        // The server rolled the whole batch back; stay busy until the reload brings the selection
-        // current versions, so a retry cannot resend stale ones.
-        setRecovering(true);
-        try {
-          await cache.invalidateQueries({ queryKey: ["kanvil"] });
-        } finally {
-          setRecovering(false);
-        }
-        throw error;
-      });
+    run(async () => {
+      for (let done = 0; done < tickets.length; done += batchSize)
+        await bulk
+          .mutateAsync({ projectId, tickets: tickets.slice(done, done + batchSize), changes })
+          .catch((error: unknown) => {
+            if (done) toast.warning(`Applied to ${done} of ${ticketCount(tickets.length)}`);
+            throw error;
+          });
+    });
   function apply(changes: Partial<Ticket>, label: string) {
     if (busy) return;
     void write(changes)
       .then(() => {
-        toast.success(`${label} applied to ${selected.length} tickets`);
+        toast.success(`${label} applied to ${ticketCount(selected.length)}`);
         onClear();
       })
       .catch(reportError);
   }
+  const planned = selected.every((ticket) => ticket.status === "backlog"),
+    archived = selected.every((ticket) => ticket.archived);
   const labels = shared(selected, (ticket) => ticket.labels.toSorted()),
     due = shared(selected, (ticket) => ticket.dueAt);
   return (
@@ -87,7 +113,14 @@ export function TicketSelectionToolbar({
             <X />
           </IconButton>
           <span className="text-xs font-medium whitespace-nowrap tabular-nums" role="status">
-            {selected.length} selected
+            {selected.length === total ? (
+              `${selected.length} selected`
+            ) : (
+              <>
+                {selected.length} of {total}
+                <span className={wideText}> selected</span>
+              </>
+            )}
           </span>
           {busy && <Spinner className="size-3.5" />}
         </div>
@@ -130,15 +163,68 @@ export function TicketSelectionToolbar({
           onChange={(date) => apply({ dueAt: date ? endOfDay(date) : null }, "Due date")}
         />
         <Separator orientation="vertical" className="hidden h-5! sm:block" />
+        {/* One slot for collection actions keeps the dock at two rows on a phone. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<IconButton label="More actions" disabled={busy} />}>
+            <Ellipsis />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {planned && (
+              <DropdownMenuItem onClick={() => apply({ status: "todo" }, "To do")}>
+                <ListTodo />
+                Move to To do
+              </DropdownMenuItem>
+            )}
+            {archived ? (
+              <DropdownMenuItem onClick={() => apply({ archived: false }, "Restore")}>
+                <ArchiveRestore />
+                Restore selected
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={() => setConfirming("archive")}>
+                <Archive />
+                Archive selected
+              </DropdownMenuItem>
+            )}
+            {access.canAdmin && (
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={selected.length > batchSize}
+                onClick={() => setConfirming("delete")}
+              >
+                <Trash2 />
+                {selected.length > batchSize
+                  ? `Delete up to ${batchSize} at once`
+                  : "Delete selected"}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Confirm
           label="Archive selected"
-          disabled={busy}
-          icon={<Archive />}
-          description={`Archive ${selected.length} selected tickets?`}
+          trigger={false}
+          open={confirming === "archive"}
+          onOpenChange={(open) => setConfirming(open ? "archive" : null)}
+          description={`Archive ${ticketCount(selected.length)} from ${collection}?`}
           onConfirm={async () => {
             await write({ archived: true });
             onClear();
           }}
+        />
+        <Confirm
+          danger
+          label="Delete selected"
+          trigger={false}
+          open={confirming === "delete"}
+          onOpenChange={(open) => setConfirming(open ? "delete" : null)}
+          description={`Permanently delete ${ticketCount(selected.length)} from ${collection}, with their comments, relationships, and attachments? Children outside the selection lose their parent.`}
+          onConfirm={() =>
+            run(async () => {
+              await remove.mutateAsync({ projectId, tickets });
+              toast.success(`Deleted ${ticketCount(selected.length)}`);
+              onClear();
+            })
+          }
         />
       </div>
     </div>
