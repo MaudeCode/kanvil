@@ -9,6 +9,7 @@ import {
   type AdminInstance,
 } from "@kanvil/contracts/instance";
 import { okSchema } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
 import { api } from "../data.tsx";
 import {
@@ -155,7 +156,7 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
     setEditing(false);
   }
   return (
-    <SettingsLayout title="Administration" section={section}>
+    <SettingsLayout title={t("admin.instance.title")} section={section}>
       {(["general", "storage", "search", "events"] as const).map((value) => (
         <SettingsPanel value={value} key={value}>
           <InstanceOverview
@@ -174,12 +175,12 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
       <Modal
         title={
           section === "general"
-            ? "Edit instance"
+            ? t("admin.instance.edit")
             : section === "storage"
-              ? "Configure file storage"
+              ? t("admin.configure.storageTitle")
               : section === "search"
-                ? "Configure ticket search"
-                : "Configure event delivery"
+                ? t("admin.configure.searchTitle")
+                : t("admin.configure.eventsTitle")
         }
         open={editing}
         onOpenChange={setEditing}
@@ -189,30 +190,30 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
           className="[&_section]:py-0 [&>[data-slot=field-set]>section:first-child]:pt-0"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!locked) void action(save, "Instance settings saved", true);
+            if (!locked) void action(save, t("admin.configure.saved"), true);
           }}
         >
           <FieldSet disabled={pending} className="gap-0">
             {section === "general" && (
               <>
                 <section>
-                  <h2>Instance</h2>
+                  <h2>{t("admin.instance.heading")}</h2>
                   <Input
-                    label="Instance name"
+                    label={t("admin.configure.instanceName")}
                     required
                     maxLength={100}
                     value={draft.name}
                     onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                   />
                   <Textarea
-                    label="Instance description"
+                    label={t("admin.configure.instanceDescription")}
                     maxLength={500}
                     value={draft.description}
                     onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                   />
-                  <CopyValue label="Public URL" value={data.deployment.url} />
+                  <CopyValue label={t("admin.instance.publicUrl")} value={data.deployment.url} />
                   <p className="text-xs text-muted-foreground">
-                    The public URL is set by KANVIL_URL in your deployment.
+                    {t("admin.configure.publicUrlSource")}
                   </p>
                 </section>
               </>
@@ -221,80 +222,76 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               <>
                 <section>
                   <div className="mb-5 flex items-center gap-3">
-                    <h2 className="mb-0">File storage</h2>
+                    <h2 className="mb-0">{t("admin.instance.section.storage")}</h2>
                     <Badge variant="secondary">
-                      {s3Locked ? "Deployment managed" : "Instance managed"}
+                      {s3Locked
+                        ? t("admin.instance.deploymentManaged")
+                        : t("admin.instance.instanceManaged")}
                     </Badge>
                   </div>
-                  <p>
-                    Attachments and profile photos use this provider. Existing files keep their
-                    original storage location.
-                  </p>
+                  <p>{t("admin.configure.storageIntro")}</p>
                   <Select
-                    label="Storage provider"
+                    label={t("admin.configure.storageProvider")}
                     disabled={s3Locked}
                     value={draft.storageProvider}
                     onValueChange={(value) =>
                       setDraft({ ...draft, storageProvider: value === "s3" ? "s3" : "local" })
                     }
                   >
-                    <SelectItem value="local">Local PostgreSQL storage</SelectItem>
-                    <SelectItem value="s3">S3-compatible object storage</SelectItem>
+                    <SelectItem value="local">{t("admin.instance.provider.local")}</SelectItem>
+                    <SelectItem value="s3">{t("admin.instance.provider.s3")}</SelectItem>
                   </Select>
                   {draft.storageProvider === "local" ? (
-                    <p>
-                      File bytes are stored in the local database and included in PostgreSQL
-                      backups.
-                    </p>
+                    <p>{t("admin.configure.localDescription")}</p>
                   ) : (
                     <FieldSet disabled={s3Locked} className="gap-0">
                       <Input
-                        label="S3 endpoint"
+                        label={t("admin.configure.s3Endpoint")}
                         type="url"
                         placeholder="https://s3.example.com"
                         value={draft.s3.endpoint}
                         onChange={(event) => setS3({ endpoint: event.target.value })}
                       />
-                      <p className="-mt-2 text-xs">Leave the endpoint empty for Amazon S3.</p>
+                      <p className="-mt-2 text-xs">{t("admin.configure.s3EndpointHint")}</p>
                       <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
                         <Input
-                          label="Bucket"
+                          label={t("admin.instance.bucket")}
                           value={draft.s3.bucket}
                           required
                           onChange={(event) => setS3({ bucket: event.target.value })}
                         />
                         <Input
-                          label="Region"
+                          label={t("admin.configure.region")}
                           value={draft.s3.region}
                           required
                           onChange={(event) => setS3({ region: event.target.value })}
                         />
                       </div>
                       <Input
-                        label="Object key prefix"
+                        label={t("admin.configure.prefix")}
                         value={draft.s3.prefix}
                         onChange={(event) => setS3({ prefix: event.target.value })}
                       />
                       <Input
-                        label="Access key ID"
+                        label={t("admin.configure.accessKeyId")}
                         autoComplete="off"
                         value={draft.s3.accessKeyId}
                         onChange={(event) => setS3({ accessKeyId: event.target.value })}
                       />
                       <Input
-                        label="Secret access key"
+                        label={t("admin.configure.secretAccessKey")}
                         type="password"
                         autoComplete="new-password"
                         value={draft.s3.secretAccessKey}
                         placeholder={
                           data.storage.secretConfigured
-                            ? "Saved. Leave empty to keep it."
-                            : "Deployment credentials when omitted"
+                            ? t("admin.configure.savedSecret")
+                            : t("admin.configure.deploymentCredentials")
                         }
                         onChange={(event) => setS3({ secretAccessKey: event.target.value })}
                       />
                       <Check
-                        label="Use path-style bucket URLs"
+                        label={t("admin.configure.pathStyle")}
                         checked={draft.s3.forcePathStyle}
                         onCheckedChange={(value) => setS3({ forcePathStyle: value })}
                       />
@@ -311,29 +308,26 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify(draft.s3),
                             }),
-                          "Storage connection verified",
+                          t("admin.configure.storageVerified"),
                         );
                       }}
                     >
-                      Test storage connection
+                      {t("admin.configure.testStorage")}
                     </Button>
                   )}
                   <p className="mt-4 text-xs" role="status">
                     {data.storage.pending
-                      ? `${data.storage.pending} files waiting for transfer. Pending files remain readable from PostgreSQL.`
-                      : "All file transfers completed."}
+                      ? t("admin.configure.filesWaiting", { count: data.storage.pending })
+                      : t("admin.configure.transfersComplete")}
                   </p>
                   {data.storage.error && <ErrorNotice error={new Error(data.storage.error)} />}
                   {s3Locked && (
-                    <p className="mt-4 text-xs">
-                      Storage is configured by KANVIL_STORAGE_PROVIDER and S3_* deployment
-                      variables.
-                    </p>
+                    <p className="mt-4 text-xs">{t("admin.configure.storageDeployment")}</p>
                   )}
                 </section>
                 {data.locations.length > 0 && (
                   <section>
-                    <h2>Existing storage locations</h2>
+                    <h2>{t("admin.configure.locations")}</h2>
                     {data.locations.map((location) => (
                       <div
                         className="flex flex-wrap items-center gap-3 border-b py-2.5 text-xs wrap-anywhere [&>:first-child]:min-w-24 [&>:first-child]:flex-1"
@@ -345,13 +339,15 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                             {location.endpoint || "Amazon S3"} / {location.prefix}
                           </span>
                         </span>
-                        <span>{location.objects} files</span>
+                        <span>
+                          {t("admin.configure.locationFiles", { count: location.objects })}
+                        </span>
                       </div>
                     ))}
                     <div className="mt-4">
                       <Confirm
-                        label="Clean unused files"
-                        description="Remove unreferenced files and failed uploads older than one day? Files attached to tickets or profiles are retained."
+                        label={t("admin.configure.cleanUp")}
+                        description={t("admin.configure.cleanUpConfirm")}
                         onConfirm={async () => {
                           await api.request(
                             "/api/v1/admin/storage/cleanup",
@@ -362,10 +358,7 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                         }}
                       />
                     </div>
-                    <p className="mt-3 text-xs">
-                      Cleanup also runs automatically. S3 objects require a bucket backup alongside
-                      the database backup.
-                    </p>
+                    <p className="mt-3 text-xs">{t("admin.configure.cleanUpNote")}</p>
                   </section>
                 )}
               </>
@@ -374,13 +367,15 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               <>
                 <section>
                   <div className="mb-5 flex items-center gap-3">
-                    <h2 className="mb-0">Ticket search</h2>
+                    <h2 className="mb-0">{t("admin.instance.section.search")}</h2>
                     <Badge variant="secondary">
-                      {data.search.status === "builtin" ? "PostgreSQL" : data.search.status}
+                      {data.search.status === "builtin"
+                        ? "PostgreSQL"
+                        : t(`admin.instance.status.${data.search.status}`)}
                     </Badge>
                   </div>
                   <Select
-                    label="Search provider"
+                    label={t("admin.configure.searchProvider")}
                     disabled={searchLocked}
                     value={draft.searchProvider}
                     onValueChange={(value) =>
@@ -390,45 +385,49 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                       })
                     }
                   >
-                    <SelectItem value="postgres">Built-in PostgreSQL search</SelectItem>
-                    <SelectItem value="elasticsearch">Elasticsearch-compatible search</SelectItem>
+                    <SelectItem value="postgres">{t("admin.configure.searchBuiltIn")}</SelectItem>
+                    <SelectItem value="elasticsearch">
+                      {t("admin.instance.provider.elasticsearch")}
+                    </SelectItem>
                   </Select>
                   {draft.searchProvider === "elasticsearch" && (
                     <>
                       <FieldSet disabled={searchLocked} className="gap-0">
                         <Input
-                          label="Search endpoint"
+                          label={t("admin.instance.searchEndpoint")}
                           type="url"
                           required
                           value={draft.elastic.url}
                           onChange={(event) => setElastic({ url: event.target.value })}
                         />
                         <Input
-                          label="Kanvil index name"
+                          label={t("admin.configure.indexName")}
                           required
                           value={draft.elastic.index}
                           onChange={(event) => setElastic({ index: event.target.value })}
                         />
                         <Select
-                          label="Search authentication"
+                          label={t("admin.configure.searchAuthentication")}
                           value={draft.elastic.auth}
                           onValueChange={(value) =>
                             setElastic({ auth: searchAuthenticationSchema.parse(value) })
                           }
                         >
-                          <SelectItem value="none">No authentication</SelectItem>
-                          <SelectItem value="apiKey">API key</SelectItem>
-                          <SelectItem value="basic">Username and password</SelectItem>
+                          <SelectItem value="none">
+                            {t("admin.configure.noAuthentication")}
+                          </SelectItem>
+                          <SelectItem value="apiKey">{t("admin.configure.apiKey")}</SelectItem>
+                          <SelectItem value="basic">{t("admin.configure.basic")}</SelectItem>
                         </Select>
                         {draft.elastic.auth === "apiKey" && (
                           <Input
-                            label="Search API key"
+                            label={t("admin.configure.searchApiKey")}
                             type="password"
                             autoComplete="new-password"
                             placeholder={
                               data.search.secretConfigured
-                                ? "Saved. Leave empty to keep it."
-                                : "Optional"
+                                ? t("admin.configure.savedSecret")
+                                : t("admin.configure.optional")
                             }
                             value={draft.elastic.apiKey}
                             onChange={(event) => setElastic({ apiKey: event.target.value })}
@@ -437,13 +436,13 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                         {draft.elastic.auth === "basic" && (
                           <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2">
                             <Input
-                              label="Search username"
+                              label={t("admin.configure.searchUsername")}
                               autoComplete="off"
                               value={draft.elastic.username}
                               onChange={(event) => setElastic({ username: event.target.value })}
                             />
                             <Input
-                              label="Search password"
+                              label={t("admin.configure.searchPassword")}
                               type="password"
                               autoComplete="new-password"
                               value={draft.elastic.password}
@@ -462,11 +461,11 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                                   headers: { "Content-Type": "application/json" },
                                   body: JSON.stringify(draft.elastic),
                                 }),
-                              "Search connection verified",
+                              t("admin.configure.searchVerified"),
                             );
                           }}
                         >
-                          Test search connection
+                          {t("admin.configure.testSearch")}
                         </Button>
                         {data.search.provider === "elasticsearch" && (
                           <Button
@@ -476,20 +475,17 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                                   api.request("/api/v1/admin/search/reindex", okSchema, {
                                     method: "POST",
                                   }),
-                                "Search rebuild queued",
+                                t("admin.configure.rebuildQueued"),
                               );
                             }}
                           >
-                            Rebuild index
+                            {t("admin.configure.rebuild")}
                           </Button>
                         )}
                       </div>
                     </>
                   )}
-                  <p className="mt-5">
-                    PostgreSQL remains authoritative for permissions and filters. Search falls back
-                    to PostgreSQL while an external index catches up or is unavailable.
-                  </p>
+                  <p className="mt-5">{t("admin.configure.searchNote")}</p>
                   {data.search.error && <ErrorNotice error={new Error(data.search.error)} />}
                 </section>
               </>
@@ -498,13 +494,15 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               <>
                 <section>
                   <div className="mb-5 flex items-center gap-3">
-                    <h2 className="mb-0">Event delivery</h2>
+                    <h2 className="mb-0">{t("admin.instance.section.events")}</h2>
                     <Badge variant="secondary">
-                      {data.broker.status === "builtin" ? "PostgreSQL" : data.broker.status}
+                      {data.broker.status === "builtin"
+                        ? "PostgreSQL"
+                        : t(`admin.instance.status.${data.broker.status}`)}
                     </Badge>
                   </div>
                   <Select
-                    label="Event delivery provider"
+                    label={t("admin.configure.brokerProvider")}
                     disabled={brokerLocked}
                     value={draft.brokerProvider}
                     onValueChange={(value) =>
@@ -514,20 +512,20 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                       })
                     }
                   >
-                    <SelectItem value="postgres">Built-in PostgreSQL notifications</SelectItem>
+                    <SelectItem value="postgres">{t("admin.configure.brokerBuiltIn")}</SelectItem>
                     <SelectItem value="rabbitmq">RabbitMQ</SelectItem>
                   </Select>
                   {draft.brokerProvider === "rabbitmq" && (
                     <>
                       <FieldSet disabled={brokerLocked} className="gap-0">
                         <Input
-                          label="RabbitMQ connection URL"
+                          label={t("admin.configure.rabbitUrl")}
                           type="password"
                           autoComplete="new-password"
                           value={draft.rabbit.url}
                           placeholder={
                             data.broker.secretConfigured
-                              ? "Saved. Leave empty to keep it."
+                              ? t("admin.configure.savedSecret")
                               : "amqps://user:password@host/vhost"
                           }
                           onChange={(event) =>
@@ -539,12 +537,12 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                         />
                         {data.broker.settings && (
                           <CopyValue
-                            label="Saved broker endpoint"
+                            label={t("admin.configure.savedBrokerEndpoint")}
                             value={data.broker.settings.endpoint}
                           />
                         )}
                         <Input
-                          label="RabbitMQ exchange"
+                          label={t("admin.configure.rabbitExchange")}
                           required
                           value={draft.rabbit.exchange}
                           onChange={(event) =>
@@ -567,24 +565,17 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                                   url: draft.rabbit.url || undefined,
                                 }),
                               }),
-                            "RabbitMQ delivery verified",
+                            t("admin.configure.brokerVerified"),
                           );
                         }}
                       >
-                        Test broker connection
+                        {t("admin.configure.testBroker")}
                       </Button>
                     </>
                   )}
-                  <p className="mt-5">
-                    RabbitMQ fans out committed event wakeups to Kanvil instances and wakes
-                    background workers. PostgreSQL keeps the durable events and pending work, and
-                    delivers wakeups when the broker is unavailable.
-                  </p>
+                  <p className="mt-5">{t("admin.configure.brokerNote")}</p>
                   {brokerLocked && (
-                    <p className="mt-4 text-xs">
-                      Event delivery is configured by KANVIL_BROKER_PROVIDER and RABBITMQ_*
-                      deployment variables.
-                    </p>
+                    <p className="mt-4 text-xs">{t("admin.configure.brokerDeployment")}</p>
                   )}
                   {data.broker.error && <ErrorNotice error={new Error(data.broker.error)} />}
                 </section>
@@ -594,11 +585,11 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
           {["general", "storage", "search", "events"].includes(section) && (
             <div className="sticky bottom-0 mt-6 flex flex-wrap items-center gap-3 border-t bg-background/95 py-4 backdrop-blur">
               <Button disabled={pending} onClick={() => setEditing(false)}>
-                {locked ? "Done" : "Cancel"}
+                {locked ? t("common.action.done") : t("common.action.cancel")}
               </Button>
               {!locked && (
                 <Button variant="default" type="submit" disabled={pending}>
-                  {pending ? "Saving…" : "Save instance settings"}
+                  {pending ? t("common.state.saving") : t("admin.configure.save")}
                 </Button>
               )}
               {message && (
@@ -619,17 +610,17 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
       </SettingsPanel>
       <SettingsPanel value="authentication">
         <section>
-          <SectionHeading title="Authentication" />
+          <SectionHeading title={t("admin.authentication.title")} />
           <form
             className="mb-6"
             onSubmit={(event) => {
               event.preventDefault();
-              void action(save, "Authentication saved", true);
+              void action(save, t("admin.authentication.saved"), true);
             }}
           >
-            <SettingRow title="Email and password sign-in">
+            <SettingRow title={t("admin.authentication.emailPassword")}>
               <Switch
-                aria-label="Email and password sign-in"
+                aria-label={t("admin.authentication.emailPassword")}
                 checked={draft.authentication.emailPasswordEnabled}
                 disabled={pending}
                 onCheckedChange={(checked) =>
@@ -641,11 +632,11 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               />
             </SettingRow>
             <SettingRow
-              title="Automatically create users from SSO"
-              description="New SSO users have no workspace or project access until invited."
+              title={t("admin.authentication.ssoProvision")}
+              description={t("admin.authentication.ssoProvisionDescription")}
             >
               <Switch
-                aria-label="Automatically create users from SSO"
+                aria-label={t("admin.authentication.ssoProvision")}
                 checked={draft.authentication.ssoAutoProvision}
                 disabled={pending}
                 onCheckedChange={(checked) =>
@@ -656,16 +647,18 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
                 }
               />
             </SettingRow>
-            <SettingRow title="Public email registration">Closed</SettingRow>
-            <SettingRow title="Identity provider">
-              {data.deployment.oidc?.name ?? "Not configured"}
+            <SettingRow title={t("admin.authentication.registration")}>
+              {t("admin.authentication.registrationClosed")}
+            </SettingRow>
+            <SettingRow title={t("admin.authentication.identityProvider")}>
+              {data.deployment.oidc?.name ?? t("admin.authentication.notConfigured")}
             </SettingRow>
             <FormActions
               layout="inline"
               error={error}
               pending={pending}
-              submitLabel="Save authentication"
-              pendingLabel="Saving…"
+              submitLabel={t("admin.authentication.save")}
+              pendingLabel={t("common.state.saving")}
               submitDisabled={
                 draft.authentication.emailPasswordEnabled ===
                   data.authentication.emailPasswordEnabled &&
@@ -675,25 +668,34 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
           </form>
           {data.deployment.oidc && (
             <>
-              <CopyValue label="OIDC discovery URL" value={data.deployment.oidc.discoveryUrl} />
-              <CopyValue label="OIDC client ID" value={data.deployment.oidc.clientId} />
+              <CopyValue
+                label={t("admin.authentication.discoveryUrl")}
+                value={data.deployment.oidc.discoveryUrl}
+              />
+              <CopyValue
+                label={t("admin.authentication.clientId")}
+                value={data.deployment.oidc.clientId}
+              />
             </>
           )}
-          <p>
-            Configure OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_NAME in your
-            deployment, then restart Kanvil. Provider secrets are never returned to the browser.
-          </p>
-          <h3>Consumer interfaces</h3>
+          <p>{t("admin.authentication.oidcSetup")}</p>
+          <h3>{t("admin.authentication.consumers")}</h3>
           <CopyValue label="HTTP API" value={`${data.deployment.url}/api/v1`} />
-          <CopyValue label="MCP endpoint" value={`${data.deployment.url}/mcp`} />
-          <CopyValue label="Realtime event feed" value={`${data.deployment.url}/api/v1/events`} />
+          <CopyValue
+            label={t("admin.authentication.mcpEndpoint")}
+            value={`${data.deployment.url}/mcp`}
+          />
+          <CopyValue
+            label={t("admin.authentication.eventFeed")}
+            value={`${data.deployment.url}/api/v1/events`}
+          />
           <a
             className="inline-flex items-center gap-2 text-primary"
             href="/api/openapi.json"
             target="_blank"
             rel="noreferrer"
           >
-            Open API specification
+            {t("admin.authentication.openApi")}
             <ExternalLink className="size-4" />
           </a>
         </section>

@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Pencil, KeyRound, Plus } from "lucide-react";
 import { hasAdminRole, okSchema, roleLabels } from "@kanvil/contracts";
 import { accountDetailsSchema } from "@kanvil/contracts/users";
+import { t } from "@kanvil/contracts/i18n";
 import { toast } from "sonner";
 import { api, auth, date, useIdentity, useOperation, useWorkspaces } from "../data.tsx";
 import {
@@ -71,7 +72,7 @@ export function AccountDetails({
         throw new Error(
           typeof cause === "object" && "message" in cause
             ? String(cause.message)
-            : "The account could not be updated",
+            : t("admin.account.updateFailed"),
         );
       }
       await onChanged();
@@ -94,7 +95,7 @@ export function AccountDetails({
       >
         <SheetContent className="w-full! sm:max-w-lg!">
           <SheetHeader className="shrink-0 border-b pr-14">
-            <SheetTitle className="mb-0">{person?.name ?? "Account details"}</SheetTitle>
+            <SheetTitle className="mb-0">{person?.name ?? t("admin.account.details")}</SheetTitle>
             <SheetDescription className="break-all">{person?.email}</SheetDescription>
           </SheetHeader>
           <div className="@container min-h-0 overflow-y-auto px-6 pb-8">
@@ -112,10 +113,10 @@ export function AccountDetails({
                     />
                     <div className="min-w-40 flex-1">
                       <Badge variant={person.banned ? "destructive" : "secondary"}>
-                        {person.banned ? "Disabled" : "Active"}
+                        {person.banned ? t("admin.users.disabled") : t("admin.users.active")}
                       </Badge>
                       <p className="mt-2 mb-0 text-xs text-muted-foreground">
-                        Joined {date(person.createdAt)}
+                        {t("admin.account.joined", { date: date(person.createdAt) })}
                       </p>
                     </div>
                     <Button
@@ -126,15 +127,15 @@ export function AccountDetails({
                       }}
                     >
                       <Pencil />
-                      Edit account
+                      {t("admin.account.edit")}
                     </Button>
                   </div>
                   <SettingRow
-                    title="Instance role"
+                    title={t("admin.account.instanceRole")}
                     description={
                       hasAdminRole(person.role)
-                        ? "Can administer every workspace, account, and deployment setting."
-                        : "Workspace and project roles determine access."
+                        ? t("admin.account.adminDescription")
+                        : t("admin.account.userDescription")
                     }
                   >
                     <Button
@@ -143,10 +144,13 @@ export function AccountDetails({
                         setEditing("role");
                       }}
                     >
-                      Change role
+                      {t("admin.account.changeRole")}
                     </Button>
                   </SettingRow>
-                  <SettingRow title="Sign-in methods" description={signInMethods(person.providers)}>
+                  <SettingRow
+                    title={t("admin.account.signInMethods")}
+                    description={signInMethods(person.providers)}
+                  >
                     <Button
                       onClick={() => {
                         setError(undefined);
@@ -154,40 +158,42 @@ export function AccountDetails({
                       }}
                     >
                       <KeyRound />
-                      Set local password
+                      {t("admin.account.setPassword")}
                     </Button>
                   </SettingRow>
                   <SettingRow
-                    title="Active sessions"
-                    description={`${person.sessionCount} ${person.sessionCount === 1 ? "session" : "sessions"}`}
+                    title={t("admin.account.activeSessions")}
+                    description={t("admin.account.sessions", { count: person.sessionCount })}
                   >
                     <Confirm
-                      label="Revoke sessions"
-                      description={`Sign ${person.name} out of every device? API keys stay active.`}
+                      label={t("admin.account.revokeSessions")}
+                      description={t("admin.account.revokeConfirm", { name: person.name })}
                       onConfirm={() =>
                         action(
                           () => auth.admin.revokeUserSessions({ userId: person.id }),
-                          "Sessions revoked",
+                          t("admin.account.sessionsRevoked"),
                         )
                       }
                     />
                   </SettingRow>
                   {person.id !== identity.id && (
                     <SettingRow
-                      title="Account access"
+                      title={t("admin.account.access")}
                       description={
                         person.banned
-                          ? "Sign-in and API access are disabled."
-                          : "Disabling an account preserves tickets and activity history."
+                          ? t("admin.account.accessDisabled")
+                          : t("admin.account.accessPreserved")
                       }
                     >
                       <Confirm
-                        label={person.banned ? "Enable account" : "Disable account"}
+                        label={
+                          person.banned ? t("admin.account.enable") : t("admin.account.disable")
+                        }
                         danger={!person.banned}
                         description={
                           person.banned
-                            ? `Restore sign-in for ${person.name}?`
-                            : `Disable ${person.name}'s sign-in and API access, and revoke their sessions?`
+                            ? t("admin.account.enableConfirm", { name: person.name })
+                            : t("admin.account.disableConfirm", { name: person.name })
                         }
                         onConfirm={() =>
                           action(
@@ -198,7 +204,9 @@ export function AccountDetails({
                                     userId: person.id,
                                     banReason: "Disabled by an instance administrator",
                                   }),
-                            person.banned ? "Account enabled" : "Account disabled",
+                            person.banned
+                              ? t("admin.account.enabled")
+                              : t("admin.account.disabledToast"),
                           )
                         }
                       />
@@ -215,7 +223,7 @@ export function AccountDetails({
                   )}
                   <section className="pt-7">
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <h3 className="mb-0">Workspaces</h3>
+                      <h3 className="mb-0">{t("admin.account.workspaces")}</h3>
                       <Button
                         size="sm"
                         onClick={() => {
@@ -224,7 +232,7 @@ export function AccountDetails({
                         }}
                       >
                         <Plus />
-                        Add to workspace
+                        {t("admin.account.addToWorkspace")}
                       </Button>
                     </div>
                     {person.workspaces.length ? (
@@ -236,18 +244,19 @@ export function AccountDetails({
                             search={{ section: "members" }}
                             onClick={onClose}
                             className="text-primary"
+                            dir="auto"
                           >
                             {workspace.name}
                           </Link>
                         </AccessRow>
                       ))
                     ) : (
-                      <EmptyState title="No workspace membership" className="py-5" />
+                      <EmptyState title={t("admin.account.noWorkspaces")} className="py-5" />
                     )}
                   </section>
                   {!!person.projects.length && (
                     <section className="pt-7">
-                      <h3>Direct project access</h3>
+                      <h3>{t("admin.account.projectAccess")}</h3>
                       {person.projects.map((project) => (
                         <AccessRow key={project.id} badge={roleLabels[project.role]}>
                           <Link
@@ -256,6 +265,7 @@ export function AccountDetails({
                             search={{ section: "members" }}
                             onClick={onClose}
                             className="text-primary"
+                            dir="auto"
                           >
                             {project.name}
                           </Link>
@@ -273,12 +283,12 @@ export function AccountDetails({
         <Modal
           title={
             editing === "profile"
-              ? "Edit account"
+              ? t("admin.account.edit")
               : editing === "role"
-                ? "Change instance role"
+                ? t("admin.account.changeRoleTitle")
                 : editing === "workspace"
-                  ? "Add to workspace"
-                  : "Set local password"
+                  ? t("admin.account.addToWorkspace")
+                  : t("admin.account.setPassword")
           }
           open={!!editing}
           onOpenChange={(open) => {
@@ -298,14 +308,14 @@ export function AccountDetails({
                     userId: person.id,
                     data: { name: formText(values, "name"), email: formText(values, "email") },
                   });
-                message = "Account updated";
+                message = t("admin.account.updated");
               } else if (editing === "role") {
                 run = () =>
                   auth.admin.setRole({
                     userId: person.id,
                     role: values.get("role") === "admin" ? "admin" : "user",
                   });
-                message = "Instance role updated";
+                message = t("admin.account.roleUpdated");
               } else if (editing === "workspace") {
                 run = () =>
                   membership.mutateAsync({
@@ -318,11 +328,11 @@ export function AccountDetails({
                           ? "admin"
                           : "writer",
                   });
-                message = "Workspace access added";
+                message = t("admin.account.workspaceAdded");
               } else {
                 const password = formText(values, "password");
                 if (password !== formText(values, "confirm")) {
-                  setError(new Error("The new passwords do not match."));
+                  setError(new Error(t("admin.account.passwordMismatch")));
                   return;
                 }
                 run = () =>
@@ -335,7 +345,7 @@ export function AccountDetails({
                       body: JSON.stringify({ password }),
                     },
                   );
-                message = "Local password set and sessions revoked";
+                message = t("admin.account.passwordSet");
               }
               void action(run, message).catch(() => {});
             }}
@@ -343,7 +353,7 @@ export function AccountDetails({
             {editing === "profile" ? (
               <>
                 <Input
-                  label="Name"
+                  label={t("admin.account.name")}
                   name="name"
                   defaultValue={person.name}
                   required
@@ -351,7 +361,7 @@ export function AccountDetails({
                   autoFocus
                 />
                 <Input
-                  label="Email"
+                  label={t("admin.account.email")}
                   name="email"
                   type="email"
                   defaultValue={person.email}
@@ -361,20 +371,18 @@ export function AccountDetails({
             ) : editing === "role" ? (
               <>
                 <Select
-                  label="Instance role"
+                  label={t("admin.account.instanceRole")}
                   name="role"
                   defaultValue={hasAdminRole(person.role) ? "admin" : "user"}
                 >
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Administrator</SelectItem>
+                  <SelectItem value="user">{t("admin.account.user")}</SelectItem>
+                  <SelectItem value="admin">{t("admin.account.administrator")}</SelectItem>
                 </Select>
-                <p className="text-sm text-muted-foreground">
-                  Administrators can manage all workspaces, users, and instance settings.
-                </p>
+                <p className="text-sm text-muted-foreground">{t("admin.account.adminsNote")}</p>
               </>
             ) : editing === "workspace" ? (
               <>
-                <Select label="Workspace" name="workspace" required>
+                <Select label={t("admin.account.workspace")} name="workspace" required>
                   {spaces.data
                     ?.filter(
                       (workspace) =>
@@ -386,16 +394,16 @@ export function AccountDetails({
                       </SelectItem>
                     ))}
                 </Select>
-                <Select label="Workspace role" name="role" defaultValue="writer">
-                  <SelectItem value="reader">Read only</SelectItem>
-                  <SelectItem value="writer">Can edit</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                <Select label={t("admin.account.workspaceRole")} name="role" defaultValue="writer">
+                  <SelectItem value="reader">{roleLabels.reader}</SelectItem>
+                  <SelectItem value="writer">{roleLabels.writer}</SelectItem>
+                  <SelectItem value="admin">{roleLabels.admin}</SelectItem>
                 </Select>
               </>
             ) : (
               <>
                 <Input
-                  label="New password"
+                  label={t("admin.account.newPassword")}
                   name="password"
                   type="password"
                   autoComplete="new-password"
@@ -404,7 +412,7 @@ export function AccountDetails({
                   maxLength={128}
                 />
                 <Input
-                  label="Confirm new password"
+                  label={t("admin.account.confirmPassword")}
                   name="confirm"
                   type="password"
                   autoComplete="new-password"
@@ -412,16 +420,14 @@ export function AccountDetails({
                   minLength={12}
                   maxLength={128}
                 />
-                <p className="text-sm text-muted-foreground">
-                  This sets a local password and signs the user out of every device.
-                </p>
+                <p className="text-sm text-muted-foreground">{t("admin.account.passwordNote")}</p>
               </>
             )}
             <FormActions
               error={error}
               pending={pending}
-              submitLabel="Save changes"
-              pendingLabel="Saving…"
+              submitLabel={t("admin.account.save")}
+              pendingLabel={t("common.state.saving")}
               onCancel={() => setEditing(null)}
             />
           </form>
