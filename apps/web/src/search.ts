@@ -7,11 +7,14 @@ import {
   ticketPredicates,
   type FilterField,
 } from "@kanvil/contracts";
-export const searchSchema = ticketFilter.extend({
-  offset: z.coerce.number().int().min(0).catch(0).default(0),
-  // The ticket open in the list's preview sheet, and its project on lists that span projects.
+// The ticket open in a preview sheet, and its project on pages that span projects.
+const previewFields = {
   peek: z.string().min(1).max(80).optional().catch(undefined),
   peekProject: z.string().min(1).max(80).optional().catch(undefined),
+};
+export const searchSchema = ticketFilter.extend({
+  offset: z.coerce.number().int().min(0).catch(0).default(0),
+  ...previewFields,
 });
 export type TicketSearch = z.output<typeof searchSchema>;
 // Two filters mean the same thing when their normalized predicates and options match, so a view
@@ -47,6 +50,12 @@ export const workSearchSchema = searchSchema.transform(
   ({ q, sort, order, peek, peekProject }): TicketSearch =>
     searchSchema.parse({ q, sort, order, peek, peekProject }),
 );
+// Inbox: which entries show and the ticket open in its preview sheet.
+export const inboxSearchSchema = z.object({
+  ...previewFields,
+  view: z.enum(["unread", "all"]).catch("unread").default("unread"),
+});
+export type InboxSearch = z.output<typeof inboxSearchSchema>;
 export const ticketDensitySchema = z.enum(["compact", "comfortable"]);
 export type TicketDensity = z.output<typeof ticketDensitySchema>;
 export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);

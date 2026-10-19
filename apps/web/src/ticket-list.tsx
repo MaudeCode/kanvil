@@ -87,8 +87,7 @@ import {
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { TicketEditor } from "./ticket-editor.tsx";
-import { TicketDetail } from "./ticket-detail.tsx";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { TicketPreviewSheet } from "./ticket-detail.tsx";
 import { writeListOrder } from "./lib/list-order.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { cn } from "@/lib/utils";
@@ -1152,49 +1151,21 @@ export function TicketList({
           {tickets.data.total} tickets
         </footer>
       )}
-      <Sheet
+      <TicketPreviewSheet
         open={!!peek}
-        onOpenChange={(open) => {
-          if (!open) closePreview();
-        }}
-      >
-        <SheetContent
-          aria-label="Ticket preview"
-          showCloseButton={false}
-          // The list stays readable beside the preview, so the backdrop only dims it.
-          overlayClassName="supports-backdrop-filter:backdrop-blur-none"
-          className="w-full! gap-0 outline-none sm:max-w-[960px]!"
-          // Focus returns to the row of the ticket last shown, which J and K may have changed.
-          finalFocus={() =>
-            (preview &&
-              document.querySelector<HTMLElement>(
+        ticket={preview}
+        order={orderedIds}
+        onOpen={(id) => showPreview(id, false)}
+        onClose={closePreview}
+        // Focus returns to the row of the ticket last shown, which J and K may have changed.
+        returnFocus={() =>
+          preview
+            ? document.querySelector<HTMLElement>(
                 `tr[data-id="${CSS.escape(preview.id)}"] .ticket-title`,
-              )) ??
-            true
-          }
-        >
-          <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-8 max-[650px]:px-4">
-            {preview &&
-              (preview.projectId ? (
-                <TicketDetail
-                  key={preview.id}
-                  projectId={preview.projectId}
-                  ticketId={preview.id}
-                  preview={{
-                    order: orderedIds,
-                    open: (id) => showPreview(id, false),
-                    close: closePreview,
-                  }}
-                />
-              ) : (
-                <EmptyState title="Ticket unavailable">
-                  <p>The link does not name the ticket's project.</p>
-                  <Button onClick={closePreview}>Close preview</Button>
-                </EmptyState>
-              ))}
-          </div>
-        </SheetContent>
-      </Sheet>
+              )
+            : null
+        }
+      />
       <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
         {creating && project && (
           <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />

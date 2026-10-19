@@ -1,10 +1,9 @@
 import { ProjectIcon } from "./components/project-icon.tsx";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createPrivatePersister } from "./lib/private-cache.ts";
 import {
@@ -19,22 +18,8 @@ import {
   useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import {
-  Settings,
-  FolderOpen,
-  MessageSquare,
-  Bell,
-  Check,
-  CheckCheck,
-  ChevronRight,
-} from "lucide-react";
-import {
-  hasAdminRole,
-  formatEvent,
-  notificationsSchema,
-  okSchema,
-  infoSchema,
-} from "@kanvil/contracts";
+import { Settings, FolderOpen, ChevronRight } from "lucide-react";
+import { hasAdminRole, formatEvent, infoSchema } from "@kanvil/contracts";
 import {
   groupSettingsSearchSchema,
   projectSettingsSearchSchema,
@@ -44,8 +29,10 @@ import {
   searchSchema,
   workSearchSchema,
   resultsSearchSchema,
+  inboxSearchSchema,
 } from "./search.ts";
 import { SearchResults } from "./search-results.tsx";
+import { Inbox } from "./inbox.tsx";
 
 import { Login, Consent } from "./auth.tsx";
 import {
@@ -534,147 +521,6 @@ function ProjectDirectory() {
     </section>
   );
 }
-function Inbox() {
-  const cache = useQueryClient(),
-    projects = useProjects(),
-    [error, setError] = useState<unknown>(),
-    [view, setView] = useState("unread"),
-    [pending, setPending] = useState(false);
-  const items = useQuery({
-    queryKey: ["kanvil", "notifications"],
-    queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
-  });
-  const workspaceItems =
-    items.data?.filter((item) =>
-      projects.data?.some((project) => project.id === item.event.projectId),
-    ) ?? [];
-  const unread = workspaceItems.filter((item) => !item.readAt),
-    visible = view === "unread" ? unread : workspaceItems;
-  async function mark(ids: string[]) {
-    if (!ids.length) return;
-    setPending(true);
-    setError(undefined);
-    try {
-      await api.request("/api/v1/notifications/read", okSchema, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      await cache.invalidateQueries({ queryKey: ["kanvil", "notifications"] });
-    } catch (cause) {
-      setError(cause);
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <>
-      <PageHeader title="Inbox">
-        <IconButton
-          label="Mark all read"
-          disabled={pending || !unread.length}
-          onClick={() => {
-            void mark(unread.map((item) => item.id));
-          }}
-        >
-          <CheckCheck />
-        </IconButton>
-      </PageHeader>
-      <Tabs value={view} onValueChange={(value) => setView(String(value))} className="mb-5">
-        <TabsList variant="line">
-          <TabsTrigger value="unread">
-            Unread
-            {unread.length > 0 && (
-              <Badge variant="secondary" className="ml-1">
-                {unread.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="all">All notifications</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <ErrorNotice error={error ?? items.error} />
-      {items.isPending ? (
-        <Loading />
-      ) : (
-        <ItemGroup className="inbox gap-0 border-t">
-          {visible.map((item) => {
-            const title =
-                typeof item.event.data.title === "string"
-                  ? item.event.data.title
-                  : formatEvent(item.event),
-              key = typeof item.event.data.key === "string" ? item.event.data.key : null,
-              project = projects.data?.find((candidate) => candidate.id === item.event.projectId),
-              linked = !!item.event.ticketId && item.event.type !== "ticket.deleted";
-            const body = (
-              <>
-                <ItemMedia variant="icon">
-                  {item.event.type.startsWith("comment.") ? <MessageSquare /> : <Bell />}
-                </ItemMedia>
-                <ItemContent className="min-w-0 gap-0.5">
-                  <ItemTitle className="line-clamp-none max-w-full text-[13px] leading-5 wrap-anywhere">
-                    {title}
-                  </ItemTitle>
-                  <ItemDescription className="m-0 text-xs">
-                    {project?.name}
-                    {key && ` · ${key}`} · {formatEvent(item.event)}
-                  </ItemDescription>
-                </ItemContent>
-              </>
-            );
-            return (
-              <Item
-                key={item.id}
-                data-unread={!item.readAt}
-                className="flex-nowrap rounded-none border-x-0 border-t-0 border-b-border px-3 py-3 data-[unread=true]:border-l-2 data-[unread=true]:border-l-primary data-[unread=true]:bg-primary/5"
-              >
-                {linked ? (
-                  <Link
-                    to="/projects/$projectId/tickets/$ticketId"
-                    params={{
-                      projectId: item.event.projectId,
-                      ticketId: item.event.ticketId ?? "",
-                    }}
-                    onClick={() => {
-                      if (!item.readAt) void mark([item.id]);
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {body}
-                  </Link>
-                ) : (
-                  <div className="flex min-w-0 flex-1 items-center gap-2.5">{body}</div>
-                )}
-                <ItemActions className="gap-2 self-start">
-                  {!item.readAt && (
-                    <IconButton
-                      label="Mark read"
-                      size="icon-sm"
-                      disabled={pending}
-                      onClick={() => void mark([item.id])}
-                    >
-                      <Check />
-                    </IconButton>
-                  )}
-                  <RelativeTime
-                    value={item.event.createdAt}
-                    className="text-xs whitespace-nowrap text-muted-foreground"
-                  />
-                </ItemActions>
-              </Item>
-            );
-          })}
-        </ItemGroup>
-      )}
-      {!items.isPending && !visible.length && (
-        <EmptyState
-          title={view === "unread" ? "No unread notifications" : "No notifications"}
-          icon={Bell}
-        />
-      )}
-    </>
-  );
-}
 function NotFoundPage() {
   return (
     <main className="mx-auto max-w-lg p-6">
@@ -718,7 +564,24 @@ function HomeRedirect() {
   return <Loading />;
 }
 const consent = createRoute({ getParentRoute: () => root, path: "/authorize", component: Consent });
-const inbox = createRoute({ getParentRoute: () => shell, path: "/inbox", component: Inbox });
+const inbox = createRoute({
+  getParentRoute: () => shell,
+  path: "/inbox",
+  validateSearch: inboxSearchSchema,
+  component: InboxPage,
+});
+function InboxPage() {
+  const search = inbox.useSearch(),
+    navigate = inbox.useNavigate();
+  return (
+    <Inbox
+      search={search}
+      onSearch={(next, push) => {
+        void navigate({ search: next, replace: !push });
+      }}
+    />
+  );
+}
 const settings = createRoute({
   getParentRoute: () => shell,
   path: "/settings",

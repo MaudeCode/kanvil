@@ -18,7 +18,6 @@ import {
   Keyboard,
   UserCheck,
 } from "lucide-react";
-import { notificationsSchema } from "@kanvil/contracts";
 import { api, auth, useIdentity, useProjects, useProjectAccess, useWorkspace } from "../data.tsx";
 import { Brand, ErrorNotice, IconButton, Loading, Modal } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
@@ -80,10 +79,7 @@ const TicketEditor = lazy(() =>
 
 export function useUnreadNotifications() {
   const projects = useProjects();
-  const items = useQuery({
-    queryKey: ["kanvil", "notifications"],
-    queryFn: () => api.request("/api/v1/notifications", notificationsSchema),
-  });
+  const items = useQuery(api.notifications());
   return (
     items.data?.filter(
       (item) =>

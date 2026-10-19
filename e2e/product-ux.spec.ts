@@ -202,46 +202,142 @@ test("readers see readable ticket content without mutation controls", async ({ p
   }
 });
 
-test("inbox shows ticket context and supports unread review", async ({ page }) => {
+test("inbox previews updates, takes replies in place, and manages its entries", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page);
   const project = await (
-      await page.request.post("/api/v1/projects", {
-        data: { key: "INBOXUX", name: "Inbox context" },
-      })
-    ).json(),
-    ticket = await (
-      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
-        data: { title: "Reconnect an interrupted worker without losing its current ownership" },
-      })
-    ).json();
-  await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/subscription`, {
-    data: { enabled: true },
-  });
+    await page.request.post("/api/v1/projects", {
+      data: { key: "INBOXUX", name: "Inbox context" },
+    })
+  ).json();
+  const create = async (title: string) =>
+    (await page.request.post(`/api/v1/projects/${project.id}/tickets`, { data: { title } })).json();
+  const ticket = await create(
+      "Reconnect an interrupted worker without losing its current ownership",
+    ),
+    other = await create("Rotate the worker signing key before it expires");
   const key = await (
     await page.request.post("/api/v1/credentials", {
       data: { name: "Inbox fixture", projectIds: [project.id], scopes: ["read", "write"] },
     })
   ).json();
-  expect(
-    (
-      await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/comments`, {
-        headers: { Authorization: `Bearer ${key.key}` },
-        data: { body: "The worker has resumed from its last durable cursor." },
-      })
-    ).ok(),
-  ).toBe(true);
+  const agentComment = async (target: { id: string }, body: string) => {
+    await page.request.post(`/api/v1/projects/${project.id}/tickets/${target.id}/subscription`, {
+      data: { enabled: true },
+    });
+    expect(
+      (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets/${target.id}/comments`, {
+          headers: { Authorization: `Bearer ${key.key}` },
+          data: { body },
+        })
+      ).ok(),
+    ).toBe(true);
+  };
+  await agentComment(ticket, "The worker has resumed from its last durable cursor.");
+  await agentComment(other, "The new key is staged.");
   await page.goto("/inbox");
-  await expect(page.getByRole("link", { name: new RegExp(ticket.title) })).toBeVisible();
+  const entry = (title: string) => page.getByRole("button", { name: new RegExp(title) }),
+    row = (title: string) => page.locator("[data-entry]").filter({ has: entry(title) });
   await expect(
     page.getByText(new RegExp(`Inbox context.*${ticket.key}.*Comment added`)),
   ).toBeVisible();
-  await page.getByRole("link", { name: new RegExp(ticket.title) }).click();
-  await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
-  await page.goto("/inbox");
-  await expect(page.getByRole("link", { name: new RegExp(ticket.title) })).toHaveCount(0);
-  await page.getByRole("tab", { name: "All notifications", exact: true }).click();
-  await expect(page.getByRole("link", { name: new RegExp(ticket.title) })).toBeVisible();
+  await expect(row(ticket.title)).toHaveAttribute("data-unread", "true");
+
+  // Selecting an entry reads its ticket beside the Inbox and marks the entry read.
+  await entry(ticket.title).click();
+  const sheet = page.getByRole("dialog", { name: ticket.title, exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(
+    sheet.getByText("The worker has resumed from its last durable cursor."),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/inbox\?.*peek=/);
+
+  // A failed reply keeps its draft; the retry posts it and clears the composer.
+  const comments = `**/api/v1/projects/${project.id}/tickets/${ticket.id}/comments`;
+  await page.route(comments, (route) =>
+    route.request().method() === "POST" ? route.abort("failed") : route.continue(),
+  );
+  const reply = "Thanks, I will watch the next lease renewal.",
+    composer = sheet.getByRole("textbox", { name: "Comment", exact: true });
+  await composer.fill(reply);
+  await sheet.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(sheet.getByRole("alert")).toBeVisible();
+  await expect(composer).toHaveValue(reply);
+  await page.unroute(comments);
+  await sheet.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(sheet.locator("article").filter({ hasText: reply })).toBeVisible();
+  await expect(composer).toHaveValue("");
+
+  // Closing returns focus to the entry, which stays in Unread until the tab changes.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/peek=/);
+  await expect(entry(ticket.title)).toBeFocused();
+  await expect(row(ticket.title)).toHaveAttribute("data-unread", "false");
+  await page.keyboard.press("u");
+  await expect(row(ticket.title)).toHaveAttribute("data-unread", "true");
+  await page.keyboard.press("u");
+  await expect(row(ticket.title)).toHaveAttribute("data-unread", "false");
+
+  // The newer entry sits above; dismissing it moves selection and focus to its neighbor.
+  await page.keyboard.press("k");
+  await expect(row(other.title)).toHaveAttribute("data-active", "true");
+  await page.keyboard.press("Backspace");
+  await expect(entry(other.title)).toHaveCount(0);
+  await expect(row(ticket.title)).toHaveAttribute("data-active", "true");
+  await expect(entry(ticket.title)).toBeFocused();
+
+  // Clear read dismisses read entries; they stay gone after a reload.
+  await page.getByRole("button", { name: "Clear read", exact: true }).click();
+  await expect(entry(ticket.title)).toHaveCount(0);
+  await page.goto("/inbox?view=all");
+  await expect(page.getByRole("tab", { name: "All notifications", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(entry(ticket.title)).toHaveCount(0);
+  await expect(entry(other.title)).toHaveCount(0);
+
+  // New updates arrive live; Mark all read empties Unread.
+  await agentComment(other, "The old key is retired.");
+  await expect(row(other.title)).toHaveAttribute("data-unread", "true");
+  await page.getByRole("tab", { name: /^Unread/ }).click();
+  await page.getByRole("button", { name: "Mark all read", exact: true }).click();
+  await expect(page.getByText("No unread notifications", { exact: true })).toBeVisible();
   await page.request.delete(`/api/v1/credentials/${key.id}`);
+  expect(errors).toEqual([]);
+});
+
+test("a deleted ticket stops showing its cached content", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "GONE", name: "Deleted work" } })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Retire the legacy importer", description: "Private migration notes" },
+    })
+  ).json();
+  const path = `/api/v1/projects/${project.id}/tickets/${ticket.id}`;
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const heading = page.getByRole("heading", { name: ticket.title, exact: true });
+  await expect(heading).toBeVisible();
+  let missing = 0;
+  page.on("response", (response) => {
+    if (response.status() === 404 && new URL(response.url()).pathname === path) missing += 1;
+  });
+  expect(
+    (await page.request.delete(path, { data: { expectedVersion: ticket.version } })).ok(),
+  ).toBe(true);
+  // The live deletion refetches the ticket; the query's retry receives the same 404.
+  await expect.poll(() => missing).toBe(2);
+  await expect(heading).toHaveCount(0);
+  await expect(page.getByText("Private migration notes")).toHaveCount(0);
+  await expect(page.getByText("Ticket unavailable", { exact: true })).toBeVisible();
 });
 
 test("an in-flight ticket save cannot be dismissed or submit twice", async ({ page }) => {

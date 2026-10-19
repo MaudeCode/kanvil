@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
-import { SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { type Ticket, ApiError } from "@kanvil/contracts";
 import { api, date, ActorName, useProjectAccess, useOperation } from "./data.tsx";
 import {
@@ -55,6 +55,58 @@ export interface TicketPreview {
   order: string[];
   open: (ticketId: string) => void;
   close: () => void;
+}
+// The preview sheet over a list that stays mounted. `ticket` is the last one shown, so it stays
+// rendered while the sheet closes; `returnFocus` names the list row focus goes back to.
+export function TicketPreviewSheet({
+  open,
+  ticket,
+  order,
+  onOpen,
+  onClose,
+  returnFocus,
+}: {
+  open: boolean;
+  ticket: { id: string; projectId?: string | undefined } | undefined;
+  order: string[];
+  onOpen: (ticketId: string) => void;
+  onClose: () => void;
+  returnFocus: () => HTMLElement | null;
+}) {
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <SheetContent
+        aria-label="Ticket preview"
+        showCloseButton={false}
+        // The list stays readable beside the preview, so the backdrop only dims it.
+        overlayClassName="supports-backdrop-filter:backdrop-blur-none"
+        className="w-full! gap-0 outline-none sm:max-w-[960px]!"
+        finalFocus={() => returnFocus() ?? true}
+      >
+        <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-8 max-[650px]:px-4">
+          {ticket &&
+            (ticket.projectId ? (
+              <TicketDetail
+                key={ticket.id}
+                projectId={ticket.projectId}
+                ticketId={ticket.id}
+                preview={{ order, open: onOpen, close: onClose }}
+              />
+            ) : (
+              <EmptyState title="Ticket unavailable">
+                <p>The link does not name the ticket's project.</p>
+                <Button onClick={onClose}>Close preview</Button>
+              </EmptyState>
+            ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 }
 export function TicketDetail({
   projectId,
@@ -99,8 +151,10 @@ export function TicketDetail({
     { enabled: !!ticket && !editing, scope },
   );
   if (result.isPending) return <Loading />;
-  if (!result.data || !ticket)
-    return result.error instanceof ApiError && result.error.status === 404 ? (
+  // A refetch that finds the ticket deleted or out of reach drops its cached content too.
+  const gone = result.error instanceof ApiError && result.error.status === 404;
+  if (!result.data || !ticket || gone)
+    return gone ? (
       <EmptyState title="Ticket unavailable">
         <p>This ticket was deleted or you no longer have access.</p>
         {preview ? (

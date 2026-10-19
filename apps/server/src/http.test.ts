@@ -637,4 +637,50 @@ describe("HTTP, realtime, and MCP", () => {
       await human.setNotificationPreferences({ inApp: true });
     }
   });
+  it("marks Inbox entries unread and dismisses them while keeping their event", async () => {
+    const project = await newProject(),
+      human = client();
+    const ticket = await human.call("create_ticket", {
+      projectId: project.id,
+      title: "Inbox management",
+    });
+    await human.call("set_subscription", {
+      projectId: project.id,
+      ticketId: ticket.id,
+      enabled: true,
+    });
+    const issued = await credential(project.id);
+    const machine = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: () => ({ Authorization: `Bearer ${issued.key}` }),
+      fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+    });
+    for (const body of ["First update", "Second update"])
+      await machine.call("add_comment", { projectId: project.id, ticketId: ticket.id, body });
+    const inbox = async () =>
+      (await human.notifications().queryFn()).filter((row) => row.event.ticketId === ticket.id);
+    const [second, first] = await inbox();
+    if (!first || !second) throw new Error("Both updates should reach the Inbox");
+    await human.markNotifications({ ids: [first.id, second.id] });
+    expect((await inbox()).every((row) => row.readAt)).toBe(true);
+    await human.markNotifications({ ids: [first.id], read: false });
+    expect((await inbox()).map((row) => [row.id, row.readAt === null])).toEqual([
+      [second.id, false],
+      [first.id, true],
+    ]);
+    const asMachine = (path: string) =>
+      request(path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${issued.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [second.id] }),
+      });
+    expect((await asMachine("/api/v1/notifications/dismiss")).status).toBe(403);
+    await human.dismissNotifications({ ids: [second.id] });
+    expect((await inbox()).map((row) => row.id)).toEqual([first.id]);
+    const stored = await fixture.database.pool.query<{ event_id: string; dismissed: boolean }>(
+      "SELECT event_id, dismissed_at IS NOT NULL AS dismissed FROM notifications WHERE id = $1",
+      [second.id],
+    );
+    expect(stored.rows).toEqual([{ event_id: second.event.id, dismissed: true }]);
+  });
 });

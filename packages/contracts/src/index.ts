@@ -459,6 +459,11 @@ export const notificationsSchema = z.array(
     event: eventSchema,
   }),
 );
+// Inbox entries a signed-in account acts on. Omitting `read` marks them read, as older clients do.
+export const notificationIdsInput = z.object({ ids: z.array(z.uuid()).min(1).max(100) }).strict();
+export const notificationReadInput = notificationIdsInput
+  .extend({ read: z.boolean().default(true) })
+  .strict();
 export const notificationPreferencesSchema = z.object({
   inApp: z.boolean().default(true),
   push: z.boolean().default(false),
