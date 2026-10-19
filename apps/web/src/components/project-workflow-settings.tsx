@@ -23,7 +23,7 @@ import { PropertyValue, stateValue, useWorkflow } from "./ticket-property.tsx";
 
 type Category = WorkflowState["category"];
 const ticketCount = (count: number) => `${count} ${count === 1 ? "ticket" : "tickets"}`;
-// ProjectLabelSettings has no categories, order, or reassignment, so states get their own rows:
+// LabelSettings has no categories, order, or reassignment, so states get their own rows:
 // grouped by category, each with its place, presentation, and a delete that moves its tickets.
 export function ProjectWorkflowSettings({
   projectId,

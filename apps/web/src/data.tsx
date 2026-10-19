@@ -63,6 +63,7 @@ const settledBy: Record<string, string[]> = {
   list_project_labels: ["label.", "project."],
   // Its ticket counts move with ticket traffic.
   list_workflow_states: ["workflow.", "project.", "ticket."],
+  list_workspace_labels: ["label.", "project."],
   list_calendar_feeds: ["calendar_feed.", "label.", "membership.", "project."],
   list_label_colors: ["label."],
   list_views: ["label.", "project."],

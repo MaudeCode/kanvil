@@ -322,6 +322,242 @@ describe("workspace boundaries and inherited project access", () => {
       "workspace.updated",
     );
   });
+  it("shares workspace labels with every project while project labels stay local", async () => {
+    const first = await project(),
+      second = await project(),
+      hidden = await project("private");
+    await membership("writer");
+    const local = await domain.execute(
+      "create_project_label",
+      { projectId: first.id, name: "local", color: "green" },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "create_workspace_label",
+        { workspaceId: workspace.id, name: "shared", color: "blue" },
+        owner,
+      ),
+    ).resolves.toMatchObject({ workspaceId: workspace.id, name: "shared", color: "blue" });
+    const catalog = async (projectId: string, actor = owner) =>
+      (await domain.execute("list_project_labels", { projectId }, actor)).map(
+        ({ scope, name, color, count }) => ({ scope, name, color, count }),
+      );
+    expect(await catalog(first.id)).toEqual([
+      { scope: "project", name: "local", color: "green", count: 0 },
+      { scope: "workspace", name: "shared", color: "blue", count: 0 },
+    ]);
+    expect(await catalog(second.id, member)).toEqual([
+      { scope: "workspace", name: "shared", color: "blue", count: 0 },
+    ]);
+    // Choosing a workspace label on a ticket never registers a same-name project label.
+    await domain.execute(
+      "create_ticket",
+      { projectId: second.id, title: "Shared and freeform", labels: ["shared", "fresh"] },
+      member,
+    );
+    await domain.execute(
+      "create_ticket",
+      { projectId: hidden.id, title: "Private usage", labels: ["shared"] },
+      owner,
+    );
+    expect(await catalog(second.id)).toEqual([
+      { scope: "project", name: "fresh", color: "gray", count: 1 },
+      { scope: "workspace", name: "shared", color: "blue", count: 1 },
+    ]);
+    // Counts follow the reader's actual project access, so private usage stays hidden.
+    const counts = async (actor: Actor) =>
+      (await domain.execute("list_workspace_labels", { workspaceId: workspace.id }, actor)).map(
+        ({ name, count }) => ({ name, count }),
+      );
+    expect(await counts(owner)).toEqual([{ name: "shared", count: 2 }]);
+    expect(await counts(member)).toEqual([{ name: "shared", count: 1 }]);
+    await expect(counts(outsider)).rejects.toMatchObject({ status: 404 });
+    await membership("admin");
+    expect(await counts(member)).toEqual([{ name: "shared", count: 2 }]);
+    await membership("writer");
+    expect(await counts(member)).toEqual([{ name: "shared", count: 1 }]);
+    // Same names never silently merge across scopes.
+    await expect(
+      domain.execute("create_project_label", { projectId: first.id, name: "shared" }, owner),
+    ).rejects.toMatchObject({ status: 409, code: "duplicate_label" });
+    await expect(
+      domain.execute(
+        "update_project_label",
+        {
+          projectId: first.id,
+          labelId: local.id,
+          expectedVersion: 1,
+          name: "shared",
+          color: "green",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: "duplicate_label" });
+    await expect(
+      domain.execute("create_workspace_label", { workspaceId: workspace.id, name: "local" }, owner),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "label_conflict",
+      details: { projects: [first.key] },
+    });
+    await expect(
+      domain.execute("create_workspace_label", { workspaceId: workspace.id, name: "x" }, member),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      domain.execute(
+        "update_project_label",
+        {
+          projectId: first.id,
+          labelId: requireRow(
+            (await domain.execute("list_project_labels", { projectId: first.id }, owner)).find(
+              (label) => label.scope === "workspace",
+            ),
+          ).id,
+          expectedVersion: 1,
+          name: "renamed",
+          color: "red",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  it("renames, adopts, and deletes workspace labels across projects in one versioned write", async () => {
+    const first = await project(),
+      second = await project();
+    const creation = {
+      workspaceId: workspace.id,
+      name: "shared",
+      color: "blue",
+      requestId: crypto.randomUUID(),
+    };
+    const shared = await domain.execute("create_workspace_label", creation, owner);
+    expect(await domain.execute("create_workspace_label", creation, owner)).toEqual(shared);
+    const one = await domain.execute(
+      "create_ticket",
+      { projectId: first.id, title: "First", labels: ["shared", "local"] },
+      owner,
+    );
+    const two = await domain.execute(
+      "create_ticket",
+      {
+        projectId: second.id,
+        title: "Second",
+        labels: ["shared"],
+        description: "Claimable work.",
+        acceptanceCriteria: "The claim holds.",
+        difficulty: "low",
+        automationReady: true,
+      },
+      owner,
+    );
+    await domain.execute(
+      "save_view",
+      { projectId: second.id, name: "Shared work", filters: { label: ["shared"] } },
+      owner,
+    );
+    const cursor = BigInt((await domain.snapshot(owner, second.id)).cursor);
+    const renamed = await domain.execute(
+      "update_workspace_label",
+      {
+        workspaceId: workspace.id,
+        labelId: shared.id,
+        expectedVersion: 1,
+        name: "common",
+        color: "orange",
+      },
+      owner,
+    );
+    expect(renamed).toMatchObject({ name: "common", color: "orange", version: 2 });
+    const read = async (projectId: string, ticketId: string) =>
+      (await domain.execute("get_ticket", { projectId, ticketId }, owner)).ticket;
+    expect(await read(first.id, one.id)).toMatchObject({
+      labels: ["common", "local"],
+      version: 2,
+    });
+    expect(await read(second.id, two.id)).toMatchObject({ labels: ["common"], version: 2 });
+    expect(
+      (await domain.execute("list_views", { projectId: second.id }, owner))[0]?.filters,
+    ).toMatchObject({ label: ["common"] });
+    expect(
+      (await domain.readEvents(owner, cursor, second.id)).items.map((event) => event.type),
+    ).toEqual(["ticket.updated", "label.updated"]);
+    await expect(
+      domain.execute(
+        "update_workspace_label",
+        {
+          workspaceId: workspace.id,
+          labelId: shared.id,
+          expectedVersion: 1,
+          name: "stale",
+          color: "red",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    // A claimed ticket blocks another agent's rename, and nothing in any project changes.
+    const claimer = await domain.actor(owner.id, { ownerId: "agent-a", scopes: ["admin"] });
+    const other = await domain.actor(owner.id, { ownerId: "agent-b", scopes: ["admin"] });
+    const claim = await domain.execute(
+      "claim_ticket",
+      { projectId: second.id, ticketId: two.id, workerId: "a", expectedVersion: 2 },
+      claimer,
+    );
+    await expect(
+      domain.execute(
+        "update_workspace_label",
+        {
+          workspaceId: workspace.id,
+          labelId: shared.id,
+          expectedVersion: 2,
+          name: "blocked",
+          color: "red",
+        },
+        other,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    expect(await read(first.id, one.id)).toMatchObject({ labels: ["common", "local"], version: 2 });
+    expect(
+      (await domain.execute("list_workspace_labels", { workspaceId: workspace.id }, owner))[0],
+    ).toMatchObject({ name: "common", version: 2 });
+    await domain.execute(
+      "release_claim",
+      { projectId: second.id, ticketId: two.id, claimId: claim.id },
+      claimer,
+    );
+    // Renaming onto a project label needs explicit adoption; the project definition is replaced.
+    const adopt = {
+      workspaceId: workspace.id,
+      labelId: shared.id,
+      expectedVersion: 2,
+      name: "local",
+      color: "purple",
+    };
+    await expect(domain.execute("update_workspace_label", adopt, owner)).rejects.toMatchObject({
+      code: "label_conflict",
+      details: { projects: [first.key] },
+    });
+    await domain.execute("update_workspace_label", { ...adopt, adopt: true }, owner);
+    expect(await read(first.id, one.id)).toMatchObject({ labels: ["local"], version: 3 });
+    expect(
+      (await domain.execute("list_project_labels", { projectId: first.id }, owner)).map(
+        ({ scope, name, color, count }) => ({ scope, name, color, count }),
+      ),
+    ).toEqual([{ scope: "workspace", name: "local", color: "purple", count: 1 }]);
+    await domain.execute(
+      "delete_workspace_label",
+      { workspaceId: workspace.id, labelId: shared.id, expectedVersion: 3 },
+      owner,
+    );
+    expect(await read(first.id, one.id)).toMatchObject({ labels: [], version: 4 });
+    expect((await read(second.id, two.id)).labels).toEqual([]);
+    expect(await domain.execute("list_project_labels", { projectId: second.id }, owner)).toEqual(
+      [],
+    );
+    expect(
+      (await domain.execute("list_views", { projectId: second.id }, owner))[0]?.filters,
+    ).not.toHaveProperty("label");
+  });
 });
 
 it("upgrades populated project data without widening private access", async () => {

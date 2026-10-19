@@ -1,128 +1,26 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import { renameFeedLabel } from "./calendar-operations.ts";
-import { and, asc, count, desc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { filterList, isHexColor, roles, ticketFilter } from "@kanvil/contracts";
+import { roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, projectPositions } from "./ordering.ts";
 import { seedWorkflow } from "./workflow-operations.ts";
-import {
-  members,
-  labelColors,
-  projects,
-  projectLabels,
-  tickets,
-  views,
-  workspaces,
-  workspaceMembers,
-} from "./schema.ts";
-import {
-  labelOrder,
-  labelUsage,
-  openTicket,
-  overdueTicket,
-  updateTicketRow,
-} from "./ticket-operations.ts";
+import { members, projects, tickets, views, workspaces, workspaceMembers } from "./schema.ts";
+import { openTicket, overdueTicket } from "./ticket-operations.ts";
 import {
   accountByEmail,
   assertVersion,
   fail,
   project,
   publish,
-  publishMany,
   toProject,
   workspace,
   type Handlers,
   type Context,
   one,
 } from "./domain.ts";
-
-async function getLabel(ctx: Context, labelId: string, expectedVersion: number) {
-  const label = one(
-    await ctx.db
-      .select()
-      .from(projectLabels)
-      .where(and(eq(projectLabels.projectId, project(ctx).id), eq(projectLabels.id, labelId))),
-  );
-  assertVersion(label, expectedVersion, "label", "saving");
-  return label;
-}
-// A custom color becomes part of the site-wide palette the first time a label uses it.
-async function rememberLabelColor(ctx: Context, color: string) {
-  if (isHexColor(color))
-    await ctx.db
-      .insert(labelColors)
-      .values({ value: color, createdBy: ctx.actor.id })
-      .onConflictDoNothing();
-}
-async function availableLabelName(ctx: Context, name: string, exceptId?: string) {
-  if (
-    (
-      await ctx.db
-        .select({ id: projectLabels.id })
-        .from(projectLabels)
-        .where(
-          and(
-            eq(projectLabels.projectId, project(ctx).id),
-            eq(projectLabels.name, name),
-            exceptId ? ne(projectLabels.id, exceptId) : undefined,
-          ),
-        )
-    ).length
-  )
-    fail(409, "duplicate_label", "A label with this name already exists in this project.");
-}
-async function changeLabelUsage(ctx: Context, name: string, replacement?: string) {
-  const affected = await ctx.db
-    .select()
-    .from(tickets)
-    .where(and(eq(tickets.projectId, project(ctx).id), sql`${name} = ANY(${tickets.labels})`));
-  const pending = [];
-  for (const ticket of affected)
-    pending.push(
-      (
-        await updateTicketRow(ctx, {
-          projectId: project(ctx).id,
-          ticketId: ticket.id,
-          expectedVersion: ticket.version,
-          changes: {
-            labels: replacement
-              ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
-              : ticket.labels.filter((tag) => tag !== name),
-          },
-        })
-      ).event,
-    );
-  await publishMany(ctx, pending);
-  // Saved label filters hold a list, or a single name from before lists existed.
-  const saved = await ctx.db
-    .select()
-    .from(views)
-    .where(
-      and(
-        eq(views.projectId, project(ctx).id),
-        sql`(${views.filters}->'label' ? ${name} OR ${views.filters}->'labelNot' ? ${name})`,
-      ),
-    );
-  const rename = (values: string | string[] | undefined) => {
-    const next = filterList(values).flatMap((tag) =>
-      tag !== name ? [tag] : replacement ? [replacement] : [],
-    );
-    return next.length ? [...new Set(next)] : undefined;
-  };
-  for (const view of saved) {
-    const filters = ticketFilter.parse(view.filters),
-      label = rename(filters.label);
-    // A rename can land on a name the view excludes; the included label wins.
-    const labelNot = rename(filters.labelNot)?.filter((tag) => !label?.includes(tag));
-    await ctx.db
-      .update(views)
-      .set({ filters: { ...filters, label, labelNot: labelNot?.length ? labelNot : undefined } })
-      .where(eq(views.id, view.id));
-  }
-}
 
 // Stores an uploaded project image; the previous one becomes an orphan for blob cleanup.
 async function storeImage(ctx: Context, image: { data: string; contentType: string }) {
@@ -145,111 +43,7 @@ export const projectHandlers: Pick<
   | "list_views"
   | "save_view"
   | "delete_view"
-  | "list_project_labels"
-  | "create_project_label"
-  | "update_project_label"
-  | "delete_project_label"
-  | "list_label_colors"
-  | "remove_label_color"
 > = {
-  async list_project_labels(ctx) {
-    const usage = labelUsage(ctx, "include").as("usage");
-    return ctx.db
-      .select({
-        ...getTableColumns(projectLabels),
-        count: sql<number>`coalesce(${usage.count}, 0)`.mapWith(Number),
-      })
-      .from(projectLabels)
-      .leftJoin(usage, eq(projectLabels.name, sql<string>`"usage"."name"`))
-      .where(eq(projectLabels.projectId, project(ctx).id))
-      .orderBy(...labelOrder(projectLabels.name));
-  },
-  async create_project_label(ctx, input) {
-    await availableLabelName(ctx, input.name);
-    await rememberLabelColor(ctx, input.color);
-    const label = one(
-      await ctx.db
-        .insert(projectLabels)
-        .values({ projectId: project(ctx).id, name: input.name, color: input.color })
-        .returning(),
-    );
-    await publish(ctx, "label.created", null, {
-      labelId: label.id,
-      name: label.name,
-      color: label.color,
-      version: label.version,
-    });
-    return label;
-  },
-  async update_project_label(ctx, input) {
-    const current = await getLabel(ctx, input.labelId, input.expectedVersion);
-    await availableLabelName(ctx, input.name, current.id);
-    if (input.color !== current.color) await rememberLabelColor(ctx, input.color);
-    const label = one(
-      await ctx.db
-        .update(projectLabels)
-        .set({ name: input.name, color: input.color, version: current.version + 1 })
-        .where(eq(projectLabels.id, current.id))
-        .returning(),
-    );
-    if (current.name !== label.name) {
-      await changeLabelUsage(ctx, current.name, label.name);
-      await renameFeedLabel(ctx, current.name, label.name);
-    }
-    await publish(ctx, "label.updated", null, {
-      labelId: label.id,
-      name: label.name,
-      previousName: current.name,
-      color: label.color,
-      version: label.version,
-    });
-    return label;
-  },
-  async delete_project_label(ctx, input) {
-    const label = await getLabel(ctx, input.labelId, input.expectedVersion);
-    await changeLabelUsage(ctx, label.name);
-    await ctx.db.delete(projectLabels).where(eq(projectLabels.id, label.id));
-    await publish(ctx, "label.deleted", null, { labelId: label.id, name: label.name });
-    return { ok: true };
-  },
-  async list_label_colors(ctx) {
-    return ctx.db
-      .select({ value: labelColors.value, createdAt: labelColors.createdAt })
-      .from(labelColors)
-      .orderBy(desc(labelColors.createdAt), asc(labelColors.value));
-  },
-  async remove_label_color(ctx, input) {
-    const current = (
-      await ctx.db.select().from(labelColors).where(eq(labelColors.value, input.value))
-    )[0];
-    if (!current) return { ok: true };
-    if (!ctx.actor.admin && current.createdBy !== ctx.actor.id)
-      fail(
-        403,
-        "forbidden",
-        "Only an instance administrator or the person who added this color can remove it",
-      );
-    await ctx.db.delete(labelColors).where(eq(labelColors.value, input.value));
-    // The palette is site-wide; the projects the actor can write hear about it in one batch.
-    const audience = await ctx.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        ctx.actor.admin
-          ? undefined
-          : inArray(projectRoleSQL(ctx.actor.id, projects.id), ["writer", "admin"]),
-      );
-    await publishMany(
-      ctx,
-      audience.map((row) => ({
-        type: "label.color_removed",
-        ticketId: null,
-        projectId: row.id,
-        data: { value: input.value },
-      })),
-    );
-    return { ok: true };
-  },
   async get_project(ctx) {
     return project(ctx);
   },

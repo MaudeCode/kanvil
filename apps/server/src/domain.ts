@@ -45,6 +45,7 @@ import type { Connection, Database, Transaction } from "./database.ts";
 import { projectRole, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
+import { labelHandlers } from "./label-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
@@ -518,6 +519,7 @@ export function createDomain(
   const handlers: Handlers = {
     ...workspaceHandlers,
     ...projectHandlers,
+    ...labelHandlers,
     ...ticketHandlers,
     ...collaborationHandlers,
     ...deliveryHandlers,
