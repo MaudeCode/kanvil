@@ -32,6 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AccessRow } from "./account-details.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
+import { InvitationList } from "./invitations.tsx";
 const size = 25;
 export function WorkspacesSettings() {
   const [query, setQuery] = useState(""),
@@ -192,6 +193,7 @@ function WorkspaceDetails({
             scope="workspace"
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
+          {workspace && <InvitationList workspaceId={workspace.id} />}
           <section className="pt-7">
             <h3>Projects</h3>
             <ErrorNotice error={projects.error} />

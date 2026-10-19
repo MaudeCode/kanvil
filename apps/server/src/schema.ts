@@ -46,6 +46,30 @@ export const workspaceMembers = pgTable(
     index("workspace_member_user").on(table.userId),
   ],
 );
+// Only a SHA-256 hash of each one-time token is stored; resending replaces it. `projectIds` null
+// grants the role on the workspace itself.
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").notNull(),
+    projectIds: uuid("project_ids").array(),
+    tokenHash: text("token_hash").notNull().unique(),
+    status: text("status").notNull().default("pending"),
+    invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
+    acceptedBy: text("accepted_by").references(() => user.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    sentAt: time("sent_at"),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [index("invitation_workspace").on(table.workspaceId, table.status)],
+);
 export const projects = pgTable(
   "projects",
   {

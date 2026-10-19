@@ -18,7 +18,14 @@ import {
   Keyboard,
   UserCheck,
 } from "lucide-react";
-import { api, auth, useIdentity, useProjects, useProjectAccess, useWorkspace } from "../data.tsx";
+import {
+  api,
+  signOut,
+  useIdentity,
+  useProjects,
+  useProjectAccess,
+  useWorkspace,
+} from "../data.tsx";
 import { Brand, ErrorNotice, IconButton, Loading, Modal } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
 import { SearchResultContent, searchResultLink } from "./search-result.tsx";
@@ -218,12 +225,6 @@ function AccountMenu() {
   const identity = useIdentity(),
     { isMobile } = useSidebar();
   const [error, setError] = useState<unknown>();
-  async function logout() {
-    const result = await auth.signOut();
-    if (result.error) throw new Error(result.error.message);
-    identity.clearPrivateData();
-    window.location.assign("/login");
-  }
   return (
     <>
       <DropdownMenu>
@@ -255,7 +256,7 @@ function AccountMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
-              void logout().catch(setError);
+              void signOut(identity).catch(setError);
             }}
           >
             <LogOut />

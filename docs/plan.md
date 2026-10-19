@@ -33,6 +33,7 @@ Pin the latest stable compatible releases during implementation. Reuse existing 
 - Local email/password and OIDC login available on web and mobile.
 - PocketID setup through discovery URL, client ID, server-held secret, and documented callback URLs.
 - Explicit account linking and consistent project authorization across login methods.
+- Expiring, revocable email invitations to a workspace or selected projects, accepted once by the account with the invited address; they never open registration.
 - Secure mobile session storage and tested browser-to-app authentication callbacks.
 - Revocable credentials with project and operation scopes for unattended consumers.
 - Authenticated and permission-filtered HTTP, realtime, attachment, and MCP access.

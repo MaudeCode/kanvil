@@ -1,12 +1,21 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { WorkspaceSelection, useAllProjects, useIdentity, useWorkspaces } from "../data.tsx";
+const workspaceKey = (userId: string) => `kanvil:${userId}:workspace`;
+// Makes a workspace the one the project list opens with, such as one the user just joined.
+export function rememberWorkspace(userId: string, workspaceId: string) {
+  try {
+    localStorage.setItem(workspaceKey(userId), workspaceId);
+  } catch {
+    /* Selection remains usable without browser storage. */
+  }
+}
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const identity = useIdentity(),
     spaces = useWorkspaces(),
     projects = useAllProjects();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const key = `kanvil:${identity.id}:workspace`;
+  const key = workspaceKey(identity.id);
   const [selection, setSelection] = useState<{ id: string | null; route: string | undefined }>(
     () => {
       try {
@@ -28,13 +37,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     spaces.data?.[0];
   const activeId = active?.id;
   useEffect(() => {
-    if (!activeId) return;
-    try {
-      localStorage.setItem(key, activeId);
-    } catch {
-      /* Selection remains usable without browser storage. */
-    }
-  }, [activeId, key]);
+    if (activeId) rememberWorkspace(identity.id, activeId);
+  }, [activeId, identity.id]);
   return (
     <WorkspaceSelection
       value={{

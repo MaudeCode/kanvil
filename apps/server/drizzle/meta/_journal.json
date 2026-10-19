@@ -162,6 +162,13 @@
       "when": 1792393653927,
       "tag": "0022_manual_order",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792394280647,
+      "tag": "0023_workspace_invitations",
+      "breakpoints": true
     }
   ]
 }

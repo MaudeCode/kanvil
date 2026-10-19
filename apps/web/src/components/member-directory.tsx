@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { z } from "zod";
 import { Plus, Trash2, RotateCcw } from "lucide-react";
-import { roles, memberSchema } from "@kanvil/contracts";
+import { roles, roleLabels, memberSchema } from "@kanvil/contracts";
 import { toast } from "sonner";
 import {
   Confirm,
@@ -20,7 +20,6 @@ import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item"
 import { Badge } from "@/components/ui/badge";
 import { UserIdentity } from "./user-avatar.tsx";
 import { UserPicker } from "./user-picker.tsx";
-export const roleLabels = { reader: "Read only", writer: "Can edit", admin: "Admin" };
 export function MemberDirectory({
   people,
   candidates = people,

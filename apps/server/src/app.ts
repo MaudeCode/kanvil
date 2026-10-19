@@ -97,9 +97,16 @@ export async function createApplication(
       adapters.jobs,
     ),
     search = createTicketSearch(integrationDatabase, instance, adapters.ticketIndex, adapters.jobs);
-  const secrets = deliverySecrets(config);
+  const secrets = deliverySecrets(config),
+    senders = adapters.senders(config);
   const auth = adapters.auth(database, config),
-    domain = createDomain(database, { blobs, search, secrets }),
+    domain = createDomain(database, {
+      blobs,
+      search,
+      secrets,
+      publicUrl: config.KANVIL_URL,
+      mail: senders.mail,
+    }),
     access = createAccess(auth, domain, config, database),
     realtime = await adapters.realtime(config, instance, integrationDatabase);
   const unsubscribeJobs = realtime.subscribe(() => {
@@ -107,8 +114,9 @@ export async function createApplication(
     void search.sync().catch(() => {});
   });
   // Queued deliveries are durable, so a restart resumes where the last worker stopped.
-  const senders = adapters.senders(config),
-    outbox = adapters.jobs("outbox", 5000, () => deliverBatch(database, config, senders, secrets));
+  const outbox = adapters.jobs("outbox", 5000, () =>
+    deliverBatch(database, config, senders, secrets),
+  );
   const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
   const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({

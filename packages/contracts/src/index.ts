@@ -9,6 +9,11 @@ export const priorities = ["urgent", "high", "medium", "low", "none"] as const;
 export const kinds = ["feature", "bug", "chore", "research", "documentation"] as const;
 export const difficulties = ["low", "med", "high"] as const;
 export const roles = ["reader", "writer", "admin"] as const;
+export const roleLabels: Record<(typeof roles)[number], string> = {
+  reader: "Read only",
+  writer: "Can edit",
+  admin: "Admin",
+};
 export const projectIconColors = [
   "default",
   "red",
@@ -301,6 +306,30 @@ export const memberSchema = z.object({
   source: z.enum(["project", "workspace"]).optional(),
   inheritedRole: z.enum(roles).nullable().optional(),
 });
+// A pending invitation grants its role on the whole workspace, or only on the listed projects.
+// The token itself is never readable; create and resend return its link once.
+const invitedProject = z.object({ id: z.uuid(), key: z.string(), name: z.string() });
+export const invitationStatuses = ["pending", "expired", "accepted", "revoked"] as const;
+export const invitationSchema = z.object({
+  id: z.uuid(),
+  workspaceId: z.uuid(),
+  email: z.string(),
+  role: z.enum(roles),
+  projects: z.array(invitedProject).nullable(),
+  status: z.enum(invitationStatuses),
+  invitedBy: z.string().nullable(),
+  expiresAt: timestamp,
+  sentAt: timestamp,
+  version,
+});
+export type Invitation = z.output<typeof invitationSchema>;
+const sentInvitationSchema = z.object({
+  invitation: invitationSchema,
+  url: z.url(),
+  // True when the instance relay was asked to email the link.
+  emailed: z.boolean(),
+});
+const invitationToken = z.string().min(20).max(200);
 export const projectSchema = z.object({
   iconName: z.string().nullable().default(null),
   iconColor: z.enum(projectIconColors).default("default"),
@@ -834,6 +863,7 @@ export const eventLabels: Record<string, string> = {
   "project.created": "Project created",
   "project.updated": "Project updated",
   "membership.updated": "Project access changed",
+  "invitation.updated": "Invitation changed",
   "destination.created": "Destination added",
   "destination.updated": "Destination changed",
   "destination.deleted": "Destination removed",
@@ -935,6 +965,89 @@ export const operations = {
     "/workspaces/{workspaceId}/members",
     "admin",
     "Manage workspace access; removal also revokes direct project access in this workspace.",
+  ),
+  list_invitations: op(
+    z.object({ workspaceId: z.uuid() }),
+    z.array(invitationSchema),
+    "GET",
+    "/workspaces/{workspaceId}/invitations",
+    "admin",
+    "List the workspace's pending and expired invitations.",
+  ),
+  create_invitation: op(
+    // No requestId: the response carries the only copy of the link, so it is never stored in a
+    // replay receipt. The same holds for resend.
+    z
+      .object({
+        workspaceId: z.uuid(),
+        email: z.email().overwrite((value) => value.toLowerCase()),
+        role: z.enum(roles),
+        // Omit or pass null for the whole workspace; otherwise the role applies to these projects.
+        projectIds: z.array(z.uuid()).min(1).max(100).nullable().default(null),
+        expiresInDays: z.number().int().min(1).max(30).default(7),
+      })
+      .strict(),
+    sentInvitationSchema,
+    "POST",
+    "/workspaces/{workspaceId}/invitations",
+    "admin",
+    "Invite an email address with a fixed role on the workspace or selected projects. Returns the one-time link and emails it when the instance has SMTP.",
+  ),
+  resend_invitation: op(
+    z
+      .object({
+        workspaceId: z.uuid(),
+        invitationId: z.uuid(),
+        expectedVersion: version,
+        expiresInDays: z.number().int().min(1).max(30).default(7),
+      })
+      .strict(),
+    sentInvitationSchema,
+    "POST",
+    "/workspaces/{workspaceId}/invitations/{invitationId}/resend",
+    "admin",
+    "Replace a pending or expired invitation's link, restart its expiry, and send it again.",
+  ),
+  revoke_invitation: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        invitationId: z.uuid(),
+        expectedVersion: version,
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/workspaces/{workspaceId}/invitations/{invitationId}",
+    "admin",
+    "Cancel an invitation so its link stops working.",
+  ),
+  get_invitation: op(
+    z.object({ token: invitationToken }),
+    z.object({
+      workspace: z.object({ id: z.uuid(), name: z.string() }),
+      email: z.string(),
+      role: z.enum(roles),
+      projects: z.array(invitedProject).nullable(),
+      status: z.enum(invitationStatuses),
+      invitedBy: z.string().nullable(),
+      expiresAt: timestamp,
+      // Whether the signed-in account's email is the invited address.
+      matchesAccount: z.boolean(),
+    }),
+    "GET",
+    "/invitations/{token}",
+    "read",
+    "Read the invitation behind a link from a signed-in session.",
+  ),
+  accept_invitation: op(
+    z.object({ ...mutation, token: invitationToken }).strict(),
+    z.object({ workspaceId: z.uuid(), projectIds: z.array(z.uuid()).nullable() }),
+    "POST",
+    "/invitations/accept",
+    "write",
+    "Accept an invitation addressed to the signed-in account's email.",
   ),
   list_projects: op(
     z.object({ workspaceId: z.uuid().optional() }),

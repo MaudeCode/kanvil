@@ -25,6 +25,7 @@ import {
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
 import type { Sealer } from "./sealing.ts";
+import type { MailMessage } from "./adapters/ports.ts";
 import {
   claims,
   deliveries,
@@ -48,6 +49,7 @@ import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
 import { calendarHandlers } from "./calendar-operations.ts";
+import { invitationHandlers } from "./invitation-operations.ts";
 
 export interface Actor {
   id: string;
@@ -67,6 +69,10 @@ export interface Context {
   project: Project | null;
   workspace: Workspace | null;
   role: "reader" | "writer" | "admin";
+  // The public origin for links in outgoing messages.
+  publicUrl: string;
+  // Queues an email to send after the write commits; absent without an SMTP relay.
+  mail?: (message: MailMessage) => void;
 }
 export type Handler<K extends Operation> = (
   ctx: Context,
@@ -155,6 +161,7 @@ async function context(
     blobs: { put: writeLocalBlob },
     search: builtinSearch,
     secrets: noSecrets,
+    publicUrl: "http://localhost",
   };
   if (workspaceId) {
     ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
@@ -499,7 +506,13 @@ export async function assertWorkerClaim(
 
 export function createDomain(
   database: Database,
-  services: { blobs?: BlobWriter; search?: TicketSearchProvider; secrets?: Sealer } = {},
+  services: {
+    blobs?: BlobWriter;
+    search?: TicketSearchProvider;
+    secrets?: Sealer;
+    publicUrl?: string;
+    mail?: ((message: MailMessage) => Promise<void>) | undefined;
+  } = {},
 ) {
   const handlers: Handlers = {
     ...workspaceHandlers,
@@ -508,7 +521,10 @@ export function createDomain(
     ...collaborationHandlers,
     ...deliveryHandlers,
     ...calendarHandlers,
+    ...invitationHandlers,
   };
+  // Operations that act for the person signed in, never for a credential.
+  const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([
     "list_projects",
@@ -526,23 +542,29 @@ export function createDomain(
     const projectId = "projectId" in input ? input.projectId : undefined;
     const workspaceId =
       "workspaceId" in input && !workspaceIsFilter.has(name) ? input.workspaceId : undefined;
+    // Checked first: every credential is project-bound and would otherwise get a scope error.
+    if (actor.machine && sessionOnly.has(name))
+      fail(403, "session_required", "Use a signed-in account for this action");
     if (actor.projectIds && spec.method !== "GET" && !projectId)
       fail(
         403,
         "insufficient_scope",
         "Project-bound credentials can only change their configured projects",
       );
+    const outgoing: MailMessage[] = [];
     const invoke = async (ctx: Context) => {
       if (services.blobs) ctx.blobs = services.blobs;
       if (services.search) ctx.search = services.search;
       if (services.secrets) ctx.secrets = services.secrets;
+      if (services.publicUrl) ctx.publicUrl = services.publicUrl;
+      if (services.mail) ctx.mail = (message) => outgoing.push(message);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
     };
     if (spec.method === "GET")
       return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
-    return database.db.transaction(async (tx) => {
+    const committed = await database.db.transaction(async (tx) => {
       // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
       const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
@@ -575,6 +597,11 @@ export function createDomain(
           .values({ actorId: actor.id, requestId, hash, operation: name, result });
       return result;
     });
+    // ponytail: mail sends once after commit and a failure is only logged; the sender still has
+    // the link to share or resend. Route it through the outbox if invitations need retries.
+    for (const message of outgoing)
+      await services.mail?.(message).catch(() => console.error("Kanvil email failed"));
+    return committed;
   }
   async function resolveActor(
     id: string,
