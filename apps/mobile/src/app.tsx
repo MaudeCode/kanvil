@@ -305,7 +305,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
           />
           {sent && (
             <Button
-              title="Send a new code"
+              title="Resend code"
               disabled={pending}
               onPress={() => {
                 void attempt(sendCode);

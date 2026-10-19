@@ -942,7 +942,7 @@ export function authResult<
   if (!result.error) return result;
   throw new Error(
     ["INVALID_OTP", "OTP_EXPIRED", "TOO_MANY_ATTEMPTS"].includes(result.error.code ?? "")
-      ? "That code is wrong, used, or expired. Send a new code."
+      ? "That code is wrong, used, or expired. Resend it to get one that works."
       : (result.error.message ?? "The request could not be completed"),
   );
 }

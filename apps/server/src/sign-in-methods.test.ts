@@ -243,6 +243,24 @@ describe("email codes", () => {
     expect((await signInWithCode("busy@sign-in.test", code)).status).toBe(200);
   });
 
+  it("keeps the mailed code and the send allowance when a later email fails", async () => {
+    await createPerson("bounced@sign-in.test");
+    await send("bounced@sign-in.test");
+    const { code } = await nextCode("bounced@sign-in.test", 0);
+    mailbox.state.rejecting = true;
+    try {
+      expect((await send("bounced@sign-in.test")).status).toBe(200);
+      await noMail(1);
+    } finally {
+      mailbox.state.rejecting = false;
+    }
+    for (let attempt = 1; attempt < 3; attempt++) {
+      await send("bounced@sign-in.test");
+      expect((await nextCode("bounced@sign-in.test", attempt)).code).toBe(code);
+    }
+    expect((await signInWithCode("bounced@sign-in.test", code)).status).toBe(200);
+  });
+
   it("resets a password with a code and signs out every session", async () => {
     await createPerson("reset@sign-in.test");
     const before = cookies(

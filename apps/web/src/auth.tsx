@@ -257,11 +257,11 @@ export function Login() {
               onClick={() =>
                 void attempt(async () => {
                   await sendCode();
-                  toast.success("A new code is on its way");
+                  toast.success("Code sent again");
                 })
               }
             >
-              Send a new code
+              Resend code
             </Button>
           )}
         </div>

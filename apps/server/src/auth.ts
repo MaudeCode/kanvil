@@ -74,7 +74,8 @@ export function createAuth(database: Database, config: Config) {
   // ponytail: per-process memory; a multi-replica deployment shares Better Auth's per-IP limit only.
   const codeSends = createWriteLimiter(3, 15 * 60_000);
   // Runs after the response, so neither the lookup nor SMTP latency tells a caller whether the
-  // address has an account. Disabled and deleted accounts get nothing.
+  // address has an account. Disabled and deleted accounts get nothing. A failed send gives its
+  // throttle slot back; the code it carried is the one already mailed, if any, so that one stays.
   async function sendCode(email: string, otp: string, type: string) {
     if (!mail || (type !== "sign-in" && type !== "forget-password")) return;
     const active = await database.pool.query(
@@ -94,6 +95,9 @@ export function createAuth(database: Database, config: Config) {
       to: email,
       subject: reset ? "Reset your Kanvil password" : "Your Kanvil sign-in code",
       text: `${reset ? "Your password reset code" : "Your sign-in code"} is ${otp}. It works once and expires in ${codeMinutes} minutes.\n\nOr open this link to ${reset ? "choose a new password" : "sign in"}:\n\n${link.href}\n\nIf you did not ask for this, ignore this email.`,
+    }).catch((error: unknown) => {
+      codeSends.release(email);
+      throw error;
     });
   }
   const social = (id: (typeof socialIds)[number]) => {
@@ -249,7 +253,11 @@ export function createAuth(database: Database, config: Config) {
         disableSignUp: true,
         expiresIn: codeMinutes * 60,
         allowedAttempts: 3,
-        storeOTP: "hashed",
+        // Asking again mails the same code while it is valid, so a later request, throttled or
+        // undelivered, never replaces a code someone already has. Reuse needs the code back, so
+        // it is stored encrypted with the server secret rather than hashed.
+        resendStrategy: "reuse",
+        storeOTP: "encrypted",
         sendVerificationOTP: ({ email, otp, type }) => {
           void sendCode(email, otp, type).catch(() => console.error("Kanvil email failed"));
           return Promise.resolve();

@@ -30,6 +30,10 @@ export function createWriteLimiter(max: number, windowMs = 60_000) {
         for (const [id, stamps] of recent)
           if (!stamps.some((at) => at > now - windowMs)) recent.delete(id);
     },
+    // Returns the latest hit, for work that failed before it counted.
+    release(key: string) {
+      recent.get(key)?.pop();
+    },
   };
 }
 export function requireSession(actor: Actor) {

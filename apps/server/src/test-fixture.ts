@@ -51,6 +51,8 @@ export async function createFixture({
 // messages are kept decoded.
 export async function startMailbox(onMessage?: (message: string) => void) {
   const messages: string[] = [];
+  // While set, the relay refuses every message with a permanent failure.
+  const state = { rejecting: false };
   const server = createServer((socket) => {
     let buffer = "",
       body: string | undefined;
@@ -61,7 +63,10 @@ export async function startMailbox(onMessage?: (message: string) => void) {
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         if (body !== undefined) {
-          if (line === ".") {
+          if (line === "." && state.rejecting) {
+            body = undefined;
+            socket.write("550 rejected\r\n");
+          } else if (line === ".") {
             const message = body.includes("Content-Transfer-Encoding: quoted-printable")
               ? body
                   .replaceAll("=\n", "")
@@ -90,6 +95,7 @@ export async function startMailbox(onMessage?: (message: string) => void) {
   if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
   return {
     messages,
+    state,
     url: `smtp://127.0.0.1:${address.port}`,
     close: () => new Promise<void>((done) => server.close(() => done())),
   };
