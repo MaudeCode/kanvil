@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus
 import { createHmac } from "node:crypto";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import type { Project, RepositoryConnection, Ticket } from "@kanvil/contracts";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
@@ -677,6 +677,26 @@ describe("repository connections", () => {
       .from(deliveries)
       .where(eq(deliveries.error, "repository_changed"));
     expect(cancelled?.finishedAt).toBeInstanceOf(Date);
+  });
+
+  it("drops queued comments once the connecting administrator loses access", async () => {
+    const connection = await connect({ commentOnLink: true }, admin);
+    await tick();
+    github.state.received = [];
+    await send(connection, "pull_request", pullRequest(17, "opened", { ref: `${ticket.key}-x` }));
+    await app.domain.execute(
+      "set_member",
+      { projectId: project.id, email: "repository-admin@example.test", role: null },
+      owner,
+    );
+    await tick();
+    expect(github.state.received).toEqual([]);
+    const [dropped] = await fixture.database.db
+      .select()
+      .from(deliveries)
+      .where(and(eq(deliveries.connectionId, connection.id), isNotNull(deliveries.eventId)));
+    expect(dropped).toMatchObject({ error: "access_revoked" });
+    expect(dropped?.finishedAt).toBeInstanceOf(Date);
   });
 
   it("applies nothing to an archived project and still lets administrators disconnect", async () => {

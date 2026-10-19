@@ -64,6 +64,11 @@ async function load(database: Database, id: string) {
         account: user,
         preference: notificationPreferences,
         projectRole: projectRoleSQL(user.id, notifications.projectId),
+        // Whether the administrator a repository connection acts as can still write to its project.
+        connectionWriter: sql<boolean>`coalesce((SELECT true FROM "user" cu
+          WHERE cu.id = ${repositoryConnections.createdBy} AND NOT coalesce(cu.banned, false)
+          AND ('admin' = any(string_to_array(cu.role, ','))
+            OR ${projectRoleSQL(repositoryConnections.createdBy, repositoryConnections.projectId)} IN ('writer', 'admin'))), false)`,
         subscription: subscriptions,
         actorName: eventActor.name,
         ticket: {
@@ -153,7 +158,9 @@ function skipReason(row: Row, config: Config): string | null {
     if (!job.eventId) return null;
     if (connection.paused) return "paused";
     if (!connection.commentOnLink) return "comments_disabled";
-    return event?.projectId === connection.projectId ? null : "access_revoked";
+    // Comments act for the connecting administrator, so they stop with that person's write access.
+    if (!row.connectionWriter || event?.projectId !== connection.projectId) return "access_revoked";
+    return row.projectArchivedAt ? "project_archived" : null;
   }
   if (!destination) return "access_revoked";
   if (!job.eventId) return null;
