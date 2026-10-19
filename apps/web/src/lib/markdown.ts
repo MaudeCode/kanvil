@@ -7,7 +7,7 @@ export const formats = {
   heading: { label: "Heading", prefix: "### ", pattern: /^#{1,6} /, replaces: /^#{1,6} / },
   bold: { label: "Bold", shortcut: "⌘ B", key: "b", wrap: "**" },
   italic: { label: "Italic", shortcut: "⌘ I", key: "i", wrap: "_" },
-  link: { label: "Link", shortcut: "⌘ K", key: "k" },
+  link: { label: "Link", help: "Link the selected text", shortcut: "⌘ K", key: "k" },
   bullets: {
     label: "Bulleted list",
     shortcut: "⌘ ⇧ 8",

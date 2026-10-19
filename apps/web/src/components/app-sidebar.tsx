@@ -260,7 +260,9 @@ const shortcuts: [string, string][] = [
   ["?", "This list"],
   ...markdownFormats.flatMap((format): [string, string][] => {
     const spec = formats[format];
-    return "shortcut" in spec ? [[spec.shortcut, `${spec.label} in a Markdown field`]] : [];
+    return "shortcut" in spec
+      ? [[spec.shortcut, `${"help" in spec ? spec.help : spec.label} in a Markdown field`]]
+      : [];
   }),
 ];
 function CommandPalette() {

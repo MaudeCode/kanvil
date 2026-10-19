@@ -87,7 +87,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Shared client operations, validation, formatting, design tokens, and status presentation rules.
 - Accessible controls, responsive layouts, useful loading/error states, and explicit connection status.
 
-Start with Markdown editing and an established renderer. Rich-text editing remains an optional scope decision. Defer automatic submission of offline edits and custom workflow designers. Optional external storage, search, and broker adapters are described in [infrastructure](infrastructure.md); the default deployment still requires only PostgreSQL.
+Start with Markdown editing and an established renderer. Markdown fields carry a formatting toolbar with shortcuts, and people who can write a ticket toggle its description and acceptance checklists in place; the stored text stays canonical Markdown. Rich-text editing remains an optional scope decision. Defer automatic submission of offline edits and custom workflow designers. Optional external storage, search, and broker adapters are described in [infrastructure](infrastructure.md); the default deployment still requires only PostgreSQL.
 
 ## Self-hosting and verification
 
