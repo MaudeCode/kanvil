@@ -258,6 +258,37 @@ describe("durable optional native push", () => {
       "unsubscribed",
     );
   });
+  it("pushes a mention to a member who does not follow the ticket", async () => {
+    await app.domain.execute(
+      "set_subscription",
+      { projectId: project.id, ticketId: ticket.id, enabled: false },
+      owner,
+    );
+    const teammate = await fixture.auth.api.createUser({
+      body: {
+        name: "Push teammate",
+        email: `teammate-${crypto.randomUUID()}@example.test`,
+        password: "Isolated push password 42!",
+        role: "user",
+      },
+    });
+    await app.domain.execute(
+      "set_member",
+      { projectId: project.id, email: teammate.user.email, role: "writer" },
+      owner,
+    );
+    await app.domain.execute(
+      "add_comment",
+      {
+        projectId: project.id,
+        ticketId: ticket.id,
+        body: `[@Push owner](mention:${owner.id}) please look`,
+      },
+      await app.domain.actor(teammate.user.id),
+    );
+    await tick();
+    expect(sent.map((message) => message.body)).toEqual(["You were mentioned in a comment."]);
+  });
   it("drops a queued notice whose category was turned off before sending", async () => {
     await request("/notifications/preferences", "PUT", {
       inApp: false,

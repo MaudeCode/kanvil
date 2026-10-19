@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   eventCategories,
+  mentionLink,
   infoSchema,
   notificationPreferencesSchema,
   notificationsSchema,
@@ -247,6 +248,7 @@ describe("notification categories", () => {
         assignment: true,
         status: true,
         comment: true,
+        mention: true,
         update: true,
         due_soon: true,
         overdue: true,
@@ -275,5 +277,11 @@ describe("notification categories", () => {
         ])
         .map((item) => item.category),
     ).toEqual(["update", "update"]);
+  });
+});
+describe("mentions", () => {
+  it("writes a Markdown link that still reads as the name", () => {
+    expect(mentionLink("Ada Lovelace", "user_1")).toBe("[@Ada Lovelace](mention:user_1)");
+    expect(mentionLink("[ops] \\ Ada", "user_2")).toBe("[@\\[ops\\] \\\\ Ada](mention:user_2)");
   });
 });

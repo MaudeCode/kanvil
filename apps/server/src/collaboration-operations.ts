@@ -15,6 +15,7 @@ import {
   tickets,
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
+import { mentionedUserIds } from "./mentions.ts";
 import {
   assertVersion,
   assertWorkerClaim,
@@ -164,7 +165,10 @@ export const collaborationHandlers: Pick<
         .returning(),
     );
     await subscribe(ctx, row.projectId, row.ticketId, [ctx.actor.id]);
-    await publish(ctx, "comment.created", ticket.id, { commentId: row.id });
+    await publish(ctx, "comment.created", ticket.id, {
+      commentId: row.id,
+      mentions: mentionedUserIds(row.body),
+    });
     return row;
   },
   async update_comment(ctx, input) {
@@ -176,9 +180,12 @@ export const collaborationHandlers: Pick<
         .where(eq(comments.id, current.id))
         .returning(),
     );
+    // An edit notifies only the members it newly mentions.
+    const before = new Set(mentionedUserIds(current.body));
     await publish(ctx, "comment.updated", row.ticketId, {
       commentId: row.id,
       version: row.version,
+      mentions: mentionedUserIds(row.body).filter((id) => !before.has(id)),
     });
     return row;
   },

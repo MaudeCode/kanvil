@@ -387,6 +387,11 @@ export const commentSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
+// A comment mentions a member with a link to `mention:<user id>`; without a renderer that knows the
+// scheme, the Markdown still reads as "@Name".
+export const mentionScheme = "mention:";
+export const mentionLink = (name: string, userId: string) =>
+  `[@${name.replaceAll(/[\\[\]]/g, "\\$&")}](${mentionScheme}${userId})`;
 export const attachmentSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -500,6 +505,7 @@ export const notificationCategoriesSchema = z.object({
   assignment: z.boolean().default(true),
   status: z.boolean().default(true),
   comment: z.boolean().default(true),
+  mention: z.boolean().default(true),
   update: z.boolean().default(true),
   due_soon: z.boolean().default(true),
   overdue: z.boolean().default(true),
@@ -510,6 +516,7 @@ export const notificationCategoryLabels: Record<NotificationCategory, string> = 
   assignment: "Assignments",
   status: "Status changes",
   comment: "Comments",
+  mention: "Mentions",
   update: "Other updates",
   due_soon: "Due soon",
   overdue: "Overdue",
@@ -1116,7 +1123,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/comments",
     "write",
-    "Add a comment with authenticated attribution.",
+    "Add a comment with authenticated attribution. Mention a project member with `[@Name](mention:<user id>)` from list_members; members who can read the project are notified.",
   ),
   update_comment: op(
     projectInput
@@ -1131,7 +1138,7 @@ export const operations = {
     "PATCH",
     "/projects/{projectId}/comments/{commentId}",
     "write",
-    "Edit your own comment or moderate as a project administrator.",
+    "Edit your own comment or moderate as a project administrator. Only mentions the edit adds are notified.",
   ),
   delete_comment: op(
     projectInput.extend({ ...mutation, commentId: z.uuid(), expectedVersion: version }).strict(),

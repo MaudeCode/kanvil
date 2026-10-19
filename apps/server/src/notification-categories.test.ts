@@ -134,6 +134,7 @@ describe("notification categories", () => {
         assignment: true,
         status: true,
         comment: true,
+        mention: true,
         update: true,
         due_soon: true,
         overdue: true,

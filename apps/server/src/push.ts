@@ -80,7 +80,8 @@ export async function deliverPushBatch(database: Database, config: Config, trans
         row.account.banned ||
         row.session.expiresAt <= new Date() ||
         !row.preference?.push ||
-        (!row.subscription && row.ticket !== null) ||
+        // A mention reaches its member without a subscription; anything else needs one.
+        (!row.subscription && row.ticket !== null && row.notification.category !== "mention") ||
         (!row.projectRole && !hasAdminRole(row.account.role))
       ) {
         await finish("access_revoked");
@@ -117,7 +118,10 @@ export async function deliverPushBatch(database: Database, config: Config, trans
               {
                 to: device.token,
                 title: "Kanvil",
-                body: "A subscribed ticket has an update.",
+                body:
+                  row.notification.category === "mention"
+                    ? "You were mentioned in a comment."
+                    : "A subscribed ticket has an update.",
                 sound: "default",
                 channelId: "tickets",
                 ttl: 3600,

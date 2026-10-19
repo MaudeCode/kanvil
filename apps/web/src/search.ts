@@ -53,7 +53,7 @@ export const workSearchSchema = searchSchema.transform(
 // Inbox: which entries show and the ticket open in its preview sheet.
 export const inboxSearchSchema = z.object({
   ...previewFields,
-  view: z.enum(["unread", "all"]).catch("unread").default("unread"),
+  view: z.enum(["unread", "mentions", "all"]).catch("unread").default("unread"),
 });
 export type InboxSearch = z.output<typeof inboxSearchSchema>;
 export const ticketDensitySchema = z.enum(["compact", "comfortable"]);
