@@ -33,6 +33,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AccessRow } from "./account-details.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
+import { useSheetRecord } from "../hooks/use-sheet-record.ts";
 import { InvitationList } from "./invitations.tsx";
 import { t, formatList } from "@kanvil/contracts/i18n";
 const size = 25;
@@ -157,23 +158,20 @@ export function WorkspacesSettings() {
         size={size}
         onChange={setOffset}
       />
-      <WorkspaceDetails
-        key={selected?.id ?? "closed"}
-        workspace={selected}
-        onClose={() => setSelected(null)}
-      />
+      <WorkspaceDetails workspace={selected} onClose={() => setSelected(null)} />
     </section>
   );
 }
 // Instance administrators manage any workspace's members through the same operations and member
 // directory as workspace settings; the server grants them access without a membership row.
 function WorkspaceDetails({
-  workspace,
+  workspace: selected,
   onClose,
 }: {
   workspace: AdminWorkspace | null;
   onClose: () => void;
 }) {
+  const { shown: workspace, settled } = useSheetRecord(selected, (space) => space.id);
   const workspaceId = workspace?.id ?? "";
   const people = useQuery({
       ...api.query("list_workspace_members", { workspaceId }),
@@ -190,10 +188,11 @@ function WorkspaceDetails({
     member = useOperation("set_workspace_member");
   return (
     <Sheet
-      open={!!workspace}
+      open={!!selected}
       onOpenChange={(open) => {
         if (!open && !member.isPending) onClose();
       }}
+      onOpenChangeComplete={settled}
     >
       <SheetContent className="w-full! sm:max-w-lg!">
         <SheetHeader className="shrink-0 border-b pr-14">
@@ -202,7 +201,7 @@ function WorkspaceDetails({
           </SheetTitle>
           <SheetDescription className="font-mono">{workspace?.slug}</SheetDescription>
         </SheetHeader>
-        <div className="@container min-h-0 overflow-y-auto px-6 pb-8">
+        <div key={workspace?.id} className="@container min-h-0 overflow-y-auto px-6 pb-8">
           <MemberDirectory
             people={people.data ?? []}
             pending={member.isPending}

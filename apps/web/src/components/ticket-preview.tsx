@@ -15,6 +15,7 @@ import { t } from "@kanvil/contracts/i18n";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button, EmptyState, IconButton, Loading } from "../ui.tsx";
 import { previewSearchSchema } from "../search.ts";
+import { useSheetRecord } from "../hooks/use-sheet-record.ts";
 
 // A ticket a reference names, with an optional anchor such as a comment.
 export interface PreviewTarget {
@@ -148,8 +149,7 @@ export function TicketPreviewController({
     ? { id: search.peek, projectId: search.peekProject ?? routeProject }
     : undefined;
   // The last ticket stays rendered while the sheet closes.
-  const [shown, setShown] = useState(target);
-  if (target && (target.id !== shown?.id || target.projectId !== shown.projectId)) setShown(target);
+  const { shown, settled } = useSheetRecord(target, (next) => `${next.projectId}:${next.id}`);
   const [collection, setCollection] = useState<PreviewCollection | null>(null);
   // The control that opened the sheet.
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
@@ -207,6 +207,7 @@ export function TicketPreviewController({
         onOpenChange={(next) => {
           if (!next) close();
         }}
+        onOpenChangeComplete={settled}
       >
         <SheetContent
           aria-label={t("detail.page.preview")}

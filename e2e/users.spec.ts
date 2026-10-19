@@ -1,6 +1,13 @@
 import { expect, test } from "./test.ts";
 import { ownerEmail, signIn, useEmailLogin } from "./auth.ts";
-import { accountMenu, choose, openSearch } from "./controls.ts";
+import {
+  accountMenu,
+  choose,
+  expectMotion,
+  openSearch,
+  recordMotion,
+  sheetMotion,
+} from "./controls.ts";
 
 test("account management supports workspace access, profile edits, password reset, and suspension", async ({
   page,
@@ -255,4 +262,125 @@ test("the workspace directory lists every workspace and manages members the admi
     .getByRole("searchbox", { name: "Search workspaces", exact: true })
     .fill("no-such-space");
   await expect(page.getByText("No matching workspaces", { exact: true })).toBeVisible();
+});
+
+test("administration detail sheets slide in and out and start fresh for each record", async ({
+  page,
+}) => {
+  await signIn(page);
+  const origin = new URL(page.url()).origin;
+  for (const name of ["Motion north", "Motion south"])
+    expect(
+      (
+        await page.request.post("/api/v1/workspaces", {
+          data: { name, slug: name.toLowerCase().replace(" ", "-") },
+        })
+      ).ok(),
+    ).toBe(true);
+  for (const name of ["Avery Motion", "Blair Motion"])
+    expect(
+      (
+        await page.request.post("/api/auth/admin/create-user", {
+          headers: { Origin: origin },
+          data: {
+            name,
+            email: `${name.split(" ")[0]!.toLowerCase()}@motion.test`,
+            password: "Motion account password 234!",
+            role: "user",
+          },
+        })
+      ).ok(),
+    ).toBe(true);
+  await page.goto("/admin?section=workspaces");
+  await (await openSearch(page, "Search workspaces")).fill("motion");
+  await recordMotion(page);
+  // Every way to close runs the exit before the sheet leaves, and reopening runs the entry again.
+  const closes = [
+    () => page.keyboard.press("Escape"),
+    (sheet: ReturnType<typeof page.getByRole>) =>
+      sheet.getByRole("button", { name: "Close", exact: true }).click(),
+    () => page.mouse.click(8, 400),
+  ];
+  for (const [index, name] of ["Motion north", "Motion south", "Motion north"].entries()) {
+    const manage = page.getByRole("button", { name: `Manage ${name}`, exact: true });
+    await manage.click();
+    const sheet = page.getByRole("dialog", { name, exact: true });
+    await expect(sheet.getByText(name.toLowerCase().replace(" ", "-"))).toBeVisible();
+    await expectMotion(page, sheetMotion("enter"));
+    await closes[index]!(sheet);
+    await expectMotion(page, sheetMotion("exit"));
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(manage).toBeFocused();
+  }
+  // Choosing another record while the sheet still closes shows that record, once. The closing
+  // backdrop still takes the pointer, so the click goes to the button directly.
+  await page.getByRole("button", { name: "Manage Motion north", exact: true }).click();
+  await expectMotion(page, sheetMotion("enter"));
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Manage Motion south", exact: true })
+    .dispatchEvent("click");
+  const south = page.getByRole("dialog", { name: "Motion south", exact: true });
+  await expect(south).toBeVisible();
+  await expect(page.locator('[data-slot="sheet-overlay"]')).toHaveCount(1);
+  await expect(page.getByRole("dialog", { name: "Motion north", exact: true })).toHaveCount(0);
+  await expect(south.locator(":focus")).toHaveCount(1);
+  await south.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.goto("/admin?section=users");
+  await (await openSearch(page, "Search users")).fill("motion");
+  await recordMotion(page);
+  const avery = page.getByRole("button", { name: "Manage Avery Motion", exact: true });
+  await avery.click();
+  let panel = page.getByRole("dialog", { name: "Avery Motion", exact: true });
+  await expect(panel.getByText("avery@motion.test")).toBeVisible();
+  await expectMotion(page, sheetMotion("enter"));
+  // A failed edit leaves its error on the sheet; it belongs to Avery alone.
+  await panel.getByRole("button", { name: "Set local password", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Set local password", exact: true });
+  await form.getByLabel("New password", { exact: true }).fill("Motion password one 234!");
+  await form.getByLabel("Confirm new password", { exact: true }).fill("Motion password two 234!");
+  await form.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(form.getByText("The new passwords do not match.")).toBeVisible();
+  await form.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(panel.getByText("The new passwords do not match.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectMotion(page, sheetMotion("exit"));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(avery).toBeFocused();
+  await page.getByRole("button", { name: "Manage Blair Motion", exact: true }).click();
+  panel = page.getByRole("dialog", { name: "Blair Motion", exact: true });
+  await expect(panel.getByText("blair@motion.test")).toBeVisible();
+  await expectMotion(page, sheetMotion("enter"));
+  await expect(page.getByText("The new passwords do not match.")).toHaveCount(0);
+  await expect(page.getByText("avery@motion.test")).toHaveCount(1);
+  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await expectMotion(page, sheetMotion("exit"));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("administration detail sheets open and close at once with reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await signIn(page);
+  await page.request.post("/api/v1/workspaces", {
+    data: { name: "Still workspace", slug: "still-workspace" },
+  });
+  await page.goto("/admin?section=workspaces");
+  await (await openSearch(page, "Search workspaces")).fill("still");
+  const manage = page.getByRole("button", { name: "Manage Still workspace", exact: true });
+  for (let round = 0; round < 2; round++) {
+    await manage.click();
+    const sheet = page.getByRole("dialog", { name: "Still workspace", exact: true });
+    await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(manage).toBeFocused();
+    // Nothing the sheet locked stays behind: the page scrolls and takes pointer input again.
+    await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
+    await expect(page.locator("html")).not.toHaveCSS("overflow", "hidden");
+    await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+  }
 });

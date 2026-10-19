@@ -222,8 +222,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "appearance.spec.ts",
-    2,
-    "Themes, responsive rows, skip link, sidebar, command palette, tooltips, and the mobile sheet in a real layout engine.",
+    3,
+    "Themes, responsive rows, skip link, sidebar, command palette, tooltips, the mobile sheet, and the sidebar and sheet transitions in a real layout engine.",
   ),
   spec(
     "auth-callback.spec.ts",
@@ -335,8 +335,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "users.spec.ts",
-    3,
-    "Account administration dialogs, filters, cache purges on role changes, and the workspace directory sheet.",
+    5,
+    "Account administration dialogs, filters, cache purges on role changes, the workspace directory sheet, and the detail sheets' entry and exit transitions with normal and reduced motion.",
   ),
   spec(
     "workspace-ownership.spec.ts",

@@ -1,8 +1,13 @@
 import { expect, type Locator, type Page, type Request } from "@playwright/test";
 
 // Prefers the combobox inside the open popover or dialog, since list rows carry inline editors too.
+// One playing its exit is already closed.
 export async function choose(page: Page, label: string, option: string) {
-  const overlay = page.locator('[data-slot="popover-content"], [role="dialog"]').last();
+  const overlay = page
+    .locator(
+      '[data-slot="popover-content"]:not([data-ending-style]), [role="dialog"]:not([data-ending-style])',
+    )
+    .last();
   const scope = (await overlay.count()) ? overlay : page;
   await scope.getByRole("combobox", { name: label, exact: true }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
@@ -95,4 +100,45 @@ export async function holdRequests(
     await route.fallback();
   });
   return () => release?.();
+}
+declare global {
+  interface Window {
+    motion?: string[];
+  }
+}
+// The mobile sidebar is a sheet whose popup carries the sidebar slot.
+const animated = ["sheet-content", "sheet-overlay", "sidebar", "sidebar-gap", "sidebar-container"];
+// Records every transition the sheet and sidebar primitives run, as "slot property phase", where
+// phase is exit while a sheet carries its ending style. Content that mounts or unmounts in its
+// final state records nothing. Call it again after a navigation that reloads the page.
+export async function recordMotion(page: Page) {
+  await page.evaluate((slots) => {
+    window.motion = [];
+    document.addEventListener(
+      "transitionrun",
+      ({ target, propertyName }) => {
+        if (!(target instanceof Element)) return;
+        const slot = target.getAttribute("data-slot");
+        if (!slot || !slots.includes(slot)) return;
+        const phase = target.hasAttribute("data-ending-style") ? "exit" : "enter";
+        window.motion?.push(`${slot} ${propertyName} ${phase}`);
+      },
+      true,
+    );
+  }, animated);
+}
+// Waits until the recorded motion includes each run, then starts a fresh record.
+export async function expectMotion(page: Page, runs: string[]) {
+  await expect
+    .poll(() => page.evaluate(() => window.motion ?? []))
+    .toEqual(expect.arrayContaining(runs));
+  await page.evaluate(() => window.motion?.splice(0));
+}
+// The shared sheet's slide and fade, in or out, with its backdrop.
+export function sheetMotion(phase: "enter" | "exit", slot = "sheet-content") {
+  return [
+    `${slot} opacity ${phase}`,
+    `${slot} translate ${phase}`,
+    `sheet-overlay opacity ${phase}`,
+  ];
 }
