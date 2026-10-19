@@ -43,7 +43,7 @@ import {
   type Project,
   type Output,
 } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { formatList, t } from "@kanvil/contracts/i18n";
 import { api, useIdentity, useProjectAccess, useProjects, useOperation } from "./data.tsx";
 import { ProjectIcon } from "./components/project-icon.tsx";
 import {
@@ -782,12 +782,12 @@ export function TicketList({
   };
   // Names the selection for confirmations: the project, then how many come from each section.
   const selectedFrom = grouped
-    ? sections
-        .flatMap((section) => {
+    ? formatList(
+        sections.flatMap((section) => {
           const count = selected.filter(section.has).length;
           return count ? [t("ticket.list.sectionCount", { n: count, section: section.label })] : [];
-        })
-        .join(", ")
+        }),
+      )
     : "";
   const source =
       project && (planning ? t("ticket.list.planning", { project: project.name }) : project.name),

@@ -7,7 +7,14 @@ import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { attachmentLimit, evidenceFields, type Ticket, type Output } from "@kanvil/contracts";
+import {
+  attachmentLimit,
+  evidenceFields,
+  evidenceKindLabels,
+  evidenceOutcomeLabels,
+  type Ticket,
+  type Output,
+} from "@kanvil/contracts";
 import { useConnection, useOperation } from "./data.tsx";
 import {
   Body,
@@ -157,7 +164,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
             }}
           />
           <Body muted>
-            {item.kind} · {item.outcome}
+            {evidenceKindLabels[item.kind]} · {evidenceOutcomeLabels[item.outcome]}
             {item.commit ? ` · ${item.commit}` : ""}
           </Body>
           <Markdown>{item.note}</Markdown>
@@ -184,15 +191,18 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
           label={t("common.filterField.kind")}
           value={kind}
           onChange={setKind}
-          options={evidenceFields.shape.kind.options.map((value) => ({ value, label: value }))}
+          options={evidenceFields.shape.kind.options.map((value) => ({
+            value,
+            label: evidenceKindLabels[value],
+          }))}
         />
         <Choice
           label={t("native.evidence.outcome")}
           value={outcome}
           onChange={setOutcome}
-          options={["reported", "pending", "passed", "failed"].map((value) => ({
+          options={evidenceFields.shape.outcome.unwrap().options.map((value) => ({
             value,
-            label: value,
+            label: evidenceOutcomeLabels[value],
           }))}
         />
         <Field

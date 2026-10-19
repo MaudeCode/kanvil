@@ -25,7 +25,7 @@ import {
   type FilterField,
   type FilterOperator,
 } from "@kanvil/contracts";
-import { labelTable, t } from "@kanvil/contracts/i18n";
+import { labelTable, t, formatList } from "@kanvil/contracts/i18n";
 import { api, ActorName, useIdentity } from "../data.tsx";
 import {
   Button,
@@ -455,8 +455,8 @@ function FilterPicker({
           <span className="truncate">
             {names.length
               ? operator === "none"
-                ? t("ticket.filter.notValues", { values: names.join(", ") })
-                : names.join(", ")
+                ? t("ticket.filter.notValues", { values: formatList(names) })
+                : formatList(names)
               : fieldText[field].any}
           </span>
           <ChevronsUpDown className="shrink-0" />

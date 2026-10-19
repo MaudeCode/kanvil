@@ -38,6 +38,8 @@ import {
   resourceHost,
   type Output,
   type Ticket,
+  evidenceKindLabels,
+  evidenceOutcomeLabels,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { api, ActorName, useOperation, useProjectAccess } from "./data.tsx";
@@ -325,7 +327,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
               badges={
                 <>
                   <Badge variant="outline" className="ml-2">
-                    {t(`detail.evidence.kind.${item.kind}`)}
+                    {evidenceKindLabels[item.kind]}
                   </Badge>
                   <Badge
                     variant="outline"
@@ -336,7 +338,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
                     )}
                     data-outcome={item.outcome}
                   >
-                    {t(`detail.evidence.outcome.${item.outcome}`)}
+                    {evidenceOutcomeLabels[item.outcome]}
                   </Badge>
                 </>
               }
@@ -394,14 +396,14 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
             <Select label={t("detail.evidence.kindLabel")} name="kind">
               {evidenceFields.shape.kind.options.map((kind) => (
                 <SelectItem key={kind} value={kind}>
-                  {t(`detail.evidence.kind.${kind}`)}
+                  {evidenceKindLabels[kind]}
                 </SelectItem>
               ))}
             </Select>
             <Select label={t("detail.evidence.outcomeLabel")} name="outcome">
               {evidenceFields.shape.outcome.unwrap().options.map((outcome) => (
                 <SelectItem key={outcome} value={outcome}>
-                  {t(`detail.evidence.outcome.${outcome}`)}
+                  {evidenceOutcomeLabels[outcome]}
                 </SelectItem>
               ))}
             </Select>

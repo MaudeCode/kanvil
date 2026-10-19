@@ -4,6 +4,7 @@ import {
   formatTimestamp,
   kindLabels,
   priorityLabels,
+  readinessReasonText,
 } from "@kanvil/contracts";
 import { formatDate, t } from "@kanvil/contracts/i18n";
 import { createHeaderAction } from "./navigation-actions.tsx";
@@ -155,7 +156,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
         </Body>
         {readiness.reasons.map((item, index) => (
           <Body key={`${item.code}:${index}`} muted>
-            • {item.message}
+            • {readinessReasonText(item, claim?.workerId)}
           </Body>
         ))}
         {ticket.holdReason && (

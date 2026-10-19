@@ -21,7 +21,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Trans } from "react-i18next";
-import { type Ticket, ApiError } from "@kanvil/contracts";
+import { type Ticket, ApiError, readinessReasonText } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { api, date, ActorName, useProjectAccess, useOperation } from "./data.tsx";
 import {
@@ -496,7 +496,9 @@ export function TicketDetail({
             </p>
             <ul>
               {readiness.reasons.map((reason, index) => (
-                <li key={`${reason.code}:${index}`}>{reasonText(reason, claim?.workerId)}</li>
+                <li key={`${reason.code}:${index}`}>
+                  {readinessReasonText(reason, claim?.workerId)}
+                </li>
               ))}
             </ul>
             {ticket.holdReason && (
@@ -543,22 +545,6 @@ export function TicketDetail({
 }
 // Reasons the server names by code read in the interface language. A hold is the ticket's own
 // text, and a dependency's message names its blocker, so those keep the server's wording.
-const knownReasons = [
-  "project_archived",
-  "not_open",
-  "not_enabled",
-  "missing_description",
-  "missing_acceptance_criteria",
-  "missing_difficulty",
-  "duplicate",
-  "claim_recovery_required",
-] as const;
-function reasonText(reason: { code: string; message: string }, worker: string | undefined) {
-  const code = knownReasons.find((known) => known === reason.code);
-  if (code) return t(`detail.readiness.reason.${code}`);
-  if (reason.code === "claimed" && worker) return t("detail.readiness.reason.claimed", { worker });
-  return reason.message;
-}
 function ClaimActions({
   ticket,
   claim,

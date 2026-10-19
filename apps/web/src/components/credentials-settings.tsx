@@ -49,7 +49,7 @@ import {
 import { DatePicker, credentialExpiry } from "./date-picker.tsx";
 import { copyText } from "../lib/browser.ts";
 import { formText } from "../forms.ts";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatList } from "@kanvil/contracts/i18n";
 
 // Key lifetimes in days; 90 matches the server default. No expiry is only an explicit choice.
 const expiryChoices = ["7", "30", "90", "365", "custom", "never"] as const;
@@ -159,16 +159,16 @@ export function Credentials() {
                     <span className="text-sm">
                       {access.permissions.length === 1 && access.permissions[0] === "read"
                         ? t("settings.credentials.preset.read")
-                        : access.permissions
-                            .map((scope) => permissionText(scope).name)
-                            .join(", ") || t("settings.credentials.custom")}
+                        : formatList(
+                            access.permissions.map((scope) => permissionText(scope).name),
+                          ) || t("settings.credentials.custom")}
                     </span>
                   </TableCell>
                   <TableCell
                     data-label={t("settings.credentials.projects")}
                     className="max-w-64 whitespace-normal"
                   >
-                    {projectNames.join(", ") || t("settings.credentials.noProjects")}
+                    {formatList(projectNames) || t("settings.credentials.noProjects")}
                   </TableCell>
                   <TableCell
                     data-label={t("settings.credentials.expires")}

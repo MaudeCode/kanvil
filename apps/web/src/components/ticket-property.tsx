@@ -40,7 +40,7 @@ import {
   type WorkflowState,
 } from "@kanvil/contracts";
 import { format, parseISO } from "date-fns";
-import { labelTable, t } from "@kanvil/contracts/i18n";
+import { formatList, labelTable, t } from "@kanvil/contracts/i18n";
 import {
   api,
   useIdentity,
@@ -552,7 +552,7 @@ export function TagsProperty({
             mixed
               ? t("ticket.tags.editMixed", { label })
               : current.length
-                ? t("ticket.tags.editValues", { label, tags: current.join(", ") })
+                ? t("ticket.tags.editValues", { label, tags: formatList(current) })
                 : t("ticket.tags.edit", { label })
           }
         />

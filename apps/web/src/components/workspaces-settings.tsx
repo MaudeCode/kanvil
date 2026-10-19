@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { AccessRow } from "./account-details.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { InvitationList } from "./invitations.tsx";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatList } from "@kanvil/contracts/i18n";
 const size = 25;
 export function WorkspacesSettings() {
   const [query, setQuery] = useState(""),
@@ -112,7 +112,7 @@ export function WorkspacesSettings() {
                     className="text-xs wrap-anywhere whitespace-normal"
                   >
                     {space.administrators.length ? (
-                      space.administrators.map((admin) => admin.name).join(", ")
+                      formatList(space.administrators.map((admin) => admin.name))
                     ) : (
                       <Badge variant="destructive">
                         {t("settings.workspaces.noAdministrator")}

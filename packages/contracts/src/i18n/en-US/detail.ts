@@ -65,18 +65,6 @@ export default {
     notReady: "Not ready to claim",
     hold: "Hold: {{reason}}",
     claimedUntil: "Claimed by <strong>{{worker}}</strong> until {{date}}.",
-    // Keyed by the server's reason code.
-    reason: {
-      project_archived: "The project is archived",
-      not_open: "Ticket must be in a To do state and unarchived",
-      not_enabled: "Agent work has not been enabled",
-      missing_description: "Add a description",
-      missing_acceptance_criteria: "Add acceptance criteria",
-      missing_difficulty: "Choose a difficulty",
-      duplicate: "This ticket is marked as a duplicate",
-      claim_recovery_required: "Confirm the previous worker stopped before recovering ownership",
-      claimed: "Claimed by {{worker}}",
-    },
   },
   claim: {
     release: "Release my claim",
@@ -147,20 +135,6 @@ export default {
     outcomeLabel: "Reported outcome",
     commit: "Commit (full hash)",
     note: "Note",
-    kind: {
-      pull_request: "Pull request",
-      test: "Test",
-      review: "Review",
-      deployment: "Deployment",
-      device: "Device",
-      other: "Other",
-    },
-    outcome: {
-      reported: "Reported",
-      pending: "Pending",
-      passed: "Passed",
-      failed: "Failed",
-    },
   },
   link: {
     heading: "Links",

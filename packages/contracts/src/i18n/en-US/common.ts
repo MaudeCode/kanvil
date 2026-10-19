@@ -286,6 +286,37 @@ export default {
     none: "None",
     unassigned: "Unassigned",
   },
+  evidenceKind: {
+    pull_request: "Pull request",
+    test: "Test",
+    review: "Review",
+    deployment: "Deployment",
+    device: "Device",
+    other: "Other",
+  },
+  evidenceOutcome: {
+    reported: "Reported",
+    pending: "Pending",
+    passed: "Passed",
+    failed: "Failed",
+  },
+  // Why a ticket is not ready for agent work, keyed by the server's reason code.
+  readinessReason: {
+    project_archived: "The project is archived",
+    not_open: "Ticket must be in a To do state and unarchived",
+    not_enabled: "Agent work has not been enabled",
+    missing_description: "Add a description",
+    missing_acceptance_criteria: "Add acceptance criteria",
+    missing_difficulty: "Choose a difficulty",
+    duplicate: "This ticket is marked as a duplicate",
+    claim_recovery_required: "Confirm the previous worker stopped before recovering ownership",
+    claimed: "Claimed by {{worker}}",
+    dependency: "{{key}} is unfinished",
+  },
+  person: {
+    deleted: "Deleted account",
+    former: "Former member",
+  },
   language: {
     label: "Language",
     system: "System default",

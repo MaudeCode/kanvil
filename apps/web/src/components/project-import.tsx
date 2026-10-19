@@ -16,7 +16,7 @@ import {
   type ImportSourceProject,
   type TicketExport,
 } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatList } from "@kanvil/contracts/i18n";
 import { api, useOperation } from "../data.tsx";
 import {
   Button,
@@ -434,8 +434,8 @@ function ImportPreview({ run }: { run: ImportRun }) {
       t(`admin.import.count.${key}`),
       run.counts[key] ? String(run.counts[key]) : "",
     ]),
-    [t("admin.import.matched"), matched.map((person) => person.name).join(", ")],
-    [t("admin.import.unmatched"), unmatched.map((person) => person.name).join(", ")],
+    [t("admin.import.matched"), formatList(matched.map((person) => person.name))],
+    [t("admin.import.unmatched"), formatList(unmatched.map((person) => person.name))],
   ];
   return (
     <section aria-label={t("admin.import.previewLabel")} className="mt-2 border-t pt-3">

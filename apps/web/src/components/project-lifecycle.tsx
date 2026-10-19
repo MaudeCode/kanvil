@@ -5,7 +5,6 @@ import { Archive, ArchiveRestore, ArrowRightLeft, Download, LogIn, Trash2 } from
 import { toast } from "sonner";
 import {
   ApiError,
-  deletedAccountName,
   type AccountImpact,
   type Project,
   type ProjectImpact,
@@ -29,7 +28,7 @@ import {
   reportError,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatList } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
 
 function useArchive(project: Project) {
@@ -114,7 +113,7 @@ export function ArchiveProjectRow({ project }: { project: Project }) {
     </SettingRow>
   );
 }
-const names = (people: { name: string }[]) => people.map((person) => person.name).join(", ");
+const names = (people: { name: string }[]) => formatList(people.map((person) => person.name));
 type ImpactRows = [string, ReactNode][];
 // What a deletion or move changes, as its impact preview reports it; blockers come first.
 function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
@@ -138,7 +137,7 @@ function ImpactSummary<T extends Pick<ProjectImpact, "blockers">>({
               blocker.tickets.length
                 ? t("settings.lifecycle.blocker", {
                     message: blocker.message,
-                    tickets: blocker.tickets.join(", "),
+                    tickets: formatList(blocker.tickets),
                   })
                 : blocker.message,
             )
@@ -181,8 +180,8 @@ const projectRows =
             t("settings.lifecycle.row.gainsAccess"),
             names(impact.transfer.gainingAccess) || t("settings.lifecycle.noOne"),
           ],
-          [t("settings.lifecycle.row.labelsCopied"), impact.transfer.copiedLabels.join(", ")],
-          [t("settings.lifecycle.row.labelsMerged"), impact.transfer.mergedLabels.join(", ")],
+          [t("settings.lifecycle.row.labelsCopied"), formatList(impact.transfer.copiedLabels)],
+          [t("settings.lifecycle.row.labelsMerged"), formatList(impact.transfer.mergedLabels)],
           [
             t("settings.lifecycle.row.followsRemoved"),
             impact.transfer.subscriptions ? String(impact.transfer.subscriptions) : "",
@@ -528,15 +527,15 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   );
 }
 export const signInMethods = (providers: readonly string[]) =>
-  providers
-    .map((provider) =>
+  formatList(
+    providers.map((provider) =>
       provider === "credential"
         ? t("settings.account.localPassword")
         : provider === "oidc"
           ? "OIDC"
           : provider,
-    )
-    .join(", ") || t("settings.lifecycle.noSignInMethods");
+    ),
+  ) || t("settings.lifecycle.noSignInMethods");
 const accountRows = (impact: AccountImpact): ImpactRows => [
   [t("settings.lifecycle.row.signIn"), signInMethods(impact.providers)],
   [
@@ -577,7 +576,7 @@ const accountRows = (impact: AccountImpact): ImpactRows => [
       tickets: t("settings.tickets", { count: impact.tickets }),
       comments: t("settings.lifecycle.commentCount", { count: impact.comments }),
       events: t("settings.lifecycle.activityCount", { count: impact.events }),
-      name: deletedAccountName,
+      name: t("common.person.deleted"),
     }),
   ],
 ];
@@ -603,7 +602,7 @@ export function DeleteAccountRow({
       description={t(
         own ? "settings.lifecycle.deleteOwnAccount" : "settings.lifecycle.deleteOtherAccount",
         {
-          name: deletedAccountName,
+          name: t("common.person.deleted"),
         },
       )}
       label={t("settings.lifecycle.deleteAccount")}

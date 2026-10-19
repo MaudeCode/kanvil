@@ -159,6 +159,7 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
           code: "dependency",
           message: `${dependency.key} is unfinished`,
           ticketId: dependency.id,
+          ticketKey: dependency.key,
         });
       }
     if (duplicates.some((row) => row.sourceId === ticket.id))

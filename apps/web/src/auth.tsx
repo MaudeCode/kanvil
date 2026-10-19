@@ -4,7 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { okSchema, roleLabels } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
-import { t } from "@kanvil/contracts/i18n";
+import { formatList, t } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
 import { z } from "zod";
 import { useNavigate } from "@tanstack/react-router";
@@ -358,7 +358,7 @@ export function AcceptInvitation({ token }: { token: string }) {
             <dd className="m-0">
               {roleLabels[data.role]} ·{" "}
               {data.projects
-                ? data.projects.map((project) => project.name).join(", ") ||
+                ? formatList(data.projects.map((project) => project.name)) ||
                   t("shell.auth.invitation.removedProjects")
                 : t("shell.auth.invitation.wholeWorkspace")}
             </dd>

@@ -5,6 +5,7 @@ import {
   activeLocale,
   defaultLocale,
   formatDate,
+  formatList,
   formatNumber,
   labelTable,
   t,
@@ -275,7 +276,7 @@ export function formatCustomFieldValue(
       return value === true ? t("common.customField.checked") : "";
     case "select":
     case "multiselect":
-      return optionNames(field, value).join(", ");
+      return formatList(optionNames(field, value));
     default:
       return String(value);
   }
@@ -319,7 +320,35 @@ const projectKey = z
   .trim()
   .regex(/^[A-Z][A-Z0-9]{1,9}$/);
 // Why a ticket is not ready, or cannot move; `ticketId` names the related ticket involved.
-const reason = z.object({ code: z.string(), message: z.string(), ticketId: z.uuid().optional() });
+const readinessCodes = [
+  "project_archived",
+  "not_open",
+  "not_enabled",
+  "missing_description",
+  "missing_acceptance_criteria",
+  "missing_difficulty",
+  "duplicate",
+  "claim_recovery_required",
+] as const;
+// A readiness reason in the interface language; codes without wording keep the server's message.
+export function readinessReasonText(
+  reason: { code: string; message: string; ticketKey?: string | undefined },
+  worker?: string,
+) {
+  const code = readinessCodes.find((known) => known === reason.code);
+  if (code) return t(`common.readinessReason.${code}`);
+  if (reason.code === "claimed" && worker) return t("common.readinessReason.claimed", { worker });
+  if (reason.code === "dependency" && reason.ticketKey)
+    return t("common.readinessReason.dependency", { key: reason.ticketKey });
+  return reason.message;
+}
+const reason = z.object({
+  code: z.string(),
+  message: z.string(),
+  ticketId: z.uuid().optional(),
+  // The related ticket's key, so clients can word the reason themselves.
+  ticketKey: z.string().optional(),
+});
 const projectRef = z.object({ id: z.uuid(), key: z.string(), name: z.string() });
 // Filterable ticket fields. Each takes one value or a list (any of them), and its `Not` twin
 // excludes values; the filters combine with AND. A legacy single value parses to a one-item list,
@@ -611,7 +640,8 @@ export const workspaceImpactSchema = projectImpactSchema.omit({ transfer: true }
   labels: count,
 });
 export type WorkspaceImpact = z.output<typeof workspaceImpactSchema>;
-// Deleted accounts keep their ID on the history they wrote and show under this name.
+// Deleted accounts keep their ID on the history they wrote and the server stores this name on
+// their tombstone; clients show `common.person.deleted` in the interface language.
 export const deletedAccountName = "Deleted account";
 // The name every client shows for an account ID on tickets and activity: a current member's name,
 // `Deleted account` for an ID from list_deleted_accounts, and otherwise someone who left.
@@ -622,7 +652,7 @@ export function memberName(
 ) {
   return (
     people?.find((person) => person.userId === userId)?.name ??
-    (deleted?.includes(userId) ? deletedAccountName : "Former member")
+    (deleted?.includes(userId) ? t("common.person.deleted") : t("common.person.former"))
   );
 }
 // What deleting an account removes, and the history that stays attributed to its tombstone.
@@ -772,6 +802,13 @@ export const evidenceFields = z.object({
   outcome: z.enum(["reported", "pending", "passed", "failed"]).default("reported"),
   note: z.string().max(20_000).default(""),
 });
+export const evidenceKindLabels = labelTable(evidenceFields.shape.kind.options, (kind) =>
+  t(`common.evidenceKind.${kind}`),
+);
+export const evidenceOutcomeLabels = labelTable(
+  evidenceFields.shape.outcome.unwrap().options,
+  (outcome) => t(`common.evidenceOutcome.${outcome}`),
+);
 export const evidenceSchema = evidenceFields.extend({
   id: z.uuid(),
   projectId: z.uuid(),

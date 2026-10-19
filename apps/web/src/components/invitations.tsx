@@ -26,7 +26,7 @@ import {
 } from "../ui.tsx";
 import { Item, ItemActions, ItemContent, ItemGroup } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatList } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
 
 const lifetimes = [1, 7, 14, 30] as const;
@@ -79,7 +79,7 @@ export function InvitationList({ workspaceId }: { workspaceId: string }) {
                   <span>
                     {roleLabels[invitation.role]} ·{" "}
                     {invitation.projects
-                      ? invitation.projects.map((project) => project.name).join(", ") ||
+                      ? formatList(invitation.projects.map((project) => project.name)) ||
                         t("settings.invitations.removedProjects")
                       : t("settings.invitations.wholeWorkspace")}
                   </span>

@@ -21,7 +21,7 @@ import {
 import { SettingRow } from "./settings-layout.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { AccentColorPicker } from "./accent-color-picker.tsx";
-import { t } from "@kanvil/contracts/i18n";
+import { formatList, t } from "@kanvil/contracts/i18n";
 
 // The project keys a `label_conflict` names; the workspace label can adopt their definitions.
 function conflictingProjects(error: unknown) {
@@ -263,7 +263,7 @@ export function LabelSettings({
               <Check
                 label={t("settings.labels.adopt")}
                 description={t("settings.labels.adoptDescription", {
-                  projects: conflicts.join(", "),
+                  projects: formatList(conflicts),
                 })}
                 checked={draft.adopt}
                 onCheckedChange={(adopt) => setDraft({ ...draft, adopt })}

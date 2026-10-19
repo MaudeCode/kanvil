@@ -192,6 +192,9 @@ const dateFormats = perLocale(
   numberFormats = perLocale(
     (locale, options: Intl.NumberFormatOptions) => new Intl.NumberFormat(locale, options),
   ),
+  listFormats = perLocale(
+    (locale, options: Intl.ListFormatOptions) => new Intl.ListFormat(locale, options),
+  ),
   relativeFormats = perLocale(
     (locale, options: Intl.RelativeTimeFormatOptions) =>
       new Intl.RelativeTimeFormat(locale, options),
@@ -204,6 +207,11 @@ export const formatDate = (
 ): string => dateFormat(options).format(new Date(value));
 export const formatNumber = (value: number, options: Intl.NumberFormatOptions = {}): string =>
   numberFormats(options).format(value);
+// "a, b, c" with the language's own separators. Runtimes without `Intl.ListFormat` join with commas.
+export const formatList = (values: readonly string[]): string =>
+  typeof Intl.ListFormat === "function"
+    ? listFormats({ type: "unit", style: "short" }).format(values)
+    : values.join(", ");
 const relativeUnits: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 31_536_000],
   ["month", 2_592_000],
