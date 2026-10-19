@@ -759,8 +759,8 @@ function ProjectPage() {
       key={project.id}
       scope={{ project }}
       search={search}
-      onSearch={(next) => {
-        void navigate({ search: next, replace: true });
+      onSearch={(next, push) => {
+        void navigate({ search: next, replace: !push });
       }}
     />
   ) : projects.isPending ? (
@@ -784,8 +784,8 @@ function MyWorkPage() {
       key={workspace.active.id}
       scope={{ workspaceId: workspace.active.id }}
       search={search}
-      onSearch={(next) => {
-        void navigate({ search: next, replace: true });
+      onSearch={(next, push) => {
+        void navigate({ search: next, replace: !push });
       }}
     />
   ) : workspace.pending ? (

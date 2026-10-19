@@ -1,8 +1,8 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import {
   useTable,
@@ -71,6 +71,8 @@ import {
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { TicketEditor } from "./ticket-editor.tsx";
+import { TicketDetail } from "./ticket-detail.tsx";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { writeListOrder } from "./lib/list-order.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { cn } from "@/lib/utils";
@@ -331,13 +333,16 @@ function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }
 export type TicketListScope = { project: Project } | { workspaceId: string };
 export function TicketList({
   scope,
-  search,
+  search: route,
   onSearch,
 }: {
   scope: TicketListScope;
   search: TicketSearch;
-  onSearch: (next: TicketSearch) => void;
+  // Pushes a history entry when `push` is set; filter changes replace the current one.
+  onSearch: (next: TicketSearch, push?: boolean) => void;
 }) {
+  // The previewed ticket rides in the URL beside the filters but never changes what the list loads.
+  const { peek, ...search } = route;
   const project = "project" in scope ? scope.project : undefined;
   const projectAccess = useProjectAccess(project?.id ?? "", !!project);
   // My work spans projects: rows edit inline through their own project's access, and
@@ -547,8 +552,35 @@ export function TicketList({
   useEffect(() => {
     if (!loading && project) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
   }, [loading, project, orderKey]);
-  // Keyboard highlight: J/K or arrows move it, Enter opens, X selects, S/P/A edit a property.
-  const [active, setActive] = useState<string | null>(null);
+  // Keyboard highlight: J/K or arrows move it, Enter opens, Space previews, X selects, S/P/A edit
+  // a property.
+  const [active, setActive] = useState<string | null>(peek ?? null);
+  // The preview keeps the project of the row that opened it, so My work can still show a ticket
+  // whose row leaves the list after an edit.
+  const [preview, setPreview] = useState<
+    { id: string; projectId?: string | undefined } | undefined
+  >(peek ? { id: peek } : undefined);
+  if (peek && peek !== preview?.id) {
+    setPreview({ id: peek, projectId: latest.get(peek)?.projectId });
+    setActive(peek);
+  } else if (preview && !preview.projectId && latest.has(preview.id))
+    setPreview({ ...preview, projectId: latest.get(preview.id)?.projectId });
+  const previewProject = project?.id ?? preview?.projectId;
+  const router = useRouter();
+  // Closing a preview this list opened steps back over its history entry, so Back and Escape agree.
+  const pushedPreview = useRef(false);
+  const showPreview = (id: string, push: boolean) => {
+    setPreview({ id, projectId: latest.get(id)?.projectId });
+    setActive(id);
+    if (push) pushedPreview.current = true;
+    onSearch({ ...route, peek: id }, push);
+  };
+  const closePreview = () => {
+    if (pushedPreview.current) {
+      pushedPreview.current = false;
+      router.history.back();
+    } else onSearch({ ...route, peek: undefined });
+  };
   useEffect(() => {
     if (active)
       document
@@ -566,7 +598,7 @@ export function TicketList({
         : Math.min(orderedIds.length - 1, Math.max(0, index + delta));
     setActive(orderedIds[next] ?? null);
   };
-  const rowKeys = { enabled: !creating };
+  const rowKeys = { enabled: !creating && !peek };
   // Enter and the arrows keep their default on focused links, buttons, and pickers, except
   // inside the highlighted row, where a closed picker still has focus after Escape.
   const navKeys = {
@@ -591,6 +623,13 @@ export function TicketList({
           to: "/projects/$projectId/tickets/$ticketId",
           params: { projectId: ticket.projectId, ticketId: ticket.id },
         });
+    },
+    navKeys,
+  );
+  useShortcut(
+    " ",
+    () => {
+      if (active && latest.has(active)) showPreview(active, true);
     },
     navKeys,
   );
@@ -927,7 +966,11 @@ export function TicketList({
                   )}
                   {(!grouped || !collapsed.has(section.id)) &&
                     sectionRows(section).map((row) => (
-                      <TicketContextMenu key={row.id} ticket={row.original}>
+                      <TicketContextMenu
+                        key={row.id}
+                        ticket={row.original}
+                        onPreview={() => showPreview(row.id, true)}
+                      >
                         <TableRow
                           className="ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60 data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]"
                           role="row"
@@ -992,6 +1035,51 @@ export function TicketList({
           {tickets.data.total} tickets
         </footer>
       )}
+      <Sheet
+        open={!!peek}
+        onOpenChange={(open) => {
+          if (!open) closePreview();
+        }}
+      >
+        <SheetContent
+          aria-label="Ticket preview"
+          showCloseButton={false}
+          // The list stays readable beside the preview, so the backdrop only dims it.
+          overlayClassName="supports-backdrop-filter:backdrop-blur-none"
+          className="w-full! gap-0 outline-none sm:max-w-[960px]!"
+          // Focus returns to the row of the ticket last shown, which J and K may have changed.
+          finalFocus={() =>
+            (preview &&
+              document.querySelector<HTMLElement>(
+                `tr[data-id="${CSS.escape(preview.id)}"] .ticket-title`,
+              )) ??
+            true
+          }
+        >
+          <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-8 max-[650px]:px-4">
+            {preview &&
+              (previewProject ? (
+                <TicketDetail
+                  key={preview.id}
+                  projectId={previewProject}
+                  ticketId={preview.id}
+                  preview={{
+                    order: orderedIds,
+                    open: (id) => showPreview(id, false),
+                    close: closePreview,
+                  }}
+                />
+              ) : loading ? (
+                <Loading />
+              ) : (
+                <EmptyState title="Ticket unavailable">
+                  <p>This ticket is no longer in this list.</p>
+                  <Button onClick={closePreview}>Close preview</Button>
+                </EmptyState>
+              ))}
+          </div>
+        </SheetContent>
+      </Sheet>
       <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
         {creating && project && (
           <TicketEditor projectId={project.id} onSaved={() => setCreating(false)} />

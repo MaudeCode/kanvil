@@ -18,6 +18,11 @@ export const actions = {
     category: "Ticket list",
   },
   open: { label: "Open the highlighted ticket", keys: "↵", category: "Ticket list" },
+  preview: {
+    label: "Preview the highlighted ticket beside the list",
+    keys: "Space",
+    category: "Ticket list",
+  },
   select: { label: "Select the highlighted ticket", keys: "X", category: "Ticket list" },
   properties: {
     label: "Set status, priority, or assignee of the highlighted ticket",
