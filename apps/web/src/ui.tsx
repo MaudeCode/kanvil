@@ -284,6 +284,35 @@ export function ErrorNotice({ error }: { error: unknown }) {
     </Alert>
   ) : null;
 }
+// Offset pagination for server-paged admin directories; hidden while everything fits on one page.
+export function Pager({
+  noun,
+  offset,
+  total,
+  size,
+  onChange,
+}: {
+  noun: string;
+  offset: number;
+  total: number;
+  size: number;
+  onChange: (offset: number) => void;
+}) {
+  if (total <= size && !offset) return null;
+  return (
+    <footer className="mt-5 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground [&>span]:mr-auto">
+      <Button disabled={!offset} onClick={() => onChange(Math.max(0, offset - size))}>
+        Previous {noun}
+      </Button>
+      <span>
+        {offset + 1}–{Math.min(offset + size, total)} of {total}
+      </span>
+      <Button disabled={offset + size >= total} onClick={() => onChange(offset + size)}>
+        Next {noun}
+      </Button>
+    </footer>
+  );
+}
 export function Loading() {
   return (
     <div role="status" className="space-y-4 py-5">

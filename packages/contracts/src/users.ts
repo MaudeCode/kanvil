@@ -25,3 +25,25 @@ export const accountDetailsSchema = accountSchema.extend({
 });
 export const localPasswordSchema = z.object({ password: z.string().min(12).max(128) }).strict();
 export type ManagedAccount = z.output<typeof accountSchema>;
+export const adminWorkspaceQuerySchema = accountQuerySchema.pick({
+  q: true,
+  limit: true,
+  offset: true,
+});
+export const adminWorkspacesSchema = z.object({
+  workspaces: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      slug: z.string(),
+      createdAt: z.iso.datetime(),
+      memberCount: z.number().int().nonnegative(),
+      projectCount: z.number().int().nonnegative(),
+      administrators: z.array(
+        accountSchema.pick({ id: true, name: true, email: true, image: true }),
+      ),
+    }),
+  ),
+  total: z.number().int().nonnegative(),
+});
+export type AdminWorkspace = z.output<typeof adminWorkspacesSchema>["workspaces"][number];

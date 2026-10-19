@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn, useEmailLogin } from "./auth.ts";
+import { ownerEmail, signIn, useEmailLogin } from "./auth.ts";
 import { accountMenu, choose, openSearch } from "./controls.ts";
 
 test("account management supports workspace access, profile edits, password reset, and suspension", async ({
@@ -185,4 +185,72 @@ test("role changes discard cached administrator-only project data", async ({ pag
   } finally {
     await context.close();
   }
+});
+
+test("the workspace directory lists every workspace and manages members the administrator does not share", async ({
+  page,
+  browser,
+}) => {
+  await signIn(page);
+  const origin = new URL(page.url()).origin,
+    email = "riley@outside.test",
+    password = "Outside workspace password 234!";
+  expect(
+    (
+      await page.request.post("/api/auth/admin/create-user", {
+        headers: { Origin: origin },
+        data: { name: "Riley Outsider", email, password, role: "user" },
+      })
+    ).ok(),
+  ).toBe(true);
+  const context = await browser.newContext({ baseURL: origin });
+  try {
+    expect(
+      (
+        await context.request.post("/api/auth/sign-in/email", {
+          headers: { Origin: origin },
+          data: { email, password },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect(
+      (
+        await context.request.post("/api/v1/workspaces", {
+          headers: { Origin: origin },
+          data: { name: "Outside workspace", slug: "outside-workspace" },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect((await context.request.get("/api/v1/admin/workspaces")).status()).toBe(403);
+  } finally {
+    await context.close();
+  }
+  await page.goto("/admin?section=workspaces");
+  await (await openSearch(page, "Search workspaces")).fill("outside");
+  const row = page.getByRole("row", { name: /Outside workspace/ });
+  await expect(row).toContainText("outside-workspace");
+  await expect(row).toContainText("Riley Outsider");
+  await expect(row.getByRole("cell", { name: "1", exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "Manage Outside workspace", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Outside workspace", exact: true });
+  await expect(sheet.locator(".member-row").filter({ hasText: email })).toBeVisible();
+  await expect(sheet.getByText("No projects", { exact: true })).toBeVisible();
+  await sheet.getByRole("button", { name: "Add member", exact: true }).click();
+  const adding = page.getByRole("dialog", { name: "Add member", exact: true });
+  await adding.getByRole("combobox", { name: "Account", exact: true }).click();
+  await page.getByRole("combobox", { name: "Search accounts", exact: true }).fill(ownerEmail);
+  await page.getByRole("option", { name: `Use ${ownerEmail}`, exact: true }).click();
+  await choose(page, "Workspace role", "Read only");
+  await adding.getByRole("button", { name: "Add member", exact: true }).click();
+  await expect(adding).toHaveCount(0);
+  await expect(sheet.locator(".member-row").filter({ hasText: ownerEmail })).toBeVisible();
+  await choose(page, "Role for Riley Outsider", "Can edit");
+  await expect(sheet.getByRole("alert")).toContainText("Keep at least one workspace administrator");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(row.getByRole("cell", { name: "2", exact: true })).toBeVisible();
+  await page
+    .getByRole("searchbox", { name: "Search workspaces", exact: true })
+    .fill("no-such-space");
+  await expect(page.getByText("No matching workspaces", { exact: true })).toBeVisible();
 });

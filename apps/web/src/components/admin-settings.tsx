@@ -32,6 +32,7 @@ import { FieldSet } from "@/components/ui/field";
 import { InstanceOverview } from "./instance-overview.tsx";
 import { SettingRow, SettingsLayout, SettingsPanel } from "./settings-layout.tsx";
 import { UsersSettings } from "./users-settings.tsx";
+import { WorkspacesSettings } from "./workspaces-settings.tsx";
 import type { adminSections } from "../search.ts";
 const query = {
   queryKey: ["kanvil", "instance"],
@@ -612,6 +613,9 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
       </Modal>
       <SettingsPanel value="users">
         <UsersSettings />
+      </SettingsPanel>
+      <SettingsPanel value="workspaces">
+        <WorkspacesSettings />
       </SettingsPanel>
       <SettingsPanel value="authentication">
         <section>

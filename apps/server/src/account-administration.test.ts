@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
-import { accountsSchema, accountDetailsSchema } from "@kanvil/contracts/users";
+import {
+  accountsSchema,
+  accountDetailsSchema,
+  adminWorkspacesSchema,
+} from "@kanvil/contracts/users";
+import { requireRow } from "./domain.ts";
 
 describe("instance account administration", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -187,5 +192,88 @@ describe("instance account administration", () => {
         )
       ).status,
     ).toBe(403);
+  });
+  it("lists every workspace with counts and administrators, and lets instance administrators manage members they do not share", async () => {
+    const creator = requireRow(await application.domain.actor(person.id));
+    const space = await application.domain.execute(
+      "create_workspace",
+      { name: "Alpha operations", slug: "alpha-ops" },
+      creator,
+    );
+    await application.domain.execute(
+      "create_workspace",
+      { name: "Beta research", slug: "beta-research" },
+      creator,
+    );
+    const project = await application.domain.execute(
+      "create_project",
+      { workspaceId: space.id, key: "ALPHA", name: "Alpha project" },
+      creator,
+    );
+    const list = async (query: string, cookie = ownerCookie) => {
+      const response = await request(`/api/v1/admin/workspaces${query}`, "GET", undefined, cookie);
+      expect(response.status).toBe(200);
+      return adminWorkspacesSchema.parse(await response.json());
+    };
+    const alpha = await list("?q=alpha");
+    expect(alpha.total).toBe(1);
+    expect(alpha.workspaces[0]).toMatchObject({
+      id: space.id,
+      slug: "alpha-ops",
+      memberCount: 1,
+      projectCount: 1,
+      administrators: [{ id: person.id, email: person.email }],
+    });
+    expect(JSON.stringify(alpha)).not.toMatch(/password|token|role/);
+    expect((await list("?q=beta-res")).workspaces.map((row) => row.slug)).toEqual([
+      "beta-research",
+    ]);
+    const all = await list("");
+    const paged = await list("?limit=1&offset=1");
+    expect(paged.total).toBe(all.total);
+    expect(paged.workspaces.map((row) => row.id)).toEqual([all.workspaces[1]?.id]);
+    expect(await list("?q=100%25")).toEqual({ workspaces: [], total: 0 });
+
+    // An instance administrator outside the workspace manages it through the shared operations.
+    const members = `/api/v1/workspaces/${space.id}/members`;
+    expect((await request(members)).status).toBe(200);
+    expect((await request(members, "POST", { email: peer.email, role: "writer" })).status).toBe(
+      200,
+    );
+    expect((await request(members, "POST", { email: person.email, role: "writer" })).status).toBe(
+      409,
+    );
+    expect((await list("?q=alpha")).workspaces[0]?.memberCount).toBe(2);
+    expect(project.workspaceId).toBe(space.id);
+
+    // Ordinary accounts, project-bound credentials, and revoked administrators are refused.
+    const memberCookie = await login(person.email);
+    expect((await request("/api/v1/admin/workspaces", "GET", undefined, memberCookie)).status).toBe(
+      403,
+    );
+    const key = await fixture.auth.api.createApiKey({
+      body: {
+        userId: owner.id,
+        name: "Project-bound administrator key",
+        metadata: { projectIds: [project.id] },
+        permissions: { kanvil: ["admin"] },
+      },
+    });
+    const bearer = (path: string, method = "GET", body?: unknown) =>
+      application.app.fetch(
+        new Request(`http://localhost:5180${path}`, {
+          method,
+          headers: { Authorization: `Bearer ${key.key}`, "Content-Type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        }),
+      );
+    expect((await bearer("/api/v1/admin/workspaces")).status).toBe(403);
+    expect((await bearer(members, "POST", { email: owner.email, role: "admin" })).status).toBe(403);
+    expect(
+      (await request("/api/auth/admin/set-role", "POST", { userId: peer.id, role: "user" })).status,
+    ).toBe(200);
+    expect((await request("/api/v1/admin/workspaces", "GET", undefined, peerCookie)).status).toBe(
+      403,
+    );
   });
 });
