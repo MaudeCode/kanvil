@@ -34,7 +34,7 @@ No physical-device installation or runtime validation has been performed. Androi
 
 Real APNs/FCM delivery and notification-tap routing remain unvalidated. They require an Expo project and authorized push/signing configuration. Push is optional and disabled by default; ticket storage, login, Inbox, realtime, and MCP work without it.
 
-The reference mirror refreshes a full project snapshot when changes arrive. It is an example of consistent recovery, not an execution scheduler. Apps retain explicit local drafts; offline edits are not automatically submitted. Rich-text editing, custom workflow designers, and separate search/message-broker services remain outside the agreed initial scope.
+The reference mirror refreshes a full project snapshot when changes arrive. It is an example of consistent recovery, not an execution scheduler. Apps retain explicit local drafts; offline edits are not automatically submitted. Custom workflow designers and separate search/message-broker services remain outside the agreed initial scope; the web Visual editor stores canonical Markdown.
 
 ## Interface redesign
 

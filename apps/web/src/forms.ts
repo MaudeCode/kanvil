@@ -12,8 +12,10 @@ export function submitOnModEnter(event: KeyboardEvent<HTMLFormElement>) {
     event.defaultPrevented
   )
     return;
-  const form = event.currentTarget;
-  if (form.querySelector('button[type="submit"]:disabled')) return;
   event.preventDefault();
-  form.requestSubmit();
+  submitForm(event.currentTarget);
+}
+// Submits like the form's own submit button, unless that button is disabled.
+export function submitForm(form: HTMLFormElement | null) {
+  if (form && !form.querySelector('button[type="submit"]:disabled')) form.requestSubmit();
 }

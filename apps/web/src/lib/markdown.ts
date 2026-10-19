@@ -146,3 +146,9 @@ export function toggleTask(source: string, offset: number, checked: boolean) {
   const box = offset + match[0].length - 2;
   return source.slice(0, box) + (checked ? "x" : " ") + source.slice(box + 1);
 }
+
+// The Markdown that embeds an uploaded file: images render inline, other files as a download link.
+export function fileMarkdown(file: { url: string; name: string; contentType: string }) {
+  const name = file.name.replaceAll(/[\\[\]]/g, "\\$&");
+  return `${file.contentType.startsWith("image/") ? "!" : ""}[${name}](${file.url})`;
+}

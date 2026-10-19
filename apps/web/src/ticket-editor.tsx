@@ -2,7 +2,8 @@ import { createTicketDraft, ticketDraftSchema, ticketDefaults } from "@kanvil/co
 import { useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ticketFields, type Ticket } from "@kanvil/contracts";
+import { ApiError, ticketFields, type Ticket } from "@kanvil/contracts";
+import { z } from "zod";
 import { api, useIdentity, useOperation } from "./data.tsx";
 import { Button, ErrorNotice, Input, Textarea, reportError, useModalBusy } from "./ui.tsx";
 import {
@@ -29,6 +30,7 @@ import { TagInput } from "./components/tag-input.tsx";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import { ProjectProperty, TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
 import { submitOnModEnter } from "./forms.ts";
+import { useInlineUpload } from "./ticket-resources.tsx";
 import { cn } from "@/lib/utils";
 
 type Fields = typeof ticketDefaults;
@@ -95,6 +97,7 @@ export function TicketEditor({
     [created, setCreated] = useState<string>();
   const create = useOperation("create_ticket"),
     update = useOperation("update_ticket"),
+    discard = useOperation("discard_upload"),
     cache = useQueryClient(),
     titleField = useRef<HTMLTextAreaElement>(null),
     submitting = useRef(false),
@@ -120,8 +123,15 @@ export function TicketEditor({
     } catch {
       /* Nothing to clear when storage is unavailable. */
     }
+    discardUploads(latest.current.uploads);
     setDraft(base);
     setSavedLocally(false);
+  }
+  // Staged files the ticket will not claim. Unclaimed uploads also expire on the server, so a
+  // failed discard needs no retry.
+  function discardUploads(ids: string[]) {
+    for (const uploadId of ids)
+      discard.mutateAsync({ projectId: target, uploadId }).catch(() => {});
   }
   const setFields = (change: Partial<Fields>) =>
     changeDraft({ ...latest.current, fields: { ...latest.current.fields, ...change } });
@@ -159,11 +169,25 @@ export function TicketEditor({
     pending = create.isPending || update.isPending,
     blocked = pending || stale || switching,
     automation = fields.automationReady || fields.scopes.length > 0 || !!fields.holdReason;
+  // Files embedded in a new ticket's text are staged in its project until it is created.
+  const inlineUpload = useInlineUpload(
+    target,
+    ticket
+      ? { ticketId: ticket.id }
+      : {
+          onStaged: (uploadId) =>
+            changeDraft({ ...latest.current, uploads: [...latest.current.uploads, uploadId] }),
+        },
+  );
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // The ref also stops a second ⌘↵ that lands before the pending state renders.
     if (blocked || submitting.current) return;
     const values = ticketFields.parse(fields);
+    // Only the staged files the text still embeds become attachments; removed ones are discarded.
+    const claimed = draft.uploads.filter(
+      (id) => fields.description.includes(id) || fields.acceptanceCriteria.includes(id),
+    );
     submitting.current = true;
     setModalBusy?.(true);
     try {
@@ -174,7 +198,13 @@ export function TicketEditor({
             expectedVersion: draft.version ?? ticket.version,
             changes: values,
           })
-        : await create.mutateAsync({ projectId: target, ...values });
+        : await create
+            .mutateAsync({ projectId: target, ...values, uploads: claimed })
+            .catch((error: unknown) => {
+              forgetExpired(error);
+              throw error;
+            });
+      if (!ticket) discardUploads(draft.uploads.filter((id) => !claimed.includes(id)));
       try {
         localStorage.removeItem(draftKey);
       } catch {
@@ -192,6 +222,7 @@ export function TicketEditor({
           current[key] === fields[key] ? "" : current[key],
         next = {
           ...latest.current,
+          uploads: latest.current.uploads.filter((id) => !draft.uploads.includes(id)),
           fields: {
             ...current,
             title: typed("title"),
@@ -217,12 +248,25 @@ export function TicketEditor({
       setModalBusy?.(false);
     }
   }
+  // An upload that expired or was discarded elsewhere cannot be claimed; drop it from the draft so
+  // the next attempt can create the ticket without it.
+  function forgetExpired(error: unknown) {
+    const missing =
+      error instanceof ApiError &&
+      z.object({ uploads: z.array(z.string()) }).safeParse(error.details).data?.uploads;
+    if (missing)
+      changeDraft({
+        ...latest.current,
+        uploads: latest.current.uploads.filter((id) => !missing.includes(id)),
+      });
+  }
   const pills = (
     <div className="-mt-3 flex flex-wrap items-center gap-1" aria-label="Ticket properties">
       {!ticket && (
         <ProjectProperty
           value={target}
-          disabled={pending}
+          // Staged files belong to this project, so the target stays while the draft has any.
+          disabled={pending || draft.uploads.length > 0}
           onChange={(next) => void changeProject(next).catch(reportError)}
         />
       )}
@@ -383,6 +427,7 @@ export function TicketEditor({
             rows={8}
             variant="document"
             placeholder="Add context, requirements, or a reproduction…"
+            onUpload={inlineUpload}
           />
           {criteriaOpen ? (
             <div className="relative">
@@ -394,6 +439,7 @@ export function TicketEditor({
                 variant="document"
                 maxLength={50000}
                 placeholder="- [ ] What will show that this is complete?"
+                onUpload={inlineUpload}
               />
               {!fields.acceptanceCriteria && (
                 <Button

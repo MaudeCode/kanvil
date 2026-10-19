@@ -56,6 +56,11 @@ export const actions = {
   edit: { label: "Edit ticket", keys: "E", category: "Ticket" },
   save: { label: "Save a ticket or comment", keys: "⌘ ↵", category: "Ticket" },
   results: { label: "Move through search results", keys: "J K", category: "Search" },
+  insertBlock: {
+    label: "Insert a table, diagram, file, or other block in the Visual editor",
+    keys: "/",
+    category: "Markdown",
+  },
 } satisfies Record<string, Action>;
 const markdownActions = markdownFormats.flatMap((format): Action[] => {
   const spec = formats[format];

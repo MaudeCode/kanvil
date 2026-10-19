@@ -1,5 +1,6 @@
 import { Pencil, Trash2, Send } from "lucide-react";
 import { MarkdownField } from "./components/markdown-field.tsx";
+import { useInlineUpload } from "./ticket-resources.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     else if (offset + 50 < comments.data.total) setOffset(offset + 50);
     else setSeeking(false);
   }
+  const inlineUpload = useInlineUpload(ticket.projectId, { ticketId: ticket.id });
   const add = useOperation("add_comment"),
     access = useProjectAccess(ticket.projectId);
   return (
@@ -88,6 +90,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
             required
             maxLength={50000}
             mentions={ticket.projectId}
+            onUpload={inlineUpload}
             placeholder="Write a comment…"
             footer={
               <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
@@ -117,6 +120,7 @@ function Comment({
   const identity = useIdentity(),
     access = useProjectAccess(comment.projectId),
     update = useOperation("update_comment"),
+    inlineUpload = useInlineUpload(comment.projectId, { ticketId: comment.ticketId }),
     remove = useOperation("delete_comment");
   const [editing, setEditing] = useState(false),
     [body, setBody] = useState(comment.body),
@@ -165,6 +169,7 @@ function Comment({
             required
             maxLength={50000}
             mentions={comment.projectId}
+            onUpload={inlineUpload}
             footer={
               <>
                 <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>

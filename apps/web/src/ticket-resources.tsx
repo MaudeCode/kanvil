@@ -32,6 +32,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   formatEvent,
   attachmentLimit,
+  attachmentPath,
   evidenceFields,
   resourceHost,
   type Output,
@@ -54,6 +55,7 @@ import {
   IconButton,
 } from "./ui.tsx";
 import { cn } from "@/lib/utils";
+import type { InlineUpload } from "./components/markdown-field.tsx";
 
 // One row for every ticket resource, so files, evidence, and links share layout and link styling.
 // Downloads stay in the tab; everything else opens externally.
@@ -129,6 +131,33 @@ const sizeFormat = new Intl.NumberFormat(undefined, {
   unit: "kilobyte",
   maximumFractionDigits: 1,
 });
+function checkFileSize(file: File) {
+  if (file.size > attachmentLimit) throw new Error("Choose files no larger than 10 MB each.");
+}
+const fileFields = async (file: File) => ({
+  name: file.name,
+  contentType: file.type || "application/octet-stream",
+  data: await blobToBase64(file),
+});
+// Uploads a file a Markdown field embeds. On an existing ticket it becomes an attachment at once;
+// before the ticket exists it is staged, `onStaged` records it, and creating the ticket claims it.
+export function useInlineUpload(
+  projectId: string,
+  target: { ticketId: string } | { onStaged: (uploadId: string) => void },
+): InlineUpload {
+  const upload = useOperation("upload_attachment"),
+    stage = useOperation("stage_upload");
+  return async (file) => {
+    checkFileSize(file);
+    const fields = await fileFields(file);
+    const row =
+      "ticketId" in target
+        ? await upload.mutateAsync({ projectId, ticketId: target.ticketId, ...fields })
+        : await stage.mutateAsync({ projectId, ...fields });
+    if ("onStaged" in target) target.onStaged(row.id);
+    return { url: attachmentPath(projectId, row.id), name: row.name, contentType: row.contentType };
+  };
+}
 export function Attachments({ ticket }: { ticket: Ticket }) {
   const items = useQuery(
       api.query("list_attachments", { projectId: ticket.projectId, ticketId: ticket.id }),
@@ -145,15 +174,12 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
     setError(undefined);
     setUploading(true);
     try {
-      if (files.some((item) => item.size > attachmentLimit))
-        throw new Error("Choose files no larger than 10 MB each.");
+      files.forEach(checkFileSize);
       for (const item of files)
         await upload.mutateAsync({
           projectId: ticket.projectId,
           ticketId: ticket.id,
-          name: item.name,
-          contentType: item.type || "application/octet-stream",
-          data: await blobToBase64(item),
+          ...(await fileFields(item)),
         });
       toast.success(files.length === 1 ? "File attached" : `${files.length} files attached`);
     } catch (cause) {
@@ -209,7 +235,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
             download
             key={item.id}
             icon={<FileText className="size-4 text-muted-foreground" />}
-            href={`/api/v1/projects/${ticket.projectId}/attachments/${item.id}/content`}
+            href={attachmentPath(ticket.projectId, item.id)}
             label={item.name}
             meta={sizeFormat.format(item.size / 1000)}
             metaId={`attachment-size-${item.id}`}

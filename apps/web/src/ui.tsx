@@ -1,6 +1,8 @@
 import {
   Children,
   createContext,
+  lazy,
+  Suspense,
   useContext,
   isValidElement,
   useId,
@@ -432,6 +434,18 @@ const nodeText = (node: MarkdownNode | MarkdownNode["children"][number]): string
     : node.type === "element" && !["ul", "ol"].includes(node.tagName)
       ? node.children.map(nodeText).join("")
       : "";
+// Highlighted code and Mermaid diagrams load on demand; until then a block renders as plain code.
+const MarkdownBlock = lazy(() => import("./components/markdown-blocks.tsx"));
+// The language a fenced block names, from the class its `code` element carries.
+function fenceLanguage(node: MarkdownNode | undefined) {
+  const code = node?.children[0];
+  if (code?.type !== "element" || code.tagName !== "code") return undefined;
+  const classes = code.properties.className;
+  return (Array.isArray(classes) ? classes : [])
+    .map(String)
+    .find((name) => name.startsWith("language-"))
+    ?.slice("language-".length);
+}
 // The rendered source and its writer, plus the checklist item each checkbox belongs to.
 const MarkdownSource = createContext<{ source: string; onChange?: (next: string) => void }>({
   source: "",
@@ -454,6 +468,20 @@ function MarkdownCheckbox({ checked }: { checked: boolean }) {
   );
 }
 const markdownComponents: Components = {
+  pre: ({ children, node, ...props }) => {
+    const language = fenceLanguage(node),
+      plain = <pre {...props}>{children}</pre>;
+    return language && node ? (
+      <Suspense fallback={plain}>
+        <MarkdownBlock language={language} code={nodeText(node).replace(/\n$/, "")} />
+      </Suspense>
+    ) : (
+      plain
+    );
+  },
+  img: ({ node: _node, ...props }) => (
+    <img {...props} loading="lazy" className="my-2 rounded-md border" />
+  ),
   a: ({ children, node: _node, ...props }) =>
     props.href?.startsWith(mentionScheme) ? (
       <span className="rounded-sm bg-primary/10 px-0.5 font-medium text-primary">{children}</span>
