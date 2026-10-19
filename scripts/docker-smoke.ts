@@ -95,7 +95,7 @@ try {
   expect(document.info.version).toBe(expectedVersion);
   await page.getByRole("button", { name: "New project", exact: true }).last().click();
   await page.getByLabel("Project name").fill("Container project");
-  await page.getByLabel("Permanent ticket prefix").fill("OPS");
+  await page.getByLabel("Ticket prefix").fill("OPS");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Container project", exact: true })).toBeVisible();
   const projectId = new URL(page.url()).pathname.split("/")[2];
