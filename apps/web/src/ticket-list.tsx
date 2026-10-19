@@ -773,6 +773,7 @@ export function TicketList({
     <>
       <TicketListControls
         projectId={project?.id}
+        archivedFilter={!planning}
         search={search}
         onSearch={changeSearch}
         view={

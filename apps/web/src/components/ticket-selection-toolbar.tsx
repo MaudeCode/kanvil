@@ -97,7 +97,8 @@ export function TicketSelectionToolbar({
       })
       .catch(reportError);
   }
-  const planned = selected.every((ticket) => ticket.status === "backlog"),
+  // Archived backlog tickets would stay out of active work, so only open planned ones promote.
+  const planned = selected.every((ticket) => ticket.status === "backlog" && !ticket.archived),
     archived = selected.every((ticket) => ticket.archived);
   const labels = shared(selected, (ticket) => ticket.labels.toSorted()),
     due = shared(selected, (ticket) => ticket.dueAt);

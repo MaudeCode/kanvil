@@ -885,6 +885,11 @@ describe("ticket operations on PostgreSQL", () => {
       [[...selection, { ticketId: claimed.id, expectedVersion: 2 }], owner, "claim_conflict"],
       [[...selection, { ticketId: stays.id, expectedVersion: 1 }], owner, "version_conflict"],
       [[...selection, { ticketId: crypto.randomUUID(), expectedVersion: 1 }], owner, "not_found"],
+      [
+        [...selection, { ticketId: parent.key.toLowerCase(), expectedVersion: 1 }],
+        owner,
+        "validation_error",
+      ],
       [selection, writer, "forbidden"],
     ] as const)
       await expect(

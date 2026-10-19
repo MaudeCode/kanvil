@@ -394,6 +394,9 @@ async function deleteTicketRows(
   const selected = new Map<string, typeof tickets.$inferSelect>();
   for (const item of selection) {
     const ticket = await getTicket(ctx, item.ticketId);
+    // A key and its UUID, or two spellings of a key, name one ticket.
+    if (selected.has(ticket.id))
+      fail(400, "validation_error", "Each ticket can appear only once", { ticketId: ticket.id });
     assertVersion(ticket, item.expectedVersion, "ticket", "deleting");
     selected.set(ticket.id, ticket);
   }
