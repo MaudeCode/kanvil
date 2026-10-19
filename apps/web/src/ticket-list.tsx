@@ -367,6 +367,12 @@ const planningGroups: Fetch[] = [
   },
 ];
 const interactive = "a, button, input, label, [role=checkbox], [role=combobox], [role=menu]";
+// A ticket record in the table or on the board: realtime arrival, selection, and highlight.
+const rowClass =
+  "ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60";
+// Comfortable spacing also scales the text, badges, and icons so rows fill the extra room.
+const densityClass =
+  "data-[density=comfortable]:[&_[data-priority]_svg]:size-5! data-[density=comfortable]:[&_[data-slot=badge]]:h-6 data-[density=comfortable]:[&_[data-slot=badge]]:px-2 data-[density=comfortable]:[&_[data-slot=badge]]:text-xs data-[density=comfortable]:[&_.status]:text-sm data-[density=comfortable]:[&_[data-slot=checkbox]]:size-5 data-[density=comfortable]:[&_.ticket-title]:text-[15px] data-[density=comfortable]:[&_.ticket-title]:leading-6";
 const tableClass = "min-w-full table-fixed @min-[1051px]:w-(--table-width)";
 // Every section table shares the header table's column widths.
 function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }[] }) {
@@ -402,13 +408,19 @@ export function TicketList({
   const identity = useIdentity();
   const navigate = useNavigate();
   const [projectGrouping] = usePreference(preferences.grouping),
-    [workGrouping] = usePreference(preferences.workGrouping);
+    [workGrouping] = usePreference(preferences.workGrouping),
+    [layout] = usePreference(preferences.layout),
+    [backgrounds] = usePreference(preferences.backgrounds);
   const planning = "project" in scope && !!scope.planning;
+  // The board shows a project's active work in status lanes; planning and My work stay lists.
+  const board = !!project && !planning && layout === "board";
   const grouping: TicketGrouping | "planning" = planning
     ? "planning"
-    : project
-      ? projectGrouping
-      : workGrouping;
+    : board
+      ? "status"
+      : project
+        ? projectGrouping
+        : workGrouping;
   const [labelDisplay] = usePreference(preferences.labelDisplay),
     [density] = usePreference(preferences.density),
     [visibility, setVisibility] = usePreference(preferences.columns);
@@ -551,16 +563,17 @@ export function TicketList({
               : [];
           })
         : groups.flatMap(({ entry: { id, label, heading, has }, data }) =>
-            data.total > 0 ? [{ id, label, heading, has, total: data.total }] : [],
+            data.total > 0 || board ? [{ id, label, heading, has, total: data.total }] : [],
           );
   const grouped = grouping !== "none";
+  // Board lanes never collapse; the list keeps its collapsed sections for when it returns.
+  const hidden = (id: string) => grouped && !board && collapsed.has(id);
   const tickets = {
     isPending: loading,
     error: queries.find((query) => query.error)?.error,
     data: {
       items: all.filter(
-        (ticket) =>
-          !grouped || !sections.some((section) => collapsed.has(section.id) && section.has(ticket)),
+        (ticket) => !sections.some((section) => hidden(section.id) && section.has(ticket)),
       ),
       total,
     },
@@ -595,7 +608,7 @@ export function TicketList({
     table.getRowModel().rows.filter((row) => section.has(row.original));
   // Rows in the order they render: sections top to bottom, skipping collapsed ones.
   const orderedIds = sections.flatMap((section) =>
-    grouped && collapsed.has(section.id) ? [] : sectionRows(section).map((row) => row.id),
+    hidden(section.id) ? [] : sectionRows(section).map((row) => row.id),
   );
   const orderKey = orderedIds.join("\n");
   const sectionSelection = (section: Section) => {
@@ -661,7 +674,7 @@ export function TicketList({
   useEffect(() => {
     if (active)
       document
-        .querySelector(`tr[data-id="${CSS.escape(active)}"]`)
+        .querySelector(`.ticket-row[data-id="${CSS.escape(active)}"]`)
         ?.scrollIntoView({ block: "nearest" });
   }, [active]);
   const move = (delta: number) => {
@@ -684,7 +697,7 @@ export function TicketList({
       !(
         event.target instanceof Element &&
         event.target.closest(interactive) &&
-        !event.target.closest("tr[data-active=true]")
+        !event.target.closest(".ticket-row[data-active=true]")
       ),
   };
   useShortcut("j", () => move(1), rowKeys);
@@ -714,7 +727,7 @@ export function TicketList({
       // returns after a preview closes.
       guard: (event: KeyboardEvent) => {
         const control = event.target instanceof Element && event.target.closest(interactive);
-        return !control || control.matches("tr[data-active=true] .ticket-title");
+        return !control || control.matches(".ticket-row[data-active=true] .ticket-title");
       },
     },
   );
@@ -729,7 +742,7 @@ export function TicketList({
     if (active)
       document
         .querySelector<HTMLElement>(
-          `tr[data-id="${CSS.escape(active)}"] td[data-column="${column}"] [role=combobox]`,
+          `.ticket-row[data-id="${CSS.escape(active)}"] [data-column="${column}"] [role=combobox]`,
         )
         ?.click();
   };
@@ -757,7 +770,19 @@ export function TicketList({
     },
     { enabled: !creating },
   );
-  const openRow = (ticket: Ticket, event: MouseEvent<HTMLTableRowElement>) => {
+  // Board drag and drop: the dragged ticket and the lane under it. A drop is the same versioned,
+  // optimistic status edit as the row's status picker.
+  const [dragging, setDragging] = useState<string | null>(null),
+    [dropLane, setDropLane] = useState<string | null>(null),
+    moveTicket = useTicketChange();
+  const dropOn = (lane: string) => {
+    const ticket = dragging ? latest.get(dragging) : undefined,
+      status = states.find((state) => state === lane);
+    setDragging(null);
+    setDropLane(null);
+    if (ticket && status && ticket.status !== status) void moveTicket.change({ status }, ticket);
+  };
+  const openRow = (ticket: Ticket, event: MouseEvent<HTMLElement>) => {
     if (event.defaultPrevented) return;
     // Pickers render in a portal; their clicks bubble through React but are not in the row.
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
@@ -768,8 +793,40 @@ export function TicketList({
       params: { projectId: ticket.projectId, ticketId: ticket.id },
     });
   };
+  const empty = !tickets.error && tickets.data.total === 0 && (
+    <EmptyState
+      title={
+        !isDefault || search.q
+          ? "No matching tickets"
+          : planning
+            ? "Nothing planned or archived"
+            : project
+              ? "No tickets yet"
+              : "No open tickets assigned to you"
+      }
+    >
+      {!isDefault ? (
+        <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
+      ) : (
+        canWrite && (
+          <Button variant="default" onClick={() => setCreating(true)}>
+            <Plus />
+            Create the first ticket
+          </Button>
+        )
+      )}
+    </EmptyState>
+  );
   return (
     <>
+      {project?.background && backgrounds === "show" && (
+        <img
+          src={project.background}
+          alt=""
+          aria-hidden="true"
+          className="project-background pointer-events-none absolute inset-0 -z-10 size-full object-cover opacity-15 mask-[linear-gradient(to_bottom,black,transparent_90%)] dark:opacity-20"
+        />
+      )}
       <TicketListControls
         projectId={project?.id}
         archivedFilter={!planning}
@@ -951,6 +1008,137 @@ export function TicketList({
         >
           Retry loading tickets
         </Button>
+      ) : board ? (
+        <div
+          role="region"
+          aria-label="Ticket board"
+          className={cn(
+            "ticket-board min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
+            densityClass,
+          )}
+          data-density={density}
+          data-label-display={labelDisplay}
+        >
+          {/* With nothing to show, the empty state replaces the lanes. */}
+          {empty || (
+            <div className="flex min-h-full w-max gap-5 pb-4">
+              {sections.map((section) => (
+                <section
+                  key={section.id}
+                  aria-label={`${section.label} tickets`}
+                  data-status={section.id}
+                  data-drop={dropLane === section.id || undefined}
+                  className="flex w-[min(19rem,calc(100vw-3.5rem))] shrink-0 flex-col transition-colors data-[drop=true]:bg-primary/5"
+                  onDragOver={(event) => {
+                    if (!dragging) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDropLane(section.id);
+                  }}
+                  onDragLeave={(event) => {
+                    if (
+                      !(event.relatedTarget instanceof Node) ||
+                      !event.currentTarget.contains(event.relatedTarget)
+                    )
+                      setDropLane((lane) => (lane === section.id ? null : lane));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    dropOn(section.id);
+                  }}
+                >
+                  <h2 className="sticky top-0 z-10 mb-0 flex h-9 items-center gap-2 border-b bg-background px-2 text-xs font-normal">
+                    {canWrite && (
+                      <Check
+                        label={`Select ${section.label} tickets`}
+                        className="sr-checkbox"
+                        {...sectionSelection(section)}
+                      />
+                    )}
+                    {section.heading}
+                    <span className="tabular-nums text-muted-foreground">{section.total}</span>
+                  </h2>
+                  <ul className="m-0 flex flex-1 list-none flex-col p-0">
+                    {sectionRows(section).map((row) => {
+                      const cells = row.getVisibleCells(),
+                        cell = (id: string) => cells.find((item) => item.column.id === id);
+                      const select = cell("select"),
+                        key = cell("key"),
+                        title = cell("title");
+                      return (
+                        <TicketContextMenu
+                          key={row.id}
+                          ticket={row.original}
+                          onPreview={() => showPreview(row.id, true)}
+                        >
+                          <li
+                            className={cn(
+                              rowClass,
+                              "flex flex-col gap-1.5 border-b px-2 py-2.5 transition-colors hover:bg-muted/40 data-[active=true]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 in-data-[density=comfortable]:gap-2.5 in-data-[density=comfortable]:py-4",
+                            )}
+                            data-id={row.id}
+                            data-selected={row.getIsSelected()}
+                            data-active={active === row.id || undefined}
+                            data-fresh={seen.fresh.has(row.id) || undefined}
+                            data-dragging={dragging === row.id || undefined}
+                            draggable={canWrite}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("text/plain", row.original.key);
+                              setDragging(row.id);
+                            }}
+                            onDragEnd={() => {
+                              setDragging(null);
+                              setDropLane(null);
+                            }}
+                            onClick={(event) => openRow(row.original, event)}
+                          >
+                            <div className="flex min-h-6 items-center gap-2">
+                              {select && <table.FlexRender cell={select} />}
+                              {key && (
+                                <span
+                                  data-column="key"
+                                  className="font-mono text-[11px] text-muted-foreground"
+                                >
+                                  <table.FlexRender cell={key} />
+                                </span>
+                              )}
+                              <span data-column="status" className="ml-auto">
+                                <PropertyCell
+                                  ticket={row.original}
+                                  property="status"
+                                  value={row.original.status}
+                                  iconOnly
+                                />
+                              </span>
+                            </div>
+                            {title && <table.FlexRender cell={title} />}
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs empty:hidden">
+                              {cells
+                                .filter(
+                                  (item) =>
+                                    !["select", "key", "title", "status"].includes(item.column.id),
+                                )
+                                .map((item) => (
+                                  <span
+                                    key={item.id}
+                                    data-column={item.column.id}
+                                    className="min-w-0 max-w-full empty:hidden"
+                                  >
+                                    <table.FlexRender cell={item} />
+                                  </span>
+                                ))}
+                            </div>
+                          </li>
+                        </TicketContextMenu>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         <div className="table-scroll min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [&_[data-slot=table-container]]:overflow-visible">
           {/* One table per section lets each sticky heading be pushed away by the next one; the
@@ -958,8 +1146,11 @@ export function TicketList({
           <div
             role="table"
             aria-label="Tickets"
-            // Comfortable spacing also scales the text, badges, and icons so rows fill the extra room.
-            className="ticket-table data-[density=comfortable]:[&_[data-priority]_svg]:size-5! data-[density=comfortable]:[&_[data-slot=badge]]:h-6 data-[density=comfortable]:[&_[data-slot=badge]]:px-2 data-[density=comfortable]:[&_[data-slot=badge]]:text-xs data-[density=comfortable]:[&_.status]:text-sm data-[density=comfortable]:[&_[data-slot=checkbox]]:size-5 data-[density=comfortable]:[&_.ticket-title]:text-[15px] data-[density=comfortable]:[&_.ticket-title]:leading-6 data-[density=comfortable]:[&_td]:text-sm data-[density=comfortable]:[&_td_svg]:size-4 data-[density=comfortable]:[&_td[data-column=key]]:text-xs"
+            className={cn(
+              "ticket-table",
+              densityClass,
+              "data-[density=comfortable]:[&_td]:text-sm data-[density=comfortable]:[&_td_svg]:size-4 data-[density=comfortable]:[&_td[data-column=key]]:text-xs",
+            )}
             data-density={density}
             data-label-display={labelDisplay}
             style={{ "--table-width": `${table.getTotalSize()}px` }}
@@ -1078,7 +1269,7 @@ export function TicketList({
                       </TableHead>
                     </TableRow>
                   )}
-                  {(!grouped || !collapsed.has(section.id)) &&
+                  {!hidden(section.id) &&
                     sectionRows(section).map((row) => (
                       <TicketContextMenu
                         key={row.id}
@@ -1086,7 +1277,10 @@ export function TicketList({
                         onPreview={() => showPreview(row.id, true)}
                       >
                         <TableRow
-                          className="ticket-row cursor-pointer data-[fresh=true]:animate-row-in data-[selected=true]:bg-primary/5 data-[active=true]:bg-muted/60 data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]"
+                          className={cn(
+                            rowClass,
+                            "data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)]",
+                          )}
                           role="row"
                           data-id={row.id}
                           data-selected={row.getIsSelected()}
@@ -1120,30 +1314,7 @@ export function TicketList({
               </Table>
             ))}
           </div>
-          {!tickets.error && tickets.data.total === 0 && (
-            <EmptyState
-              title={
-                !isDefault || search.q
-                  ? "No matching tickets"
-                  : planning
-                    ? "Nothing planned or archived"
-                    : project
-                      ? "No tickets yet"
-                      : "No open tickets assigned to you"
-              }
-            >
-              {!isDefault ? (
-                <Button onClick={() => changeSearch(searchSchema.parse({}))}>Clear filters</Button>
-              ) : (
-                canWrite && (
-                  <Button variant="default" onClick={() => setCreating(true)}>
-                    <Plus />
-                    Create the first ticket
-                  </Button>
-                )
-              )}
-            </EmptyState>
-          )}
+          {empty}
         </div>
       )}
       {!tickets.isPending && !tickets.error && (
@@ -1161,7 +1332,7 @@ export function TicketList({
         returnFocus={() =>
           preview
             ? document.querySelector<HTMLElement>(
-                `tr[data-id="${CSS.escape(preview.id)}"] .ticket-title`,
+                `.ticket-row[data-id="${CSS.escape(preview.id)}"] .ticket-title`,
               )
             : null
         }

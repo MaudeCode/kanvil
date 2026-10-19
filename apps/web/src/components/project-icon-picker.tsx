@@ -8,7 +8,7 @@ import { useOperation } from "../data.tsx";
 import { Button, ErrorNotice, Loading, Modal, ModalActions, SearchField } from "../ui.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { prepareSquareImage } from "../lib/browser.ts";
+import { prepareImage } from "../lib/browser.ts";
 import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 import { ImageEditTrigger } from "./image-edit-trigger.tsx";
 export function ProjectIconPicker({
@@ -137,7 +137,7 @@ export function ProjectIconPicker({
             if (!selected) return;
             setPreparing(true);
             setError(undefined);
-            void prepareSquareImage(selected, { fit: "contain", format: "image/png" })
+            void prepareImage(selected, { fit: "contain", format: "image/png" })
               .then((image) => save({ kind: "image", ...image }))
               .catch(setError)
               .finally(() => setPreparing(false));

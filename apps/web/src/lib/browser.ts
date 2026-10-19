@@ -40,33 +40,53 @@ export function blobToBase64(blob: Blob) {
   });
 }
 
-export async function prepareSquareImage(
+// Resizes an upload for the server's image limit: a `size` square for "cover" and "contain", or
+// at most `size` on its longer side for "inside", stepping the quality down until it fits.
+export async function prepareImage(
   file: File,
   {
     fit = "cover",
     format = "image/jpeg",
-  }: { fit?: "cover" | "contain"; format?: "image/jpeg" | "image/png" } = {},
+    size = 256,
+  }: {
+    fit?: "cover" | "contain" | "inside";
+    format?: "image/jpeg" | "image/png";
+    size?: number;
+  } = {},
 ) {
   if (file.size > 10000000) throw new Error("Choose an image smaller than 10 MB.");
   const bitmap = await createImageBitmap(file);
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 256;
+    const scale =
+      fit === "inside"
+        ? Math.min(1, size / Math.max(bitmap.width, bitmap.height))
+        : (fit === "cover" ? Math.max : Math.min)(size / bitmap.width, size / bitmap.height);
+    const width = Math.round(bitmap.width * scale),
+      height = Math.round(bitmap.height * scale);
+    canvas.width = fit === "inside" ? width : size;
+    canvas.height = fit === "inside" ? height : size;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("This browser cannot resize the image.");
-    const scale = (fit === "cover" ? Math.max : Math.min)(256 / bitmap.width, 256 / bitmap.height);
-    const width = bitmap.width * scale,
-      height = bitmap.height * scale;
-    context.drawImage(bitmap, (256 - width) / 2, (256 - height) / 2, width, height);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error("The image could not be prepared."))),
-        format,
-        0.9,
-      ),
+    context.drawImage(
+      bitmap,
+      (canvas.width - width) / 2,
+      (canvas.height - height) / 2,
+      width,
+      height,
     );
-    return { contentType: format, data: await blobToBase64(blob) };
+    for (const quality of [0.9, 0.75, 0.6, 0.45]) {
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(
+          (value) =>
+            value ? resolve(value) : reject(new Error("The image could not be prepared.")),
+          format,
+          quality,
+        ),
+      );
+      if (blob.size <= 500000) return { contentType: format, data: await blobToBase64(blob) };
+    }
+    throw new Error("This image stays too large after resizing. Choose a simpler image.");
   } finally {
     bitmap.close();
   }

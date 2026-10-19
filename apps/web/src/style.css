@@ -239,22 +239,22 @@
   }
 }
 
-.ticket-table[data-label-display="all"] .ticket-tags-trigger {
+[data-label-display="all"] .ticket-tags-trigger {
   flex-wrap: wrap;
   white-space: normal;
 }
-.ticket-table[data-label-display="all"] .ticket-tag {
+[data-label-display="all"] .ticket-tag {
   display: inline-flex;
   height: auto;
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.ticket-table[data-label-display="all"] .ticket-tag > span {
+[data-label-display="all"] .ticket-tag > span {
   overflow: visible;
   white-space: normal;
 }
-.ticket-table[data-label-display="all"] .ticket-tags-overflow {
+[data-label-display="all"] .ticket-tags-overflow {
   display: none;
 }
 
