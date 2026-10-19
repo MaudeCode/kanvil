@@ -11,11 +11,65 @@ export const priorities = ["urgent", "high", "medium", "low", "none"] as const;
 export const kinds = ["feature", "bug", "chore", "research", "documentation"] as const;
 export const difficulties = ["low", "med", "high"] as const;
 export const roles = ["reader", "writer", "admin"] as const;
-export const roleLabels: Record<(typeof roles)[number], string> = {
+export type Role = (typeof roles)[number];
+export const roleLabels: Record<Role, string> = {
   reader: "Read only",
   writer: "Can edit",
   admin: "Admin",
 };
+// The actions a role grants beyond reading. The seeded roles are fixed sets; a workspace defines
+// custom roles as any subset. Credential scopes stay a ceiling: `ticket.write` needs `write`, every
+// other action `admin`.
+export const permissions = [
+  "ticket.write",
+  "ticket.delete",
+  "project.manage",
+  "member.manage",
+  "invitation.manage",
+  "sharing.manage",
+  "workspace.manage",
+] as const;
+export type Permission = (typeof permissions)[number];
+export const permissionLabels: Record<Permission, { label: string; description: string }> = {
+  "ticket.write": {
+    label: "Edit tickets",
+    description: "Create, edit, move, claim, and comment on tickets; create projects",
+  },
+  "ticket.delete": { label: "Delete tickets", description: "Delete tickets permanently" },
+  "project.manage": {
+    label: "Manage projects",
+    description: "Project details, workflow, labels, fields, integrations, and lifecycle",
+  },
+  "member.manage": { label: "Manage members", description: "Add, change, and remove members" },
+  "invitation.manage": { label: "Manage invitations", description: "Invite people by email" },
+  "sharing.manage": {
+    label: "Manage sharing",
+    description: "Public read-only links and calendar feeds",
+  },
+  "workspace.manage": {
+    label: "Manage workspace",
+    description: "Workspace details, shared labels, and roles",
+  },
+};
+// The seeded roles' actions. Their IDs are their names; a custom role's ID is a UUID.
+export const seededPermissions: Record<Role, readonly Permission[]> = {
+  reader: [],
+  writer: ["ticket.write"],
+  admin: permissions,
+};
+export const roleId = z.union([z.enum(roles), z.uuid()]);
+export const isSeededRole = (id: string): id is Role => roles.some((role) => role === id);
+// The seeded role a custom role stands in for wherever only the three are known: stored beside
+// every assignment and rewritten with the role, so it never disagrees. Never `admin`, which alone
+// reaches a workspace's private projects.
+export const roleCategory = (granted: readonly Permission[]): Role =>
+  granted.includes("ticket.write") ? "writer" : "reader";
+// What a membership may do. Servers that predate custom roles report only the seeded role.
+export const capabilitiesOf = (access: {
+  role: Role | null | undefined;
+  capabilities?: readonly Permission[] | undefined;
+}): readonly Permission[] =>
+  access.capabilities ?? (access.role ? seededPermissions[access.role] : []);
 export const projectIconColors = [
   "default",
   "red",
@@ -494,16 +548,34 @@ export const workspaceSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
   role: z.enum(roles).nullable(),
+  // The membership's role and what it may do here, capped by the credential's scopes. `role` is
+  // the seeded role a custom one stands in for. Older servers omit both; see `capabilitiesOf`.
+  roleId: z.string().nullable().optional(),
+  capabilities: z.array(z.enum(permissions)).optional(),
 });
 export type Workspace = z.output<typeof workspaceSchema>;
+// A seeded role or one the workspace defined. `assigned` counts the workspace and project
+// memberships that hold it; deleting an assigned role names the role they move to.
+export const workspaceRoleSchema = z.object({
+  id: roleId,
+  name: z.string(),
+  permissions: z.array(z.enum(permissions)),
+  seeded: z.boolean(),
+  assigned: z.number().int().nonnegative(),
+  version,
+});
+export type WorkspaceRole = z.output<typeof workspaceRoleSchema>;
 export const memberSchema = z.object({
   userId: z.string(),
   name: z.string(),
   email: z.string(),
   role: z.enum(roles),
+  // The role held, seeded or custom; `role` is its seeded stand-in for older clients.
+  roleId: z.string().optional(),
   image: z.string().nullable().optional(),
   source: z.enum(["project", "workspace"]).optional(),
   inheritedRole: z.enum(roles).nullable().optional(),
+  inheritedRoleId: z.string().nullable().optional(),
   // Workspace member lists flag disabled accounts, which cannot receive ownership.
   disabled: z.boolean().optional(),
 });
@@ -1650,14 +1722,72 @@ export const operations = {
         ...mutation,
         workspaceId: z.uuid(),
         email: z.email(),
-        role: z.enum(roles).nullable(),
+        // A seeded role name or a custom role ID of this workspace.
+        role: roleId.nullable(),
       })
       .strict(),
     okSchema,
     "POST",
     "/workspaces/{workspaceId}/members",
     "admin",
-    "Manage workspace access; removal also revokes direct project access in this workspace.",
+    "Manage workspace access with a seeded or custom role; removal also revokes direct project access in this workspace. Needs `member.manage`; the role, and any role the person holds now, must grant nothing the caller lacks.",
+  ),
+  list_workspace_roles: op(
+    z.object({ workspaceId: z.uuid() }),
+    z.array(workspaceRoleSchema),
+    "GET",
+    "/workspaces/{workspaceId}/roles",
+    "read",
+    "List the seeded roles and the workspace's custom roles with the actions each grants and how many memberships hold it.",
+  ),
+  create_workspace_role: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        name: text.max(40),
+        permissions: z.array(z.enum(permissions)).max(permissions.length),
+      })
+      .strict(),
+    workspaceRoleSchema,
+    "POST",
+    "/workspaces/{workspaceId}/roles",
+    "admin",
+    "Define a custom role. Needs `workspace.manage` and every action it grants. Names are unique in the workspace and the seeded role names are reserved (`duplicate_role`).",
+  ),
+  update_workspace_role: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        roleId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(40),
+        permissions: z.array(z.enum(permissions)).max(permissions.length),
+      })
+      .strict(),
+    workspaceRoleSchema,
+    "PATCH",
+    "/workspaces/{workspaceId}/roles/{roleId}",
+    "admin",
+    "Rename a custom role or change its actions; every membership holding it changes at once. Needs `workspace.manage` and every action the role grants before and after.",
+  ),
+  delete_workspace_role: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        roleId: z.uuid(),
+        expectedVersion: version,
+        // Where memberships holding the role go; required while any does.
+        reassignTo: roleId.optional(),
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/workspaces/{workspaceId}/roles/{roleId}",
+    "admin",
+    "Delete a custom role. Fails with `role_in_use` while memberships hold it unless `reassignTo` names another role of the workspace for them.",
   ),
   transfer_workspace: op(
     z
@@ -1872,12 +2002,14 @@ export const operations = {
         closedTickets: z.number().int().nonnegative().default(0),
         nextDueAt: timestamp.nullable().default(null),
         role: z.enum(roles),
+        roleId: z.string().optional(),
+        capabilities: z.array(z.enum(permissions)).optional(),
       }),
     ),
     "GET",
     "/projects",
     "read",
-    "List projects accessible to the current identity, each with open, overdue, and closed ticket counts and the soonest upcoming open due date. Archived projects are left out unless `archived` is `include` or `only`.",
+    "List projects accessible to the current identity, each with open, overdue, and closed ticket counts, the soonest upcoming open due date, and the caller's role and actions there. Archived projects are left out unless `archived` is `include` or `only`.",
   ),
   create_project: op(
     z
@@ -2113,13 +2245,21 @@ export const operations = {
     "read",
     "List project members.",
   ),
+  list_project_roles: op(
+    projectInput,
+    z.array(workspaceRoleSchema),
+    "GET",
+    "/projects/{projectId}/roles",
+    "read",
+    "List the roles a project membership can hold: the seeded roles and its workspace's custom roles.",
+  ),
   set_member: op(
-    projectInput.extend({ ...mutation, email: z.email(), role: z.enum(roles).nullable() }).strict(),
+    projectInput.extend({ ...mutation, email: z.email(), role: roleId.nullable() }).strict(),
     okSchema,
     "POST",
     "/projects/{projectId}/members",
     "admin",
-    "Add or update an existing user's membership, or remove it with a null role.",
+    "Add or update an existing user's membership with a seeded role or a custom role of the project's workspace, or remove it with a null role. Needs `member.manage`; the role, and any role the person holds now, must grant nothing the caller lacks.",
   ),
   list_tickets: op(
     projectInput
@@ -3241,6 +3381,35 @@ export function parsePublicOutput<K extends PublicOperation>(
 }
 
 export type Operation = keyof typeof operations;
+// The action an operation needs from the caller's role where it runs: none to read, the writer's
+// action for other writes, and project or workspace management to administer, except where a
+// narrower action owns the operation.
+const permissionOverrides: Partial<Record<Operation, Permission | null>> = {
+  set_member: "member.manage",
+  set_workspace_member: "member.manage",
+  list_invitations: "invitation.manage",
+  create_invitation: "invitation.manage",
+  resend_invitation: "invitation.manage",
+  revoke_invitation: "invitation.manage",
+  delete_ticket: "ticket.delete",
+  bulk_delete_tickets: "ticket.delete",
+  list_calendar_feeds: "sharing.manage",
+  create_calendar_feed: "sharing.manage",
+  revoke_calendar_feed: "sharing.manage",
+  // Details need `project.manage` and the public link `sharing.manage`; the handler checks what
+  // changed.
+  update_project: null,
+};
+export function operationPermission(name: Operation): Permission | null {
+  if (Object.hasOwn(permissionOverrides, name)) return permissionOverrides[name] ?? null;
+  const { scope, path } = operations[name];
+  if (scope === "read") return null;
+  if (scope !== "admin") return "ticket.write";
+  return path.startsWith("/workspaces/") ? "workspace.manage" : "project.manage";
+}
+// The credential scope an action needs; a credential never acts beyond its scopes.
+export const permissionScope = (permission: Permission): (typeof scopes)[number] =>
+  permission === "ticket.write" ? "write" : "admin";
 export type Input<K extends Operation> = z.input<(typeof operations)[K]["input"]>;
 export type ParsedInput<K extends Operation> = z.output<(typeof operations)[K]["input"]>;
 export type Output<K extends Operation> = z.output<(typeof operations)[K]["output"]>;

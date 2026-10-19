@@ -106,7 +106,7 @@ async function assertTransferable(ctx: Context, workspaceId: string) {
   const current = project(ctx);
   if (workspaceId === current.workspaceId)
     fail(400, "validation_error", "The project is already in this workspace");
-  await requireWorkspace(ctx, current.workspaceId, true);
+  await requireWorkspace(ctx, current.workspaceId, "project.manage");
 }
 // Active members of the project and its workspaces, with their read access now (`before`) and with
 // the project in `workspaceId` (`after`). Instance administrators read every project, so no
@@ -406,6 +406,8 @@ export const lifecycleHandlers: Pick<
       workspaceId: input.workspaceId,
       position: endPosition(projectPositions, eq(projects.workspaceId, input.workspaceId)),
     });
+    // Custom roles belong to the source workspace; direct members keep their seeded stand-in.
+    await ctx.db.update(members).set({ roleId: null }).where(eq(members.projectId, current.id));
     // People who can no longer read the project stop following its tickets.
     if (transfer.losingAccess.length)
       await ctx.db.delete(subscriptions).where(

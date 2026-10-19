@@ -5,13 +5,15 @@ import {
   invitationStatuses,
   roleLabels,
   roles,
+  seededPermissions,
   type Invitation,
 } from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { invitations, members, projects, workspaceMembers, workspaces } from "./schema.ts";
-import { projectRole } from "./project-access.ts";
+import { permissionsOf, projectAccess } from "./project-access.ts";
 import { publishWorkspace } from "./workspace-operations.ts";
 import {
+  assertGrantable,
   assertVersion,
   fail,
   one,
@@ -167,13 +169,19 @@ async function byToken(ctx: Context, token: string) {
   );
   return { ...row, matches: account.email.toLowerCase() === row.invitation.email };
 }
-// The sender must still administer the workspace, so a demoted or disabled admin's links stop
-// granting anything.
+// The sender must still manage invitations and hold every action the role grants, so a demoted or
+// disabled sender's links stop granting anything.
 async function senderCanGrant(ctx: Context, row: Row) {
   if (!row.invitedBy) return false;
   const sender = (
     await ctx.db
-      .select({ role: user.role, banned: user.banned, membership: workspaceMembers.role })
+      .select({
+        role: user.role,
+        banned: user.banned,
+        membership: sql<
+          string | null
+        >`coalesce(${workspaceMembers.roleId}::text, ${workspaceMembers.role})`,
+      })
       .from(user)
       .leftJoin(
         workspaceMembers,
@@ -184,7 +192,14 @@ async function senderCanGrant(ctx: Context, row: Row) {
       )
       .where(eq(user.id, row.invitedBy))
   )[0];
-  return !!sender && !sender.banned && (hasAdminRole(sender.role) || sender.membership === "admin");
+  if (!sender || sender.banned) return false;
+  if (hasAdminRole(sender.role)) return true;
+  const held = (await permissionsOf(ctx.db, [sender.membership]))(sender.membership);
+  return (
+    held.includes("invitation.manage") &&
+    (roleOf(row) !== "admin" || sender.membership === "admin") &&
+    seededPermissions[roleOf(row)].every((permission) => held.includes(permission))
+  );
 }
 export const invitationHandlers: Pick<
   Handlers,
@@ -205,6 +220,7 @@ export const invitationHandlers: Pick<
   },
   async create_invitation(ctx, input) {
     const space = workspace(ctx);
+    assertGrantable(ctx, seededPermissions[input.role], input.role);
     if (input.projectIds) {
       const wanted = [...new Set(input.projectIds)];
       const found = await ctx.db
@@ -238,6 +254,7 @@ export const invitationHandlers: Pick<
   },
   async resend_invitation(ctx, input) {
     const row = await pendingRow(ctx, input.invitationId, input.expectedVersion);
+    assertGrantable(ctx, seededPermissions[roleOf(row)], roleOf(row));
     await assertNoLiveInvitation(ctx, row.email, row.id);
     // The new link replaces the old one, and the resending administrator becomes its sender.
     return send(ctx, (tokenHash) =>
@@ -315,7 +332,7 @@ export const invitationHandlers: Pick<
           .values({ workspaceId: row.workspaceId, userId, role })
           .onConflictDoUpdate({
             target: [workspaceMembers.workspaceId, workspaceMembers.userId],
-            set: { role },
+            set: { role, roleId: null },
           });
       await publishWorkspace(ctx, row.workspaceId, "membership.updated", { userId, role });
     } else {
@@ -333,11 +350,14 @@ export const invitationHandlers: Pick<
           reason: "projects_removed",
         });
       for (const target of targets)
-        if (rank(await projectRole(ctx.db, ctx.actor, target)) < rank(role))
+        if (rank((await projectAccess(ctx.db, ctx.actor, target))?.role) < rank(role))
           await ctx.db
             .insert(members)
             .values({ projectId: target.id, userId, role })
-            .onConflictDoUpdate({ target: [members.projectId, members.userId], set: { role } });
+            .onConflictDoUpdate({
+              target: [members.projectId, members.userId],
+              set: { role, roleId: null },
+            });
       await publishMany(
         ctx,
         targets.map((target) => ({

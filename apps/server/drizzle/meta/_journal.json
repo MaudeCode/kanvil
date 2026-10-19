@@ -253,6 +253,13 @@
       "when": 1792408149957,
       "tag": "0035_account_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792409663803,
+      "tag": "0036_workspace_roles",
+      "breakpoints": true
     }
   ]
 }

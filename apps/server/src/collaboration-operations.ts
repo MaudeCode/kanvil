@@ -42,6 +42,7 @@ import {
   getTicket,
   project,
   publish,
+  can,
   publishMany,
   relationEvents,
   requireRow,
@@ -60,7 +61,7 @@ async function editableComment(ctx: Context, commentId: string, expectedVersion:
       .from(comments)
       .where(and(eq(comments.projectId, project(ctx).id), eq(comments.id, commentId))),
   );
-  if (row.actorId !== ctx.actor.id && ctx.role !== "admin")
+  if (row.actorId !== ctx.actor.id && !can(ctx, "project.manage"))
     fail(403, "forbidden", "Only the author or a project administrator can edit this comment");
   assertVersion(row, expectedVersion, "comment");
   return row;
