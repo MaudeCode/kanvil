@@ -159,16 +159,22 @@ const validation: Record<Locale, () => Promise<ZodLocale>> = {
 };
 export const loadCatalog = async (locale: Locale): Promise<Catalog> =>
   locale === "en-US" ? en : (await catalogs[locale]()).default;
+// The language most recently asked for; a change still loading when another starts gives way.
+let requested: Locale = defaultLocale;
 // Switches the interface to a locale, loading its catalog once. A catalog that fails to load
 // leaves the interface in English rather than half translated; the error goes to the caller.
 export async function applyLocale(locale: Locale): Promise<Locale> {
+  requested = locale;
   try {
     if (!i18n.hasResourceBundle(locale, "translation"))
       i18n.addResourceBundle(locale, "translation", await loadCatalog(locale));
-    z.config((await validation[locale]()).default());
+    const messages = (await validation[locale]()).default();
+    if (requested !== locale) return activeLocale();
+    z.config(messages);
     await i18n.changeLanguage(locale);
     return locale;
   } catch (error) {
+    if (requested !== locale) return activeLocale();
     await i18n.changeLanguage(defaultLocale);
     throw error;
   }

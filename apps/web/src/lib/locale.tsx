@@ -52,17 +52,22 @@ export function savedLocalePreference(): LocalePreference {
 }
 // Applies a choice before the first render and on every change. A language whose files fail to
 // load leaves the interface in English instead of blocking it.
+let latest = 0;
 export async function startLocale(preference: LocalePreference = savedLocalePreference()) {
-  const locale = resolveLocale(preference, navigator.languages);
+  const locale = resolveLocale(preference, navigator.languages),
+    change = ++latest;
+  // A change started earlier but still loading gives way to this one.
   try {
     const wording = await calendars[locale]();
+    if (change !== latest) return;
     calendar = wording;
     await applyLocale(locale);
   } catch (error) {
+    if (change !== latest) return;
     calendar = undefined;
     console.error(error);
   }
-  document.documentElement.lang = activeLocale();
+  if (change === latest) document.documentElement.lang = activeLocale();
 }
 export async function setLocalePreference(preference: LocalePreference) {
   try {

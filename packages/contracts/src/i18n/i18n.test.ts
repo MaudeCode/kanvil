@@ -185,6 +185,21 @@ describe("presentation in another language", () => {
     if (!issue.success) expect(errorMessage(issue.error)).not.toMatch(/Too small/);
     expect(firstWeekday()).toBe(1);
   });
+  it("applies the language chosen last when changes overlap", async () => {
+    // French still has its catalog to load when German, already loaded, is chosen after it.
+    await applyLocale("de-DE");
+    await applyLocale("en-US");
+    await Promise.all([applyLocale("fr-FR"), applyLocale("de-DE")]);
+    expect(activeLocale()).toBe("de-DE");
+    expect(stateLabels.todo).toBe(leaves(await catalog("de-DE")).get("common.status.todo"));
+  });
+  it("formats counts in the language while choosing their plural form", async () => {
+    await applyLocale("de-DE");
+    expect(t("ticket.list.count", { count: 1234 })).toBe("1.234 Tickets");
+    await applyLocale("en-US");
+    expect(t("ticket.list.count", { count: 1234 })).toBe("1,234 tickets");
+    expect(t("ticket.list.count", { count: 1 })).toBe("1 ticket");
+  });
   it("keeps English server messages and English fallback for keys a catalog lacks", async () => {
     expect(
       errorMessage(new ApiError(403, "forbidden", "Only the workspace owner can do this")),
