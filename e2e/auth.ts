@@ -1,33 +1,40 @@
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 export const ownerEmail = "owner@example.test";
 export const ownerPassword = "test-only-owner-password-234";
+const setupSchema = z.object({ setupRequired: z.boolean() });
+// Signs the shared owner in for a case whose purpose is not signing in, landing on Projects. A
+// fresh test server's first case completes owner setup through the form; every other case gets
+// its own session from the sign-in API, so it keeps a fresh context without driving the form.
 export async function signIn(page: Page) {
-  const info = z
-    .object({ setupRequired: z.boolean() })
-    .parse(await (await page.request.get("/api/v1/info")).json());
+  const { setupRequired } = setupSchema.parse(
+    await (await page.request.get("/api/v1/info")).json(),
+  );
+  if (setupRequired) return createOwner(page);
+  const response = await page.request.post("/api/auth/sign-in/email", {
+    data: { email: ownerEmail, password: ownerPassword },
+    headers: { Origin: new URL(test.info().project.use.baseURL ?? "").origin },
+  });
+  expect(response.ok()).toBe(true);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+}
+// First-run setup through the login page, as an operator completes it.
+async function createOwner(page: Page) {
   await page.goto("/login");
   await expect(
-    page.getByRole("heading", {
-      name: info.setupRequired ? "Create your owner account" : "Sign in",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Create your owner account", exact: true }),
   ).toBeVisible();
-  if (info.setupRequired) {
-    await page.getByLabel("Name", { exact: true }).fill("Test Owner");
-    await page
-      .getByLabel("Setup token", { exact: true })
-      .fill("kanvil-browser-tests-only-setup-token");
-  }
-  if (!info.setupRequired) await useEmailLogin(page);
+  await page.getByLabel("Name", { exact: true }).fill("Test Owner");
+  await page
+    .getByLabel("Setup token", { exact: true })
+    .fill("kanvil-browser-tests-only-setup-token");
   await page.getByLabel("Email", { exact: true }).fill(ownerEmail);
   await page.getByLabel("Password", { exact: true }).fill(ownerPassword);
-  await page
-    .getByRole("button", { name: info.setupRequired ? "Create account" : "Sign in", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
 }
 // Opens the password form, which configured sign-in providers fold behind a button.

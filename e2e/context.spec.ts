@@ -1,5 +1,6 @@
 import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
+import { holdRequests } from "./controls.ts";
 test("sidebar resizing and contextual ticket and project actions work", async ({
   page,
   context,
@@ -125,16 +126,15 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const edited = page.getByRole("link", { name: "Edited from the context menu", exact: true });
   // The menu's earlier ticket read is still cached; copies must use the refreshed row.
+  // Its fresh read is held until the copy is checked, so the copy cannot wait for it.
   const ticketPath = `/api/v1/projects/${project.id}/tickets/${ticket.id}`;
-  await page.route(`**${ticketPath}`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    await route.fallback();
-  });
+  const release = await holdRequests(page, `**${ticketPath}`);
   await edited.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Copy title", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe("Edited from the context menu");
+  release();
   await page.unroute(`**${ticketPath}`);
   await edited.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Duplicate ticket", exact: true }).click();

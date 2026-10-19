@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Request } from "@playwright/test";
 
 // Prefers the combobox inside the open popover or dialog, since list rows carry inline editors too.
 export async function choose(page: Page, label: string, option: string) {
@@ -78,4 +78,21 @@ export async function setLayout(page: Page, layout: "List" | "Board" | "Calendar
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await toggleDisplay(page, layout);
   await page.keyboard.press("Escape");
+}
+// Holds matching requests until the returned function releases them, so a spec can check a
+// pending state without waiting out a fixed delay.
+export async function holdRequests(
+  page: Page,
+  url: Parameters<Page["route"]>[0],
+  when: (request: Request) => boolean = () => true,
+) {
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(url, async (route) => {
+    if (when(route.request())) await held;
+    await route.fallback();
+  });
+  return () => release?.();
 }

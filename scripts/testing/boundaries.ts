@@ -5,7 +5,7 @@
 import childProcess from "node:child_process";
 import dns from "node:dns";
 import { syncBuiltinESMExports } from "node:module";
-import net from "node:net";
+import net, { isIP } from "node:net";
 
 // database: the dedicated test PostgreSQL server; loopback: fakes and services on this machine;
 // network: any other host; process: child processes.
@@ -88,21 +88,68 @@ function replace<T extends object>(owner: T, name: keyof T & string, handler: Pr
 function connectTarget(args: unknown[]) {
   const head: unknown = args[0];
   const first: unknown = Array.isArray(head) ? head[0] : head;
-  if (typeof first === "string") return { path: first };
+  const callback: unknown = Array.isArray(head)
+    ? head[1]
+    : args.find((arg) => typeof arg === "function");
+  if (typeof first === "string") return { path: first, options: {}, callback };
   if (typeof first === "number")
-    return { port: first, host: typeof args[1] === "string" ? args[1] : undefined };
+    return {
+      port: first,
+      host: typeof args[1] === "string" ? args[1] : undefined,
+      options: {},
+      callback,
+    };
+  const options: object = typeof first === "object" && first !== null ? first : {};
   const read = (name: string) => {
-    const value: unknown =
-      typeof first === "object" && first !== null ? Reflect.get(first, name) : undefined;
+    const value: unknown = Reflect.get(options, name);
     return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
   };
-  return { port: Number(read("port")), host: read("host"), path: read("path") };
+  return { port: Number(read("port")), host: read("host"), path: read("path"), options, callback };
+}
+// Lookup results are one address or, with `all`, a list of them.
+function resolvedAddresses(address: unknown): string[] {
+  if (typeof address === "string") return [address];
+  if (!Array.isArray(address)) return [];
+  return address.flatMap((entry: unknown) => {
+    const value: unknown =
+      typeof entry === "object" && entry !== null ? Reflect.get(entry, "address") : undefined;
+    return typeof value === "string" ? [value] : [];
+  });
 }
 
 function install(current: State) {
   replace(net.Socket.prototype, "connect", {
     apply(target: () => unknown, socket: net.Socket, args: unknown[]) {
-      const { path, host, port } = connectTarget(args);
+      const { path, host, port, options, callback } = connectTarget(args);
+      if (host && !isIP(host) && !loopbackHosts.has(host)) {
+        // A host name crosses a boundary when it resolves to an address the socket connects to;
+        // an injected resolver that answers without DNS reaches nothing.
+        const custom: unknown = Reflect.get(options, "lookup");
+        const resolve = typeof custom === "function" ? custom : dns.lookup;
+        const lookup = (
+          hostname: string,
+          lookupOptions: unknown,
+          done: (...result: unknown[]) => void,
+        ) =>
+          Reflect.apply(resolve, undefined, [
+            hostname,
+            lookupOptions,
+            (error: unknown, address: unknown, family: unknown) => {
+              if (error) return done(error, address, family);
+              const refused = resolvedAddresses(address)
+                .map((resolved) =>
+                  attempt(
+                    current,
+                    classifyTarget(resolved, port),
+                    `${hostname} (${resolved}):${port}`,
+                  ),
+                )
+                .find(Boolean);
+              done(refused ?? null, address, family);
+            },
+          ]);
+        return Reflect.apply(target, socket, [{ ...options, host, port, lookup }, callback]);
+      }
       // A Unix socket is this machine's database server or a local fake, never another host.
       const boundary = path
         ? path.includes(".s.PGSQL.")
