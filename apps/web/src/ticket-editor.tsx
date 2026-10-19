@@ -1,9 +1,10 @@
 import { createTicketDraft, ticketDraftSchema, ticketDefaults } from "@kanvil/contracts/drafts";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ticketFields, type Ticket } from "@kanvil/contracts";
-import { useIdentity, useOperation } from "./data.tsx";
-import { Button, ErrorNotice, Input, Textarea, useModalBusy } from "./ui.tsx";
+import { api, useIdentity, useOperation } from "./data.tsx";
+import { Button, ErrorNotice, Input, Textarea, reportError, useModalBusy } from "./ui.tsx";
 import {
   Maximize2,
   Minimize2,
@@ -18,13 +19,15 @@ import { DialogClose } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Toggle } from "@/components/ui/toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MarkdownField } from "./components/markdown-field.tsx";
 import { TicketPicker } from "./components/ticket-picker.tsx";
 import { DatePicker, endOfDay } from "./components/date-picker.tsx";
 import { TagInput } from "./components/tag-input.tsx";
-import { TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
+import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
+import { ProjectProperty, TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { cn } from "@/lib/utils";
 
@@ -45,11 +48,11 @@ export function TicketEditor({
   const setModalBusy = useModalBusy();
   const identity = useIdentity(),
     draftKey = `kanvil:${identity.id}:draft:${projectId}:${ticket?.id ?? `new:${initial?.parentId ?? ""}`}`;
-  const [base] = useState(() => {
+  const [base, setBase] = useState(() => {
     const draft = createTicketDraft(ticket);
     return initial ? { ...draft, fields: { ...draft.fields, ...initial } } : draft;
   });
-  const [draft, setDraft] = useState(() => {
+  const [draft, setDraftState] = useState(() => {
     try {
       const saved = ticketDraftSchema.safeParse(
         JSON.parse(localStorage.getItem(draftKey) ?? "null"),
@@ -60,6 +63,12 @@ export function TicketEditor({
     }
     return base;
   });
+  // The latest draft for handlers that finish after an await, such as a project change.
+  const latest = useRef(draft);
+  function setDraft(next: typeof draft) {
+    latest.current = next;
+    setDraftState(next);
+  }
   const expandedKey = "kanvil:composer-expanded";
   const [expanded, setExpanded] = useState(() => {
     try {
@@ -81,11 +90,19 @@ export function TicketEditor({
   const [criteriaOpen, setCriteriaOpen] = useState(() => !!draft.fields.acceptanceCriteria);
   const [validationError, setValidationError] = useState<unknown>(),
     [storageError, setStorageError] = useState<unknown>(),
-    [savedLocally, setSavedLocally] = useState(false);
+    [savedLocally, setSavedLocally] = useState(false),
+    [createMore, setCreateMore] = useState(false),
+    [created, setCreated] = useState<string>();
   const create = useOperation("create_ticket"),
-    update = useOperation("update_ticket");
+    update = useOperation("update_ticket"),
+    cache = useQueryClient(),
+    titleField = useRef<HTMLTextAreaElement>(null),
+    submitting = useRef(false),
+    switches = useRef(0),
+    [switching, setSwitching] = useState(false);
   function changeDraft(next: typeof draft) {
     setDraft(next);
+    setCreated(undefined);
     try {
       localStorage.setItem(draftKey, JSON.stringify(next));
       setStorageError(undefined);
@@ -107,16 +124,46 @@ export function TicketEditor({
     setSavedLocally(false);
   }
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) =>
-    changeDraft({ ...draft, fields: { ...draft.fields, [key]: value } });
+    changeDraft({ ...latest.current, fields: { ...latest.current.fields, [key]: value } });
+  // A new ticket may target another writable project; its parent and assignee must belong there.
+  // The target applies at once, and submitting waits until the assignee is checked against the
+  // latest choice, so a ticket never goes to the previous project or with a stale assignee.
+  async function changeProject(next: string) {
+    const switchId = ++switches.current;
+    changeDraft({
+      ...latest.current,
+      projectId: next === projectId ? undefined : next,
+      fields: { ...latest.current.fields, parentId: null },
+    });
+    setSwitching(true);
+    let members: { userId: string }[] = [];
+    try {
+      members = await cache.ensureQueryData(api.query("list_members", { projectId: next }));
+    } finally {
+      if (switchId === switches.current) {
+        const current = latest.current,
+          { assigneeId } = current.fields;
+        if (assigneeId && !members.some((member) => member.userId === assigneeId))
+          changeDraft({ ...current, fields: { ...current.fields, assigneeId: null } });
+        setSwitching(false);
+      }
+    }
+  }
   const fields = draft.fields,
+    target = draft.projectId ?? projectId,
     stale = !!ticket && draft.version !== ticket.version,
-    dirty = JSON.stringify(draft.fields) !== JSON.stringify(base.fields),
+    dirty =
+      JSON.stringify(draft.fields) !== JSON.stringify(base.fields) ||
+      draft.projectId !== base.projectId,
     pending = create.isPending || update.isPending,
+    blocked = pending || stale || switching,
     automation = fields.automationReady || fields.scopes.length > 0 || !!fields.holdReason;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (stale || pending) return;
+    // The ref also stops a second ⌘↵ that lands before the pending state renders.
+    if (blocked || submitting.current) return;
     const values = ticketFields.parse(fields);
+    submitting.current = true;
     setModalBusy?.(true);
     try {
       const result = ticket
@@ -126,47 +173,85 @@ export function TicketEditor({
             expectedVersion: draft.version ?? ticket.version,
             changes: values,
           })
-        : await create.mutateAsync({ projectId, ...values });
+        : await create.mutateAsync({ projectId: target, ...values });
       try {
         localStorage.removeItem(draftKey);
       } catch {
         /* A completed write must not be repeated because local storage is unavailable. */
       }
-      toast.success(ticket ? `${result.key} saved` : `${result.key} created`);
-      onSaved(result);
+      if (ticket || !createMore) {
+        toast.success(ticket ? `${result.key} saved` : `${result.key} created`);
+        return onSaved(result);
+      }
+      // Keep the project and reusable properties; the next ticket starts with a clean text. Text
+      // already typed for it while this one saved stays and is saved as its draft. The footer
+      // status announces the key, so no toast covers the footer on narrow screens.
+      const current = latest.current.fields,
+        typed = (key: "title" | "description" | "acceptanceCriteria") =>
+          current[key] === fields[key] ? "" : current[key],
+        next = {
+          ...latest.current,
+          fields: {
+            ...current,
+            title: typed("title"),
+            description: typed("description"),
+            acceptanceCriteria: typed("acceptanceCriteria"),
+          },
+        };
+      setBase({
+        ...next,
+        fields: { ...next.fields, title: "", description: "", acceptanceCriteria: "" },
+      });
+      if (next.fields.title || next.fields.description || next.fields.acceptanceCriteria)
+        changeDraft(next);
+      else {
+        setDraft(next);
+        setSavedLocally(false);
+      }
+      setCriteriaOpen(!!next.fields.acceptanceCriteria);
+      setCreated(result.key);
+      titleField.current?.focus();
     } finally {
+      submitting.current = false;
       setModalBusy?.(false);
     }
   }
   const pills = (
     <div className="-mt-3 flex flex-wrap items-center gap-1" aria-label="Ticket properties">
+      {!ticket && (
+        <ProjectProperty
+          value={target}
+          disabled={pending}
+          onChange={(next) => void changeProject(next).catch(reportError)}
+        />
+      )}
       <TicketProperty
         property="status"
-        projectId={projectId}
+        projectId={target}
         value={fields.status}
         onChange={(status) => set("status", status)}
       />
       <TicketProperty
         property="priority"
-        projectId={projectId}
+        projectId={target}
         value={fields.priority}
         onChange={(priority) => set("priority", priority)}
       />
       <TicketProperty
         property="assignee"
-        projectId={projectId}
+        projectId={target}
         value={fields.assigneeId}
         onChange={(assignee) => set("assigneeId", assignee)}
       />
       <TicketProperty
         property="kind"
-        projectId={projectId}
+        projectId={target}
         value={fields.kind}
         onChange={(kind) => set("kind", kind)}
       />
       <TicketProperty
         property="difficulty"
-        projectId={projectId}
+        projectId={target}
         value={fields.difficulty}
         onChange={(difficulty) => set("difficulty", difficulty)}
       />
@@ -182,7 +267,7 @@ export function TicketEditor({
         variant="pill"
         label="Parent ticket"
         placeholder="Parent"
-        projectId={projectId}
+        projectId={target}
         value={fields.parentId}
         onChange={(value) => set("parentId", value)}
         exclude={ticket ? [ticket.id] : []}
@@ -235,7 +320,7 @@ export function TicketEditor({
       </Popover>
     </div>
   );
-  return (
+  const form = (
     <form
       onSubmit={(event) => {
         setValidationError(undefined);
@@ -290,6 +375,7 @@ export function TicketEditor({
               required
               maxLength={500}
               autoFocus
+              ref={titleField}
               placeholder="Ticket title"
               className="field-sizing-content min-h-10 resize-none border-0 bg-transparent px-0 py-1 text-xl! font-semibold leading-snug shadow-none caret-primary focus-visible:ring-0 dark:bg-transparent"
             />
@@ -344,38 +430,46 @@ export function TicketEditor({
             aria-label="Ticket properties"
           >
             <div className="space-y-1">
+              {!ticket && (
+                <ProjectProperty
+                  variant="row"
+                  value={target}
+                  disabled={pending}
+                  onChange={(next) => void changeProject(next).catch(reportError)}
+                />
+              )}
               <TicketProperty
                 variant="row"
                 property="status"
-                projectId={projectId}
+                projectId={target}
                 value={fields.status}
                 onChange={(status) => set("status", status)}
               />
               <TicketProperty
                 variant="row"
                 property="priority"
-                projectId={projectId}
+                projectId={target}
                 value={fields.priority}
                 onChange={(priority) => set("priority", priority)}
               />
               <TicketProperty
                 variant="row"
                 property="assignee"
-                projectId={projectId}
+                projectId={target}
                 value={fields.assigneeId}
                 onChange={(assignee) => set("assigneeId", assignee)}
               />
               <TicketProperty
                 variant="row"
                 property="kind"
-                projectId={projectId}
+                projectId={target}
                 value={fields.kind}
                 onChange={(kind) => set("kind", kind)}
               />
               <TicketProperty
                 variant="row"
                 property="difficulty"
-                projectId={projectId}
+                projectId={target}
                 value={fields.difficulty}
                 onChange={(difficulty) => set("difficulty", difficulty)}
               />
@@ -408,7 +502,7 @@ export function TicketEditor({
               />
               <TicketPicker
                 label="Parent ticket"
-                projectId={projectId}
+                projectId={target}
                 value={fields.parentId}
                 onChange={(value) => set("parentId", value)}
                 exclude={ticket ? [ticket.id] : []}
@@ -432,11 +526,13 @@ export function TicketEditor({
       </div>
       <footer className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3">
         <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-          {savedLocally
-            ? "Draft saved on this device"
-            : storageError
-              ? "Draft could not be saved"
-              : ""}
+          {created
+            ? `${created} created`
+            : savedLocally
+              ? "Draft saved on this device"
+              : storageError
+                ? "Draft could not be saved"
+                : ""}
           {dirty && !stale && (
             <Button variant="ghost" size="xs" disabled={pending} onClick={discardDraft}>
               <RotateCcw />
@@ -445,8 +541,19 @@ export function TicketEditor({
           )}
         </span>
         <div className="flex items-center gap-2">
+          {!ticket && (
+            <label className="mr-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <Switch
+                size="sm"
+                checked={createMore}
+                disabled={pending}
+                onCheckedChange={setCreateMore}
+              />
+              Create more
+            </label>
+          )}
           <DialogClose render={<Button disabled={pending} />}>Cancel</DialogClose>
-          <Button type="submit" variant="default" disabled={pending || stale}>
+          <Button type="submit" variant="default" disabled={blocked}>
             {pending ? <Spinner /> : null}
             {pending ? "Saving…" : ticket ? "Save ticket" : "Create ticket"}
             {!pending && (
@@ -462,4 +569,5 @@ export function TicketEditor({
       </footer>
     </form>
   );
+  return <ProjectLabelProvider projectId={target}>{form}</ProjectLabelProvider>;
 }

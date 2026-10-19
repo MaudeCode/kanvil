@@ -13,6 +13,9 @@ export const ticketDraftSchema = z.object({
     dueAt: dueDate.nullable().default(null),
   }),
   version: z.number().int().positive().optional(),
+  // The project a new ticket will be created in, when the author chose one other than where the
+  // composer opened. The draft itself stays stored under the opening project.
+  projectId: z.uuid().optional(),
 });
 export function createTicketDraft(ticket?: Ticket): z.output<typeof ticketDraftSchema> {
   return ticket

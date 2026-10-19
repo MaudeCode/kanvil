@@ -499,6 +499,7 @@ export const operations = {
       projectSchema.extend({
         openTickets: z.number().int().nonnegative(),
         overdueTickets: z.number().int().nonnegative(),
+        role: z.enum(roles),
       }),
     ),
     "GET",
