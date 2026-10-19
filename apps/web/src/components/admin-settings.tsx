@@ -10,7 +10,7 @@ import {
 } from "@kanvil/contracts/instance";
 import { okSchema } from "@kanvil/contracts";
 import { z } from "zod";
-import { api } from "../data.tsx";
+import { api, useInfo } from "../data.tsx";
 import {
   Button,
   Check,
@@ -87,6 +87,7 @@ function initial(data: AdminInstance) {
 }
 function InstanceSettings({ data, section }: { data: AdminInstance; section: string }) {
   const cache = useQueryClient(),
+    info = useInfo(),
     [draft, setDraft] = useState(() => initial(data)),
     [pending, setPending] = useState(false),
     [error, setError] = useState<unknown>(),
@@ -627,7 +628,10 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               void action(save, "Authentication saved", true);
             }}
           >
-            <SettingRow title="Email and password sign-in">
+            <SettingRow
+              title="Email and password sign-in"
+              description="Includes emailed sign-in codes and password reset."
+            >
               <Switch
                 aria-label="Email and password sign-in"
                 checked={draft.authentication.emailPasswordEnabled}
@@ -660,6 +664,15 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
             <SettingRow title="Identity provider">
               {data.deployment.oidc?.name ?? "Not configured"}
             </SettingRow>
+            <SettingRow
+              title="Linked-account providers"
+              description="Sign in only accounts that linked them; they never create accounts."
+            >
+              {info.data?.providers
+                .filter((provider) => provider.id !== "oidc")
+                .map((provider) => provider.name)
+                .join(", ") || "Not configured"}
+            </SettingRow>
             <FormActions
               layout="inline"
               error={error}
@@ -680,8 +693,9 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
             </>
           )}
           <p>
-            Configure OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_NAME in your
-            deployment, then restart Kanvil. Provider secrets are never returned to the browser.
+            Configure OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_NAME, or a
+            GITHUB_, GOOGLE_, or DISCORD_ CLIENT_ID and CLIENT_SECRET pair, in your deployment, then
+            restart Kanvil. Provider secrets are never returned to the browser.
           </p>
           <h3>Consumer interfaces</h3>
           <CopyValue label="HTTP API" value={`${data.deployment.url}/api/v1`} />
