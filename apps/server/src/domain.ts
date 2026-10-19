@@ -63,6 +63,7 @@ import { invitationHandlers } from "./invitation-operations.ts";
 import { workflowHandlers } from "./workflow-operations.ts";
 import { publicHandlers } from "./public-operations.ts";
 import { customFieldHandlers } from "./custom-field-operations.ts";
+import { repositoryHandlers } from "./repository-operations.ts";
 
 export interface Actor {
   id: string;
@@ -570,6 +571,7 @@ export function createDomain(
     ...invitationHandlers,
     ...workflowHandlers,
     ...customFieldHandlers,
+    ...repositoryHandlers,
   };
   // The writes an archived project still accepts: its lifecycle, details, order, and access, and
   // removing what reaches outside it. Everything else waits for a restore.
@@ -584,6 +586,7 @@ export function createDomain(
     "set_member",
     "revoke_calendar_feed",
     "delete_project_destination",
+    "delete_repository_connection",
   ]);
   // Operations that act for the person signed in, never for a credential.
   const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);
@@ -594,6 +597,32 @@ export function createDomain(
     "search_tickets",
     "search_workspace",
   ]);
+  const withServices = (ctx: Context) => {
+    if (services.blobs) ctx.blobs = services.blobs;
+    if (services.search) ctx.search = services.search;
+    if (services.secrets) ctx.secrets = services.secrets;
+    if (services.publicUrl) ctx.publicUrl = services.publicUrl;
+    return ctx;
+  };
+  // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
+  const locked = <T>(run: (tx: Transaction) => Promise<T>) =>
+    database.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+      return run(tx);
+    });
+  // A locked write that arrives outside the operation registry, such as a signed repository
+  // webhook. `as` gives an actor the same write context and project checks an operation gets.
+  const transact = <T>(
+    run: (tx: Transaction, as: (actor: Actor, projectId: string) => Promise<Context>) => Promise<T>,
+  ) =>
+    locked((tx) =>
+      run(tx, async (actor, projectId) => {
+        const ctx = await context(tx, actor, "write", projectId);
+        if (ctx.project?.archivedAt)
+          fail(409, "project_archived", "Restore this archived project before changing it");
+        return withServices(ctx);
+      }),
+    );
   async function execute<K extends Operation>(
     name: K,
     value: unknown,
@@ -615,10 +644,7 @@ export function createDomain(
       );
     const outgoing: MailMessage[] = [];
     const invoke = async (ctx: Context) => {
-      if (services.blobs) ctx.blobs = services.blobs;
-      if (services.search) ctx.search = services.search;
-      if (services.secrets) ctx.secrets = services.secrets;
-      if (services.publicUrl) ctx.publicUrl = services.publicUrl;
+      withServices(ctx);
       if (services.mail) ctx.mail = (message) => outgoing.push(message);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
@@ -626,9 +652,7 @@ export function createDomain(
     };
     if (spec.method === "GET")
       return invoke(await context(database.db, actor, spec.scope, projectId, workspaceId));
-    const committed = await database.db.transaction(async (tx) => {
-      // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+    const committed = await locked(async (tx) => {
       const requestId = "requestId" in input ? input.requestId : undefined;
       const hash = createHash("sha256").update(JSON.stringify({ name, input })).digest("hex");
       const receipt = requestId
@@ -802,6 +826,7 @@ export function createDomain(
   }
   return {
     execute,
+    transact,
     readPublic,
     actor: resolveActor,
     accessibleProjects,

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { deliverBatch } from "./outbox.ts";
+import { defaultAdapters } from "./runtime-adapters.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
@@ -65,6 +66,7 @@ describe("durable optional native push", () => {
       { ...fixture.config, KANVIL_PUSH_ENABLED: pushEnabled },
       { push: transport, http: async () => ({ status: 500 }) },
       deliverySecrets(fixture.config),
+      defaultAdapters.repositories(fixture.config),
     );
   beforeAll(async () => {
     fixture = await createFixture();

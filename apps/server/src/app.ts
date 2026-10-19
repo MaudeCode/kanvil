@@ -42,6 +42,7 @@ import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
 import { deliverBatch } from "./outbox.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
+import { receiveRepositoryWebhook } from "./repository-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -100,7 +101,8 @@ export async function createApplication(
     ),
     search = createTicketSearch(integrationDatabase, instance, adapters.ticketIndex, adapters.jobs);
   const secrets = deliverySecrets(config),
-    senders = adapters.senders(config);
+    senders = adapters.senders(config),
+    repositories = adapters.repositories(config);
   const auth = adapters.auth(database, config),
     domain = createDomain(database, {
       blobs,
@@ -117,7 +119,7 @@ export async function createApplication(
   });
   // Queued deliveries are durable, so a restart resumes where the last worker stopped.
   const outbox = adapters.jobs("outbox", 5000, () =>
-    deliverBatch(database, config, senders, secrets),
+    deliverBatch(database, config, senders, secrets, repositories),
   );
   const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
   const accounts = createAccountAdministration(integrationDatabase, auth, config);
@@ -293,6 +295,29 @@ export async function createApplication(
         "Referrer-Policy": "no-referrer",
       },
     });
+  });
+  // Repository webhooks authenticate by their signature under the connection's saved secret.
+  app.openAPIRegistry.registerPath({
+    method: "post",
+    path: "/api/repository-hooks/{connectionId}",
+    request: { params: z.object({ connectionId: z.uuid() }) },
+    responses: {
+      200: { description: "Already handled; nothing applied again" },
+      202: { description: "Handled; the body names the outcome per linked ticket" },
+      401: { description: "Signature does not match" },
+      404: { description: "Connection unavailable" },
+    },
+  });
+  app.post("/api/repository-hooks/:connectionId", async (c) => {
+    const result = await receiveRepositoryWebhook(
+      domain,
+      repositories,
+      secrets,
+      c.req.param("connectionId"),
+      c.req.raw.headers,
+      await c.req.text(),
+    );
+    return c.json(result, result.outcome === "duplicate" ? 200 : 202);
   });
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);

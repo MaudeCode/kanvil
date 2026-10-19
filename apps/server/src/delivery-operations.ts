@@ -67,18 +67,33 @@ function present(ctx: Context, row: Target, pending: Map<string, number>) {
     settings: Object.fromEntries(entries.filter(([field]) => !secret.includes(field))),
     secrets: entries.flatMap(([field]) => (secret.includes(field) ? [field] : [])),
     endpoint: endpointOf(settings),
-    health: {
-      status: !row.lastAttemptAt ? "idle" : row.lastError ? "failing" : "ok",
-      error: row.lastError,
-      lastAttemptAt: row.lastAttemptAt,
-      lastSuccessAt: row.lastSuccessAt,
-      pending: pending.get(row.id) ?? 0,
-    },
+    health: healthOf(row, pending),
   };
 }
-async function pendingFor(
+// The latest send's outcome for any outbox target, with its count of unfinished deliveries.
+export function healthOf(
+  row: {
+    id: string;
+    lastAttemptAt: Date | null;
+    lastSuccessAt: Date | null;
+    lastError: string | null;
+  },
+  pending: Map<string, number>,
+) {
+  return {
+    status: !row.lastAttemptAt ? "idle" : row.lastError ? "failing" : "ok",
+    error: row.lastError,
+    lastAttemptAt: row.lastAttemptAt,
+    lastSuccessAt: row.lastSuccessAt,
+    pending: pending.get(row.id) ?? 0,
+  };
+}
+export async function pendingFor(
   ctx: Context,
-  column: typeof deliveries.channelId | typeof deliveries.destinationId,
+  column:
+    | typeof deliveries.channelId
+    | typeof deliveries.destinationId
+    | typeof deliveries.connectionId,
   ids: string[],
 ) {
   if (!ids.length) return new Map<string, number>();
@@ -89,7 +104,7 @@ async function pendingFor(
     .groupBy(column);
   return new Map(rows.map((row) => [String(row.id), row.total]));
 }
-const changedHealth = { lastAttemptAt: null, lastSuccessAt: null, lastError: null };
+export const changedHealth = { lastAttemptAt: null, lastSuccessAt: null, lastError: null };
 
 async function ownChannel(ctx: Context, channelId: string, expectedVersion?: number) {
   const row = one(

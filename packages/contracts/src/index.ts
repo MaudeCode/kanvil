@@ -735,12 +735,21 @@ export function resourceProvider(url: string): string | null {
   const host = resourceHost(url)?.replace(/^www\./, "");
   return host && Object.hasOwn(resourceProviders, host) ? (resourceProviders[host] ?? null) : null;
 }
+// What a verified link points at on its code host.
+export const remoteKinds = ["branch", "pull_request", "issue"] as const;
+export const remoteKindLabels: Record<(typeof remoteKinds)[number], string> = {
+  branch: "Branch",
+  pull_request: "Pull request",
+  issue: "Issue",
+};
 export const resourceSchema = resourceFields.extend({
   id: z.uuid(),
   projectId: z.uuid(),
   ticketId: z.uuid(),
   actorId: z.string(),
   provider: z.string().nullable(),
+  // Set with the remote state when a repository connection verified the link.
+  remoteKind: z.enum(remoteKinds).nullable(),
   remoteState: z.string().nullable(),
   remoteCheckedAt: timestamp.nullable(),
   version,
@@ -1032,6 +1041,55 @@ export const projectDestinationSchema = z.object({
   events: z.array(z.enum(destinationEvents)),
 });
 export type ProjectDestination = z.output<typeof projectDestinationSchema>;
+// Repository connections. Signed webhooks from a connected repository attach verified issue,
+// branch, and pull-request links to the tickets they name, and can move those tickets to a chosen
+// workflow state. Access checks and link comments go through the delivery outbox.
+export const repositoryProviders = ["github"] as const;
+export type RepositoryProvider = (typeof repositoryProviders)[number];
+export const repositoryProviderLabels: Record<RepositoryProvider, string> = { github: "GitHub" };
+export const repositoryTriggers = [
+  "branch_created",
+  "pull_request_opened",
+  "pull_request_draft",
+  "pull_request_merged",
+  "pull_request_closed",
+] as const;
+export type RepositoryTrigger = (typeof repositoryTriggers)[number];
+export const repositoryTriggerLabels: Record<RepositoryTrigger, string> = {
+  branch_created: "Branch created",
+  pull_request_opened: "Pull request opened",
+  pull_request_draft: "Draft pull request",
+  pull_request_merged: "Pull request merged",
+  pull_request_closed: "Pull request closed unmerged",
+};
+export const repositorySecretFields = ["token", "webhookSecret"] as const;
+const repositoryName = z
+  .string()
+  .trim()
+  .max(200)
+  .regex(/^[A-Za-z0-9-]+\/(?!\.\.?$)[\w.-]+$/, "Use owner/repository");
+const repositorySecret = z.string().trim().min(1).max(500);
+// A trigger left out moves nothing.
+const repositoryTransitions = z.partialRecord(z.enum(repositoryTriggers), z.uuid());
+export const repositoryConnectionSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  provider: z.enum(repositoryProviders),
+  repository: z.string(),
+  // Where the code host sends signed events for this connection.
+  webhookUrl: z.string(),
+  secrets: z.array(z.enum(repositorySecretFields)),
+  paused: z.boolean(),
+  commentOnLink: z.boolean(),
+  transitions: repositoryTransitions,
+  // The latest access check or link comment.
+  health: deliveryHealthSchema,
+  lastEventAt: timestamp.nullable(),
+  lastEventError: z.string().nullable(),
+  version,
+  createdAt: timestamp,
+});
+export type RepositoryConnection = z.output<typeof repositoryConnectionSchema>;
 export const credentialsSchema = z.array(
   z.object({
     id: z.string(),
@@ -1106,6 +1164,9 @@ export const eventLabels: Record<string, string> = {
   "destination.created": "Destination added",
   "destination.updated": "Destination changed",
   "destination.deleted": "Destination removed",
+  "repository.connected": "Repository connected",
+  "repository.updated": "Repository connection changed",
+  "repository.disconnected": "Repository disconnected",
 };
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),
@@ -2397,6 +2458,69 @@ export const operations = {
     "/projects/{projectId}/destinations/{destinationId}/test",
     "admin",
     "Queue a test message to a project destination; its health shows the result.",
+  ),
+  list_repository_connections: op(
+    projectInput,
+    z.array(repositoryConnectionSchema),
+    "GET",
+    "/projects/{projectId}/repositories",
+    "admin",
+    "List the project's connected repositories with their webhook URL, mapped transitions, access check, and latest webhook. Secrets are never returned.",
+  ),
+  create_repository_connection: op(
+    projectInput
+      .extend({
+        ...mutation,
+        provider: z.enum(repositoryProviders).default("github"),
+        repository: repositoryName,
+        token: repositorySecret,
+        webhookSecret: repositorySecret,
+        commentOnLink: z.boolean().default(false),
+        transitions: repositoryTransitions.default({}),
+        paused: z.boolean().default(false),
+      })
+      .strict(),
+    repositoryConnectionSchema,
+    "POST",
+    "/projects/{projectId}/repositories",
+    "admin",
+    "Connect a repository with an access token and a webhook signing secret, both write-only. Queues an access check; `health` shows its result.",
+  ),
+  update_repository_connection: op(
+    projectInput
+      .extend({
+        ...mutation,
+        connectionId: z.uuid(),
+        expectedVersion: version,
+        repository: repositoryName.optional(),
+        token: repositorySecret.optional(),
+        webhookSecret: repositorySecret.optional(),
+        commentOnLink: z.boolean().optional(),
+        transitions: repositoryTransitions.optional(),
+        paused: z.boolean().optional(),
+      })
+      .strict(),
+    repositoryConnectionSchema,
+    "PATCH",
+    "/projects/{projectId}/repositories/{connectionId}",
+    "admin",
+    "Reconnect, pause, or change the transitions of a repository connection. Omitted secrets keep their saved value; a new repository or token queues another access check.",
+  ),
+  delete_repository_connection: op(
+    projectInput.extend({ ...mutation, connectionId: z.uuid(), expectedVersion: version }).strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/repositories/{connectionId}",
+    "admin",
+    "Disconnect a repository. Its webhook stops being accepted at once; links it verified stay on their tickets.",
+  ),
+  verify_repository_connection: op(
+    projectInput.extend({ ...mutation, connectionId: z.uuid() }).strict(),
+    okSchema,
+    "POST",
+    "/projects/{projectId}/repositories/{connectionId}/verify",
+    "admin",
+    "Queue an access check of the saved token against the repository; `health` shows the result.",
   ),
 } as const;
 

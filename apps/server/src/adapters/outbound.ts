@@ -52,7 +52,7 @@ export function isReservedAddress(address: string) {
   return family === 0 || reserved.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
-// Posts JSON to a configured endpoint. Every resolved address is checked and the connection uses
+// Sends JSON to a configured endpoint. Every resolved address is checked and the connection uses
 // the checked address, so DNS rebinding cannot reach an internal host; redirects are not followed.
 export function createHttpSender({
   allowPrivate,
@@ -86,7 +86,7 @@ export function createHttpSender({
       const call = send(
         url,
         {
-          method: "POST",
+          method: request.method ?? "POST",
           lookup,
           headers: {
             "Content-Type": "application/json",

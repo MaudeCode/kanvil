@@ -22,13 +22,20 @@ import {
   projectDestinations,
   projects,
   pushDevices,
+  repositoryConnections,
   subscriptions,
   tickets,
 } from "./schema.ts";
 import { json } from "./domain.ts";
 import { readSettings } from "./delivery-operations.ts";
+import { driverFor, readRepositorySettings } from "./repository-operations.ts";
 import { createHttpSender, createMailSender, DeliveryError } from "./adapters/outbound.ts";
-import type { MailMessage, OutboundRequest, OutboundSenders } from "./adapters/ports.ts";
+import type {
+  MailMessage,
+  OutboundRequest,
+  OutboundSenders,
+  RepositoryDrivers,
+} from "./adapters/ports.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
 import type { Sealer } from "./sealing.ts";
@@ -48,6 +55,7 @@ async function load(database: Database, id: string) {
         session: session,
         channel: notificationChannels,
         destination: projectDestinations,
+        connection: repositoryConnections,
         notification: notifications,
         event: events,
         project: { id: projects.id, key: projects.key, name: projects.name },
@@ -70,6 +78,7 @@ async function load(database: Database, id: string) {
       .leftJoin(session, eq(session.id, pushDevices.sessionId))
       .leftJoin(notificationChannels, eq(notificationChannels.id, deliveries.channelId))
       .leftJoin(projectDestinations, eq(projectDestinations.id, deliveries.destinationId))
+      .leftJoin(repositoryConnections, eq(repositoryConnections.id, deliveries.connectionId))
       .leftJoin(notifications, eq(notifications.id, deliveries.notificationId))
       .leftJoin(
         events,
@@ -122,7 +131,7 @@ function notificationSkip(row: Row, ownerId: string | undefined): string | null 
   return null;
 }
 function skipReason(row: Row, config: Config): string | null {
-  const { job, device, channel, destination, event } = row;
+  const { job, device, channel, destination, connection, event } = row;
   // Turning push off stops sends to devices that registered while it was on.
   if (device && !config.KANVIL_PUSH_ENABLED) return "push_disabled";
   if (device)
@@ -138,6 +147,13 @@ function skipReason(row: Row, config: Config): string | null {
       channelRouteAllows(channel.routes, row.workspaceId ?? undefined, event.projectId)
       ? null
       : "route_disabled";
+  }
+  // A connection's access check always runs; its link comments follow the current preferences.
+  if (connection) {
+    if (!job.eventId) return null;
+    if (connection.paused) return "paused";
+    if (!connection.commentOnLink) return "comments_disabled";
+    return event?.projectId === connection.projectId ? null : "access_revoked";
   }
   if (!destination) return "access_revoked";
   if (!job.eventId) return null;
@@ -176,6 +192,7 @@ function compose(config: Config, row: Row): Message {
 }
 // Chat formats render mentions; a zero-width space keeps ticket text from pinging anyone.
 const quiet = (value: string) => value.replaceAll("@", "@​");
+const markdownText = (value: string) => quiet(value).replaceAll(/[[\]\\]/g, "\\$&");
 const slackText = (value: string) =>
   quiet(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const post = (url: string, body: unknown, headers?: Record<string, string>): OutboundRequest => ({
@@ -286,6 +303,7 @@ export async function deliverBatch(
   config: Config,
   senders: OutboundSenders,
   secrets: Sealer,
+  repositories: RepositoryDrivers,
 ) {
   const lock = await database.pool.connect();
   let ownsLock = false;
@@ -307,7 +325,7 @@ export async function deliverBatch(
       const skip = skipReason(row, config);
       if (skip) await finish(database, row.job, skip);
       else if (row.device) await sendPush(database, config, senders, row);
-      else await send(database, config, senders, secrets, row);
+      else await send(database, config, senders, secrets, repositories, row);
     }
   } finally {
     try {
@@ -347,23 +365,57 @@ async function recordHealth(database: Database, job: Job, error: string | null) 
       .update(projectDestinations)
       .set(values)
       .where(eq(projectDestinations.id, job.destinationId));
+  if (job.connectionId)
+    await database.db
+      .update(repositoryConnections)
+      .set(values)
+      .where(eq(repositoryConnections.id, job.connectionId));
+}
+// A connection's access check, or its comment linking an issue or pull request to the ticket.
+function repositoryRequest(
+  config: Config,
+  secrets: Sealer,
+  repositories: RepositoryDrivers,
+  row: Row & { connection: NonNullable<Row["connection"]> },
+): OutboundRequest {
+  const { connection, event } = row,
+    { token } = readRepositorySettings(secrets, connection.settings),
+    driver = driverFor(repositories, connection);
+  if (!event) return driver.access(connection.repository, token);
+  const remote = event.data.remote,
+    number =
+      remote && typeof remote === "object" && "number" in remote ? Number(remote.number) : NaN;
+  if (!Number.isInteger(number)) throw new DeliveryError("invalid_event", false);
+  const message = compose(config, row);
+  return driver.comment(
+    connection.repository,
+    token,
+    number,
+    `Linked to [${markdownText(message.title)}](${message.url}) in Kanvil.`,
+  );
 }
 async function send(
   database: Database,
   config: Config,
   senders: OutboundSenders,
   secrets: Sealer,
+  repositories: RepositoryDrivers,
   row: Row,
 ) {
-  const target = row.channel ?? row.destination;
-  if (!target) return;
+  const { connection } = row,
+    target = row.channel ?? row.destination;
   let failure: DeliveryError | undefined;
   try {
-    const request = outbound(readSettings({ secrets }, target.settings), compose(config, row), {
-      deliveryId: row.job.id,
-      event: row.event,
-      project: row.project,
-    });
+    let request: ReturnType<typeof outbound>;
+    if (connection)
+      request = { http: repositoryRequest(config, secrets, repositories, { ...row, connection }) };
+    else if (target)
+      request = outbound(readSettings({ secrets }, target.settings), compose(config, row), {
+        deliveryId: row.job.id,
+        event: row.event,
+        project: row.project,
+      });
+    else return;
     if ("mail" in request) {
       if (!senders.mail) throw new DeliveryError("email_unavailable", false);
       await senders.mail(request.mail);

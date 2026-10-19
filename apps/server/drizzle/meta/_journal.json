@@ -211,6 +211,13 @@
       "when": 1792401203156,
       "tag": "0029_ticket_relocation",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792402010453,
+      "tag": "0030_repository_connections",
+      "breakpoints": true
     }
   ]
 }

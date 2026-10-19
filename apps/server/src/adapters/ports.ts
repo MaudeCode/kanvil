@@ -1,4 +1,5 @@
 import type { Expo } from "expo-server-sdk";
+import type { RepositoryProvider, RepositoryTrigger, remoteKinds } from "@kanvil/contracts";
 export interface ObjectStore {
   keyFor(id: string): string;
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
@@ -55,6 +56,8 @@ export type WakeupBusFactory = (
 ) => Promise<WakeupBus>;
 // Outbound delivery transports. The outbox owns retries, authorization, and health.
 export interface OutboundRequest {
+  // POST unless set.
+  method?: "GET" | "POST";
   url: string;
   headers?: Record<string, string> | undefined;
   body: string;
@@ -70,3 +73,36 @@ export interface OutboundSenders {
   // Absent when the instance has no SMTP relay.
   mail?: (message: MailMessage) => Promise<void>;
 }
+// Code-host repositories. A driver checks webhook signatures, reads deliveries into provider-neutral
+// changes, and builds the API requests the outbox sends; it never writes Kanvil state itself.
+export interface RepositoryChange {
+  kind: (typeof remoteKinds)[number];
+  url: string;
+  title: string;
+  // The issue or pull-request number that comments go to; null for a branch.
+  number: number | null;
+  // open, draft, merged, or closed for pull requests and issues; active or deleted for branches.
+  state: string;
+  trigger: RepositoryTrigger | null;
+  // Branch names and titles that may name tickets.
+  references: string[];
+  // When the host recorded this state; null when the payload has none and receipt time counts.
+  occurredAt: Date | null;
+  // Whether this change may create a link; a deleted branch only updates an existing one.
+  creates: boolean;
+}
+export interface RepositoryDelivery {
+  id: string;
+  event: string;
+  repository: string | null;
+  // Null for events Kanvil does not use, such as the setup ping.
+  change: RepositoryChange | null;
+}
+export interface RepositoryDriver {
+  signed(secret: string, headers: Headers, body: string): boolean;
+  // Throws on a payload it cannot read.
+  read(headers: Headers, body: string): RepositoryDelivery;
+  access(repository: string, token: string): OutboundRequest;
+  comment(repository: string, token: string, number: number, text: string): OutboundRequest;
+}
+export type RepositoryDrivers = Record<RepositoryProvider, RepositoryDriver>;
