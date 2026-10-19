@@ -382,6 +382,7 @@ export const collaborationHandlers: Pick<
           // Remote state belongs to the old target, so a new URL starts unknown again.
           ...(moved && {
             provider: resourceProvider(url),
+            remoteKind: null,
             remoteState: null,
             remoteCheckedAt: null,
           }),

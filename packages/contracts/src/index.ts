@@ -1167,6 +1167,7 @@ export const eventLabels: Record<string, string> = {
   "repository.connected": "Repository connected",
   "repository.updated": "Repository connection changed",
   "repository.disconnected": "Repository disconnected",
+  "repository.received": "Repository webhook received",
 };
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),

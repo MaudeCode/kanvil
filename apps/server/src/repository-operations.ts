@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ApiError,
@@ -15,6 +15,7 @@ import {
   workflowStates,
 } from "./schema.ts";
 import {
+  appendEvents,
   assertVersion,
   fail,
   one,
@@ -196,6 +197,18 @@ export const repositoryHandlers: Pick<
         .where(eq(repositoryConnections.id, current.id))
         .returning(),
     );
+    if (row.repository !== current.repository)
+      // Queued comments name issues of the old repository; never send them to the new one.
+      await ctx.db
+        .update(deliveries)
+        .set({ finishedAt: new Date(), error: "repository_changed" })
+        .where(
+          and(
+            eq(deliveries.connectionId, row.id),
+            isNotNull(deliveries.eventId),
+            isNull(deliveries.finishedAt),
+          ),
+        );
     if (recheck) await ctx.db.insert(deliveries).values({ connectionId: row.id });
     await publish(ctx, "repository.updated", null, connectionEvent(row));
     return presentOne(ctx, row);
@@ -392,16 +405,30 @@ export async function receiveRepositoryWebhook(
         ),
       );
     // Connection-level refusals show on the connection; per-ticket skips are recorded above.
+    const lastEventError =
+      result.outcome === "access_revoked" || result.outcome === "repository_mismatch"
+        ? result.outcome
+        : null;
     await tx
       .update(repositoryConnections)
-      .set({
-        lastEventAt: new Date(),
-        lastEventError:
-          result.outcome === "access_revoked" || result.outcome === "repository_mismatch"
-            ? result.outcome
-            : null,
-      })
+      .set({ lastEventAt: new Date(), lastEventError })
       .where(eq(repositoryConnections.id, connection.id));
+    // Open settings screens learn of every delivery, including ones that changed no ticket.
+    await appendEvents(tx, [
+      {
+        projectId: connection.projectId,
+        ticketId: null,
+        actorId: null,
+        type: "repository.received",
+        data: {
+          connectionId: connection.id,
+          event: delivery.event,
+          outcome: result.outcome,
+          lastEventError,
+          source: { kind: "repository", id: connection.id },
+        },
+      },
+    ]);
     return result;
 
     async function apply(): Promise<WebhookResult> {

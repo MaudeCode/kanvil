@@ -11,7 +11,7 @@ import { createHttpSender } from "./adapters/outbound.ts";
 import { createGitHubDriver } from "./adapters/github.ts";
 import { deliverBatch } from "./outbox.ts";
 import { deliverySecrets } from "./sealing.ts";
-import { deliveries, receivedWebhooks, repositoryConnections } from "./schema.ts";
+import { deliveries, events, receivedWebhooks, repositoryConnections } from "./schema.ts";
 import type { Actor } from "./domain.ts";
 
 function portOf(address: string | AddressInfo | null) {
@@ -276,6 +276,19 @@ describe("repository connections", () => {
       outcome: "ignored",
     });
     expect((await listed())?.lastEventAt).not.toBeNull();
+    // A delivery that changes no ticket still tells open clients the connection changed.
+    expect(
+      await fixture.database.db
+        .select({ data: events.data })
+        .from(events)
+        .where(eq(events.type, "repository.received")),
+    ).toContainEqual({
+      data: expect.objectContaining({
+        connectionId: created.id,
+        event: "ping",
+        outcome: "ignored",
+      }),
+    });
   });
 
   it("links verified branches, pull requests, and issues and moves tickets through mapped states", async () => {
@@ -379,6 +392,21 @@ describe("repository connections", () => {
     expect(foreign.body).toMatchObject({ outcome: "repository_mismatch" });
     expect((await listed())?.lastEventError).toBe("repository_mismatch");
     expect(await links(other)).toHaveLength(1);
+    // Pointing a verified link elsewhere drops everything the connection verified about it.
+    const [verified] = await links(other);
+    await app.domain.execute(
+      "update_resource",
+      {
+        projectId: project.id,
+        resourceId: verified?.id,
+        expectedVersion: verified?.version,
+        url: "https://example.com/spec",
+      },
+      owner,
+    );
+    expect(await links(other)).toMatchObject([
+      { remoteKind: null, remoteState: null, remoteCheckedAt: null },
+    ]);
   });
 
   it("rejects unsigned deliveries and applies replayed or out-of-order ones only once", async () => {
@@ -606,6 +634,49 @@ describe("repository connections", () => {
       .from(deliveries)
       .where(eq(deliveries.error, "comments_disabled"));
     expect(skipped?.finishedAt).toBeInstanceOf(Date);
+
+    // Moving the connection to another repository never sends its queued comments there.
+    connection = (await listed()) ?? connection;
+    connection = await app.domain.execute(
+      "update_repository_connection",
+      {
+        projectId: project.id,
+        connectionId: connection.id,
+        expectedVersion: connection.version,
+        commentOnLink: true,
+      },
+      owner,
+    );
+    await send(connection, "issues", {
+      action: "opened",
+      issue: {
+        number: 23,
+        html_url: "https://github.com/acme/widgets/issues/23",
+        title: `${ticket.key} second follow-up`,
+        state: "open",
+        updated_at: "2030-01-01T09:00:00Z",
+      },
+      repository,
+    });
+    await app.domain.execute(
+      "update_repository_connection",
+      {
+        projectId: project.id,
+        connectionId: connection.id,
+        expectedVersion: connection.version,
+        repository: "acme/renamed",
+      },
+      owner,
+    );
+    await tick();
+    expect(github.state.received).toMatchObject([
+      { method: "GET", url: "/api/v3/repos/acme/renamed" },
+    ]);
+    const [cancelled] = await fixture.database.db
+      .select()
+      .from(deliveries)
+      .where(eq(deliveries.error, "repository_changed"));
+    expect(cancelled?.finishedAt).toBeInstanceOf(Date);
   });
 
   it("moves mapped transitions with a deleted workflow state's tickets", async () => {
