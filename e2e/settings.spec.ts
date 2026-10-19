@@ -401,7 +401,7 @@ test("one settings navigation reaches every scope and keeps history, palette, an
   await expect(page.getByRole("heading", { name: "Event delivery", exact: true })).toBeVisible();
   await page.keyboard.press("?");
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
-  for (const category of ["General", "Ticket list", "Ticket", "Markdown"])
+  for (const category of ["General", "Ticket list", "Ticket", "Search", "Markdown"])
     await expect(help.getByRole("heading", { name: category, exact: true })).toBeVisible();
   await expect(help.getByText("Open the next or previous ticket", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");

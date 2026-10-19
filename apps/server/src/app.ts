@@ -608,9 +608,15 @@ export async function createApplication(
       },
     });
     app.openapi(route, async (c) => {
+      // A repeated query parameter carries a list, such as `status=todo&status=done`.
       const values =
         spec.method === "GET"
-          ? c.req.query()
+          ? Object.fromEntries(
+              Object.entries(c.req.queries()).map(([key, list]) => [
+                key,
+                list.length === 1 ? list[0] : list,
+              ]),
+            )
           : z.record(z.string(), z.unknown()).parse(await c.req.json());
       return Response.json(
         await domain.execute(name, { ...values, ...c.req.param() }, c.get("actor")),

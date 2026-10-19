@@ -10,8 +10,11 @@ import type { Instance } from "./instance.ts";
 import type { SearchSettings } from "@kanvil/contracts/instance";
 import { fail, one } from "./domain.ts";
 
+// An ILIKE pattern that matches the query literally anywhere in the text.
+export const likePattern = (query: string) =>
+  `%${query.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 export function postgresSearch(query: string): SQL | undefined {
-  const value = `%${query.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+  const value = likePattern(query);
   return or(
     ilike(tickets.title, value),
     ilike(tickets.description, value),
@@ -21,12 +24,26 @@ export function postgresSearch(query: string): SQL | undefined {
     sql`array_to_string(${tickets.scopes}, ' ') ILIKE ${value}`,
   );
 }
+// `engine` says what matched: the external index only while it is current. `indexing` is set when
+// an index is configured but PostgreSQL answered because the index is behind or unavailable.
+export type TicketMatch = {
+  where: SQL | undefined;
+  engine: "postgres" | "index";
+  indexing: boolean;
+};
 export type TicketSearchProvider = {
   where: (
     db: Connection | Transaction,
     projectIds: readonly string[],
     query: string,
-  ) => Promise<SQL | undefined>;
+  ) => Promise<TicketMatch>;
+};
+export const builtinSearch: TicketSearchProvider = {
+  where: async (_db, _ids, query) => ({
+    where: postgresSearch(query),
+    engine: "postgres",
+    indexing: false,
+  }),
 };
 export function createTicketSearch(
   database: Database,
@@ -109,9 +126,13 @@ export function createTicketSearch(
     _db: Connection | Transaction,
     projectIds: readonly string[],
     query: string,
-  ) {
-    const fallback = () => postgresSearch(query),
-      settings = await instance.search();
+  ): Promise<TicketMatch> {
+    const settings = await instance.search();
+    const fallback = (): TicketMatch => ({
+      where: postgresSearch(query),
+      engine: "postgres",
+      indexing: !!settings,
+    });
     if (!settings) return fallback();
     const state = (await database.db.select().from(searchState).where(eq(searchState.id, 1)))[0],
       clock = (await database.db.select().from(eventClock).where(eq(eventClock.id, 1)))[0];
@@ -130,7 +151,11 @@ export function createTicketSearch(
         projectIds,
         query,
       );
-      return ids.length ? inArray(tickets.id, ids) : sql`false`;
+      return {
+        where: ids.length ? inArray(tickets.id, ids) : sql`false`,
+        engine: "index",
+        indexing: false,
+      };
     } catch {
       return fallback();
     }

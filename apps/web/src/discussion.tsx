@@ -1,8 +1,9 @@
 import { Pencil, Trash2, Send } from "lucide-react";
 import { MarkdownField } from "./components/markdown-field.tsx";
 import { submitOnModEnter } from "./forms.ts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import type { Ticket } from "@kanvil/contracts";
 import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import {
@@ -103,8 +104,22 @@ function Comment({
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
   const own = comment.actorId === identity.id;
+  // A search result links here with the comment's anchor; bring it into view and mark it.
+  // ponytail: only comments on the loaded page can be reached; page to the comment if threads
+  // routinely pass 50 comments.
+  const linked =
+      useRouterState({ select: (state) => state.location.hash }) === `comment-${comment.id}`,
+    article = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (linked) article.current?.scrollIntoView({ block: "center" });
+  }, [linked]);
   return (
-    <article className="group/comment relative py-4 animate-in fade-in-0 duration-200">
+    <article
+      ref={article}
+      id={`comment-${comment.id}`}
+      data-linked={linked}
+      className="group/comment relative scroll-mt-16 py-4 animate-in fade-in-0 duration-200 data-[linked=true]:animate-row-in data-[linked=true]:shadow-[inset_2px_0_0_var(--primary)] data-[linked=true]:pl-3"
+    >
       <div className="mb-3 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pr-20 text-xs text-muted-foreground">
         <strong className="text-foreground">
           <ActorName projectId={comment.projectId} actorId={comment.actorId} avatar />

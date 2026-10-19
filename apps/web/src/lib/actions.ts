@@ -4,7 +4,7 @@ import { formats, markdownFormats } from "./markdown.ts";
 import { ticketBranch, ticketMarkdown } from "./ticket-copy.ts";
 // One catalog for command labels and their keys. The keyboard help, the command palette and the
 // ticket menus read it; `useShortcut` stays the owner of the key events.
-export const actionCategories = ["General", "Ticket list", "Ticket", "Markdown"] as const;
+export const actionCategories = ["General", "Ticket list", "Ticket", "Search", "Markdown"] as const;
 type Action = { label: string; keys: string; category: (typeof actionCategories)[number] };
 export const actions = {
   palette: { label: "Go to anything", keys: "⌘ K", category: "General" },
@@ -32,6 +32,7 @@ export const actions = {
   step: { label: "Open the next or previous ticket", keys: "J K", category: "Ticket" },
   edit: { label: "Edit ticket", keys: "E", category: "Ticket" },
   save: { label: "Save a ticket or comment", keys: "⌘ ↵", category: "Ticket" },
+  results: { label: "Move through search results", keys: "J K", category: "Search" },
 } satisfies Record<string, Action>;
 const markdownActions = markdownFormats.flatMap((format): Action[] => {
   const spec = formats[format];

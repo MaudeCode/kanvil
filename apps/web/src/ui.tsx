@@ -706,6 +706,7 @@ export function SectionHeading({
 }
 // A magnifying glass that opens into an underlined field, focused and ready to type. Leaving it
 // empty folds it back; `shortcut` opens it from the keyboard and `defaultOpen` starts it open.
+// `wide` lets the field fill its row, for a page whose main control is the search.
 export function SearchField({
   label,
   value,
@@ -713,6 +714,7 @@ export function SearchField({
   placeholder = "Search…",
   shortcut,
   defaultOpen = false,
+  wide = false,
   className,
 }: {
   label: string;
@@ -721,6 +723,7 @@ export function SearchField({
   placeholder?: string;
   shortcut?: string;
   defaultOpen?: boolean;
+  wide?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(() => defaultOpen || value.length > 0),
@@ -760,7 +763,7 @@ export function SearchField({
       <div
         className={cn(
           "flex items-center overflow-hidden transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
-          expanded ? "w-full max-w-56 opacity-100" : "w-0 opacity-0",
+          expanded ? cn("w-full opacity-100", !wide && "max-w-56") : "w-0 opacity-0",
         )}
       >
         <input

@@ -1,15 +1,21 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check as CheckIcon, ChevronsUpDown, Columns3, SlidersHorizontal, X } from "lucide-react";
-import { z } from "zod";
+import { ChevronsUpDown, Columns3, SlidersHorizontal, X } from "lucide-react";
 import {
   ticketFilter,
   states,
   priorities,
   stateLabels,
+  priorityLabels,
   dueFilterLabels,
   sortLabels,
   defaultOrder,
+  filterFieldLabels,
+  filterKey,
+  filterList,
+  ticketPredicates,
+  type FilterField,
+  type FilterOperator,
 } from "@kanvil/contracts";
 import { api, ActorName, useIdentity } from "../data.tsx";
 import {
@@ -18,7 +24,6 @@ import {
   ErrorNotice,
   Select,
   SelectItem,
-  TicketIndicator,
   SearchField,
   fieldClass,
   IconButton,
@@ -45,6 +50,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TicketTag } from "./ticket-tags.tsx";
+import { PropertyValue, difficultyLabels, kindLabels } from "./ticket-property.tsx";
 import { cn } from "@/lib/utils";
 
 // Extends the list's existing filter popover with personal display preferences.
@@ -64,8 +70,7 @@ export function TicketListControls({
   view: ReactNode;
   actions: ReactNode;
 }) {
-  const [filtersOpen, setFiltersOpen] = useState(false),
-    [labelsOpen, setLabelsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const identity = useIdentity();
   const members = useQuery({
     ...api.query("list_members", { projectId: projectId ?? "" }),
@@ -75,15 +80,64 @@ export function TicketListControls({
     ...api.query("list_ticket_labels", { projectId: projectId ?? "", archived: search.archived }),
     enabled: filtersOpen && !!projectId,
   });
-  const activeFilters = [
-    search.status,
-    search.priority,
-    search.assigneeId,
-    search.label,
-    search.due,
-    search.archived !== "exclude",
-  ].filter(Boolean).length;
+  const predicates = ticketPredicates(search);
+  const activeFilters =
+    predicates.length + [search.due, search.archived !== "exclude"].filter(Boolean).length;
   const filter = (patch: Partial<TicketSearch>) => onSearch({ ...search, ...patch, offset: 0 });
+  // Replaces one field's predicate; both operators clear first so a value is never in both.
+  const setPredicate = (field: FilterField, operator: FilterOperator, values: string[]) =>
+    onSearch(
+      searchSchema.parse({
+        ...search,
+        [field]: undefined,
+        [filterKey(field, "none")]: undefined,
+        ...(values.length ? { [filterKey(field, operator)]: values } : {}),
+        offset: 0,
+      }),
+    );
+  const projectKey = projectId ?? "";
+  const choices: Record<"status" | "priority" | "label" | "assigneeId", FilterChoice[]> = {
+    status: states.map((status) => ({
+      value: status,
+      text: stateLabels[status],
+      node: <PropertyValue property="status" value={status} projectId={projectKey} />,
+    })),
+    priority: priorities.map((priority) => ({
+      value: priority,
+      text: priorityLabels[priority],
+      node: <PropertyValue property="priority" value={priority} projectId={projectKey} />,
+    })),
+    label: (labels.data ?? []).map((label) => ({
+      value: label.name,
+      text: label.name,
+      node: <TicketTag tag={label.name} className="h-auto max-w-full" />,
+      count: label.count,
+    })),
+    assigneeId: [
+      { value: identity.id, text: "Me" },
+      { value: "none", text: "Unassigned" },
+      ...(members.data ?? [])
+        .filter((member) => member.userId !== identity.id)
+        .map((member) => ({ value: member.userId, text: member.name, keywords: [member.email] })),
+    ],
+  };
+  // Kind and difficulty have no picker here, but links and the API can still set them.
+  const valueNames: Record<FilterField, Record<string, string>> = {
+    status: stateLabels,
+    priority: priorityLabels,
+    kind: kindLabels,
+    difficulty: difficultyLabels,
+    label: {},
+    assigneeId: Object.fromEntries(choices.assigneeId.map((choice) => [choice.value, choice.text])),
+  };
+  const chipValue = (field: FilterField, value: string) =>
+    field === "label" ? (
+      <TicketTag tag={value} />
+    ) : field === "assigneeId" && !valueNames.assigneeId[value] ? (
+      <ActorName projectId={projectKey} actorId={value} />
+    ) : (
+      (valueNames[field][value] ?? value)
+    );
   return (
     <>
       <div className="ticket-list-controls mb-0 flex min-h-12 min-w-0 items-center gap-1 border-b py-1 @max-[850px]:[&>[data-slot]]:px-2">
@@ -119,90 +173,17 @@ export function TicketListControls({
             <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
               <PopoverTitle>Filters</PopoverTitle>
               <div className="grid grid-cols-1">
-                <Select
-                  label="Status"
-                  value={search.status ?? ""}
-                  onValueChange={(value) =>
-                    filter({ status: value ? z.enum(states).parse(value) : undefined })
-                  }
-                >
-                  <SelectItem value="">All statuses</SelectItem>
-                  {states.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {stateLabels[status]}
-                    </SelectItem>
-                  ))}
-                </Select>
-                <Select
-                  label="Priority"
-                  value={search.priority ?? ""}
-                  onValueChange={(value) =>
-                    filter({ priority: value ? z.enum(priorities).parse(value) : undefined })
-                  }
-                >
-                  <SelectItem value="">All priorities</SelectItem>
-                  {priorities.map((priority) => (
-                    <SelectItem key={priority} value={priority}>
-                      <TicketIndicator property="priority" value={priority} />
-                    </SelectItem>
-                  ))}
-                </Select>
-                <Field className={fieldClass}>
-                  <FieldLabel>Label</FieldLabel>
-                  <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
-                    <PopoverTrigger
-                      render={
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-label="Label"
-                          aria-expanded={labelsOpen}
-                          className="w-full justify-between"
-                        />
-                      }
-                    >
-                      <span className="truncate">{search.label ?? "All labels"}</span>
-                      <ChevronsUpDown className="shrink-0" />
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-[min(20rem,calc(100vw-3rem))] p-0">
-                      <Command>
-                        <CommandInput aria-label="Search labels" placeholder="Search labels…" />
-                        <CommandList>
-                          <CommandItem
-                            value="All labels"
-                            onSelect={() => {
-                              filter({ label: undefined });
-                              setLabelsOpen(false);
-                            }}
-                          >
-                            All labels{!search.label && <CheckIcon className="ml-auto" />}
-                          </CommandItem>
-                          {labels.data?.map((label) => (
-                            <CommandItem
-                              key={label.name}
-                              value={`label:${label.name}`}
-                              keywords={[label.name]}
-                              onSelect={() => {
-                                filter({ label: label.name });
-                                setLabelsOpen(false);
-                              }}
-                            >
-                              <TicketTag tag={label.name} className="h-auto max-w-full" />
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                {label.count}
-                              </span>
-                              {search.label === label.name && <CheckIcon />}
-                            </CommandItem>
-                          ))}
-                          <CommandEmpty>
-                            {labels.isPending ? "Loading labels…" : "No matching labels"}
-                          </CommandEmpty>
-                        </CommandList>
-                      </Command>
-                      <ErrorNotice error={labels.error} />
-                    </PopoverContent>
-                  </Popover>
-                </Field>
+                {(["status", "priority", "label"] as const).map((field) => (
+                  <FilterPicker
+                    key={field}
+                    field={field}
+                    search={search}
+                    choices={choices[field]}
+                    onChange={setPredicate}
+                    loading={field === "label" && labels.isPending}
+                    error={field === "label" ? labels.error : null}
+                  />
+                ))}
                 <Select
                   label="Due"
                   value={search.due ?? ""}
@@ -219,27 +200,12 @@ export function TicketListControls({
                     </SelectItem>
                   ))}
                 </Select>
-                <Select
-                  label="Assignee"
-                  value={search.assigneeId ?? "any"}
-                  onValueChange={(value) =>
-                    filter({
-                      assigneeId:
-                        value === "any" ? undefined : ticketFilter.shape.assigneeId.parse(value),
-                    })
-                  }
-                >
-                  <SelectItem value="any">Anyone</SelectItem>
-                  <SelectItem value={identity.id}>Me</SelectItem>
-                  <SelectItem value="none">Unassigned</SelectItem>
-                  {(members.data ?? [])
-                    .filter((member) => member.userId !== identity.id)
-                    .map((member) => (
-                      <SelectItem key={member.userId} value={member.userId}>
-                        {member.name}
-                      </SelectItem>
-                    ))}
-                </Select>
+                <FilterPicker
+                  field="assigneeId"
+                  search={search}
+                  choices={choices.assigneeId}
+                  onChange={setPredicate}
+                />
                 <Select
                   label="Archived"
                   value={search.archived}
@@ -312,38 +278,25 @@ export function TicketListControls({
               <X className="size-3" />
             </Button>
           )}
-          {search.status && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ status: undefined })}>
-              {stateLabels[search.status]}
+          {predicates.map(({ field, operator, values }) => (
+            <Button
+              key={filterKey(field, operator)}
+              variant="secondary"
+              size="sm"
+              onClick={() => setPredicate(field, operator, [])}
+            >
+              {filterFieldLabels[field]}
+              {operator === "none" ? " is not" : ""}:{" "}
+              {values.map((value, index) => (
+                <span key={value} className="inline-flex items-center">
+                  {chipValue(field, value)}
+                  {/* Label tags are separate shapes; text values need a comma. */}
+                  {field !== "label" && index < values.length - 1 && ","}
+                </span>
+              ))}
               <X className="size-3" />
             </Button>
-          )}
-          {search.priority && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ priority: undefined })}>
-              <TicketIndicator property="priority" value={search.priority} /> priority
-              <X className="size-3" />
-            </Button>
-          )}
-          {search.assigneeId && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ assigneeId: undefined })}>
-              {search.assigneeId === "none" ? (
-                "Unassigned"
-              ) : search.assigneeId === identity.id ? (
-                "Assigned to me"
-              ) : (
-                <>
-                  Assignee: <ActorName projectId={projectId ?? ""} actorId={search.assigneeId} />
-                </>
-              )}
-              <X className="size-3" />
-            </Button>
-          )}
-          {search.label && (
-            <Button variant="secondary" size="sm" onClick={() => filter({ label: undefined })}>
-              Label: <TicketTag tag={search.label} />
-              <X className="size-3" />
-            </Button>
-          )}
+          ))}
           {search.due && (
             <Button variant="secondary" size="sm" onClick={() => filter({ due: undefined })}>
               {dueFilterLabels[search.due]}
@@ -366,6 +319,146 @@ export function TicketListControls({
         </div>
       )}
     </>
+  );
+}
+
+type FilterChoice = {
+  value: string;
+  text: string;
+  node?: ReactNode;
+  keywords?: string[];
+  count?: number;
+};
+// The clearing choice and the search box name for each field.
+const fieldText: Record<FilterField, { any: string; search: string }> = {
+  status: { any: "All statuses", search: "Search statuses" },
+  priority: { any: "All priorities", search: "Search priorities" },
+  kind: { any: "All kinds", search: "Search kinds" },
+  difficulty: { any: "All difficulties", search: "Search difficulties" },
+  label: { any: "All labels", search: "Search labels" },
+  assigneeId: { any: "Anyone", search: "Search people" },
+};
+// A searchable multi-select for one filter field. "Is" keeps tickets with any chosen value;
+// "Is not" keeps tickets with none of them.
+function FilterPicker({
+  field,
+  search,
+  choices,
+  onChange,
+  loading = false,
+  error = null,
+}: {
+  field: FilterField;
+  search: TicketSearch;
+  choices: FilterChoice[];
+  onChange: (field: FilterField, operator: FilterOperator, values: string[]) => void;
+  loading?: boolean;
+  error?: unknown;
+}) {
+  const [open, setOpen] = useState(false),
+    // The chosen operator before any value is picked; once values exist the URL decides.
+    [mode, setMode] = useState<FilterOperator>("any");
+  const label = filterFieldLabels[field];
+  const excluded = filterList(search[filterKey(field, "none")]),
+    included = filterList(search[field]);
+  const operator: FilterOperator = excluded.length ? "none" : included.length ? "any" : mode;
+  const selected: string[] = operator === "none" ? excluded : included;
+  const names = selected.map(
+    (value) => choices.find((choice) => choice.value === value)?.text ?? value,
+  );
+  return (
+    <Field className={fieldClass}>
+      <FieldLabel>{label}</FieldLabel>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-label={label}
+              aria-expanded={open}
+              className="h-8 w-full justify-between font-normal"
+            />
+          }
+        >
+          <span className="truncate">
+            {names.length
+              ? `${operator === "none" ? "Not " : ""}${names.join(", ")}`
+              : fieldText[field].any}
+          </span>
+          <ChevronsUpDown className="shrink-0" />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[min(20rem,calc(100vw-3rem))] p-0">
+          <ToggleGroup
+            aria-label={`${label} match`}
+            value={[operator]}
+            onValueChange={(next) => {
+              const chosen = next[0];
+              if (chosen !== "any" && chosen !== "none") return;
+              setMode(chosen);
+              if (selected.length) onChange(field, chosen, selected);
+            }}
+            variant="outline"
+            size="sm"
+            spacing={0}
+            className="w-full p-2 pb-0 *:flex-1"
+          >
+            <ToggleGroupItem value="any">Is</ToggleGroupItem>
+            <ToggleGroupItem value="none">Is not</ToggleGroupItem>
+          </ToggleGroup>
+          <Command>
+            <CommandInput
+              aria-label={fieldText[field].search}
+              placeholder={`${fieldText[field].search}…`}
+            />
+            <CommandList>
+              <CommandItem
+                value={fieldText[field].any}
+                data-checked={!selected.length}
+                aria-checked={!selected.length}
+                onSelect={() => {
+                  onChange(field, operator, []);
+                  setOpen(false);
+                }}
+              >
+                {fieldText[field].any}
+              </CommandItem>
+              {choices.map((choice) => {
+                const checked = selected.includes(choice.value);
+                return (
+                  <CommandItem
+                    key={choice.value}
+                    value={`${field}:${choice.value}`}
+                    keywords={[choice.text, ...(choice.keywords ?? [])]}
+                    data-checked={checked}
+                    aria-checked={checked}
+                    aria-label={choice.text}
+                    onSelect={() =>
+                      onChange(
+                        field,
+                        operator,
+                        checked
+                          ? selected.filter((value) => value !== choice.value)
+                          : [...selected, choice.value],
+                      )
+                    }
+                  >
+                    {choice.node ?? <span className="truncate">{choice.text}</span>}
+                    {choice.count !== undefined && (
+                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                        {choice.count}
+                      </span>
+                    )}
+                  </CommandItem>
+                );
+              })}
+              <CommandEmpty>{loading ? "Loading…" : "No matches"}</CommandEmpty>
+            </CommandList>
+          </Command>
+          <ErrorNotice error={error} />
+        </PopoverContent>
+      </Popover>
+    </Field>
   );
 }
 

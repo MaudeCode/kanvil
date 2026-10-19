@@ -96,16 +96,89 @@ const pagination = {
 const mutation = { requestId: z.uuid().optional() };
 const projectInput = z.object({ projectId: id });
 const ticketInput = projectInput.extend({ ticketId: id });
+// Filterable ticket fields. Each takes one value or a list (any of them), and its `Not` twin
+// excludes values; the filters combine with AND. A legacy single value parses to a one-item list,
+// so saved views and links keep their meaning. A new filterable field joins this catalog and gets
+// both operators, its predicate, and its chip.
+export const filterFieldNames = [
+  "status",
+  "priority",
+  "kind",
+  "difficulty",
+  "label",
+  "assigneeId",
+] as const;
+export type FilterField = (typeof filterFieldNames)[number];
+export const filterFields = {
+  status: z.enum(states),
+  priority: z.enum(priorities),
+  kind: z.enum(kinds),
+  difficulty: z.enum(difficulties),
+  label: z.string().max(40),
+  // A user id, or "none" for unassigned tickets.
+  assigneeId: z.union([id, z.literal("none")]),
+} satisfies Record<FilterField, z.ZodType<string>>;
+export const filterFieldLabels: Record<FilterField, string> = {
+  status: "Status",
+  priority: "Priority",
+  kind: "Kind",
+  difficulty: "Difficulty",
+  label: "Label",
+  assigneeId: "Assignee",
+};
+export const filterOperators = ["any", "none"] as const;
+export type FilterOperator = (typeof filterOperators)[number];
+export const filterValueLimit = 25;
+const filterValues = <T extends z.ZodType<string>>(value: T) =>
+  z.union([value, z.array(value).min(1).max(filterValueLimit)]).optional();
+// The distinct values of one filter, whether it holds a single value or a list.
+export const filterList = <T extends string>(value: T | T[] | undefined): T[] =>
+  value === undefined ? [] : [...new Set(Array.isArray(value) ? value : [value])];
+const filterShape = {
+  status: filterValues(filterFields.status),
+  statusNot: filterValues(filterFields.status),
+  priority: filterValues(filterFields.priority),
+  priorityNot: filterValues(filterFields.priority),
+  kind: filterValues(filterFields.kind),
+  kindNot: filterValues(filterFields.kind),
+  difficulty: filterValues(filterFields.difficulty),
+  difficultyNot: filterValues(filterFields.difficulty),
+  label: filterValues(filterFields.label),
+  labelNot: filterValues(filterFields.label),
+  assigneeId: filterValues(filterFields.assigneeId),
+  assigneeIdNot: filterValues(filterFields.assigneeId),
+};
+export type FilterKey = keyof typeof filterShape;
+export const filterKey = (field: FilterField, operator: FilterOperator): FilterKey =>
+  operator === "any" ? field : `${field}Not`;
+export type TicketPredicate = { field: FilterField; operator: FilterOperator; values: string[] };
+type FilterValues = Partial<Record<FilterKey, string | string[] | undefined>>;
+// The normalized predicates every consumer evaluates: the server query, chips, and counts.
+export function ticketPredicates(filter: FilterValues): TicketPredicate[] {
+  return filterFieldNames.flatMap((field) =>
+    filterOperators.flatMap((operator) => {
+      const values = filterList(filter[filterKey(field, operator)]);
+      return values.length ? [{ field, operator, values }] : [];
+    }),
+  );
+}
+// A value cannot be both included and excluded.
+function rejectConflicts(filter: FilterValues, context: z.RefinementCtx) {
+  for (const field of filterFieldNames) {
+    const excluded = new Set(filterList(filter[filterKey(field, "none")]));
+    const both = filterList(filter[field]).filter((value) => excluded.has(value));
+    if (both.length)
+      context.addIssue({
+        code: "custom",
+        path: [field],
+        message: `${filterFieldLabels[field]} cannot both include and exclude ${both.join(", ")}`,
+      });
+  }
+}
 export const ticketFilter = z
   .object({
     q: z.string().trim().max(200).optional(),
-    status: z.enum(states).optional(),
-    priority: z.enum(priorities).optional(),
-    kind: z.enum(kinds).optional(),
-    difficulty: z.enum(difficulties).optional(),
-    label: z.string().max(40).optional(),
-    // A user id, or "none" for unassigned tickets.
-    assigneeId: z.union([id, z.literal("none")]).optional(),
+    ...filterShape,
     parentId: id.optional(),
     archived: z.enum(["include", "only", "exclude"]).default("exclude"),
     due: z.enum(["overdue", "today", "week", "scheduled", "none"]).optional(),
@@ -126,7 +199,8 @@ export const ticketFilter = z
       .default("priority"),
     order: z.enum(["asc", "desc"]).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(rejectConflicts);
 export const sortLabels: Record<z.output<typeof ticketFilter>["sort"], string> = {
   priority: "Priority",
   updated: "Recently updated",
@@ -342,6 +416,24 @@ export const eventSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   createdAt: timestamp,
 });
+export const searchResultTypes = ["project", "ticket", "comment", "activity"] as const;
+export type SearchResultType = (typeof searchResultTypes)[number];
+export const searchResultSchema = z.object({
+  type: z.enum(searchResultTypes),
+  // The stable reference: a project, ticket, or comment ID, or an event ID for activity.
+  id: z.string(),
+  project: z.object({ id: z.uuid(), key: z.string(), name: z.string() }),
+  // The ticket a result belongs to; null for projects and activity without a live ticket.
+  ticket: z
+    .object({ id: z.uuid(), key: z.string(), title: z.string(), status: z.enum(states) })
+    .nullable(),
+  title: z.string(),
+  // Matching text around the first occurrence of the query, when the result has body text.
+  excerpt: z.string(),
+  actorId: z.string().nullable(),
+  at: timestamp,
+});
+export type SearchResult = z.output<typeof searchResultSchema>;
 export const infoSchema = z.object({
   authentication: authenticationPolicySchema.default(() => authenticationPolicySchema.parse({})),
   name: z.string(),
@@ -395,7 +487,7 @@ export const createdCredentialSchema = z.object({
 });
 export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
-const eventLabels: Record<string, string> = {
+export const eventLabels: Record<string, string> = {
   "label.created": "Label created",
   "label.updated": "Label updated",
   "label.deleted": "Label deleted",
@@ -610,17 +702,19 @@ export const operations = {
     "Add or update an existing user's membership, or remove it with a null role.",
   ),
   list_tickets: op(
-    projectInput.extend({
-      ...ticketFilter.shape,
-      ...pagination,
-      // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
-      relatedTo: id.optional(),
-    }),
+    projectInput
+      .extend({
+        ...ticketFilter.shape,
+        ...pagination,
+        // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
+        relatedTo: id.optional(),
+      })
+      .superRefine(rejectConflicts),
     page(ticketSchema),
     "GET",
     "/projects/{projectId}/tickets",
     "read",
-    "Search tickets with server-side filters, stable ordering, and pagination.",
+    "Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values.",
   ),
   list_ticket_labels: op(
     projectInput.extend({ archived: ticketFilter.shape.archived }),
@@ -805,6 +899,32 @@ export const operations = {
     "/tickets/search",
     "read",
     "Search unarchived tickets by key or text across every accessible project, optionally within one workspace.",
+  ),
+  search_workspace: op(
+    z
+      .object({
+        q: z.string().trim().min(1).max(200),
+        workspaceId: z.uuid().optional(),
+        type: z.enum(searchResultTypes).optional(),
+        ...filterShape,
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+        offset: z.coerce.number().int().min(0).max(1000).default(0),
+      })
+      .strict()
+      .superRefine(rejectConflicts),
+    z.object({
+      items: z.array(searchResultSchema),
+      total: z.number().int().nonnegative(),
+      counts: z.record(z.enum(searchResultTypes), z.number().int().nonnegative()),
+      // What matched ticket text: the external index when it is current, otherwise PostgreSQL.
+      engine: z.enum(["postgres", "index"]),
+      // An external index is configured but behind or unavailable, so PostgreSQL answered.
+      indexing: z.boolean(),
+    }),
+    "GET",
+    "/search",
+    "read",
+    "Search accessible tickets, projects, comments, and activity by text or ticket key, optionally within one workspace or one result type. Property filters restrict results to matching tickets. Results order by exact key match, then type, then recency.",
   ),
   list_my_work: op(
     z

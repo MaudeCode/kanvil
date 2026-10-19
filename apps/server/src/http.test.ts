@@ -177,6 +177,54 @@ describe("HTTP, realtime, and MCP", () => {
       ).status,
     ).toBe(403);
   });
+  it("evaluates repeated filter parameters over HTTP", async () => {
+    const project = await newProject(),
+      api = client(),
+      token = `h${crypto.randomUUID().slice(0, 8)}`;
+    for (const status of ["todo", "in_progress", "done"] as const)
+      await api.call("create_ticket", {
+        projectId: project.id,
+        title: `${token} ${status}`,
+        status,
+      });
+    const total = async (query: string) => {
+      const response = await request(`/api/v1/projects/${project.id}/tickets?${query}`, {
+        headers: sessionHeaders(),
+      });
+      return response.ok
+        ? z.object({ total: z.number() }).parse(await response.json()).total
+        : response.status;
+    };
+    expect(await total("status=todo&status=in_progress")).toBe(2);
+    expect(await total("status=todo")).toBe(1);
+    expect(await total("statusNot=done")).toBe(2);
+    expect(await total("status=todo&statusNot=todo")).toBe(400);
+    expect(
+      (await api.call("list_tickets", { projectId: project.id, status: ["todo", "done"] })).total,
+    ).toBe(2);
+  });
+  it("serves workspace search over HTTP with the shared filters", async () => {
+    const project = await newProject(),
+      api = client(),
+      token = `w${crypto.randomUUID().slice(0, 8)}`;
+    for (const status of ["todo", "in_progress", "done"] as const)
+      await api.call("create_ticket", {
+        projectId: project.id,
+        title: `${token} ${status}`,
+        status,
+      });
+    const search = await request(
+      `/api/v1/search?q=${token}&workspaceId=${project.workspaceId}&statusNot=done`,
+      { headers: sessionHeaders() },
+    );
+    expect(search.status).toBe(200);
+    expect(
+      z
+        .object({ total: z.number(), counts: z.record(z.string(), z.number()) })
+        .parse(await search.json()),
+    ).toMatchObject({ total: 2, counts: { ticket: 2 } });
+    expect((await api.call("search_workspace", { q: token, type: "ticket" })).total).toBe(3);
+  });
   it("enforces project and operation scopes on credentials and allows revocation", async () => {
     const project = await newProject(),
       other = await newProject(),
