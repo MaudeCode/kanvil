@@ -548,6 +548,14 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).not.toHaveURL(/peek=/);
   await expect(page.locator("tr[data-active=true] .ticket-title")).toBeFocused();
+  // Space on a control inside the highlighted row keeps the control's own behavior.
+  await page.locator("tr[data-active=true] td[data-column=status] [role=combobox]").focus();
+  await page.keyboard.press(" ");
+  await expect(page.getByRole("option", { name: /In progress/ })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-slot=popover-content]")).toHaveCount(0);
+  await page.locator("tr[data-active=true] .ticket-title").focus();
   // Back closes a preview opened from the list.
   await page.keyboard.press(" ");
   await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toBeVisible();
@@ -579,6 +587,8 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
   await expect(page.locator("tr.ticket-row", { hasText: "Delta" })).toHaveCount(0);
   await expect(delta).toBeVisible();
   await expect(delta.getByRole("combobox", { name: "Status", exact: true })).toContainText("Done");
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "Delta", exact: true })).toBeVisible();
 });
 test("keyboard highlight walks the list, opens tickets, and the detail steps through the same order", async ({
   page,

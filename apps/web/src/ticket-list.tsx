@@ -342,7 +342,7 @@ export function TicketList({
   onSearch: (next: TicketSearch, push?: boolean) => void;
 }) {
   // The previewed ticket rides in the URL beside the filters but never changes what the list loads.
-  const { peek, ...search } = route;
+  const { peek, peekProject, ...search } = route;
   const project = "project" in scope ? scope.project : undefined;
   const projectAccess = useProjectAccess(project?.id ?? "", !!project);
   // My work spans projects: rows edit inline through their own project's access, and
@@ -555,31 +555,30 @@ export function TicketList({
   // Keyboard highlight: J/K or arrows move it, Enter opens, Space previews, X selects, S/P/A edit
   // a property.
   const [active, setActive] = useState<string | null>(peek ?? null);
-  // The preview keeps the project of the row that opened it, so My work can still show a ticket
-  // whose row leaves the list after an edit.
-  const [preview, setPreview] = useState<
-    { id: string; projectId?: string | undefined } | undefined
-  >(peek ? { id: peek } : undefined);
-  if (peek && peek !== preview?.id) {
-    setPreview({ id: peek, projectId: latest.get(peek)?.projectId });
-    setActive(peek);
-  } else if (preview && !preview.projectId && latest.has(preview.id))
-    setPreview({ ...preview, projectId: latest.get(preview.id)?.projectId });
-  const previewProject = project?.id ?? preview?.projectId;
+  // My work spans projects, so its URL also names the previewed ticket's project: an edit can drop
+  // the ticket from the list. The last preview stays rendered while the sheet closes.
+  const target = peek ? { id: peek, projectId: project?.id ?? peekProject } : undefined;
+  const [preview, setPreview] = useState(target);
+  if (target && (target.id !== preview?.id || target.projectId !== preview.projectId)) {
+    if (target.id !== preview?.id) setActive(target.id);
+    setPreview(target);
+  }
   const router = useRouter();
   // Closing a preview this list opened steps back over its history entry, so Back and Escape agree.
   const pushedPreview = useRef(false);
   const showPreview = (id: string, push: boolean) => {
-    setPreview({ id, projectId: latest.get(id)?.projectId });
     setActive(id);
     if (push) pushedPreview.current = true;
-    onSearch({ ...route, peek: id }, push);
+    onSearch(
+      { ...route, peek: id, peekProject: project ? undefined : latest.get(id)?.projectId },
+      push,
+    );
   };
   const closePreview = () => {
     if (pushedPreview.current) {
       pushedPreview.current = false;
       router.history.back();
-    } else onSearch({ ...route, peek: undefined });
+    } else onSearch({ ...route, peek: undefined, peekProject: undefined });
   };
   useEffect(() => {
     if (active)
@@ -631,7 +630,15 @@ export function TicketList({
     () => {
       if (active && latest.has(active)) showPreview(active, true);
     },
-    navKeys,
+    {
+      ...rowKeys,
+      // A focused control keeps Space, except the highlighted row's title link, where focus
+      // returns after a preview closes.
+      guard: (event: KeyboardEvent) => {
+        const control = event.target instanceof Element && event.target.closest(interactive);
+        return !control || control.matches("tr[data-active=true] .ticket-title");
+      },
+    },
   );
   useShortcut(
     "x",
@@ -1058,10 +1065,10 @@ export function TicketList({
         >
           <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-8 max-[650px]:px-4">
             {preview &&
-              (previewProject ? (
+              (preview.projectId ? (
                 <TicketDetail
                   key={preview.id}
-                  projectId={previewProject}
+                  projectId={preview.projectId}
                   ticketId={preview.id}
                   preview={{
                     order: orderedIds,
@@ -1069,11 +1076,9 @@ export function TicketList({
                     close: closePreview,
                   }}
                 />
-              ) : loading ? (
-                <Loading />
               ) : (
                 <EmptyState title="Ticket unavailable">
-                  <p>This ticket is no longer in this list.</p>
+                  <p>The link does not name the ticket's project.</p>
                   <Button onClick={closePreview}>Close preview</Button>
                 </EmptyState>
               ))}
