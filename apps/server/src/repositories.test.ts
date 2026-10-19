@@ -707,6 +707,31 @@ describe("repository connections", () => {
     );
   });
 
+  it("removes connections, secrets, and webhooks with a deleted project", async () => {
+    const connection = await connect();
+    await app.domain.execute(
+      "delete_project",
+      { projectId: project.id, expectedVersion: project.version, confirmKey: project.key },
+      owner,
+    );
+    expect(
+      await fixture.database.db
+        .select()
+        .from(repositoryConnections)
+        .where(eq(repositoryConnections.id, connection.id)),
+    ).toEqual([]);
+    expect(
+      await fixture.database.db
+        .select()
+        .from(deliveries)
+        .where(eq(deliveries.connectionId, connection.id)),
+    ).toEqual([]);
+    expect(
+      (await send(connection, "pull_request", pullRequest(3, "opened", { ref: `${ticket.key}-x` })))
+        .status,
+    ).toBe(404);
+  });
+
   it("moves mapped transitions with a deleted workflow state's tickets", async () => {
     const extra = await app.domain.execute(
       "create_workflow_state",

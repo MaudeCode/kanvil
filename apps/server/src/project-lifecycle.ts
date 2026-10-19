@@ -17,6 +17,7 @@ import {
   invitations,
   members,
   projectDestinations,
+  repositoryConnections,
   projectLabels,
   projects,
   stagedUploads,
@@ -331,8 +332,12 @@ export const lifecycleHandlers: Pick<
       fail(400, "validation_error", "Type the project prefix to confirm deletion");
     assertNoBlockers(await claimBlockers(ctx));
     const readers = (await projectPeople(ctx)).filter((person) => person.before);
-    // Destinations go first, so the deletion events queue no outbound deliveries.
+    // Destinations go first, so the deletion events queue no outbound deliveries. Repository
+    // connections go with their secrets, queued GitHub calls, and webhook.
     await ctx.db.delete(projectDestinations).where(eq(projectDestinations.projectId, current.id));
+    await ctx.db
+      .delete(repositoryConnections)
+      .where(eq(repositoryConnections.projectId, current.id));
     await ctx.db.delete(calendarFeeds).where(eq(calendarFeeds.projectId, current.id));
     const removed = await ctx.db
       .select({ id: tickets.id, key: tickets.key, version: tickets.version })
