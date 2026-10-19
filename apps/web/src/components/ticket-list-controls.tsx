@@ -34,6 +34,7 @@ import {
   ticketDensitySchema,
   ticketLabelDisplaySchema,
   ticketGroupingSchema,
+  ticketLayoutSchema,
   workGroupingSchema,
   type TicketSearch,
 } from "../search.ts";
@@ -475,6 +476,8 @@ function FilterPicker({
 // has its own grouping choices.
 export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
   const [grouping, setGrouping] = usePreference(preferences.grouping),
+    [layout, setLayout] = usePreference(preferences.layout),
+    [backgrounds, setBackgrounds] = usePreference(preferences.backgrounds),
     [workGrouping, setWorkGrouping] = usePreference(preferences.workGrouping),
     [density, setDensity] = usePreference(preferences.density),
     [labelDisplay, setLabelDisplay] = usePreference(preferences.labelDisplay),
@@ -493,15 +496,38 @@ export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
           ]}
         />
       ) : (
-        <DisplayToggle
-          label="Group by"
-          value={grouping}
-          onChange={(value) => setGrouping(ticketGroupingSchema.parse(value))}
-          options={[
-            ["status", "Status"],
-            ["none", "None"],
-          ]}
-        />
+        <>
+          <DisplayToggle
+            label="Layout"
+            value={layout}
+            onChange={(value) => setLayout(ticketLayoutSchema.parse(value))}
+            options={[
+              ["list", "List"],
+              ["board", "Board"],
+            ]}
+          />
+          {/* The board always has a lane per status. */}
+          {layout === "list" && (
+            <DisplayToggle
+              label="Group by"
+              value={grouping}
+              onChange={(value) => setGrouping(ticketGroupingSchema.parse(value))}
+              options={[
+                ["status", "Status"],
+                ["none", "None"],
+              ]}
+            />
+          )}
+          <DisplayToggle
+            label="Project backgrounds"
+            value={backgrounds}
+            onChange={(value) => setBackgrounds(preferences.backgrounds.schema.parse(value))}
+            options={[
+              ["show", "Show"],
+              ["hide", "Hide"],
+            ]}
+          />
+        </>
       )}
       <Separator />
       <DisplayToggle

@@ -355,18 +355,23 @@ export function TicketProperty<P extends PropertyName>({
 }
 
 // Shared mutation wrapper so every inline edit reports failures the same way.
-export function useTicketChange(ticket: Pick<Ticket, "id" | "projectId" | "version">) {
+// `target` edits another ticket than the hook's own, e.g. the one dropped on a board lane.
+export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "version">) {
   const update = useOperation("update_ticket");
   const cache = useQueryClient();
   return {
     pending: update.isPending,
-    change: (changes: Partial<PropertyValues> & Partial<Ticket>) => {
+    change: (
+      changes: Partial<PropertyValues> & Partial<Ticket>,
+      target: Pick<Ticket, "id" | "projectId" | "version"> | undefined = ticket,
+    ) => {
+      if (!target) return Promise.resolve();
       const { assignee, ...rest } = changes;
       const patch = { ...rest, ...(assignee === undefined ? {} : { assigneeId: assignee }) };
       // Show the edit at once in project lists and My work; the success invalidation or the
       // failure refetch settles it.
       for (const queryKey of [
-        api.query("list_tickets", { projectId: ticket.projectId }).queryKey.slice(0, 3),
+        api.query("list_tickets", { projectId: target.projectId }).queryKey.slice(0, 3),
         api.query("list_my_work", {}).queryKey.slice(0, 3),
       ])
         cache.setQueriesData<Pick<Output<"list_tickets">, "items">>(
@@ -374,21 +379,21 @@ export function useTicketChange(ticket: Pick<Ticket, "id" | "projectId" | "versi
           (page) =>
             page && {
               ...page,
-              items: page.items.map((row) => (row.id === ticket.id ? { ...row, ...patch } : row)),
+              items: page.items.map((row) => (row.id === target.id ? { ...row, ...patch } : row)),
             },
         );
       cache.setQueriesData<Output<"get_ticket">>(
         {
-          queryKey: api.query("get_ticket", { projectId: ticket.projectId, ticketId: ticket.id })
+          queryKey: api.query("get_ticket", { projectId: target.projectId, ticketId: target.id })
             .queryKey,
         },
         (data) => data && { ...data, ticket: { ...data.ticket, ...patch } },
       );
       return update
         .mutateAsync({
-          projectId: ticket.projectId,
-          ticketId: ticket.id,
-          expectedVersion: ticket.version,
+          projectId: target.projectId,
+          ticketId: target.id,
+          expectedVersion: target.version,
           changes: patch,
         })
         .catch((error: unknown) => {

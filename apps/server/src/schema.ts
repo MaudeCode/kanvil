@@ -52,6 +52,8 @@ export const projects = pgTable(
     iconColor: text("icon_color").notNull().default("default"),
     image: text("image"),
     iconObjectId: uuid("icon_object_id").references(() => blobObjects.id),
+    background: text("background"),
+    backgroundObjectId: uuid("background_object_id").references(() => blobObjects.id),
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id),

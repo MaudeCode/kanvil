@@ -98,10 +98,29 @@ it("commits files locally before external transfer and retains readable bytes af
     expect(await blobs.status()).toMatchObject({ pending: 1, status: "unavailable" });
     expect((await blobs.get(attachment.id)).data).toEqual(bytes);
     failTransfer = false;
+    // Project images transfer like attachments.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXpUAAAAASUVORK5CYII=",
+      "base64",
+    );
+    await domain.execute(
+      "set_project_background",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        background: { contentType: "image/png", data: png.toString("base64") },
+      },
+      actor,
+    );
     await blobs.sync();
     expect(await blobs.status()).toMatchObject({ pending: 0, status: "ready" });
     expect((await blobs.get(attachment.id)).data).toEqual(bytes);
-    expect(files.size).toBe(1);
+    expect(files.size).toBe(2);
+    const background = await fixture.database.pool.query<{ id: string }>(
+      "SELECT background_object_id AS id FROM projects WHERE id = $1",
+      [project.id],
+    );
+    expect((await blobs.get(background.rows[0]!.id)).data).toEqual(png);
   } finally {
     release?.();
     await blobs.close();

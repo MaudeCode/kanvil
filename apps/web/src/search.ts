@@ -61,6 +61,8 @@ export type TicketDensity = z.output<typeof ticketDensitySchema>;
 export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
 export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 export const ticketGroupingSchema = z.enum(["status", "none"]);
+// Project lists render as a table or as a board of status lanes.
+export const ticketLayoutSchema = z.enum(["list", "board"]);
 // My work spans projects, so it groups by due date or project instead of status.
 export const workGroupingSchema = z.enum(["due", "project", "none"]);
 export type TicketGrouping =

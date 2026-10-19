@@ -1,7 +1,7 @@
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 import { createHash } from "node:crypto";
-import { and, eq, isNull, isNotNull, lt, sql, count } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lt, or, sql, count } from "drizzle-orm";
 import { blobObjects, attachments, profilePhotos, projects } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
@@ -93,7 +93,7 @@ export function createBlobStorage(
             and(
               isNotNull(blobObjects.data),
               isNotNull(blobObjects.backendId),
-              sql`(EXISTS (SELECT 1 FROM attachments a WHERE a.object_id=${blobObjects.id}) OR EXISTS (SELECT 1 FROM profile_photos p WHERE p.object_id=${blobObjects.id}))`,
+              sql`(EXISTS (SELECT 1 FROM attachments a WHERE a.object_id=${blobObjects.id}) OR EXISTS (SELECT 1 FROM profile_photos p WHERE p.object_id=${blobObjects.id}) OR EXISTS (SELECT 1 FROM projects pr WHERE ${blobObjects.id} IN (pr.icon_object_id, pr.background_object_id)))`,
             ),
           )
           .orderBy(blobObjects.createdAt)
@@ -152,7 +152,13 @@ export function createBlobStorage(
         .from(blobObjects)
         .leftJoin(attachments, eq(attachments.objectId, blobObjects.id))
         .leftJoin(profilePhotos, eq(profilePhotos.objectId, blobObjects.id))
-        .leftJoin(projects, eq(projects.iconObjectId, blobObjects.id))
+        .leftJoin(
+          projects,
+          or(
+            eq(projects.iconObjectId, blobObjects.id),
+            eq(projects.backgroundObjectId, blobObjects.id),
+          ),
+        )
         .where(
           and(
             isNull(attachments.id),

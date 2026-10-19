@@ -290,6 +290,7 @@ export const projectSchema = z.object({
   iconName: z.string().nullable().default(null),
   iconColor: z.enum(projectIconColors).default("default"),
   image: z.string().nullable().default(null),
+  background: z.string().nullable().default(null),
   workspaceId: z.uuid(),
   visibility: z.enum(["workspace", "private"]),
   id: z.uuid(),
@@ -793,6 +794,28 @@ export const operations = {
     "/projects/{projectId}/icon",
     "admin",
     "Choose an installed library icon, upload an image, or reset the project icon.",
+  ),
+  set_project_background: op(
+    projectInput
+      .extend({
+        ...mutation,
+        expectedVersion: version,
+        background: z.union([
+          z
+            .object({
+              contentType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+              data: z.string().max(700000),
+            })
+            .strict(),
+          z.null(),
+        ]),
+      })
+      .strict(),
+    projectSchema,
+    "POST",
+    "/projects/{projectId}/background",
+    "admin",
+    "Upload an image shown behind the project's ticket views, or remove it.",
   ),
   update_project: op(
     projectInput

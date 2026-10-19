@@ -1,7 +1,9 @@
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ImageUp } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import type { Output } from "@kanvil/contracts";
+import type { Output, Project } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import { Button, CopyButton, RelativeTime, Select, SelectItem, reportError } from "../ui.tsx";
@@ -10,6 +12,8 @@ import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
 import type { projectSections } from "../search.ts";
+import { Input as FileInput } from "@/components/ui/input";
+import { prepareImage } from "../lib/browser.ts";
 export function ProjectSettings({
   project,
   section,
@@ -111,6 +115,7 @@ export function ProjectSettings({
                 <SelectItem value="private">Only project members</SelectItem>
               </Select>
             </SettingRow>
+            <ProjectBackground project={project} canAdmin={access.canAdmin} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
               {workspace.active?.role && (
                 <Button
@@ -144,5 +149,68 @@ export function ProjectSettings({
         </SettingsPanel>
       </SettingsLayout>
     </>
+  );
+}
+
+// The optional image behind the project's ticket list and board. Each person can still hide
+// backgrounds in their display preferences without touching this project setting.
+function ProjectBackground({ project, canAdmin }: { project: Project; canAdmin: boolean }) {
+  const update = useOperation("set_project_background"),
+    file = useRef<HTMLInputElement>(null),
+    [preparing, setPreparing] = useState(false),
+    busy = preparing || update.isPending;
+  const save = (background: Parameters<typeof update.mutateAsync>[0]["background"]) =>
+    update
+      .mutateAsync({ projectId: project.id, expectedVersion: project.version, background })
+      .then(() => toast.success(background ? "Background updated" : "Background removed"));
+  return (
+    <SettingRow
+      title="Background"
+      description={
+        project.background ? "Shown behind this project's ticket list and board." : "None"
+      }
+    >
+      {project.background && (
+        <img
+          src={project.background}
+          alt="Current background"
+          className="h-14 w-24 rounded-md border object-cover"
+        />
+      )}
+      {canAdmin && (
+        <>
+          <Button disabled={busy} onClick={() => file.current?.click()}>
+            <ImageUp />
+            {busy ? "Uploading…" : project.background ? "Replace" : "Upload image"}
+          </Button>
+          {project.background && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void save(null).catch(reportError)}
+            >
+              Remove
+            </Button>
+          )}
+          <FileInput
+            ref={file}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            aria-label="Project background file"
+            onChange={(event) => {
+              const selected = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!selected) return;
+              setPreparing(true);
+              void prepareImage(selected, { fit: "inside", size: 1920 })
+                .then((image) => save(image))
+                .catch(reportError)
+                .finally(() => setPreparing(false));
+            }}
+          />
+        </>
+      )}
+    </SettingRow>
   );
 }

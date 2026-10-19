@@ -7,7 +7,7 @@ import { Button, ErrorNotice, SectionHeading } from "../ui.tsx";
 import { EditableHeading } from "./settings-layout.tsx";
 import { Input as FileInput } from "@/components/ui/input";
 import { UserAvatar } from "./user-avatar.tsx";
-import { prepareSquareImage } from "../lib/browser.ts";
+import { prepareImage } from "../lib/browser.ts";
 import { ImageEditTrigger } from "./image-edit-trigger.tsx";
 export function ProfileSettings() {
   const cache = useQueryClient();
@@ -33,7 +33,7 @@ export function ProfileSettings() {
           ? {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(await prepareSquareImage(value)),
+              body: JSON.stringify(await prepareImage(value)),
             }
           : { method: "DELETE" },
       );

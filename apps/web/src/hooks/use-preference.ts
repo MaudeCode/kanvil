@@ -5,6 +5,7 @@ import {
   ticketDensitySchema,
   ticketGroupingSchema,
   ticketLabelDisplaySchema,
+  ticketLayoutSchema,
   workGroupingSchema,
 } from "../search.ts";
 
@@ -23,6 +24,8 @@ export const preferences = {
   density: preference("ticket-density", ticketDensitySchema.catch("compact")),
   labelDisplay: preference("ticket-label-display", ticketLabelDisplaySchema.catch("compact")),
   grouping: preference("ticket-grouping", ticketGroupingSchema.catch("status")),
+  layout: preference("ticket-layout", ticketLayoutSchema.catch("list")),
+  backgrounds: preference("project-backgrounds", z.enum(["show", "hide"]).catch("show")),
   workGrouping: preference("work-grouping", workGroupingSchema.catch("due")),
   columns: preference(
     "ticket-columns",
@@ -40,6 +43,8 @@ export const ticketDisplayPreferences = [
   preferences.density,
   preferences.labelDisplay,
   preferences.grouping,
+  preferences.layout,
+  preferences.backgrounds,
   preferences.workGrouping,
   preferences.columns,
 ];
