@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { signIn } from "./auth.ts";
 
@@ -65,4 +66,72 @@ test("project destinations choose events and keep their endpoint secret", async 
   ).json();
   expect(saved).toMatchObject({ kind: "slack", secrets: ["url"], settings: {} });
   expect(saved.events).toEqual(["created", "assignment", "status"]);
+});
+
+test("repository connections keep secrets write-only and link verified pull requests", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "REPO", name: "Repositories" } })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Ship the widget" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/settings?section=integrations`);
+  await page.getByRole("button", { name: "Connect repository", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect repository" });
+  await dialog.getByLabel("GitHub repository", { exact: true }).fill("acme/widgets");
+  await dialog.getByLabel("Access token", { exact: true }).fill("ghp_browserTestToken");
+  await dialog.getByLabel("Webhook secret", { exact: true }).fill("browser-hook-secret");
+  await dialog.getByRole("combobox", { name: "Pull request merged" }).click();
+  await page.getByRole("option", { name: "Done", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save repository" }).click();
+  await expect(dialog).toBeHidden();
+  // The test server's GitHub API host never resolves, so the access check reports it.
+  await expect(page.getByText("Host not found")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("No webhook received")).toBeVisible();
+  const [saved] = await (
+    await page.request.get(`/api/v1/projects/${project.id}/repositories`)
+  ).json();
+  expect(saved).toMatchObject({ secrets: ["token", "webhookSecret"], provider: "github" });
+  expect(JSON.stringify(saved)).not.toContain("ghp_browserTestToken");
+
+  const body = JSON.stringify({
+    action: "closed",
+    number: 4,
+    pull_request: {
+      number: 4,
+      html_url: "https://github.com/acme/widgets/pull/4",
+      title: "Ship the widget",
+      state: "closed",
+      draft: false,
+      merged: true,
+      updated_at: "2030-01-01T10:00:00Z",
+      head: { ref: `${ticket.key.toLowerCase()}-ship` },
+    },
+    repository: { full_name: "acme/widgets", html_url: "https://github.com/acme/widgets" },
+  });
+  const delivery = await page.request.post(saved.webhookUrl, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-GitHub-Event": "pull_request",
+      "X-GitHub-Delivery": crypto.randomUUID(),
+      "X-Hub-Signature-256": `sha256=${createHmac("sha256", "browser-hook-secret").update(body).digest("hex")}`,
+    },
+    data: body,
+  });
+  expect(delivery.status()).toBe(202);
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const links = page.getByRole("region", { name: "Links" });
+  await expect(links.getByRole("link", { name: "Ship the widget #4" })).toBeVisible();
+  await expect(links.getByText("Pull request · Merged", { exact: true })).toBeVisible();
+  const current = await (
+    await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)
+  ).json();
+  expect(current.ticket.status).toBe("done");
+  await page.goto(`/projects/${project.id}/settings?section=integrations`);
+  await expect(page.getByText("Webhook received")).toBeVisible();
 });

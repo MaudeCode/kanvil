@@ -1,6 +1,17 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Pause, Pencil, Play, Plus, Send, Trash2, Webhook } from "lucide-react";
+import {
+  GitBranch,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Webhook,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   channelKinds,
@@ -10,11 +21,16 @@ import {
   destinationEventLabels,
   destinationEvents,
   destinationKinds,
+  repositoryProviderLabels,
+  repositoryTriggerLabels,
+  repositoryTriggers,
   type ChannelRoute,
   type DeliveryKind,
   type DestinationEvent,
   type NotificationChannel,
   type ProjectDestination,
+  type RepositoryConnection,
+  type RepositoryTrigger,
 } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
@@ -23,6 +39,7 @@ import { formText, submitOnModEnter } from "../forms.ts";
 import {
   Check,
   Confirm,
+  CopyButton,
   EmptyState,
   ErrorNotice,
   FormActions,
@@ -37,8 +54,10 @@ import {
   reportError,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
+import { useWorkflow } from "./ticket-property.tsx";
 
 type Target = NotificationChannel | ProjectDestination;
+type Health = Target["health"];
 type FieldSpec = {
   name: string;
   label: string;
@@ -89,6 +108,9 @@ const failures: Record<string, string> = {
   invalid_endpoint: "Invalid endpoint",
   email_unavailable: "Email is not configured on this server",
   smtp_error: "Mail server unavailable",
+  // Repository connections.
+  access_revoked: "The administrator who connected it lost access; reconnect",
+  repository_mismatch: "A delivery came from another repository",
 };
 const failureText = (code: string) =>
   failures[code] ??
@@ -99,103 +121,137 @@ const failureText = (code: string) =>
       : code.replaceAll("_", " "));
 // Health refreshes while a send is queued, so a test shows its result without a reload; a failed
 // send waiting for its retry refreshes slowly.
-const refreshWhilePending = (query: { state: { data?: Target[] | undefined } }) => {
+const refreshWhilePending = (query: { state: { data?: { health: Health }[] | undefined } }) => {
   const pending = query.state.data?.filter((target) => target.health.pending > 0) ?? [];
   if (!pending.length) return false;
   return pending.some((target) => target.health.status !== "failing") ? 2000 : 30_000;
 };
 
-function Health({ target }: { target: Target }) {
-  const { health } = target;
+const deliveryWords = {
+  done: "Delivered",
+  pending: "Sending…",
+  none: "Nothing sent yet",
+  failed: "",
+};
+function HealthText({
+  health,
+  words = deliveryWords,
+}: {
+  health: Health;
+  words?: typeof deliveryWords;
+}) {
   if (health.status === "failing" && health.lastAttemptAt)
     return (
       <span className="text-destructive">
+        {words.failed}
         {failureText(health.error ?? "")} · <RelativeTime value={health.lastAttemptAt} />
         {health.pending > 0 && " · retrying"}
       </span>
     );
-  if (health.pending) return <>Sending…</>;
+  if (health.pending) return <>{words.pending}</>;
   if (health.lastSuccessAt)
     return (
       <>
-        Delivered <RelativeTime value={health.lastSuccessAt} />
+        {words.done} <RelativeTime value={health.lastSuccessAt} />
       </>
     );
-  return <>Nothing sent yet</>;
+  return <>{words.none}</>;
 }
-// One channel or destination: what it sends to, its latest delivery, and its actions. Without
-// `onEdit`, `onTest`, and `onPause`, as on an archived project, only disconnecting remains.
+// One outbound target: channel, destination, or repository connection. `check` is its test send.
+// Without `canChange`, as on an archived project, only disconnecting remains.
 function DeliveryRow({
-  target,
+  canChange = true,
+  name,
+  kind,
+  paused,
+  health,
+  description,
+  check = { label: `Send test to ${name}`, icon: <Send />, queued: "Test queued" },
+  actions,
   onEdit,
   onTest,
   onPause,
   onDelete,
   removal,
 }: {
-  target: Target;
-  onEdit?: (() => void) | undefined;
-  onTest?: (() => Promise<unknown>) | undefined;
-  onPause?: ((paused: boolean) => Promise<unknown>) | undefined;
+  name: string;
+  kind: string;
+  paused: boolean;
+  health: Health;
+  description: ReactNode;
+  check?: { label: string; icon: ReactNode; queued: string };
+  actions?: ReactNode;
+  onEdit: () => void;
+  onTest: () => Promise<unknown>;
+  onPause: (paused: boolean) => Promise<unknown>;
   onDelete: () => Promise<unknown>;
   removal: string;
+  canChange?: boolean;
 }) {
   return (
     <SettingRow
       title={
         <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-          <span className="wrap-anywhere">{target.name}</span>
-          <Badge variant="outline">{deliveryKindLabels[target.kind]}</Badge>
-          {target.paused && <Badge variant="secondary">Paused</Badge>}
-          {target.health.status === "failing" && <Badge variant="destructive">Failing</Badge>}
+          <span className="wrap-anywhere">{name}</span>
+          <Badge variant="outline">{kind}</Badge>
+          {paused && <Badge variant="secondary">Paused</Badge>}
+          {health.status === "failing" && <Badge variant="destructive">Failing</Badge>}
         </span>
       }
-      description={
-        <>
-          <span className="wrap-anywhere">{target.endpoint}</span> · <Health target={target} />
-        </>
-      }
+      description={description}
     >
-      {onTest && (
-        <IconButton
-          label={`Send test to ${target.name}`}
-          onClick={() => {
-            void onTest()
-              .then(() => toast.success("Test queued"))
-              .catch(reportError);
-          }}
-        >
-          <Send />
-        </IconButton>
-      )}
-      {onPause && (
-        <IconButton
-          label={`${target.paused ? "Resume" : "Pause"} ${target.name}`}
-          onClick={() => {
-            void onPause(!target.paused).catch(reportError);
-          }}
-        >
-          {target.paused ? <Play /> : <Pause />}
-        </IconButton>
-      )}
-      {onEdit && (
-        <IconButton label={`Edit ${target.name}`} onClick={onEdit}>
-          <Pencil />
-        </IconButton>
+      {actions}
+      {canChange && (
+        <>
+          <IconButton
+            label={check.label}
+            onClick={() => {
+              void onTest()
+                .then(() => toast.success(check.queued))
+                .catch(reportError);
+            }}
+          >
+            {check.icon}
+          </IconButton>
+          <IconButton
+            label={`${paused ? "Resume" : "Pause"} ${name}`}
+            onClick={() => {
+              void onPause(!paused).catch(reportError);
+            }}
+          >
+            {paused ? <Play /> : <Pause />}
+          </IconButton>
+          <IconButton label={`Edit ${name}`} onClick={onEdit}>
+            <Pencil />
+          </IconButton>
+        </>
       )}
       <Confirm
-        label={`Disconnect ${target.name}`}
+        label={`Disconnect ${name}`}
         icon={<Trash2 />}
         danger
         description={removal}
         onConfirm={async () => {
           await onDelete();
-          toast.success(`${target.name} disconnected`);
+          toast.success(`${name} disconnected`);
         }}
       />
     </SettingRow>
   );
 }
+// A channel's or destination's row fields.
+const targetRow = (target: Target) => ({
+  name: target.name,
+  kind: deliveryKindLabels[target.kind],
+  paused: target.paused,
+  health: target.health,
+  description: (
+    <>
+      <span className="wrap-anywhere">{target.endpoint}</span> ·{" "}
+      <HealthText health={target.health} />
+    </>
+  ),
+});
 // Name, kind, and the kind's fields. Saved secrets show as kept unless replaced or removed.
 function DeliveryFields({
   kinds,
@@ -279,6 +335,7 @@ function DeliveryList({
   error,
   onAdd,
   empty,
+  icon = Webhook,
   children,
 }: {
   title: string;
@@ -288,6 +345,7 @@ function DeliveryList({
   error: unknown;
   onAdd?: (() => void) | undefined;
   empty: string;
+  icon?: LucideIcon;
   children: ReactNode;
 }) {
   return (
@@ -308,7 +366,7 @@ function DeliveryList({
       ) : count ? (
         children
       ) : (
-        !error && <EmptyState title={empty} icon={Webhook} className="py-10" />
+        !error && <EmptyState title={empty} icon={icon} className="py-10" />
       )}
     </section>
   );
@@ -399,7 +457,7 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
         {channels.data?.map((channel) => (
           <DeliveryRow
             key={channel.id}
-            target={channel}
+            {...targetRow(channel)}
             onEdit={() => edit(channel)}
             onTest={() => test.mutateAsync({ channelId: channel.id })}
             onPause={(paused) =>
@@ -552,7 +610,7 @@ export function ProjectDestinations({
   if (!canAdmin)
     return (
       <EmptyState
-        title="Project administrators manage destinations"
+        title="Project administrators manage integrations"
         icon={Webhook}
         className="py-16"
       />
@@ -571,23 +629,17 @@ export function ProjectDestinations({
         {destinations.data?.map((destination) => (
           <DeliveryRow
             key={destination.id}
-            target={destination}
-            onEdit={canChange ? () => edit(destination) : undefined}
-            onTest={
-              canChange
-                ? () => test.mutateAsync({ projectId, destinationId: destination.id })
-                : undefined
-            }
-            onPause={
-              canChange
-                ? (paused) =>
-                    update.mutateAsync({
-                      projectId,
-                      destinationId: destination.id,
-                      expectedVersion: destination.version,
-                      paused,
-                    })
-                : undefined
+            {...targetRow(destination)}
+            canChange={canChange}
+            onEdit={() => edit(destination)}
+            onTest={() => test.mutateAsync({ projectId, destinationId: destination.id })}
+            onPause={(paused) =>
+              update.mutateAsync({
+                projectId,
+                destinationId: destination.id,
+                expectedVersion: destination.version,
+                paused,
+              })
             }
             onDelete={() =>
               remove.mutateAsync({
@@ -639,6 +691,229 @@ export function ProjectDestinations({
                 error={create.error ?? update.error}
                 pending={busy}
                 submitLabel="Save destination"
+                onCancel={() => setDraft(null)}
+              />
+            </FieldSet>
+          </form>
+        )}
+      </Modal>
+    </>
+  );
+}
+
+const accessWords = {
+  done: "Access checked",
+  pending: "Checking access…",
+  none: "Access not checked",
+  failed: "Access check: ",
+};
+function WebhookText({ connection }: { connection: RepositoryConnection }) {
+  if (connection.lastEventError)
+    return <span className="text-destructive">{failureText(connection.lastEventError)}</span>;
+  if (!connection.lastEventAt) return <>No webhook received</>;
+  return (
+    <>
+      Webhook received <RelativeTime value={connection.lastEventAt} />
+    </>
+  );
+}
+// A project's code-host repositories. Signed webhooks link the tickets they name and move them
+// through the mapped workflow states. Only project administrators see it; while the project is
+// archived (`canChange` false) they can only disconnect.
+export function RepositoryConnections({
+  projectId,
+  canAdmin,
+  canChange = canAdmin,
+}: {
+  projectId: string;
+  canAdmin: boolean;
+  canChange?: boolean;
+}) {
+  const connections = useQuery({
+    ...api.query("list_repository_connections", { projectId }),
+    enabled: canAdmin,
+    refetchInterval: refreshWhilePending,
+  });
+  const workflow = useWorkflow(projectId, canAdmin);
+  const create = useOperation("create_repository_connection"),
+    update = useOperation("update_repository_connection"),
+    remove = useOperation("delete_repository_connection"),
+    verify = useOperation("verify_repository_connection");
+  const [draft, setDraft] = useState<{
+    connection: RepositoryConnection | null;
+    transitions: Partial<Record<RepositoryTrigger, string>>;
+    commentOnLink: boolean;
+  } | null>(null);
+  const busy = create.isPending || update.isPending;
+  function edit(connection: RepositoryConnection | null) {
+    create.reset();
+    update.reset();
+    setDraft({
+      connection,
+      transitions: connection?.transitions ?? {},
+      commentOnLink: connection?.commentOnLink ?? false,
+    });
+  }
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft) return;
+    const form = new FormData(event.currentTarget),
+      repository = formText(form, "repository").trim(),
+      token = formText(form, "token").trim(),
+      webhookSecret = formText(form, "webhookSecret").trim(),
+      fields = { transitions: draft.transitions, commentOnLink: draft.commentOnLink };
+    const action = draft.connection
+      ? update.mutateAsync({
+          projectId,
+          connectionId: draft.connection.id,
+          expectedVersion: draft.connection.version,
+          repository,
+          ...(token && { token }),
+          ...(webhookSecret && { webhookSecret }),
+          ...fields,
+        })
+      : create.mutateAsync({ projectId, repository, token, webhookSecret, ...fields });
+    void action
+      .then(() => {
+        setDraft(null);
+        toast.success("Repository saved");
+      })
+      .catch(() => {});
+  }
+  if (!canAdmin) return null;
+  const editing = draft?.connection;
+  return (
+    <>
+      <DeliveryList
+        title="Repositories"
+        addLabel="Connect repository"
+        count={connections.data?.length ?? 0}
+        loading={connections.isPending}
+        error={connections.error}
+        onAdd={canChange ? () => edit(null) : undefined}
+        empty="No repositories"
+        icon={GitBranch}
+      >
+        {connections.data?.map((connection) => (
+          <DeliveryRow
+            key={connection.id}
+            canChange={canChange}
+            name={connection.repository}
+            kind={repositoryProviderLabels[connection.provider]}
+            paused={connection.paused}
+            health={connection.health}
+            description={
+              <>
+                <WebhookText connection={connection} /> ·{" "}
+                <HealthText health={connection.health} words={accessWords} />
+              </>
+            }
+            check={{
+              label: `Check access to ${connection.repository}`,
+              icon: <ShieldCheck />,
+              queued: "Access check queued",
+            }}
+            actions={
+              <CopyButton
+                label={`Copy webhook URL for ${connection.repository}`}
+                value={connection.webhookUrl}
+              />
+            }
+            onEdit={() => edit(connection)}
+            onTest={() => verify.mutateAsync({ projectId, connectionId: connection.id })}
+            onPause={(paused) =>
+              update.mutateAsync({
+                projectId,
+                connectionId: connection.id,
+                expectedVersion: connection.version,
+                paused,
+              })
+            }
+            onDelete={() =>
+              remove.mutateAsync({
+                projectId,
+                connectionId: connection.id,
+                expectedVersion: connection.version,
+              })
+            }
+            removal={`Disconnect ${connection.repository}? Its webhook stops working at once. Links it added stay on their tickets.`}
+          />
+        ))}
+      </DeliveryList>
+      <Modal
+        title={editing ? "Edit repository" : "Connect repository"}
+        open={!!draft}
+        onOpenChange={(open) => {
+          if (!open) setDraft(null);
+        }}
+        busy={busy}
+      >
+        {draft && (
+          <form onSubmit={save} onKeyDown={submitOnModEnter}>
+            <FieldSet disabled={busy}>
+              <Input
+                label="GitHub repository"
+                name="repository"
+                required
+                autoFocus
+                placeholder="owner/repository"
+                defaultValue={editing?.repository}
+              />
+              {(["token", "webhookSecret"] as const).map((field) => (
+                <Input
+                  key={field}
+                  label={field === "token" ? "Access token" : "Webhook secret"}
+                  name={field}
+                  type="password"
+                  autoComplete="off"
+                  required={!editing?.secrets.includes(field)}
+                  placeholder={
+                    editing?.secrets.includes(field) ? "Saved · leave blank to keep" : undefined
+                  }
+                />
+              ))}
+              <p className="-mt-2 mb-4 text-xs text-muted-foreground">
+                The token needs repository read access, and issue and pull request write access to
+                comment. Add a GitHub webhook with the URL copied from this repository&apos;s row,
+                content type application/json, this secret, and the Branch or tag creation, Branch
+                or tag deletion, Issues, and Pull requests events.
+              </p>
+              <Check
+                label="Comment on newly linked issues and pull requests"
+                checked={draft.commentOnLink}
+                onCheckedChange={(checked) => setDraft({ ...draft, commentOnLink: checked })}
+              />
+              <FieldSet className="gap-0">
+                <FieldLegend variant="label">Move linked tickets</FieldLegend>
+                {repositoryTriggers.map((trigger) => (
+                  <Select
+                    key={trigger}
+                    label={repositoryTriggerLabels[trigger]}
+                    layout="property"
+                    className="grid-cols-[minmax(0,1fr)_12rem] border-b py-1 last:border-b-0"
+                    value={draft.transitions[trigger] ?? "none"}
+                    onValueChange={(value) => {
+                      const { [trigger]: _, ...rest } = draft.transitions;
+                      setDraft({
+                        ...draft,
+                        transitions:
+                          value && value !== "none" ? { ...rest, [trigger]: value } : rest,
+                      });
+                    }}
+                  >
+                    <SelectItem value="none">No move</SelectItem>
+                    {workflow.data?.map((state) => (
+                      <SelectItem key={state.id} value={state.id}>
+                        {state.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                ))}
+              </FieldSet>
+              <FormActions
+                error={create.error ?? update.error}
+                pending={busy}
+                submitLabel="Save repository"
                 onCancel={() => setDraft(null)}
               />
             </FieldSet>

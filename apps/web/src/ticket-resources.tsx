@@ -34,6 +34,7 @@ import {
   attachmentLimit,
   attachmentPath,
   evidenceFields,
+  remoteKindLabels,
   resourceHost,
   type Output,
   type Ticket,
@@ -414,6 +415,12 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
   );
 }
 type Resource = Output<"list_resources">[number];
+// What a connection verified, such as "Pull request · Merged"; unknown without one.
+function remoteLabel({ remoteKind, remoteState }: Resource) {
+  const state = remoteState && remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
+  if (!state) return "State unknown";
+  return remoteKind ? `${remoteKindLabels[remoteKind]} · ${state}` : state;
+}
 export function Links({ ticket }: { ticket: Ticket }) {
   const access = useProjectAccess(ticket.projectId),
     items = useQuery(
@@ -462,9 +469,9 @@ export function Links({ ticket }: { ticket: Ticket }) {
                   <Badge variant="outline">{item.provider}</Badge>
                   <Badge
                     variant="outline"
-                    className={item.remoteState ? "capitalize" : "text-muted-foreground"}
+                    className={item.remoteState ? undefined : "text-muted-foreground"}
                   >
-                    {item.remoteState ?? "State unknown"}
+                    {remoteLabel(item)}
                   </Badge>
                 </span>
               ) : (
