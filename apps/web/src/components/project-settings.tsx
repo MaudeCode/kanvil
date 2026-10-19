@@ -252,7 +252,14 @@ function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boole
               .catch(() => {});
           }}
         >
-          <PrefixInput value={key} onChange={setKey} autoFocus />
+          <PrefixInput
+            value={key}
+            onChange={(next) => {
+              setKey(next);
+              update.reset();
+            }}
+            autoFocus
+          />
           <FormActions
             error={update.error}
             pending={update.isPending}

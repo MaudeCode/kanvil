@@ -80,9 +80,11 @@ test("moves a ticket between projects and changes a prefix without breaking old 
   await page.getByRole("button", { name: "Change prefix", exact: true }).click();
   await change.getByLabel("Ticket prefix", { exact: true }).fill(destination.key);
   await change.getByRole("button", { name: "Change prefix", exact: true }).click();
-  await expect(
-    change.getByText("This prefix is in use or reserved by another project"),
-  ).toBeVisible();
+  const taken = change.getByText("This prefix is in use or reserved by another project");
+  await expect(taken).toBeVisible();
+  // Editing the prefix clears the stale error.
+  await change.getByLabel("Ticket prefix", { exact: true }).fill(`ALT${suffix}`);
+  await expect(taken).toHaveCount(0);
   const resolved = await (
     await page.request.get(`/api/v1/tickets/resolve?ticketId=${ticket.key}`)
   ).json();
