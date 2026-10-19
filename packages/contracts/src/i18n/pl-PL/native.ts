@@ -1,1 +1,228 @@
-export default {};
+// Screens of the native app. Shared wording comes from `common`.
+export default {
+  // A field's name and its current value, for screen readers and read-only field lists.
+  labelValue: "{{label}}: {{value}}",
+  ui: {
+    dismiss: "Odrzuć",
+    loading: "Wczytywanie",
+  },
+  server: {
+    url: "URL serwera",
+    connect: "Połącz",
+    change: "Zmień serwer",
+    invalidOrigin:
+      "Użyj źródła HTTP lub HTTPS serwera Kanvil, bez ścieżki i danych uwierzytelniających.",
+    httpsRequired: "Użyj HTTPS, aby połączyć się z serwerem Kanvil.",
+  },
+  login: {
+    setupTitle: "Utwórz konto właściciela",
+    signIn: "Zaloguj się",
+    signingIn: "Logowanie…",
+    createAccount: "Utwórz konto",
+    // {{provider}} is the identity provider's configured name.
+    signInWith: "Zaloguj się przez {{provider}}",
+    name: "Imię i nazwisko",
+    setupToken: "Token konfiguracji",
+    email: "E-mail",
+    password: "Hasło",
+  },
+  // The live feed's state in the footer under every screen.
+  connection: {
+    connecting: "łączenie",
+    connected: "● Na żywo",
+    offline: "Offline · dane z pamięci podręcznej",
+    closed: "zamknięte",
+    signedOut: "Zaloguj się, aby ponownie połączyć",
+  },
+  screen: {
+    projects: "Projekty",
+    inbox: "Skrzynka odbiorcza",
+    settings: "Ustawienia",
+    tickets: "Zadania",
+    ticket: "Zadanie",
+    newTicket: "Nowe zadanie",
+    editTicket: "Edytuj zadanie",
+  },
+  projects: {
+    empty: "Brak projektów",
+    new: "Nowy projekt",
+    name: "Nazwa projektu",
+    prefix: "Prefiks zadań",
+    description: "Opis",
+    create: "Utwórz projekt",
+  },
+  tickets: {
+    search: "Szukaj zadań",
+    searchPlaceholder: "Tytuł, opis lub klucz",
+    allStatuses: "Wszystkie statusy",
+    empty: "Brak pasujących zadań",
+    // Loaded rows out of all matching tickets, under the list.
+    count: "{{shown}} z {{total}}",
+  },
+  // A ticket's properties in list rows and on its page.
+  ticket: {
+    priority: "Priorytet: {{priority}}",
+    noDifficulty: "Nieokreślona trudność",
+    version: "v{{version}}",
+    starts: "Początek: {{date}}",
+    due: "Termin: {{date}}",
+  },
+  editor: {
+    stale: "To zadanie się zmieniło. Zapisana wersja robocza nadal używa wersji {{version}}.",
+    discardDraft: "Odrzuć wersję roboczą i odśwież",
+    title: "Tytuł",
+    noDifficulty: "Nieokreślona",
+    labels: "Etykiety (oddzielone przecinkami)",
+    scopes: "Zakresy (oddzielone przecinkami)",
+    editMarkdown: "Edytuj Markdown",
+    previewMarkdown: "Podgląd Markdown",
+    description: "Opis (Markdown)",
+    acceptanceCriteria: "Kryteria akceptacji (Markdown)",
+    parent: "Identyfikator zadania nadrzędnego",
+    automationReady: "Gotowe dla agentów, gdy pozwolą na to wymagania i zależności",
+    holdReason: "Powód wstrzymania",
+    draftSaved: "Wersja robocza zapisana na tym urządzeniu",
+    save: "Zapisz zadanie",
+  },
+  detail: {
+    archived: "Zarchiwizowane",
+    subscribe: "Subskrybuj",
+    unsubscribe: "Anuluj subskrypcję",
+    share: "Udostępnij",
+    description: "Opis",
+    // Markdown: underscores render the placeholder in italics.
+    noDescription: "_Brak opisu_",
+    acceptanceCriteria: "Kryteria akceptacji",
+    noAcceptanceCriteria: "_Brak kryteriów akceptacji_",
+    fields: "Pola",
+    archive: {
+      action: "Archiwizuj zadanie",
+      title: "Zarchiwizować zadanie?",
+      message: "Usunąć to zadanie z aktywnych list i wykluczyć je z pracy agentów?",
+    },
+    unarchive: {
+      action: "Przywróć zadanie z archiwum",
+      title: "Przywrócić zadanie z archiwum?",
+      message: "Przywrócić to zadanie na aktywne listy?",
+    },
+  },
+  readiness: {
+    title: "Gotowość dla agentów",
+    ready: "Gotowe do przejęcia",
+    notReady: "Niegotowe do przejęcia",
+    hold: "Wstrzymane: {{reason}}",
+    claimed: "Przejęte przez {{worker}} do {{time}}.",
+    release: {
+      action: "Zwolnij moje przejęcie",
+      title: "Zwolnić przejęcie?",
+      message: "Zatrzymaj wykonawcę przed zwolnieniem własności.",
+      confirm: "Zwolnij",
+    },
+    recover: {
+      action: "Odzyskaj wygasłe przejęcie",
+      explanation:
+        "Tylko administrator projektu może odzyskać wygasłe przejęcie. Najpierw potwierdź, że wykonawca został zatrzymany.",
+      reason: "Powód odzyskania",
+      confirm: "Wykonawca zatrzymany · odzyskaj",
+    },
+  },
+  relations: {
+    title: "Powiązania",
+    parent: "Nadrzędne · {{key}} · {{title}}",
+    openParent: "Otwórz zadanie nadrzędne",
+    children: "Zadania podrzędne",
+    previousChildren: "Poprzednie zadania podrzędne",
+    nextChildren: "Następne zadania podrzędne",
+    remove: "Usuń powiązanie",
+    removeTitle: "Usunąć powiązanie?",
+    add: "Dodaj powiązanie",
+    find: "Znajdź zadanie",
+    type: "Powiązanie",
+    ticket: "Zadanie",
+    choose: "Wybierz zadanie",
+  },
+  discussion: {
+    title: "Dyskusja",
+    previous: "Wcześniejsze komentarze",
+    next: "Późniejsze komentarze",
+    field: "Komentarz (Markdown)",
+    submit: "Skomentuj",
+    // The author of your own comments.
+    you: "Ty",
+    edit: "Edytuj komentarz",
+    editField: "Komentarz",
+    delete: "Usuń komentarz",
+    deleteTitle: "Usunąć komentarz?",
+    deleteMessage: "Trwale usunąć ten komentarz?",
+    save: "Zapisz komentarz",
+  },
+  attachments: {
+    title: "Załączniki",
+    // {{size}} is a whole number of kilobytes.
+    item: "{{name}} · {{size}} kB",
+    remove: "Usuń {{name}}",
+    removeTitle: "Usunąć załącznik?",
+    working: "Przetwarzanie…",
+    add: "Dodaj załącznik",
+    tooLarge: "Wybierz plik o rozmiarze do 10 MB.",
+    sharingUnavailable: "Udostępnianie plików jest niedostępne na tym urządzeniu.",
+  },
+  evidence: {
+    title: "Dowody",
+    explanation: "Wyniki są zgłaszane przez konta, które je przesłały.",
+    add: "Dodaj dowód",
+    name: "Tytuł",
+    url: "URL",
+    outcome: "Zgłoszony wynik",
+    commit: "Commit (pełny hash)",
+    note: "Notatka",
+    save: "Zapisz dowód",
+  },
+  activity: {
+    title: "Aktywność",
+    previous: "Wcześniejsza aktywność",
+    next: "Późniejsza aktywność",
+  },
+  inbox: {
+    markAllRead: "Oznacz wszystkie jako przeczytane",
+    empty: "Brak powiadomień",
+  },
+  notifications: {
+    title: "Powiadomienia",
+    inApp: "Aktualizacje subskrybowanych zadań w skrzynce odbiorczej",
+    push: "Powiadomienia push",
+    enableDevice: "Włącz push na tym urządzeniu",
+    disableDevice: "Wyłącz push na tym urządzeniu",
+    unconfigured:
+      "Ta kompilacja wymaga identyfikatora projektu Expo i konfiguracji podpisywania dla push.",
+    noProjectId: "Ta kompilacja wymaga identyfikatora projektu Expo dla powiadomień push.",
+    permissionDenied: "Zezwól na powiadomienia w ustawieniach urządzenia, aby włączyć push.",
+    // The Android notification channel name in system settings.
+    channel: "Aktualizacje zadań",
+  },
+  settings: {
+    password: {
+      title: "Hasło lokalne",
+      current: "Bieżące hasło",
+      new: "Nowe hasło",
+      change: "Zmień hasło",
+      updated: "Hasło zaktualizowane; pozostałe sesje odwołane",
+    },
+    oidc: {
+      linked: "Konto połączone",
+      explanation: "Połącz to konto przed zalogowaniem się przez dostawcę tożsamości.",
+      // {{provider}} is the identity provider's configured name.
+      link: "Połącz {{provider}}",
+    },
+    signOut: {
+      action: "Wyloguj się",
+      title: "Wylogować się?",
+      message:
+        "Zadania z pamięci podręcznej i wersje robocze tego konta zostaną usunięte z tego urządzenia.",
+    },
+    changeServer: {
+      title: "Zmienić serwer?",
+      message: "Wylogować się i wyczyścić lokalną pamięć podręczną oraz wersje robocze tego konta?",
+    },
+  },
+};
