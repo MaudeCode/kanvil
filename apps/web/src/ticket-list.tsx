@@ -1,9 +1,25 @@
 import { toast } from "sonner";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { Plus, ChevronDown, BookmarkPlus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  Plus,
+  ChevronDown,
+  BookmarkPlus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  NotebookTabs,
+} from "lucide-react";
 import {
   useTable,
   tableFeatures,
@@ -110,13 +126,21 @@ function TicketSectionHeader({
   section,
   collapsed,
   onToggle,
+  selection,
 }: {
   section: Section;
   collapsed: boolean;
   onToggle: () => void;
+  // Selects every row of the section; lines up with the rows' selection column.
+  selection?: Omit<ComponentProps<typeof Check>, "label"> | undefined;
 }) {
   return (
     <div className="flex items-center">
+      {selection && (
+        <div className="flex w-11 shrink-0 justify-center pl-3 @max-[850px]:w-8 @max-[850px]:justify-start @max-[850px]:pl-0">
+          <Check label={`Select ${section.label} tickets`} className="sr-checkbox" {...selection} />
+        </div>
+      )}
       <Button
         variant="ghost"
         className="flex-1 justify-start gap-2 rounded-none px-3"
@@ -318,7 +342,31 @@ const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
   createdAt: "created",
   updatedAt: "updated",
 };
-const pageKey = (status: Ticket["status"] | undefined) => status ?? "all";
+// One server query series: a status section, a planning group, or the whole list. `status` and
+// `archived` override the page's filters for that series.
+interface Fetch extends Omit<Section, "total"> {
+  status?: Ticket["status"];
+  archived?: TicketSearch["archived"];
+}
+const allTickets: Fetch = { id: "all", label: "All", heading: null, has: () => true };
+// Planning splits a project into work not yet scheduled and work put away.
+const planningGroups: Fetch[] = [
+  {
+    id: "planned",
+    label: "Planned",
+    heading: <span className="text-xs">Planned</span>,
+    status: "backlog",
+    archived: "exclude",
+    has: (ticket) => !ticket.archived && ticket.status === "backlog",
+  },
+  {
+    id: "archived",
+    label: "Archived",
+    heading: <span className="text-xs">Archived</span>,
+    archived: "only",
+    has: (ticket) => ticket.archived,
+  },
+];
 const interactive = "a, button, input, label, [role=checkbox], [role=combobox], [role=menu]";
 const tableClass = "min-w-full table-fixed @min-[1051px]:w-(--table-width)";
 // Every section table shares the header table's column widths.
@@ -331,8 +379,9 @@ function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }
     </colgroup>
   );
 }
-// A project's tickets, or My work: the open tickets assigned to you across one workspace.
-export type TicketListScope = { project: Project } | { workspaceId: string };
+// A project's tickets, its planning view, or My work: the open tickets assigned to you across one
+// workspace.
+export type TicketListScope = { project: Project; planning?: boolean } | { workspaceId: string };
 export function TicketList({
   scope,
   search: route,
@@ -355,7 +404,12 @@ export function TicketList({
   const navigate = useNavigate();
   const [projectGrouping] = usePreference(preferences.grouping),
     [workGrouping] = usePreference(preferences.workGrouping);
-  const grouping: TicketGrouping = project ? projectGrouping : workGrouping;
+  const planning = "project" in scope && !!scope.planning;
+  const grouping: TicketGrouping | "planning" = planning
+    ? "planning"
+    : project
+      ? projectGrouping
+      : workGrouping;
   const [labelDisplay] = usePreference(preferences.labelDisplay),
     [density] = usePreference(preferences.density),
     [visibility, setVisibility] = usePreference(preferences.columns);
@@ -366,24 +420,38 @@ export function TicketList({
   });
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const pages = paging.filterKey === filterKey ? paging.pages : {};
-  // Status sections fetch one series of pages each; other lists fetch one series and group it here.
-  const fetches: (Ticket["status"] | undefined)[] =
-    grouping === "status"
-      ? states.filter((status) => matchesFilter(search, "status", status))
-      : [undefined];
-  const pageQueries = fetches.flatMap((status) =>
-    Array.from({ length: pages[pageKey(status)] ?? 1 }, (_, page) => ({
-      status,
+  // Status sections and planning groups fetch one series of pages each; other lists fetch one
+  // series and group it here.
+  const fetches: Fetch[] =
+    grouping === "planning"
+      ? planningGroups.filter(
+          (entry) => !entry.status || matchesFilter(search, "status", entry.status),
+        )
+      : grouping === "status"
+        ? states
+            .filter((status) => matchesFilter(search, "status", status))
+            .map((status) => ({
+              id: status,
+              label: stateLabels[status],
+              heading: <TicketIndicator property="status" value={status} />,
+              status,
+              has: (ticket: Ticket) => ticket.status === status,
+            }))
+        : [allTickets];
+  const pageQueries = fetches.flatMap((entry) =>
+    Array.from({ length: pages[entry.id] ?? 1 }, (_, page) => ({
+      entry,
       offset: page * pageSize,
     })),
   );
   const queries = useQueries({
-    queries: pageQueries.map(({ status, offset }) =>
+    queries: pageQueries.map(({ entry, offset }) =>
       project
         ? api.query("list_tickets", {
             projectId: project.id,
             ...search,
-            ...(status ? { status, statusNot: undefined } : {}),
+            ...(entry.status ? { status: entry.status, statusNot: undefined } : {}),
+            archived: entry.archived ?? search.archived,
             offset,
             limit: pageSize,
           })
@@ -397,23 +465,21 @@ export function TicketList({
           }),
     ),
   });
-  const groups = fetches.map((status) => ({
-    status,
+  const groups = fetches.map((entry) => ({
+    entry,
     data: {
-      items: pageQueries.flatMap((entry, index) =>
-        entry.status === status ? (queries[index]?.data?.items ?? []) : [],
+      items: pageQueries.flatMap((query, index) =>
+        query.entry.id === entry.id ? (queries[index]?.data?.items ?? []) : [],
       ),
-      total: queries[pageQueries.findIndex((entry) => entry.status === status)]?.data?.total ?? 0,
+      total:
+        queries[pageQueries.findIndex((query) => query.entry.id === entry.id)]?.data?.total ?? 0,
     },
   }));
   const requiredPages = Object.fromEntries(
-    groups.map((group) => [
-      pageKey(group.status),
-      Math.max(1, Math.ceil(group.data.total / pageSize)),
-    ]),
+    groups.map((group) => [group.entry.id, Math.max(1, Math.ceil(group.data.total / pageSize))]),
   );
   const missingPages = fetches.some(
-    (status) => (pages[pageKey(status)] ?? 1) < (requiredPages[pageKey(status)] ?? 1),
+    (entry) => (pages[entry.id] ?? 1) < (requiredPages[entry.id] ?? 1),
   );
   // Load the remaining pages of a section as soon as its total is known.
   if (missingPages) setPaging({ filterKey, pages: requiredPages });
@@ -453,55 +519,41 @@ export function TicketList({
     return () => window.clearInterval(timer);
   }, [grouping]);
   const sections: Section[] =
-    grouping === "status"
-      ? groups.flatMap(({ status, data }) =>
-          status && data.total > 0
-            ? [
-                {
-                  id: status,
-                  label: stateLabels[status],
-                  heading: <TicketIndicator property="status" value={status} />,
-                  total: data.total,
-                  has: (ticket: Ticket) => ticket.status === status,
-                },
-              ]
-            : [],
-        )
-      : grouping === "project"
-        ? // Sections come from the tickets, so a project missing from the cached list never hides one.
-          [...new Set(all.map((ticket) => ticket.projectId))]
-            .map((id) => ({ id, owner: projects.data?.find((item) => item.id === id) }))
-            .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
-            .map(({ id, owner }) => ({
-              id,
-              label: owner?.name ?? "Project",
-              heading: (
-                <span className="flex min-w-0 items-center gap-2 text-xs">
-                  {owner && <ProjectIcon project={owner} className="size-4" />}
-                  <span className="truncate">{owner?.name ?? "Project"}</span>
-                </span>
-              ),
-              total: all.filter((ticket) => ticket.projectId === id).length,
-              has: (ticket: Ticket) => ticket.projectId === id,
-            }))
-        : grouping === "due"
-          ? [...dueWindows, ["none", dueFilterLabels.none] as const].flatMap(([id, label]) => {
-              const count = all.filter((ticket) => dueWindow(ticket, now) === id).length;
-              return count
-                ? [
-                    {
-                      id,
-                      label,
-                      heading: <span className="text-xs">{label}</span>,
-                      total: count,
-                      has: (ticket: Ticket) => dueWindow(ticket, now) === id,
-                    },
-                  ]
-                : [];
-            })
-          : total > 0
-            ? [{ id: "all", label: "All", heading: null, total, has: () => true }]
-            : [];
+    grouping === "project"
+      ? // Sections come from the tickets, so a project missing from the cached list never hides one.
+        [...new Set(all.map((ticket) => ticket.projectId))]
+          .map((id) => ({ id, owner: projects.data?.find((item) => item.id === id) }))
+          .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
+          .map(({ id, owner }) => ({
+            id,
+            label: owner?.name ?? "Project",
+            heading: (
+              <span className="flex min-w-0 items-center gap-2 text-xs">
+                {owner && <ProjectIcon project={owner} className="size-4" />}
+                <span className="truncate">{owner?.name ?? "Project"}</span>
+              </span>
+            ),
+            total: all.filter((ticket) => ticket.projectId === id).length,
+            has: (ticket: Ticket) => ticket.projectId === id,
+          }))
+      : grouping === "due"
+        ? [...dueWindows, ["none", dueFilterLabels.none] as const].flatMap(([id, label]) => {
+            const count = all.filter((ticket) => dueWindow(ticket, now) === id).length;
+            return count
+              ? [
+                  {
+                    id,
+                    label,
+                    heading: <span className="text-xs">{label}</span>,
+                    total: count,
+                    has: (ticket: Ticket) => dueWindow(ticket, now) === id,
+                  },
+                ]
+              : [];
+          })
+        : groups.flatMap(({ entry: { id, label, heading, has }, data }) =>
+            data.total > 0 ? [{ id, label, heading, has, total: data.total }] : [],
+          );
   const grouped = grouping !== "none";
   const tickets = {
     isPending: loading,
@@ -547,6 +599,35 @@ export function TicketList({
     grouped && collapsed.has(section.id) ? [] : sectionRows(section).map((row) => row.id),
   );
   const orderKey = orderedIds.join("\n");
+  const sectionSelection = (section: Section) => {
+    const rows = sectionRows(section),
+      count = rows.filter((row) => row.getIsSelected()).length;
+    return {
+      checked: count > 0 && count === rows.length,
+      indeterminate: count > 0 && count < rows.length,
+      disabled: !rows.length,
+      onCheckedChange: (checked: boolean) =>
+        table.setRowSelection((previous) => {
+          const next = { ...previous };
+          for (const row of rows)
+            if (checked) next[row.id] = true;
+            else delete next[row.id];
+          return next;
+        }),
+    };
+  };
+  // Names the selection for confirmations: the project, then how many come from each section.
+  const selectedFrom = grouped
+    ? sections
+        .flatMap((section) => {
+          const count = selected.filter(section.has).length;
+          return count ? [`${count} ${section.label}`] : [];
+        })
+        .join(", ")
+    : "";
+  const collection = project
+    ? `${project.name}${planning ? " planning" : ""}${selectedFrom ? ` (${selectedFrom})` : ""}`
+    : "";
   useEffect(() => {
     if (!loading && project) writeListOrder(project.id, orderKey ? orderKey.split("\n") : []);
   }, [loading, project, orderKey]);
@@ -692,10 +773,21 @@ export function TicketList({
     <>
       <TicketListControls
         projectId={project?.id}
+        archivedFilter={!planning}
         search={search}
         onSearch={changeSearch}
         view={
-          !project ? null : (
+          !project ? null : planning ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              render={<Link to="/projects/$projectId" params={{ projectId: project.id }} />}
+            >
+              <ArrowLeft />
+              Active work
+            </Button>
+          ) : (
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -755,15 +847,27 @@ export function TicketList({
         }
         actions={
           project && (
-            <IconButton
-              label="New ticket"
-              title="New ticket (C)"
-              variant="default"
-              disabled={!canWrite}
-              onClick={() => setCreating(true)}
-            >
-              <Plus />
-            </IconButton>
+            <>
+              {!planning && (
+                <IconButton
+                  label="Planning"
+                  render={
+                    <Link to="/projects/$projectId/planning" params={{ projectId: project.id }} />
+                  }
+                >
+                  <NotebookTabs />
+                </IconButton>
+              )}
+              <IconButton
+                label="New ticket"
+                title="New ticket (C)"
+                variant="default"
+                disabled={!canWrite}
+                onClick={() => setCreating(true)}
+              >
+                <Plus />
+              </IconButton>
+            </>
           )
         }
         onReset={() => {
@@ -830,7 +934,12 @@ export function TicketList({
       )}
       <ErrorNotice error={tickets.error ?? deleteView.error} />
       {canWrite && selected.length > 0 && (
-        <TicketSelectionToolbar selected={selected} onClear={() => table.resetRowSelection()} />
+        <TicketSelectionToolbar
+          selected={selected}
+          total={orderedIds.length}
+          collection={collection}
+          onClear={() => table.resetRowSelection()}
+        />
       )}
       {tickets.isPending ? (
         <Loading />
@@ -965,6 +1074,7 @@ export function TicketList({
                           section={section}
                           collapsed={collapsed.has(section.id)}
                           onToggle={() => toggleSection(section.id)}
+                          selection={canWrite ? sectionSelection(section) : undefined}
                         />
                       </TableHead>
                     </TableRow>
@@ -1016,9 +1126,11 @@ export function TicketList({
               title={
                 !isDefault || search.q
                   ? "No matching tickets"
-                  : project
-                    ? "No tickets yet"
-                    : "No open tickets assigned to you"
+                  : planning
+                    ? "Nothing planned or archived"
+                    : project
+                      ? "No tickets yet"
+                      : "No open tickets assigned to you"
               }
             >
               {!isDefault ? (

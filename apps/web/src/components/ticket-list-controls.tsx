@@ -61,9 +61,12 @@ export function TicketListControls({
   onReset,
   view,
   actions,
+  archivedFilter = true,
 }: {
   // Without a project (My work), the project-scoped filters are hidden.
   projectId: string | undefined;
+  // Planning shows archived tickets as their own group, so it has no Archived filter.
+  archivedFilter?: boolean;
   search: TicketSearch;
   onSearch: (search: TicketSearch) => void;
   onReset: () => void;
@@ -77,12 +80,16 @@ export function TicketListControls({
     enabled: !!projectId,
   });
   const labels = useQuery({
-    ...api.query("list_ticket_labels", { projectId: projectId ?? "", archived: search.archived }),
+    ...api.query("list_ticket_labels", {
+      projectId: projectId ?? "",
+      archived: archivedFilter ? search.archived : "include",
+    }),
     enabled: filtersOpen && !!projectId,
   });
   const predicates = ticketPredicates(search);
   const activeFilters =
-    predicates.length + [search.due, search.archived !== "exclude"].filter(Boolean).length;
+    predicates.length +
+    [search.due, archivedFilter && search.archived !== "exclude"].filter(Boolean).length;
   const filter = (patch: Partial<TicketSearch>) => onSearch({ ...search, ...patch, offset: 0 });
   // Replaces one field's predicate; both operators clear first so a value is never in both.
   const setPredicate = (field: FilterField, operator: FilterOperator, values: string[]) =>
@@ -206,17 +213,19 @@ export function TicketListControls({
                   choices={choices.assigneeId}
                   onChange={setPredicate}
                 />
-                <Select
-                  label="Archived"
-                  value={search.archived}
-                  onValueChange={(value) =>
-                    filter({ archived: ticketFilter.shape.archived.parse(value) })
-                  }
-                >
-                  <SelectItem value="exclude">Hide archived</SelectItem>
-                  <SelectItem value="include">Include archived</SelectItem>
-                  <SelectItem value="only">Archived only</SelectItem>
-                </Select>
+                {archivedFilter && (
+                  <Select
+                    label="Archived"
+                    value={search.archived}
+                    onValueChange={(value) =>
+                      filter({ archived: ticketFilter.shape.archived.parse(value) })
+                    }
+                  >
+                    <SelectItem value="exclude">Hide archived</SelectItem>
+                    <SelectItem value="include">Include archived</SelectItem>
+                    <SelectItem value="only">Archived only</SelectItem>
+                  </Select>
+                )}
               </div>
               <Button
                 variant="ghost"
@@ -303,7 +312,7 @@ export function TicketListControls({
               <X className="size-3" />
             </Button>
           )}
-          {search.archived !== "exclude" && (
+          {archivedFilter && search.archived !== "exclude" && (
             <Button variant="secondary" size="sm" onClick={() => filter({ archived: "exclude" })}>
               {search.archived === "only" ? "Archived only" : "Including archived"}
               <X className="size-3" />

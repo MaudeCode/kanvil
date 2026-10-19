@@ -175,6 +175,15 @@ function rejectConflicts(filter: FilterValues, context: z.RefinementCtx) {
       });
   }
 }
+// Up to 100 distinct tickets, each with the version the caller last saw.
+const ticketSelection = z
+  .array(z.object({ ticketId: id, expectedVersion: version }))
+  .min(1)
+  .max(100)
+  .refine(
+    (values) => new Set(values.map((v) => v.ticketId)).size === values.length,
+    "Tickets must be unique",
+  );
 export const ticketFilter = z
   .object({
     q: z.string().trim().max(200).optional(),
@@ -854,14 +863,7 @@ export const operations = {
     projectInput
       .extend({
         ...mutation,
-        tickets: z
-          .array(z.object({ ticketId: id, expectedVersion: version }))
-          .min(1)
-          .max(100)
-          .refine(
-            (values) => new Set(values.map((v) => v.ticketId)).size === values.length,
-            "Tickets must be unique",
-          ),
+        tickets: ticketSelection,
         changes: ticketChanges,
       })
       .strict(),
@@ -878,6 +880,14 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}",
     "admin",
     "Delete a ticket and publish a deletion event.",
+  ),
+  bulk_delete_tickets: op(
+    projectInput.extend({ ...mutation, tickets: ticketSelection }).strict(),
+    okSchema,
+    "POST",
+    "/projects/{projectId}/tickets/bulk-delete",
+    "admin",
+    "Delete up to 100 tickets atomically. Every ticket's version and ownership is checked before anything is deleted; children outside the selection lose their parent. Reuse requestId when retrying this write.",
   ),
   search_tickets: op(
     z

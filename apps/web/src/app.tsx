@@ -750,16 +750,24 @@ const projectRoute = createRoute({
   validateSearch: searchSchema,
   component: ProjectPage,
 });
-function ProjectPage() {
-  const { projectId } = projectRoute.useParams(),
-    search = projectRoute.useSearch(),
-    navigate = projectRoute.useNavigate(),
+const planningRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/projects/$projectId/planning",
+  validateSearch: searchSchema,
+  component: () => <ProjectPage planning />,
+});
+// Active work and planning share one page; planning reads its own route's params and search.
+function ProjectPage({ planning = false }: { planning?: boolean }) {
+  const route = planning ? planningRoute : projectRoute;
+  const { projectId } = route.useParams(),
+    search = route.useSearch(),
+    navigate = route.useNavigate(),
     projects = useProjects(),
     project = projects.data?.find((item) => item.id === projectId);
   return project ? (
     <TicketList
-      key={project.id}
-      scope={{ project }}
+      key={`${project.id}:${planning}`}
+      scope={{ project, planning }}
       search={search}
       onSearch={(next, push) => {
         void navigate({ search: next, replace: !push });
@@ -865,6 +873,7 @@ const router = createRouter({
       myWork,
       searchRoute,
       projectRoute,
+      planningRoute,
       ticket,
       projectSettings,
       workspaceSettings,

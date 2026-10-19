@@ -79,7 +79,8 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 
 ## Web and mobile
 
-- Web list with readable wrapping titles, adjustable columns, filters, selection, keyboard navigation, a preview sheet that shows the full ticket detail over the list, and atomic bulk actions for status, priority, assignee, kind, difficulty, labels (replace or clear), due date (set or clear), and archiving. Mixed selections show as mixed, never as the first row's value.
+- Web list with readable wrapping titles, adjustable columns, filters, selection, keyboard navigation, a preview sheet that shows the full ticket detail over the list, and atomic bulk actions for status, priority, assignee, kind, difficulty, labels (replace or clear), due date (set or clear), archiving or restoring, and deletion. Mixed selections show as mixed, never as the first row's value. Each status section selects as a whole.
+- Project planning view with complete Planned (backlog) and Archived groups, moving planned work to To do, restoring archived tickets, and a way back to active work.
 - Ticket detail view containing requirements, relationships, discussion, attachments, activity, and supplied evidence.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
 - Home overview of your assigned work, recent activity, and project progress, with a complete My work list across the workspace's projects grouped by due date or project.
