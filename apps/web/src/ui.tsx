@@ -139,12 +139,18 @@ export function IconButton({
     </Tooltip>
   );
 }
-export function Input({ label, ...props }: ComponentProps<typeof TextInput> & { label: string }) {
+export function Input({
+  label,
+  labelHidden = false,
+  ...props
+}: ComponentProps<typeof TextInput> & { label: string; labelHidden?: boolean }) {
   const id = useId(),
     [visible, setVisible] = useState(false);
   return (
-    <Field className={fieldClass}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+    <Field className={cn(fieldClass, labelHidden && "mb-0")}>
+      <FieldLabel htmlFor={id} className={cn(labelHidden && "sr-only")}>
+        {label}
+      </FieldLabel>
       {props.type === "password" ? (
         <InputGroup>
           <InputGroupInput {...props} id={id} type={visible ? "text" : "password"} />

@@ -2,7 +2,15 @@ import { useAuthError } from "./hooks/use-auth-error.ts";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { infoSchema } from "@kanvil/contracts";
+import {
+  infoSchema,
+  notificationCategories,
+  notificationCategoryLabels,
+  reminderUnits,
+  reminderUnitSchema,
+  type NotificationPreferences,
+} from "@kanvil/contracts";
+import { notificationCategoryIcons } from "./lib/notification-categories.ts";
 import { api, auth, useIdentity } from "./data.tsx";
 import {
   Button,
@@ -257,52 +265,152 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
     options = api.notificationPreferences(),
     preferences = useQuery(options),
     update = useMutation({
-      mutationFn: api.setNotificationPreferences,
+      mutationFn: (value: NotificationPreferences) => api.setNotificationPreferences(value),
       networkMode: "always",
       retry: false,
       onSuccess: (value) => cache.setQueryData(options.queryKey, value),
     });
+  // The pending write shows immediately; a failure falls back to the saved value.
+  const shown = update.isPending ? update.variables : preferences.data;
+  const save = (change: Partial<NotificationPreferences>) => {
+    if (shown) update.mutate({ ...shown, ...change });
+  };
   return (
-    <section>
-      <SectionHeading title="Notifications" />
-      <ErrorNotice error={preferences.error ?? update.error} />
-      {preferences.isPending ? (
-        <Loading />
-      ) : (
-        preferences.data && (
-          <>
-            <SettingRow title="Inbox" description="Updates to tickets you follow appear in Kanvil.">
-              <Switch
-                aria-label="Subscribed ticket updates in Inbox"
-                checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
-                disabled={update.isPending}
-                onCheckedChange={(checked) =>
-                  update.mutate({ ...preferences.data, inApp: checked })
+    <>
+      <section className="[&>.setting-row:last-child]:border-b-0">
+        <SectionHeading title="Notifications" />
+        <ErrorNotice error={preferences.error ?? update.error} />
+        {preferences.isPending ? (
+          <Loading />
+        ) : (
+          shown && (
+            <>
+              <SettingRow
+                title="Inbox"
+                description="Updates to tickets you follow appear in Kanvil."
+              >
+                <Switch
+                  aria-label="Subscribed ticket updates in Inbox"
+                  checked={shown.inApp}
+                  disabled={update.isPending}
+                  onCheckedChange={(checked) => save({ inApp: checked })}
+                />
+              </SettingRow>
+              <SettingRow
+                title="Push notifications"
+                description={
+                  pushAvailable
+                    ? "Send updates to devices you’ve registered."
+                    : "Push delivery is not enabled on this instance."
                 }
+              >
+                <Switch
+                  aria-label="Push notifications on registered devices"
+                  checked={shown.push}
+                  disabled={update.isPending || !pushAvailable}
+                  onCheckedChange={(checked) => save({ push: checked })}
+                />
+              </SettingRow>
+            </>
+          )
+        )}
+      </section>
+      {shown && (
+        <section className="[&>.setting-row:last-child]:border-b-0">
+          <SectionHeading title="Categories" />
+          {notificationCategories.map((category) => {
+            const Icon = notificationCategoryIcons[category];
+            return (
+              <SettingRow
+                key={category}
+                compact
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <Icon aria-hidden className="size-4 text-muted-foreground" />
+                    {notificationCategoryLabels[category]}
+                  </span>
+                }
+              >
+                <Switch
+                  aria-label={`${notificationCategoryLabels[category]} notifications`}
+                  checked={shown.categories[category]}
+                  disabled={update.isPending}
+                  onCheckedChange={(checked) =>
+                    save({ categories: { ...shown.categories, [category]: checked } })
+                  }
+                />
+              </SettingRow>
+            );
+          })}
+          <SettingRow
+            title="Due soon reminder"
+            description="How long before a followed ticket’s due date."
+          >
+            <div className="flex items-center gap-2">
+              <ReminderAmount
+                key={shown.reminderLead.amount}
+                value={shown.reminderLead.amount}
+                disabled={update.isPending || !shown.categories.due_soon}
+                onCommit={(amount) => save({ reminderLead: { ...shown.reminderLead, amount } })}
               />
-            </SettingRow>
-            <SettingRow
-              title="Push notifications"
-              description={
-                pushAvailable
-                  ? "Send updates to devices you’ve registered."
-                  : "Push delivery is not enabled on this instance."
-              }
-            >
-              <Switch
-                aria-label="Push notifications on registered devices"
-                checked={
-                  update.isPending ? (update.variables.push ?? false) : preferences.data.push
+              <Select
+                label="Reminder unit"
+                labelHidden
+                className="mb-0 w-32"
+                value={shown.reminderLead.unit}
+                disabled={update.isPending || !shown.categories.due_soon}
+                onValueChange={(value) =>
+                  save({
+                    reminderLead: { ...shown.reminderLead, unit: reminderUnitSchema.parse(value) },
+                  })
                 }
-                disabled={update.isPending || !pushAvailable}
-                onCheckedChange={(checked) =>
-                  update.mutate({ inApp: preferences.data?.inApp ?? true, push: checked })
-                }
-              />
-            </SettingRow>
-          </>
-        )
+              >
+                {reminderUnits.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {unit.charAt(0).toUpperCase() + unit.slice(1)}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+          </SettingRow>
+        </section>
       )}
-    </section>
+    </>
+  );
+}
+// Commits on blur or Enter so typing a two-digit amount saves once.
+function ReminderAmount({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  disabled: boolean;
+  onCommit: (amount: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const commit = () => {
+    const amount = Number(draft);
+    if (Number.isInteger(amount) && amount >= 1 && amount <= 999) {
+      if (amount !== value) onCommit(amount);
+    } else setDraft(String(value));
+  };
+  return (
+    <Input
+      label="Reminder amount"
+      labelHidden
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={999}
+      className="w-20"
+      value={draft}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+      }}
+    />
   );
 }

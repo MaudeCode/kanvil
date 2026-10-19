@@ -112,16 +112,22 @@ export function ActorName({
   avatar = false,
 }: {
   projectId: string;
-  actorId: string;
+  // Null for events the server raises on its own clock, such as due-date reminders.
+  actorId: string | null;
   avatar?: boolean;
 }) {
   const identity = useIdentity(),
     members = useQuery(api.query("list_members", { projectId })),
     member = members.data?.find((person) => person.userId === actorId),
-    name = actorId === identity.id ? identity.name : (member?.name ?? "Former member"),
+    name =
+      actorId === null
+        ? "Kanvil"
+        : actorId === identity.id
+          ? identity.name
+          : (member?.name ?? "Former member"),
     image = actorId === identity.id ? identity.image : member?.image;
   return (
-    <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId}>
+    <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId ?? undefined}>
       {avatar && <UserAvatar name={name} image={image} className="size-7 text-[10px]" />}
       {actorId === identity.id ? "You" : name}
     </span>

@@ -340,6 +340,64 @@ test("a deleted ticket stops showing its cached content", async ({ page }) => {
   await expect(page.getByText("Ticket unavailable", { exact: true })).toBeVisible();
 });
 
+test("notification categories filter the Inbox and keep the reminder lead", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+      await page.request.post("/api/v1/projects", {
+        data: { key: "NOTECAT", name: "Notification categories" },
+      })
+    ).json(),
+    ticket = await (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: "Report a stalled import to the person who owns it" },
+      })
+    ).json();
+  const key = await (
+    await page.request.post("/api/v1/credentials", {
+      data: { name: "Category fixture", projectIds: [project.id], scopes: ["read", "write"] },
+    })
+  ).json();
+  try {
+    await page.goto("/settings?section=notifications");
+    const comments = page.getByRole("switch", { name: "Comments notifications", exact: true });
+    await expect(comments).toBeChecked();
+    await comments.click();
+    await expect(comments).not.toBeChecked();
+    const amount = page.getByLabel("Reminder amount", { exact: true });
+    await amount.fill("3");
+    await amount.press("Enter");
+    await page.getByRole("combobox", { name: "Reminder unit", exact: true }).click();
+    await page.getByRole("option", { name: "Hours", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Reminder unit" })).toHaveText(/Hours/);
+    await page.reload();
+    await expect(comments).not.toBeChecked();
+    await expect(amount).toHaveValue("3");
+    await expect(page.getByRole("combobox", { name: "Reminder unit" })).toHaveText(/Hours/);
+    const worker = { Authorization: `Bearer ${key.key}` };
+    await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/comments`, {
+      headers: worker,
+      data: { body: "The import stopped at row 4,000." },
+    });
+    await page.request.patch(`/api/v1/projects/${project.id}/tickets/${ticket.id}`, {
+      headers: worker,
+      data: { expectedVersion: ticket.version, changes: { status: "in_progress" } },
+    });
+    await page.goto("/inbox");
+    const row = page.locator("[data-entry]").filter({ hasText: ticket.key });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByRole("img", { name: "Status changes", exact: true })).toBeVisible();
+  } finally {
+    await page.request.put("/api/v1/notifications/preferences", {
+      data: {
+        inApp: true,
+        categories: { comment: true },
+        reminderLead: { amount: 1, unit: "days" },
+      },
+    });
+    await page.request.delete(`/api/v1/credentials/${key.id}`);
+  }
+});
+
 test("an in-flight ticket save cannot be dismissed or submit twice", async ({ page }) => {
   await signIn(page);
   const project = await (

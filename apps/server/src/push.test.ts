@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { deliverPushBatch } from "./push.ts";
+import { sendDueReminders } from "./reminders.ts";
 import { members, pushDeliveries, pushDevices } from "./schema.ts";
 import { session } from "./auth-schema.ts";
 import type { Actor } from "./domain.ts";
@@ -217,11 +218,11 @@ describe("durable optional native push", () => {
       headers: () => ({ Cookie: cookie, Origin: fixture.config.KANVIL_URL }),
       fetch: async (input, init) => app.app.fetch(new Request(input, init)),
     });
-    expect(await client.setNotificationPreferences({ inApp: true })).toEqual({
+    expect(await client.setNotificationPreferences({ inApp: true })).toMatchObject({
       inApp: true,
       push: true,
     });
-    expect(await (await request("/notifications/preferences")).json()).toEqual({
+    expect(await (await request("/notifications/preferences")).json()).toMatchObject({
       inApp: true,
       push: true,
     });
@@ -256,5 +257,49 @@ describe("durable optional native push", () => {
     expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
       "unsubscribed",
     );
+  });
+  it("drops a queued notice whose category was turned off before sending", async () => {
+    await request("/notifications/preferences", "PUT", {
+      inApp: false,
+      categories: { comment: false },
+    });
+    await tick();
+    expect(sent).toHaveLength(0);
+    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
+      "category_disabled",
+    );
+  });
+  it("drops a queued reminder once its ticket is completed", async () => {
+    await tick();
+    const dueAt = new Date(Date.now() + 86_400_000);
+    const updated = await app.domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: ticket.id,
+        expectedVersion: ticket.version,
+        changes: { dueAt: dueAt.toISOString() },
+      },
+      machine,
+    );
+    await tick();
+    sent = [];
+    expect(await sendDueReminders(fixture.database, dueAt)).toBe(1);
+    await app.domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: ticket.id,
+        expectedVersion: updated.version,
+        changes: { status: "done" },
+      },
+      machine,
+    );
+    await fixture.database.db.update(pushDeliveries).set({ availableAt: new Date(0) });
+    await tick();
+    expect(sent.filter((message) => message.data?.ticketId === ticket.id)).toHaveLength(1);
+    expect(
+      (await fixture.database.db.select().from(pushDeliveries)).map((row) => row.error),
+    ).toContain("reminder_stale");
   });
 });

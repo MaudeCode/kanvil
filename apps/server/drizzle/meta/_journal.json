@@ -106,6 +106,13 @@
       "when": 1792384369462,
       "tag": "0014_inbox_dismissal",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792386797392,
+      "tag": "0015_notification_categories",
+      "breakpoints": true
     }
   ]
 }

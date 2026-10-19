@@ -608,7 +608,10 @@ describe("HTTP, realtime, and MCP", () => {
       title: ticket.title,
       source: { kind: "credential", id: issued.id },
     });
-    expect(await human.notificationPreferences().queryFn()).toEqual({ inApp: true, push: false });
+    expect(await human.notificationPreferences().queryFn()).toMatchObject({
+      inApp: true,
+      push: false,
+    });
     await expect(machine.setNotificationPreferences({ inApp: false })).rejects.toMatchObject({
       status: 403,
     });
@@ -622,7 +625,7 @@ describe("HTTP, realtime, and MCP", () => {
       ).status,
     ).toBe(403);
     try {
-      expect(await human.setNotificationPreferences({ inApp: false })).toEqual({
+      expect(await human.setNotificationPreferences({ inApp: false })).toMatchObject({
         inApp: false,
         push: false,
       });

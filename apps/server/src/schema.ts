@@ -201,7 +201,8 @@ export const events = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     ticketId: uuid("ticket_id"),
-    actorId: actor(),
+    // Null when the server raises the event on its own clock; `data.source` names the job.
+    actorId: text("actor_id").references(() => user.id),
     type: text("type").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
     createdAt: time("created_at"),
@@ -347,22 +348,36 @@ export const notificationPreferences = pgTable("notification_preferences", {
     .references(() => user.id, { onDelete: "cascade" }),
   inApp: boolean("in_app").notNull().default(true),
   push: boolean("push").notNull().default(false),
+  // Category flags that are absent read as enabled.
+  categories: jsonb("categories").$type<Record<string, boolean>>().notNull().default({}),
+  reminderAmount: integer("reminder_amount").notNull().default(1),
+  reminderUnit: text("reminder_unit").notNull().default("days"),
 });
-export const notifications = pgTable("notifications", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  eventId: bigint("event_id", { mode: "bigint" }).notNull(),
-  readAt: timestamp("read_at", { withTimezone: true }),
-  // Dismissal hides the entry from the Inbox; the row and its event stay as recorded.
-  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
-  inbox: boolean("inbox").notNull().default(true),
-  createdAt: time("created_at"),
-});
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    eventId: bigint("event_id", { mode: "bigint" }).notNull(),
+    category: text("category").notNull().default("update"),
+    // Set on due-date reminders: kind, ticket, and due date, so each follower gets each at most once.
+    reminderKey: text("reminder_key"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    // Dismissal hides the entry from the Inbox; the row and its event stay as recorded.
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    inbox: boolean("inbox").notNull().default(true),
+    createdAt: time("created_at"),
+  },
+  (table) => [
+    unique("notification_event_user").on(table.eventId, table.userId),
+    unique("notification_reminder").on(table.userId, table.reminderKey),
+  ],
+);
 export const pushDevices = pgTable("push_devices", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id")

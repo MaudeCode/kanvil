@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { Bell, BellDot, Check, CheckCheck, ListX, MessageSquare, X } from "lucide-react";
-import { formatEvent } from "@kanvil/contracts";
+import { Bell, BellDot, Check, CheckCheck, ListX, X } from "lucide-react";
+import { formatEvent, notificationCategoryLabels } from "@kanvil/contracts";
+import { notificationCategoryIcons } from "./lib/notification-categories.ts";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -297,11 +298,12 @@ function InboxEntry({
   const { event } = entry,
     title = typeof event.data.title === "string" ? event.data.title : formatEvent(event),
     key = typeof event.data.key === "string" ? event.data.key : null,
-    linked = !!ticketOf(entry);
+    linked = !!ticketOf(entry),
+    CategoryIcon = notificationCategoryIcons[entry.category];
   const body = (
     <>
-      <ItemMedia variant="icon">
-        {event.type.startsWith("comment.") ? <MessageSquare /> : <Bell />}
+      <ItemMedia variant="icon" title={notificationCategoryLabels[entry.category]}>
+        <CategoryIcon role="img" aria-label={notificationCategoryLabels[entry.category]} />
       </ItemMedia>
       <ItemContent className="min-w-0 gap-0.5">
         <ItemTitle className="line-clamp-none max-w-full text-[13px] leading-5 wrap-anywhere">
@@ -309,7 +311,11 @@ function InboxEntry({
         </ItemTitle>
         <ItemDescription className="m-0 text-xs">
           {projectName}
-          {key && ` · ${key}`} · {formatEvent(event)}
+          {key && ` · ${key}`} ·{" "}
+          {event.type === "ticket.updated" &&
+          (entry.category === "assignment" || entry.category === "status")
+            ? notificationCategoryLabels[entry.category]
+            : formatEvent(event)}
         </ItemDescription>
       </ItemContent>
     </>
@@ -359,7 +365,7 @@ function InboxEntry({
           <X />
         </IconButton>
         <RelativeTime
-          value={event.createdAt}
+          value={entry.createdAt ?? event.createdAt}
           className="ml-1 self-center text-xs whitespace-nowrap text-muted-foreground"
         />
       </ItemActions>

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  eventCategories,
   infoSchema,
+  notificationPreferencesSchema,
+  notificationsSchema,
   formatEvent,
   operations,
   parseRelationChoice,
@@ -186,5 +189,60 @@ describe("ticket filter predicates", () => {
       operations.list_tickets.input.safeParse({ projectId: "p", kind: "bug", kindNot: ["bug"] })
         .success,
     ).toBe(false);
+  });
+});
+const updated = (changedFields: string[]) => ({
+  type: "ticket.updated",
+  data: { changedFields },
+});
+describe("notification categories", () => {
+  it("lists the most specific categories of an event first", () => {
+    expect(eventCategories(updated(["status", "assigneeId", "title"]))).toEqual([
+      "assignment",
+      "status",
+      "update",
+    ]);
+    expect(eventCategories(updated(["status"]))).toEqual(["status"]);
+    expect(eventCategories(updated([]))).toEqual(["update"]);
+    expect(eventCategories({ type: "comment.created", data: {} })).toEqual(["comment"]);
+    expect(eventCategories({ type: "ticket.overdue", data: {} })).toEqual(["overdue"]);
+    expect(eventCategories({ type: "relation.added", data: {} })).toEqual(["update"]);
+  });
+  it("reads older preferences and Inbox entries with every category enabled", () => {
+    expect(notificationPreferencesSchema.parse({ inApp: false, push: true })).toEqual({
+      inApp: false,
+      push: true,
+      categories: {
+        assignment: true,
+        status: true,
+        comment: true,
+        update: true,
+        due_soon: true,
+        overdue: true,
+      },
+      reminderLead: { amount: 1, unit: "days" },
+    });
+    const event = {
+      id: "1",
+      projectId: "10000000-0000-4000-8000-000000000001",
+      ticketId: null,
+      actorId: null,
+      type: "ticket.overdue",
+      data: {},
+      createdAt: "2026-10-19T00:00:00.000Z",
+    };
+    expect(
+      notificationsSchema
+        .parse([
+          { id: "10000000-0000-4000-8000-000000000002", readAt: null, event },
+          {
+            id: "10000000-0000-4000-8000-000000000003",
+            readAt: null,
+            category: "mentions",
+            event,
+          },
+        ])
+        .map((item) => item.category),
+    ).toEqual(["update", "update"]);
   });
 });
