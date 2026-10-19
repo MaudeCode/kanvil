@@ -111,6 +111,7 @@ export async function createApplication(
       secrets,
       publicUrl: config.KANVIL_URL,
       mail: senders.mail,
+      sources: adapters.importSources(config),
     }),
     access = createAccess(auth, domain, config, database),
     realtime = await adapters.realtime(config, instance, integrationDatabase);

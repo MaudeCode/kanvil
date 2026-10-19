@@ -11,6 +11,7 @@ import {
 } from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
 import { createFixture } from "./test-fixture.ts";
+import { startImportSources } from "./import-source-fixture.ts";
 
 async function readSseUntil(reader: ReadableStreamDefaultReader<Uint8Array>, value: string) {
   let received = "";
@@ -967,5 +968,52 @@ describe("HTTP, realtime, and MCP", () => {
       [second.id],
     );
     expect(stored.rows).toEqual([{ event_id: second.event.id, dismissed: true }]);
+  });
+  it("reads Linear for an import over HTTP without returning the credentials", async () => {
+    const source = await startImportSources(),
+      token = "lin_api_http_fixture_secret",
+      linear = { provider: "linear", token };
+    const sourced = await createApplication(fixture.database, {
+      ...fixture.config,
+      KANVIL_LINEAR_API_URL: source.linearUrl,
+      KANVIL_DELIVERY_ALLOW_PRIVATE: true,
+    });
+    try {
+      const { workspaceId } = await newProject();
+      const call = (path: string, body: unknown) =>
+        sourced.app.fetch(
+          new Request(url(path), {
+            method: "POST",
+            headers: sessionHeaders(),
+            body: JSON.stringify(body),
+          }),
+        );
+      const listed = await call(`/api/v1/workspaces/${workspaceId}/import-sources/projects`, {
+        source: linear,
+      });
+      expect(listed.status).toBe(200);
+      const teams = await listed.text();
+      expect(z.array(z.object({ key: z.string() })).parse(JSON.parse(teams))[0]?.key).toBe("ENG");
+      expect(teams).not.toContain(token);
+      const staged = await call(`/api/v1/workspaces/${workspaceId}/imports/source`, {
+        key: "LINHTTP",
+        name: "From Linear",
+        source: linear,
+        sourceProject: "lin-team",
+        includeComments: false,
+      });
+      expect(staged.status).toBe(200);
+      const run = await staged.text();
+      expect(JSON.parse(run)).toMatchObject({ status: "previewed", counts: { tickets: 3 } });
+      expect(run).not.toContain(token);
+      expect(source.requests.every((sent) => sent.authorization === token)).toBe(true);
+      const document = z
+        .object({ paths: z.record(z.string(), z.unknown()) })
+        .parse(await (await request("/api/openapi.json")).json());
+      expect(document.paths["/api/v1/workspaces/{workspaceId}/imports/source"]).toBeDefined();
+    } finally {
+      await sourced.close();
+      await source.close();
+    }
   });
 });

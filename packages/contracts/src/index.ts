@@ -1515,6 +1515,59 @@ export const importRunSchema = z.object({
 });
 export type ImportRun = z.output<typeof importRunSchema>;
 const importInput = z.object({ workspaceId: z.uuid(), importId: z.uuid() });
+// Trackers an import reads directly. The server reads the source with the credentials of one
+// request, only ever reading, and stages what it read like a `kanvil.tickets` bundle. Credentials
+// are never stored or returned.
+export const importProviders = ["linear", "jira"] as const;
+export type ImportProvider = (typeof importProviders)[number];
+export const importProviderDefinitions: Record<
+  ImportProvider,
+  { label: string; project: string; setup: string }
+> = {
+  linear: {
+    label: "Linear",
+    project: "Team",
+    setup:
+      "Create a personal API key under Settings › Security & access in Linear; read access is enough.",
+  },
+  jira: {
+    label: "Jira",
+    project: "Project",
+    setup:
+      "Jira Cloud signs in with your account email and an API token from id.atlassian.com; Data Center and Server use a personal access token. Browse access to the project is enough.",
+  },
+};
+export const jiraEditions = ["cloud", "data_center"] as const;
+export const jiraEditionLabels: Record<(typeof jiraEditions)[number], string> = {
+  cloud: "Cloud",
+  data_center: "Data Center or Server",
+};
+const sourceToken = z.string().trim().min(1).max(2000);
+export const importSourceSchema = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("linear"), token: sourceToken }).strict(),
+  z
+    .object({
+      provider: z.literal("jira"),
+      edition: z.enum(jiraEditions),
+      baseUrl: repositoryBaseUrl,
+      // Cloud only: the account the API token belongs to.
+      email: z.string().trim().max(320).default(""),
+      token: sourceToken,
+    })
+    .strict()
+    .refine((source) => source.edition !== "cloud" || source.email !== "", {
+      message: "Jira Cloud needs the account email",
+      path: ["email"],
+    }),
+]);
+export type ImportSource = z.output<typeof importSourceSchema>;
+// A Linear team or a Jira project the credentials can read.
+export const importSourceProjectSchema = z.object({
+  ref: z.string(),
+  key: z.string(),
+  name: z.string(),
+});
+export type ImportSourceProject = z.output<typeof importSourceProjectSchema>;
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
 // One uploaded file: attachments and staged inline uploads accept the same bytes.
@@ -1991,6 +2044,34 @@ export const operations = {
     "/workspaces/{workspaceId}/imports",
     "write",
     "Stage a `kanvil.tickets` bundle for import into a new project of the workspace and check it without writing tickets: references, workflow, custom field values, dependency cycles, and the prefix. People are matched by email to accounts that can open the new project. The run holds the issues found; errors block `start_import`. Signed-in accounts only; an unstarted run expires after 24 hours.",
+  ),
+  list_import_source_projects: op(
+    z.object({ workspaceId: z.uuid(), source: importSourceSchema }).strict(),
+    z.array(importSourceProjectSchema),
+    "POST",
+    "/workspaces/{workspaceId}/import-sources/projects",
+    "write",
+    "Connect to Linear or a Jira site with the given credentials and list the teams or projects they can read, for `preview_source_import`. Only reads the source and writes nothing; the credentials serve this request alone. Signed-in accounts only.",
+  ),
+  preview_source_import: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        key: projectKey,
+        name: text.max(120),
+        visibility: z.enum(["workspace", "private"]).default("private"),
+        source: importSourceSchema,
+        // The team or project `ref` from `list_import_source_projects`.
+        sourceProject: z.string().trim().min(1).max(200),
+        includeComments: z.boolean().default(true),
+      })
+      .strict(),
+    importRunSchema,
+    "POST",
+    "/workspaces/{workspaceId}/imports/source",
+    "write",
+    "Read a Linear team or Jira project with the given credentials, translate it into a `kanvil.tickets` bundle, and stage it like `preview_import`: workflow, issues with parents, priorities, labels, assignees, relationships, and optionally comments. What the source holds that Kanvil cannot, such as cycles, estimates, and milestones, is listed among the warnings. Only reads the source, before the write; the credentials serve this request alone and are never stored, and a retry with the same `requestId` returns the staged run without reading the source again. Start the run with `start_import`. Signed-in accounts only.",
   ),
   list_imports: op(
     z.object({ workspaceId: z.uuid() }),

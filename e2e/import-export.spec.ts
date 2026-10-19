@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
+import { choose } from "./controls.ts";
 
 // The request that stages an import preview.
 const staged = (request: { method: () => string; url: () => string }) =>
@@ -83,7 +84,7 @@ test("exports a project as JSON and imports it into a new project", async ({ pag
   await page.unroute("**/imports");
   await submit.click();
   await expect(preview.getByText("Tickets", { exact: true })).toBeVisible();
-  await expect(preview.getByText("Not in the file: activity", { exact: false })).toBeVisible();
+  await expect(preview.getByText("Not imported: activity", { exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: "Import", exact: true }).click();
   await expect(dialog.getByRole("status")).toHaveText(/^Imported · \d+ of \d+ records$/, {
     timeout: 20_000,
@@ -93,4 +94,54 @@ test("exports a project as JSON and imports it into a new project", async ({ pag
 
   await page.goto(`/workspaces/${project.workspaceId}/settings`);
   await expect(page.getByText(/^Imported · \d+ of \d+ records/)).toBeVisible();
+});
+
+test("connects to Linear, picks a team, and imports it with its comments", async ({ page }) => {
+  await signIn(page);
+  const { workspaceId } = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "LINHOME", name: "Linear home", visibility: "workspace" },
+    })
+  ).json();
+  await page.goto(`/workspaces/${workspaceId}/settings`);
+  await page.getByRole("button", { name: "Import project", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Import project", exact: true });
+  await choose(page, "Source", "Jira");
+  // Jira Cloud asks for the account email; Data Center signs in with a token alone.
+  await expect(dialog.getByLabel("Account email", { exact: true })).toBeVisible();
+  await choose(page, "Jira edition", "Data Center or Server");
+  await expect(dialog.getByLabel("Account email", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Personal access token", { exact: true })).toBeVisible();
+
+  await choose(page, "Source", "Linear");
+  await dialog.getByLabel("API key", { exact: true }).fill("lin_api_browser_fixture");
+  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  // The first team is chosen and names the project.
+  await expect(dialog.getByRole("combobox", { name: "Team", exact: true })).toContainText(
+    "Engineering",
+  );
+  await expect(dialog.getByLabel("Project name", { exact: true })).toHaveValue("Engineering");
+  await expect(
+    dialog.getByRole("checkbox", { name: "Include comments", exact: true }),
+  ).toBeChecked();
+  await dialog.getByLabel("Ticket prefix", { exact: true }).fill("LINEARENG");
+  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+  const preview = dialog.getByRole("region", { name: "Import preview", exact: true });
+  await expect(preview.getByText("Comments", { exact: true })).toBeVisible();
+  await expect(preview.getByText(/Not imported: cycles \(1\)/)).toBeVisible();
+  await expect(preview.getByText(/Not imported: estimates \(1\)/)).toBeVisible();
+  // Leaving comments out discards the preview; the next one says they were left out.
+  await dialog.getByRole("checkbox", { name: "Include comments", exact: true }).uncheck();
+  await expect(preview).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(preview.getByText(/Not imported: comments\./)).toBeVisible();
+  await dialog.getByRole("checkbox", { name: "Include comments", exact: true }).check();
+  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(preview.getByText("Comments", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(dialog.getByRole("status")).toHaveText(/^Imported · \d+ of \d+ records$/, {
+    timeout: 20_000,
+  });
+  await dialog.getByRole("link", { name: "Open project", exact: true }).click();
+  await expect(page.getByRole("link", { name: /Ship the importer/ }).first()).toBeVisible();
 });
