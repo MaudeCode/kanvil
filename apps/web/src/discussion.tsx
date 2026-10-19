@@ -26,6 +26,21 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
   const comments = useQuery(
     api.query("list_comments", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
   );
+  // A search result links a comment by anchor. Page forward until it loads, once per anchor;
+  // paging after that stays with the reader.
+  const hash = useRouterState({ select: (state) => state.location.hash }),
+    anchored = hash.startsWith("comment-") ? hash.slice("comment-".length) : null;
+  const [anchor, setAnchor] = useState(anchored),
+    [seeking, setSeeking] = useState(anchored !== null);
+  if (anchored !== anchor) {
+    setAnchor(anchored);
+    setSeeking(anchored !== null);
+  }
+  if (seeking && comments.data) {
+    if (comments.data.items.some((item) => item.id === anchored)) setSeeking(false);
+    else if (offset + 50 < comments.data.total) setOffset(offset + 50);
+    else setSeeking(false);
+  }
   const add = useOperation("add_comment"),
     access = useProjectAccess(ticket.projectId);
   return (
@@ -36,7 +51,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
       )}
       <div className="divide-y">
         {comments.data?.items.map((comment) => (
-          <Comment key={comment.id} comment={comment} />
+          <Comment key={comment.id} comment={comment} linked={comment.id === anchored} />
         ))}
       </div>
       {((comments.data?.total ?? 0) > 50 || offset > 0) && (
@@ -93,8 +108,10 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
 }
 function Comment({
   comment,
+  linked,
 }: {
   comment: Awaited<ReturnType<typeof api.call<"list_comments">>>["items"][number];
+  linked: boolean;
 }) {
   const identity = useIdentity(),
     access = useProjectAccess(comment.projectId),
@@ -104,12 +121,8 @@ function Comment({
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
   const own = comment.actorId === identity.id;
-  // A search result links here with the comment's anchor; bring it into view and mark it.
-  // ponytail: only comments on the loaded page can be reached; page to the comment if threads
-  // routinely pass 50 comments.
-  const linked =
-      useRouterState({ select: (state) => state.location.hash }) === `comment-${comment.id}`,
-    article = useRef<HTMLElement>(null);
+  // Bring the linked comment into view and mark it.
+  const article = useRef<HTMLElement>(null);
   useEffect(() => {
     if (linked) article.current?.scrollIntoView({ block: "center" });
   }, [linked]);

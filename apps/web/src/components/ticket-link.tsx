@@ -13,12 +13,15 @@ export function TicketLink({
   projectId,
   ticketId,
   ticket,
+  hash,
   className,
   children,
 }: {
   projectId: string;
   ticketId: string;
   ticket?: Pick<Ticket, "key" | "title"> | undefined;
+  // An anchor within the ticket page, such as a comment.
+  hash?: string | undefined;
   className?: string;
   children?: ReactNode;
 }) {
@@ -36,6 +39,7 @@ export function TicketLink({
           <Link
             to="/projects/$projectId/tickets/$ticketId"
             params={{ projectId, ticketId }}
+            {...(hash ? { hash } : {})}
             className={cn("ticket-link text-foreground hover:text-primary", className)}
           />
         }

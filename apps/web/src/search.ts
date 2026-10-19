@@ -24,7 +24,12 @@ export function filterIdentity(input: unknown) {
       ),
     ),
   );
-  return JSON.stringify([ticketPredicates(values), q, parentId, archived, due, sort, order]);
+  // Values within a predicate are a set: order of selection does not change the filter.
+  const predicates = ticketPredicates(values).map((predicate) => ({
+    ...predicate,
+    values: predicate.values.toSorted(),
+  }));
+  return JSON.stringify([predicates, q, parentId, archived, due, sort, order]);
 }
 // Whether a value passes one field's include and exclude lists.
 export function matchesFilter(search: TicketSearch, field: FilterField, value: string) {

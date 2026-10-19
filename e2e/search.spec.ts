@@ -17,6 +17,11 @@ test("workspace search finds tickets and comments and opens their context", asyn
       data: { title: "Closed work", status: "done" },
     })
   ).json();
+  // The linked comment lands on the second page of the discussion.
+  for (let index = 0; index < 50; index += 1)
+    await page.request.post(`/api/v1/projects/${project.id}/tickets/${closed.id}/comments`, {
+      data: { body: `Earlier note ${index + 1}` },
+    });
   const comment = await (
     await page.request.post(`/api/v1/projects/${project.id}/tickets/${closed.id}/comments`, {
       data: { body: `The ${token} fix shipped.` },
@@ -38,6 +43,11 @@ test("workspace search finds tickets and comments and opens their context", asyn
   const results = page.getByRole("list", { name: "Search results", exact: true });
   await expect(results.getByRole("listitem")).toHaveCount(2);
   await expect(results.getByRole("listitem").first()).toContainText(`Read the ${token} runbook`);
+  // Ticket-backed results are ticket links with the shared hover preview.
+  await results.getByRole("link").first().hover();
+  await expect(page.locator('[data-slot="hover-card-content"]')).toContainText(
+    `Rotate ${token} keys`,
+  );
   await page.getByRole("tab", { name: /Comments/ }).click();
   await expect(results.getByRole("listitem")).toHaveCount(1);
   await page.keyboard.press("j");

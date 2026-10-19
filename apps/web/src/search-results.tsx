@@ -7,6 +7,7 @@ import { z } from "zod";
 import { api, useWorkspace } from "./data.tsx";
 import { Button, EmptyState, ErrorNotice, Loading, PageHeader, SearchField } from "./ui.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
+import { TicketLink } from "./components/ticket-link.tsx";
 import { SearchResultContent, searchResultLink } from "./components/search-result.tsx";
 import type { resultsSearchSchema } from "./search.ts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 
 type ResultsSearch = z.output<typeof resultsSearchSchema>;
 const pageSize = 25;
+const rowClass =
+  "flex min-w-0 px-2 py-2.5 outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/60 focus-visible:shadow-[inset_2px_0_0_var(--primary)]";
 const tabSchema = z.enum(["all", ...searchResultTypes]);
 const tabLabels: Record<z.output<typeof tabSchema>, string> = {
   all: "All",
@@ -132,12 +135,21 @@ export function SearchResults({
             >
               {data.items.map((result) => (
                 <li key={`${result.type}:${result.id}`}>
-                  <Link
-                    {...searchResultLink(result)}
-                    className="flex min-w-0 px-2 py-2.5 outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:shadow-[inset_2px_0_0_var(--primary)]"
-                  >
-                    <SearchResultContent result={result} />
-                  </Link>
+                  {result.ticket ? (
+                    <TicketLink
+                      projectId={result.project.id}
+                      ticketId={result.ticket.id}
+                      ticket={result.ticket}
+                      hash={result.type === "comment" ? `comment-${result.id}` : undefined}
+                      className={rowClass}
+                    >
+                      <SearchResultContent result={result} />
+                    </TicketLink>
+                  ) : (
+                    <Link {...searchResultLink(result)} className={rowClass}>
+                      <SearchResultContent result={result} />
+                    </Link>
+                  )}
                 </li>
               ))}
             </ol>
