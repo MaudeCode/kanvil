@@ -392,6 +392,7 @@ describe("notification channels and project destinations", () => {
       "http://[::1]/",
       "http://169.254.169.254/",
       "http://[64:ff9b:1::a00:1]/",
+      "http://[fec0::1]/",
     ])
       await expect(send({ url, body: "{}" })).rejects.toMatchObject({ code: "blocked_address" });
     expect(http.state.received).toHaveLength(0);
