@@ -1052,7 +1052,7 @@ export const ticketHandlers: Pick<
               events.ticket_id, events.actor_id, NULL::text AS body, events.type AS event_type,
               events.data, events.created_at AS at, 1 AS rank, 3 AS family
             FROM events
-            LEFT JOIN tickets ON tickets.id = events.ticket_id
+            LEFT JOIN tickets ON tickets.id = events.ticket_id AND tickets.project_id = events.project_id
             LEFT JOIN "user" ON "user".id = events.actor_id
             LEFT JOIN (VALUES ${sql.join(
               Object.entries(eventLabels).map(([type, label]) => sql`(${type}, ${label})`),
@@ -1078,7 +1078,8 @@ export const ticketHandlers: Pick<
     }
     const rows = (
       await ctx.db.execute(sql`SELECT hits.*, tickets.key, tickets.title, tickets.status
-        FROM (${hits}) AS hits LEFT JOIN tickets ON tickets.id = hits.ticket_id
+        FROM (${hits}) AS hits
+        LEFT JOIN tickets ON tickets.id = hits.ticket_id AND tickets.project_id = hits.project_id
         WHERE ${input.type ? sql`hits.type = ${input.type}` : sql`true`}
         ORDER BY hits.rank, hits.family, hits.at DESC, hits.id DESC
         LIMIT ${input.limit} OFFSET ${input.offset}`)

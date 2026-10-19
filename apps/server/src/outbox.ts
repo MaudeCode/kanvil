@@ -76,7 +76,11 @@ async function load(database: Database, id: string) {
         eq(events.id, sql`coalesce(${notifications.eventId}, ${deliveries.eventId})`),
       )
       .leftJoin(projects, eq(projects.id, events.projectId))
-      .leftJoin(tickets, eq(tickets.id, events.ticketId))
+      // A ticket that moved away is no longer the subject of its old project's events.
+      .leftJoin(
+        tickets,
+        and(eq(tickets.id, events.ticketId), eq(tickets.projectId, events.projectId)),
+      )
       .leftJoin(
         user,
         eq(user.id, sql`coalesce(${pushDevices.userId}, ${notificationChannels.userId})`),

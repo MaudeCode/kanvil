@@ -495,6 +495,25 @@ describe("project prefixes and ticket moves", () => {
         status: 404,
         code: "not_found",
       });
+    // Activity left in the source never describes the ticket as it is now.
+    const found = await domain.execute(
+      "search_workspace",
+      { q: "Ticket created", workspaceId: source.workspaceId },
+      outsider,
+    );
+    const history = found.items.filter((item) => item.type === "activity");
+    expect(history.length).toBeGreaterThan(0);
+    expect(history.every((item) => item.ticket === null)).toBe(true);
+    expect(JSON.stringify(found)).not.toContain(moved.key);
+    expect(
+      (
+        await domain.execute(
+          "search_workspace",
+          { q: "Ticket created", workspaceId: source.workspaceId, status: "todo" },
+          outsider,
+        )
+      ).items,
+    ).toEqual([]);
     await expect(
       domain.execute("resolve_ticket", { ticketId: ticket.key }, bound),
     ).rejects.toMatchObject({ status: 404 });
