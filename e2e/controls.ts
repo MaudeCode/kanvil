@@ -27,6 +27,14 @@ export async function appearance(page: Page, option: string) {
   await page.getByRole("radio", { name: option, exact: true }).check();
   await page.goto(previousUrl);
 }
+// A section link in the settings navigation; `group` disambiguates names such as General.
+export function settingsLink(page: Page, name: string, group?: string) {
+  const nav = page.getByRole("navigation", { name: "Settings", exact: true });
+  return (group ? nav.getByRole("group", { name: group, exact: true }) : nav).getByRole("link", {
+    name,
+    exact: true,
+  });
+}
 export async function accountMenu(page: Page) {
   const trigger = page.locator("[data-account-menu]");
   if (!(await trigger.isVisible()))

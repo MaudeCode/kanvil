@@ -8,15 +8,12 @@ import {
   CalendarDays,
   Copy,
   ExternalLink,
-  FileText,
   FolderOpen,
-  GitBranch,
   Link2,
   Pencil,
   Plus,
   Settings,
   Trash2,
-  Type,
 } from "lucide-react";
 import { toast } from "sonner";
 import { type Ticket, type Project } from "@kanvil/contracts";
@@ -44,7 +41,7 @@ import {
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "../lib/browser.ts";
-import { ticketBranch, ticketMarkdown } from "../lib/ticket-copy.ts";
+import { ticketCopyActions, type CopyAction, type CopySource } from "../lib/actions.ts";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -108,6 +105,8 @@ async function copy(value: string, label: string) {
     reportError(error);
   }
 }
+export const copyTicket = (action: CopyAction, ticket: CopySource) =>
+  copy(action.value(ticket), action.copied);
 export function TicketContextMenu({
   ticket,
   children,
@@ -161,46 +160,12 @@ export function TicketContextMenu({
               <ExternalLink />
               Open in new tab
             </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                void copy(new URL(href, location.origin).href, "Ticket link");
-              }}
-            >
-              <Link2 />
-              Copy link
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                void copy(`${current.key} ${current.title}`, "Ticket");
-              }}
-            >
-              <Copy />
-              Copy key and title
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                void copy(current.title, "Title");
-              }}
-            >
-              <Type />
-              Copy title
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                void copy(ticketMarkdown(current), "Markdown");
-              }}
-            >
-              <FileText />
-              Copy as Markdown
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
-                void copy(ticketBranch(current), "Branch name");
-              }}
-            >
-              <GitBranch />
-              Copy branch name
-            </ContextMenuItem>
+            {ticketCopyActions.map((action) => (
+              <ContextMenuItem key={action.label} onClick={() => void copyTicket(action, current)}>
+                <action.icon />
+                {action.label}
+              </ContextMenuItem>
+            ))}
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuItem

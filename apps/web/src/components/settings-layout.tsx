@@ -5,82 +5,180 @@ import {
   Input,
   PageHeader,
   Select,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   Textarea,
 } from "../ui.tsx";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "@/components/ui/item";
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useIsMobile } from "../hooks/use-mobile.ts";
 import { submitOnModEnter } from "../forms.ts";
-import { useState, type ReactNode } from "react";
-import { Pencil, type LucideIcon } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { createContext, use, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIdentity, useProjects, useWorkspace } from "../data.tsx";
+import {
+  expanded,
+  settingsEntries,
+  settingsGroups,
+  settingsHref,
+  settingsLocation,
+  type SettingsEntry,
+} from "../lib/settings-nav.ts";
+import { ProjectIcon } from "./project-icon.tsx";
+export function useSettingsGroups() {
+  const identity = useIdentity(),
+    workspace = useWorkspace(),
+    projects = useProjects();
+  return settingsGroups({
+    workspace: workspace.active?.role ? workspace.active : undefined,
+    projects: projects.data ?? [],
+    admin: identity.admin,
+  });
+}
+const Section = createContext("");
+// Opening another scope (or admin section) remounts the page, so the chosen entry takes focus back
+// once the page that owns it renders; the outgoing page can still render once with the new URL.
+let refocus: string | undefined;
 export function SettingsLayout({
   title,
-  value,
-  onChange,
-  sections,
+  section,
   children,
 }: {
   title: string;
-  value: string;
-  onChange: (value: string) => void;
-  sections: readonly { id: string; label: string; icon: LucideIcon }[];
+  section: string;
   children: ReactNode;
 }) {
-  const mobile = useIsMobile(1024);
+  const mobile = useIsMobile(1024),
+    groups = useSettingsGroups(),
+    navigate = useNavigate(),
+    pathname = useRouterState({ select: (state) => state.location.pathname }),
+    nav = useRef<HTMLElement>(null),
+    id = useId();
+  const current = (entry: SettingsEntry<unknown>) =>
+    entry.to === pathname && entry.section === section && !entry.children;
+  const here = settingsLocation(groups, pathname, section);
+  useEffect(() => {
+    if (!refocus || here?.group.title !== title || settingsHref(here.entry) !== refocus) return;
+    refocus = undefined;
+    nav.current?.querySelector<HTMLElement>('[aria-current="page"], [role="combobox"]')?.focus();
+  });
+  const link = (entry: SettingsEntry<unknown>) => (
+    <Link
+      to={entry.to}
+      search={{ section: entry.section }}
+      aria-current={current(entry) ? "page" : undefined}
+      onClick={() => {
+        refocus = settingsHref(entry);
+      }}
+    />
+  );
   return (
     <>
       <PageHeader title={title} />
-      <Tabs
-        orientation={mobile ? "horizontal" : "vertical"}
-        value={value}
-        onValueChange={(next) => onChange(String(next))}
-        className="grid min-w-0 items-start grid-cols-1 gap-5 lg:grid-cols-[160px_minmax(0,1fr)] lg:gap-9"
-      >
-        {mobile && (
-          <Select
-            label={`${title} section`}
-            labelHidden
-            className="mb-0"
-            value={value}
-            onValueChange={(next) => {
-              if (next) onChange(next);
-            }}
-          >
-            {sections.map((section) => (
-              <SelectItem key={section.id} value={section.id}>
-                <section.icon className="size-4" />
-                {section.label}
-              </SelectItem>
-            ))}
-          </Select>
-        )}
-        <TabsList
-          hidden={mobile}
-          variant="line"
-          aria-label={`${title} sections`}
-          className={
-            mobile ? "hidden" : "h-fit! w-full self-start flex-col items-stretch justify-start p-0"
-          }
-        >
-          {sections.map((section) => (
-            <TabsTrigger
-              key={section.id}
-              value={section.id}
-              className="h-8 flex-none justify-start gap-2 px-3 text-left lg:w-full"
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-9">
+        <nav ref={nav} aria-label="Settings" className="min-w-0 lg:sticky lg:top-14">
+          {mobile ? (
+            <Select
+              label="Settings section"
+              labelHidden
+              className="mb-0"
+              value={`${pathname}?section=${section}`}
+              onValueChange={(next) => {
+                const entry = settingsEntries(groups).find((item) => settingsHref(item) === next);
+                if (!entry) return;
+                refocus = settingsHref(entry);
+                void navigate({ to: entry.to, search: { section: entry.section } });
+              }}
             >
-              <section.icon />
-              {section.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <div className="settings @container mx-0 max-w-5xl min-w-0 [&_form]:max-w-none [&_p]:text-sm [&_p]:text-muted-foreground [&_section]:border-t [&_section]:py-5 [&_section:first-child]:border-0 [&_section:first-child]:pt-0 [&>[data-slot=tabs-content]>section:first-child]:border-0 [&>[data-slot=tabs-content]>section:first-child]:pt-0">
-          {children}
+              {groups.map((group) => (
+                <SelectGroup key={group.id}>
+                  <SelectLabel>{group.label}</SelectLabel>
+                  {group.entries.flatMap((entry) => {
+                    const sections = expanded(entry, pathname);
+                    return (sections.length ? sections : [entry]).map((item) => (
+                      <SelectItem key={settingsHref(item)} value={settingsHref(item)}>
+                        {item.project ? (
+                          <ProjectIcon project={item.project} className="size-4" />
+                        ) : (
+                          item.icon && <item.icon className="size-4" />
+                        )}
+                        {sections.length ? `${entry.label} · ${item.label}` : item.label}
+                      </SelectItem>
+                    ));
+                  })}
+                </SelectGroup>
+              ))}
+            </Select>
+          ) : (
+            groups.map((group) => (
+              <SidebarGroup
+                key={group.id}
+                role="group"
+                aria-labelledby={`${id}-${group.id}`}
+                className="px-0 pt-0"
+              >
+                <SidebarGroupLabel id={`${id}-${group.id}`}>{group.label}</SidebarGroupLabel>
+                <SidebarMenu>
+                  {group.entries.map((entry) => {
+                    const sections = expanded(entry, pathname);
+                    return (
+                      <SidebarMenuItem key={settingsHref(entry)}>
+                        <SidebarMenuButton isActive={current(entry)} render={link(entry)}>
+                          {entry.project ? (
+                            <ProjectIcon project={entry.project} className="size-4" />
+                          ) : (
+                            entry.icon && <entry.icon />
+                          )}
+                          <span>{entry.label}</span>
+                        </SidebarMenuButton>
+                        {sections.length > 0 && (
+                          <SidebarMenuSub role="group" aria-label={entry.label}>
+                            {sections.map((child) => (
+                              <SidebarMenuSubItem key={settingsHref(child)}>
+                                <SidebarMenuSubButton
+                                  isActive={current(child)}
+                                  render={link(child)}
+                                >
+                                  <span>{child.label}</span>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            ))}
+                          </SidebarMenuSub>
+                        )}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroup>
+            ))
+          )}
+        </nav>
+        <div className="settings @container min-w-0 max-w-3xl [&_form]:max-w-none [&_p]:text-sm [&_p]:text-muted-foreground [&_section]:border-t [&_section]:py-5 [&_section:first-child]:border-0 [&_section:first-child]:pt-0 [&>[data-settings-section]>section:first-child]:border-0 [&>[data-settings-section]>section:first-child]:pt-0">
+          <Section value={section}>{children}</Section>
         </div>
-      </Tabs>
+      </div>
     </>
   );
+}
+// One settings section's content; only the open section renders.
+export function SettingsPanel({ value, children }: { value: string; children: ReactNode }) {
+  return use(Section) === value ? (
+    <div data-settings-section={value} className="animate-in fade-in-0 duration-200">
+      {children}
+    </div>
+  ) : null;
 }
 
 export function SettingRow({

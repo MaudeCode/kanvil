@@ -92,7 +92,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyHeader, EmptyTitle, EmptyMedia } from "@/components/ui/empty";
 
 export { Button } from "@/components/ui/button";
-export { SelectItem } from "@/components/ui/select";
+export { SelectGroup, SelectItem, SelectLabel } from "@/components/ui/select";
 
 export function Brand() {
   return (
@@ -178,6 +178,16 @@ export function Textarea({
     </Field>
   );
 }
+// Options may sit inside `SelectGroup`s; the value-to-label map still needs every one of them.
+function selectItems(children: ReactNode): { value: string; label: ReactNode }[] {
+  return Children.toArray(children).flatMap((child) =>
+    isValidElement<{ value?: string; children: ReactNode }>(child)
+      ? child.props.value === undefined
+        ? selectItems(child.props.children)
+        : [{ value: child.props.value, label: child.props.children }]
+      : [],
+  );
+}
 export function Select({
   label,
   children,
@@ -193,11 +203,7 @@ export function Select({
   labelHidden?: boolean;
 }) {
   const id = useId();
-  const items = Children.toArray(children).flatMap((child) =>
-    isValidElement<{ value: string; children: ReactNode }>(child)
-      ? [{ value: child.props.value, label: child.props.children }]
-      : [],
-  );
+  const items = selectItems(children);
   return (
     <Field
       className={cn(

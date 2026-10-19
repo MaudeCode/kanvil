@@ -3,7 +3,7 @@ import { WorkspaceSwitcher } from "./workspace-switcher.tsx";
 import { ProjectContextMenu } from "./object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import {
   Bell,
   ChevronsUpDown,
@@ -69,7 +69,10 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { formats, markdownFormats } from "@/lib/markdown";
+import { actions, shortcutGroups, ticketCopyActions } from "../lib/actions.ts";
+import { settingsLocation } from "../lib/settings-nav.ts";
+import { useSettingsGroups } from "./settings-layout.tsx";
+import { copyTicket } from "./object-context-menu.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -256,25 +259,6 @@ function AccountMenu() {
     </>
   );
 }
-const shortcuts: [string, string][] = [
-  ["⌘ K", "Go to anything"],
-  ["C", "New ticket"],
-  ["/", "Search tickets"],
-  ["J K", "Highlight the next or previous ticket"],
-  ["↵", "Open the highlighted ticket"],
-  ["X", "Select the highlighted ticket"],
-  ["S P A", "Set status, priority, or assignee of the highlighted ticket"],
-  ["E", "Edit the open ticket"],
-  ["⌘ B", "Toggle sidebar"],
-  ["⌘ ↵", "Save a ticket or comment"],
-  ["?", "This list"],
-  ...markdownFormats.flatMap((format): [string, string][] => {
-    const spec = formats[format];
-    return "shortcut" in spec
-      ? [[spec.shortcut, `${"help" in spec ? spec.help : spec.label} in a Markdown field`]]
-      : [];
-  }),
-];
 function CommandPalette() {
   const [open, setOpen] = useState(false),
     [help, setHelp] = useState(false),
@@ -289,6 +273,21 @@ function CommandPalette() {
   const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1];
   const project = projects.data?.find((item) => item.id === projectId);
   const access = useProjectAccess(projectId ?? "", !!projectId);
+  const ticketId = pathname.match(/^\/projects\/[^/]+\/tickets\/([^/]+)/)?.[1];
+  const current = useQuery({
+    ...api.query("get_ticket", { projectId: projectId ?? "", ticketId: ticketId ?? "" }),
+    enabled: open && !!projectId && !!ticketId,
+  }).data?.ticket;
+  // Settings for the open project only; the Projects group below already lists every project.
+  const settings = useSettingsGroups().flatMap((group) =>
+    group.entries.flatMap((entry) =>
+      entry.project
+        ? entry.project.id === projectId
+          ? (entry.children ?? []).map((child) => ({ ...child, scope: entry.label }))
+          : []
+        : [{ ...entry, scope: group.label }],
+    ),
+  );
   const trimmed = query.trim();
   const workspace = useWorkspace();
   const tickets = useQuery({
@@ -393,8 +392,8 @@ function CommandPalette() {
                   onSelect={() => run(() => setCreating(true))}
                 >
                   <Plus />
-                  New ticket in {project.name}
-                  <CommandShortcut>C</CommandShortcut>
+                  {actions.newTicket.label} in {project.name}
+                  <CommandShortcut>{actions.newTicket.keys}</CommandShortcut>
                 </CommandItem>
               )}
               {project && (
@@ -429,11 +428,25 @@ function CommandPalette() {
                   onSelect={() => run(() => setHelp(true))}
                 >
                   <Keyboard />
-                  Keyboard shortcuts
-                  <CommandShortcut>?</CommandShortcut>
+                  {actions.help.label}
+                  <CommandShortcut>{actions.help.keys}</CommandShortcut>
                 </CommandItem>
               }
             </CommandGroup>
+            {current && (
+              <CommandGroup heading={current.key}>
+                {ticketCopyActions.map((action) => (
+                  <CommandItem
+                    key={action.label}
+                    value={`${current.key} ${action.label}`}
+                    onSelect={() => run(() => void copyTicket(action, current))}
+                  >
+                    <action.icon />
+                    {action.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
             <CommandGroup heading="Pages">
               {
                 <CommandItem value="home overview all projects" onSelect={() => go("/")}>
@@ -453,30 +466,23 @@ function CommandPalette() {
                   Inbox
                 </CommandItem>
               }
-              {
+            </CommandGroup>
+            <CommandGroup heading="Settings">
+              {settings.map((entry) => (
                 <CommandItem
-                  value="settings account appearance api keys"
-                  onSelect={() => go("/settings")}
+                  key={`${entry.to}:${entry.section}`}
+                  value={`settings ${entry.scope} ${entry.label}`}
+                  onSelect={() =>
+                    run(() => {
+                      void navigate({ to: entry.to, search: { section: entry.section } });
+                    })
+                  }
                 >
-                  <Settings />
-                  Settings
+                  {entry.icon ? <entry.icon /> : <Settings />}
+                  {entry.label}
+                  <CommandShortcut>{entry.scope}</CommandShortcut>
                 </CommandItem>
-              }
-              {identity.admin && (
-                <CommandItem value="administration admin users" onSelect={() => go("/admin")}>
-                  <ShieldCheck />
-                  Administration
-                </CommandItem>
-              )}
-              {project && access.canAdmin && (
-                <CommandItem
-                  value={`${project.name} project settings labels members`}
-                  onSelect={() => go(`/projects/${project.id}/settings`)}
-                >
-                  <Settings />
-                  {project.name} settings
-                </CommandItem>
-              )}
+              ))}
             </CommandGroup>
             <CommandGroup heading="Projects">
               {projects.data?.map((item) => (
@@ -495,20 +501,30 @@ function CommandPalette() {
         </Command>
       </CommandDialog>
       <Modal title="Keyboard shortcuts" open={help} onOpenChange={setHelp}>
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-2.5 text-sm">
-          {shortcuts.map(([keys, label]) => (
-            <div key={label} className="contents">
-              <dt>
-                <KbdGroup>
-                  {keys.split(" ").map((key) => (
-                    <Kbd key={key}>{key}</Kbd>
-                  ))}
-                </KbdGroup>
-              </dt>
-              <dd className="m-0">{label}</dd>
-            </div>
-          ))}
-        </dl>
+        {shortcutGroups.map((group) => (
+          <section key={group.category} aria-labelledby={`shortcuts-${group.category}`}>
+            <h3
+              id={`shortcuts-${group.category}`}
+              className="mt-4 mb-2 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase first:mt-0"
+            >
+              {group.category}
+            </h3>
+            <dl className="grid grid-cols-[5.5rem_1fr] items-center gap-x-6 gap-y-2.5 text-sm">
+              {group.actions.map((action) => (
+                <div key={action.label} className="contents">
+                  <dt>
+                    <KbdGroup>
+                      {action.keys.split(" ").map((key) => (
+                        <Kbd key={key}>{key}</Kbd>
+                      ))}
+                    </KbdGroup>
+                  </dt>
+                  <dd className="m-0">{action.label}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
       </Modal>
       {project && (
         <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>
@@ -532,27 +548,26 @@ export function WorkspaceHeader() {
     enabled: !!project && !!ticketId,
   });
   const projectList = project && pathname === `/projects/${project.id}`;
-  const page =
-    pathname === "/admin"
-      ? "Administration"
-      : pathname === "/inbox"
-        ? "Inbox"
-        : pathname === "/my-work"
-          ? "My work"
-          : pathname === "/settings"
-            ? "Settings"
-            : pathname.startsWith("/workspaces/")
-              ? "Workspace settings"
-              : pathname.endsWith("/settings")
-                ? "Project settings"
-                : ticketId
-                  ? (ticket.data?.ticket.key ?? "Ticket")
-                  : "Tickets";
+  const { section } = useSearch({ strict: false }),
+    place = settingsLocation(useSettingsGroups(), pathname, section);
+  const page = place
+    ? place.group.title
+    : pathname === "/inbox"
+      ? "Inbox"
+      : pathname === "/my-work"
+        ? "My work"
+        : pathname === "/admin" || pathname.endsWith("/settings")
+          ? "Settings"
+          : ticketId
+            ? (ticket.data?.ticket.key ?? "Ticket")
+            : "Tickets";
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />
-      <Breadcrumb className={projectList ? "min-w-0 flex-1" : undefined}>
-        <BreadcrumbList className={projectList ? "min-w-0 flex-nowrap overflow-hidden" : undefined}>
+      <Breadcrumb className={projectList || place ? "min-w-0 flex-1" : undefined}>
+        <BreadcrumbList
+          className={projectList || place ? "min-w-0 flex-nowrap overflow-hidden" : undefined}
+        >
           <BreadcrumbItem>
             {pathname === "/" ? (
               <BreadcrumbPage>Home</BreadcrumbPage>
@@ -583,9 +598,12 @@ export function WorkspaceHeader() {
           )}
           {pathname !== "/" && !projectList && (
             <>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                {pathname === "/my-work" ? (
+              {/* On a phone the page heading already names the settings scope. */}
+              <BreadcrumbSeparator className={place ? "max-[650px]:hidden" : undefined} />
+              <BreadcrumbItem className={place ? "max-[650px]:hidden" : undefined}>
+                {place ? (
+                  <BreadcrumbLink render={<Link to={place.entry.to} />}>{page}</BreadcrumbLink>
+                ) : pathname === "/my-work" ? (
                   // My work's list controls have no title of their own, like a project list.
                   <h1 className="m-0 text-[13px] font-medium tracking-normal">
                     <BreadcrumbPage>{page}</BreadcrumbPage>
@@ -595,6 +613,14 @@ export function WorkspaceHeader() {
                     {page}
                   </BreadcrumbPage>
                 )}
+              </BreadcrumbItem>
+            </>
+          )}
+          {place && (
+            <>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="truncate">{place.entry.label}</BreadcrumbPage>
               </BreadcrumbItem>
             </>
           )}

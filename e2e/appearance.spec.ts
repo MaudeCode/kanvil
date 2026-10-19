@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { choose, appearance, ticketRows } from "./controls.ts";
+import { choose, appearance, ticketRows, settingsLink } from "./controls.ts";
 import { signIn } from "./auth.ts";
 
 test("themes and responsive ticket rows preserve complete titles and actions", async ({ page }) => {
@@ -158,7 +158,7 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
   await settings.click();
   await expect(page.getByRole("heading", { name: "Project settings", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Members", exact: true }).click();
+  await settingsLink(page, "Members", "Projects").click();
   await page.getByRole("button", { name: "Add member", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Account", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
