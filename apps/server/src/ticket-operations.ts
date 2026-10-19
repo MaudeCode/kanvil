@@ -17,7 +17,6 @@ import {
 import {
   claims,
   events,
-  members,
   projects,
   projectLabels,
   relations,
@@ -42,7 +41,7 @@ import {
   type PendingEvent,
   one,
 } from "./domain.ts";
-import { accessibleProjectRows } from "./project-access.ts";
+import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
   closedStates,
   defaultOrder,
@@ -132,14 +131,15 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
 export async function readiness(ctx: Context, ticket: typeof tickets.$inferSelect) {
   return requireRow((await readinessMany(ctx, [ticket])).get(ticket.id));
 }
+// Uses the effective role, so workspace members of a workspace-visible project count.
 async function projectMember(ctx: Context, userId: string) {
-  return !!(
+  const { id } = project(ctx);
+  return !!one(
     await ctx.db
-      .select()
-      .from(members)
-      .where(and(eq(members.projectId, project(ctx).id), eq(members.userId, userId)))
-      .limit(1)
-  ).length;
+      .select({ role: projectRoleSQL(userId, id) })
+      .from(projects)
+      .where(eq(projects.id, id)),
+  ).role;
 }
 async function validateReferences(
   ctx: Context,

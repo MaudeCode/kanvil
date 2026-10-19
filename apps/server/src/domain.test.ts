@@ -613,21 +613,36 @@ describe("ticket operations on PostgreSQL", () => {
       writer,
     );
     expect(second.id).not.toBe(copy.id);
-    // A former member stays on the original but is not assigned to new copies.
-    await domain.execute(
-      "set_member",
-      { projectId: project.id, email: "writer@example.test", role: null },
-      owner,
-    );
-    expect(
+    // Workspace membership keeps the assignee; a former member is not assigned to new copies.
+    const assigneeOfCopy = async () =>
       (
         await domain.execute(
           "duplicate_ticket",
           { projectId: project.id, ticketId: copy.id },
           owner,
         )
-      ).assigneeId,
-    ).toBeNull();
+      ).assigneeId;
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: null },
+      owner,
+    );
+    await domain.execute(
+      "update_project",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: project.description,
+        visibility: "workspace",
+      },
+      owner,
+    );
+    const membership = { workspaceId: project.workspaceId, email: "writer@example.test" };
+    await domain.execute("set_workspace_member", { ...membership, role: "writer" }, owner);
+    expect(await assigneeOfCopy()).toBe(writer.id);
+    await domain.execute("set_workspace_member", { ...membership, role: null }, owner);
+    expect(await assigneeOfCopy()).toBeNull();
     const total = (await domain.execute("list_tickets", { projectId: project.id }, owner)).total;
     const readOnly = await domain.actor(owner.id, { ownerId: "reader", scopes: ["read"] });
     await expect(
