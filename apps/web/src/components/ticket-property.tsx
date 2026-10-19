@@ -20,11 +20,12 @@ import {
   type Ticket,
   type Output,
 } from "@kanvil/contracts";
-import { api, useIdentity, useOperation } from "../data.tsx";
+import { api, useIdentity, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { TicketIndicator, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { TagInput } from "./tag-input.tsx";
+import { ProjectIcon } from "./project-icon.tsx";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -200,6 +201,19 @@ export function pair<P extends PropertyName>(property: P, value: PropertyValues[
   };
   return pairs[property](value);
 }
+const triggerClass = {
+  pill: "max-w-full min-w-0 justify-start font-normal h-7 border border-transparent px-2 hover:border-border",
+  row: "max-w-full min-w-0 justify-start font-normal h-7 w-full px-2",
+  cell: "max-w-full min-w-0 justify-start font-normal -mx-1.5 h-6 px-1.5",
+};
+function PropertyRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
 // Linear-style property picker: a trigger showing the current value and a searchable command list.
 export function TicketProperty<P extends PropertyName>({
   property,
@@ -237,13 +251,7 @@ export function TicketProperty<P extends PropertyName>({
           role="combobox"
           aria-label={label}
           aria-expanded={open}
-          className={cn(
-            "max-w-full min-w-0 justify-start font-normal",
-            variant === "cell" && "-mx-1.5 h-6 px-1.5",
-            variant === "row" && "h-7 w-full px-2",
-            variant === "pill" && "h-7 border border-transparent px-2 hover:border-border",
-            className,
-          )}
+          className={cn(triggerClass[variant], className)}
         />
       }
     >
@@ -254,14 +262,7 @@ export function TicketProperty<P extends PropertyName>({
   );
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      {variant === "row" ? (
-        <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
-          <span className="text-xs text-muted-foreground">{label}</span>
-          {trigger}
-        </div>
-      ) : (
-        trigger
-      )}
+      {variant === "row" ? <PropertyRow label={label}>{trigger}</PropertyRow> : trigger}
       <PopoverContent align={align} className="w-60 p-0">
         <Command>
           <CommandInput
@@ -422,5 +423,84 @@ export function TagsProperty({
         <TagInput label={label} kind={kind} value={value} onChange={onChange} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+// Target project of a new ticket, chosen from the active workspace's projects the user can write
+// to. Kept apart from TicketProperty because a project is not an editable ticket field: its values
+// feed update_ticket patches through useTicketChange and the selection toolbar.
+export function ProjectProperty({
+  value,
+  onChange,
+  variant = "pill",
+  disabled = false,
+}: {
+  value: string;
+  onChange: (projectId: string) => void;
+  variant?: "pill" | "row";
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const projects = useProjects(),
+    project = projects.data?.find((item) => item.id === value);
+  const trigger = (
+    <PopoverTrigger
+      disabled={disabled}
+      render={
+        <Button
+          variant="ghost"
+          size="sm"
+          role="combobox"
+          aria-label="Project"
+          aria-expanded={open}
+          className={triggerClass[variant]}
+        />
+      }
+    >
+      {project && <ProjectIcon project={project} className="size-4 rounded" />}
+      <span className="truncate">{project?.name ?? "Project"}</span>
+    </PopoverTrigger>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      {variant === "row" ? <PropertyRow label="Project">{trigger}</PropertyRow> : trigger}
+      <PopoverContent align="start" className="w-64 p-0">
+        <Command>
+          <CommandInput placeholder="Create in project…" aria-label="Search projects" autoFocus />
+          <CommandList>
+            {projects.data?.map((item) => (
+              <WritableProject
+                key={item.id}
+                project={item}
+                selected={item.id === value}
+                onSelect={() => {
+                  setOpen(false);
+                  if (item.id !== value) onChange(item.id);
+                }}
+              />
+            ))}
+            <CommandEmpty>No matches</CommandEmpty>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+function WritableProject({
+  project,
+  selected,
+  onSelect,
+}: {
+  project: Output<"list_projects">[number];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  if (!useProjectAccess(project.id).canWrite) return null;
+  return (
+    <CommandItem value={`${project.name} ${project.key}`} onSelect={onSelect}>
+      <ProjectIcon project={project} className="size-4 rounded" />
+      <span className="truncate">{project.name}</span>
+      {selected && <Check className="ml-auto" />}
+    </CommandItem>
   );
 }

@@ -446,3 +446,130 @@ test("writable checklists toggle in place and Markdown fields share formatting c
     page.getByRole("toolbar", { name: "Description formatting", exact: true }),
   ).toBeVisible();
 });
+
+test("create more keeps one composer open across projects without mixing their drafts", async ({
+  page,
+}) => {
+  await signIn(page);
+  const create = async (key: string, name: string) =>
+    (await page.request.post("/api/v1/projects", { data: { key, name } })).json();
+  const alpha = await create("BATCHA", "Alpha batch"),
+    beta = await create("BATCHB", "Beta batch");
+  const parent = await (
+    await page.request.post(`/api/v1/projects/${alpha.id}/tickets`, {
+      data: { title: "Alpha parent" },
+    })
+  ).json();
+  const betaTicket = await (
+    await page.request.post(`/api/v1/projects/${beta.id}/tickets`, {
+      data: { title: "Beta neighbour", labels: ["beta-only"] },
+    })
+  ).json();
+  const dialog = page.getByRole("dialog", { name: "New ticket", exact: true }),
+    title = page.getByLabel("Title", { exact: true }),
+    description = page.getByLabel("Description", { exact: true });
+
+  // A draft written in one project stays with that project.
+  await page.goto(`/projects/${beta.id}`);
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await title.fill("Private beta draft");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.goto(`/projects/${alpha.id}`);
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await expect(title).toHaveValue("");
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveText(
+    "Alpha batch",
+  );
+
+  // Create more keeps the composer and its reusable properties after a confirmed create.
+  await page.getByRole("switch", { name: "Create more", exact: true }).click();
+  await choose(page, "Priority", "High");
+  await page.getByRole("combobox", { name: "Parent ticket", exact: true }).click();
+  await page.getByRole("combobox", { name: "Search parent ticket", exact: true }).fill(parent.key);
+  await page.getByRole("option", { name: /Alpha parent/ }).click();
+  await title.fill("First batch ticket");
+  await description.fill("Only for the first ticket");
+  await description.press("ControlOrMeta+Enter");
+  await expect(dialog.getByRole("status")).toContainText("BATCHA-2 created");
+  await expect(dialog).toBeVisible();
+  await expect(title).toHaveValue("");
+  await expect(description).toHaveValue("");
+  await expect(title).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Priority", exact: true })).toHaveText("High");
+  await expect(page.getByRole("combobox", { name: "Parent ticket", exact: true })).toHaveText(
+    parent.key,
+  );
+
+  // Switching project clears its parent and loads the other project's catalogs.
+  await choose(page, "Project", "Beta batch");
+  await expect(page.getByRole("combobox", { name: "Parent ticket", exact: true })).toHaveText(
+    "Parent",
+  );
+  await page.getByRole("button", { name: "Edit labels", exact: true }).click();
+  await page.getByRole("button", { name: "Choose labels", exact: true }).click();
+  await expect(page.getByRole("option", { name: "beta-only", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.getByRole("combobox", { name: "Parent ticket", exact: true }).click();
+  await page.getByRole("combobox", { name: "Search parent ticket", exact: true }).fill("Beta");
+  await expect(page.getByRole("option", { name: /Beta neighbour/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // A failed create keeps the draft, the project, and the composer.
+  await title.fill("Second batch ticket");
+  let failed = false;
+  await page.route(`**/api/v1/projects/${beta.id}/tickets`, async (route) => {
+    if (route.request().method() !== "POST" || failed) return route.continue();
+    failed = true;
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "internal", message: "Simulated outage" } }),
+    });
+  });
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(dialog.getByText("Simulated outage")).toBeVisible();
+  await expect(title).toHaveValue("Second batch ticket");
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveText(
+    "Beta batch",
+  );
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText("BATCHB-2 created");
+  await page.unrouteAll({ behavior: "wait" });
+
+  // Ordinary create still closes the composer.
+  await page.getByRole("switch", { name: "Create more", exact: true }).click();
+  await title.fill("Last batch ticket");
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const betaRows = (
+    await (await page.request.get(`/api/v1/projects/${beta.id}/tickets`)).json()
+  ).items.filter((ticket: { id: string }) => ticket.id !== betaTicket.id);
+  expect(betaRows.map((ticket: { title: string }) => ticket.title).toSorted()).toEqual([
+    "Last batch ticket",
+    "Second batch ticket",
+  ]);
+  expect(betaRows.every((ticket: { priority: string }) => ticket.priority === "high")).toBe(true);
+  expect(betaRows.every((ticket: { parentId: string | null }) => !ticket.parentId)).toBe(true);
+  const alphaRows = (await (await page.request.get(`/api/v1/projects/${alpha.id}/tickets`)).json())
+    .items;
+  expect(
+    alphaRows.find((ticket: { title: string }) => ticket.title === "First batch ticket").parentId,
+  ).toBe(parent.id);
+
+  // A draft retargeted to beta reopens where it was written, without replacing beta's own draft.
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await expect(title).toHaveValue("");
+  await choose(page, "Project", "Beta batch");
+  await title.fill("Retargeted draft");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await expect(title).toHaveValue("Retargeted draft");
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveText(
+    "Beta batch",
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.goto(`/projects/${beta.id}`);
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await expect(title).toHaveValue("Private beta draft");
+});
