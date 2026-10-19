@@ -1,5 +1,5 @@
 import { decodeBlobData } from "./blob-storage.ts";
-import { attachmentLimit } from "@kanvil/contracts";
+import { attachmentLimit, resourceProvider } from "@kanvil/contracts";
 import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -8,6 +8,7 @@ import {
   events,
   evidence,
   relations,
+  resources,
   subscriptions,
   notifications,
   pushDeliveries,
@@ -44,6 +45,20 @@ async function editableComment(ctx: Context, commentId: string, expectedVersion:
   assertVersion(row, expectedVersion, "comment");
   return row;
 }
+async function editableResource(
+  ctx: Context,
+  input: { resourceId: string; expectedVersion: number; claimId?: string | undefined },
+) {
+  const row = one(
+    await ctx.db
+      .select()
+      .from(resources)
+      .where(and(eq(resources.projectId, project(ctx).id), eq(resources.id, input.resourceId))),
+  );
+  await assertWorkerClaim(ctx, await getTicket(ctx, row.ticketId), input.claimId);
+  assertVersion(row, input.expectedVersion, "resource");
+  return row;
+}
 export const collaborationHandlers: Pick<
   Handlers,
   | "list_relations"
@@ -59,6 +74,10 @@ export const collaborationHandlers: Pick<
   | "delete_attachment"
   | "list_evidence"
   | "add_evidence"
+  | "list_resources"
+  | "add_resource"
+  | "update_resource"
+  | "delete_resource"
   | "set_subscription"
 > = {
   async list_relations(ctx, input) {
@@ -260,6 +279,67 @@ export const collaborationHandlers: Pick<
       commit: row.commit,
     });
     return row;
+  },
+  async list_resources(ctx, input) {
+    const ticket = await getTicket(ctx, input.ticketId);
+    return ctx.db
+      .select()
+      .from(resources)
+      .where(eq(resources.ticketId, ticket.id))
+      .orderBy(asc(resources.createdAt), asc(resources.id));
+  },
+  async add_resource(ctx, input) {
+    const ticket = await getTicket(ctx, input.ticketId);
+    await assertWorkerClaim(ctx, ticket, input.claimId);
+    const row = one(
+      await ctx.db
+        .insert(resources)
+        .values({
+          projectId: project(ctx).id,
+          ticketId: ticket.id,
+          actorId: ctx.actor.id,
+          url: input.url,
+          title: input.title,
+          provider: resourceProvider(input.url),
+        })
+        .returning(),
+    );
+    await publish(ctx, "resource.added", ticket.id, { resourceId: row.id });
+    return row;
+  },
+  async update_resource(ctx, input) {
+    const current = await editableResource(ctx, input);
+    const url = input.url ?? current.url,
+      moved = url !== current.url;
+    const row = one(
+      await ctx.db
+        .update(resources)
+        .set({
+          url,
+          title: input.title ?? current.title,
+          // Remote state belongs to the old target, so a new URL starts unknown again.
+          ...(moved && {
+            provider: resourceProvider(url),
+            remoteState: null,
+            remoteCheckedAt: null,
+          }),
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(resources.id, current.id))
+        .returning(),
+    );
+    await publish(ctx, "resource.updated", row.ticketId, {
+      resourceId: row.id,
+      version: row.version,
+    });
+    return row;
+  },
+  async delete_resource(ctx, input) {
+    const current = await editableResource(ctx, input);
+    await ctx.db.delete(resources).where(eq(resources.id, current.id));
+    await publish(ctx, "resource.removed", current.ticketId, { resourceId: current.id });
+    return { ok: true };
   },
   async set_subscription(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);

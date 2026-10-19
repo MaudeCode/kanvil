@@ -42,7 +42,7 @@ import {
 import { TicketEditor } from "./ticket-editor.tsx";
 import { Relations } from "./relations.tsx";
 import { Discussion } from "./discussion.tsx";
-import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
+import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import { TagsProperty, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { DatePicker, endOfDay } from "./components/date-picker.tsx";
@@ -474,6 +474,7 @@ export function TicketDetail({
             )}
           </section>
           <Relations key={ticket.id} ticket={ticket} />
+          <Links ticket={ticket} />
           <Attachments ticket={ticket} />
         </aside>
       </article>

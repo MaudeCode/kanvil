@@ -397,10 +397,11 @@ export const attachmentSchema = z.object({
   size: z.number().int().nonnegative(),
   createdAt: timestamp,
 });
+const httpUrl = z.url().regex(/^https?:\/\//i, "Use an HTTP or HTTPS URL");
 export const evidenceFields = z.object({
   kind: z.enum(["pull_request", "test", "review", "deployment", "device", "other"]),
   title: text.max(200),
-  url: z.url().regex(/^https?:\/\//i, "Use an HTTP or HTTPS URL"),
+  url: httpUrl,
   commit: z
     .string()
     .regex(/^[a-f0-9]{40,64}$/i)
@@ -415,6 +416,37 @@ export const evidenceSchema = evidenceFields.extend({
   ticketId: z.uuid(),
   actorId: z.string(),
   createdAt: timestamp,
+});
+// Editable links on a ticket. Unlike evidence, they carry no reported outcome and can change.
+const resourceTitle = z.string().trim().max(200);
+export const resourceFields = z.object({ url: httpUrl, title: resourceTitle.default("") });
+// Hosts whose links are shown as a provider row. Remote state is only ever written by a
+// configured connection; without one it stays null and renders as unknown.
+const resourceProviders: Record<string, string> = {
+  "github.com": "GitHub",
+  "gitlab.com": "GitLab",
+  "bitbucket.org": "Bitbucket",
+};
+// A regex instead of URL: React Native's URL does not implement hostname, and older browsers
+// lack URL.parse.
+export function resourceHost(url: string): string | null {
+  return /^https?:\/\/(?:[^@/?#]*@)?([^/:?#]+)/i.exec(url)?.[1]?.toLowerCase() ?? null;
+}
+export function resourceProvider(url: string): string | null {
+  const host = resourceHost(url)?.replace(/^www\./, "");
+  return host && Object.hasOwn(resourceProviders, host) ? (resourceProviders[host] ?? null) : null;
+}
+export const resourceSchema = resourceFields.extend({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  ticketId: z.uuid(),
+  actorId: z.string(),
+  provider: z.string().nullable(),
+  remoteState: z.string().nullable(),
+  remoteCheckedAt: timestamp.nullable(),
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
 });
 export const eventSchema = z.object({
   id: z.string().regex(/^\d+$/),
@@ -579,6 +611,9 @@ export const eventLabels: Record<string, string> = {
   "attachment.created": "File attached",
   "attachment.deleted": "File removed",
   "evidence.added": "Evidence attached",
+  "resource.added": "Link added",
+  "resource.updated": "Link edited",
+  "resource.removed": "Link removed",
   "project.created": "Project created",
   "project.updated": "Project updated",
   "membership.updated": "Project access changed",
@@ -1160,6 +1195,56 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/evidence",
     "write",
     "Attach evidence with its commit and provenance.",
+  ),
+  list_resources: op(
+    ticketInput,
+    z.array(resourceSchema),
+    "GET",
+    "/projects/{projectId}/tickets/{ticketId}/resources",
+    "read",
+    "List the ticket's editable links. remoteState is null unless a configured connection confirmed it.",
+  ),
+  add_resource: op(
+    ticketInput
+      .extend({ ...mutation, ...resourceFields.shape, claimId: z.uuid().optional() })
+      .strict(),
+    resourceSchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/resources",
+    "write",
+    "Link an HTTP or HTTPS resource with an optional title. Reuse requestId when retrying this write.",
+  ),
+  update_resource: op(
+    projectInput
+      .extend({
+        ...mutation,
+        resourceId: z.uuid(),
+        expectedVersion: version,
+        claimId: z.uuid().optional(),
+        url: httpUrl.optional(),
+        title: resourceTitle.optional(),
+      })
+      .strict(),
+    resourceSchema,
+    "PATCH",
+    "/projects/{projectId}/resources/{resourceId}",
+    "write",
+    "Edit a link's URL or title at its current version. Changing the URL clears confirmed remote state.",
+  ),
+  delete_resource: op(
+    projectInput
+      .extend({
+        ...mutation,
+        resourceId: z.uuid(),
+        expectedVersion: version,
+        claimId: z.uuid().optional(),
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/resources/{resourceId}",
+    "write",
+    "Remove a link at its current version.",
   ),
   claim_ticket: op(
     ticketInput

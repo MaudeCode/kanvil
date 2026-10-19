@@ -1569,4 +1569,153 @@ describe("ticket operations on PostgreSQL", () => {
       )[0]?.outcome,
     ).toBe("passed");
   });
+  it("versions editable links separately from evidence and fences readers, stale edits, and stale workers", async () => {
+    const current = await ticket();
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    const requestId = crypto.randomUUID(),
+      input = {
+        projectId: project.id,
+        ticketId: current.key,
+        url: "https://github.com/MaudeCode/kanvil/pull/1",
+        requestId,
+      };
+    const added = await domain.execute("add_resource", input, owner);
+    expect(await domain.execute("add_resource", input, owner)).toEqual(added);
+    expect(added).toMatchObject({
+      ticketId: current.id,
+      actorId: owner.id,
+      title: "",
+      provider: "GitHub",
+      remoteState: null,
+      remoteCheckedAt: null,
+      version: 1,
+    });
+    for (const url of ["javascript:alert(1)", "data:text/html,hi", "ftp://example.test/file"])
+      await expect(
+        domain.execute("add_resource", { projectId: project.id, ticketId: current.id, url }, owner),
+      ).rejects.toThrow("Use an HTTP or HTTPS URL");
+    await expect(
+      domain.execute(
+        "add_resource",
+        { projectId: project.id, ticketId: current.id, url: "https://example.test" },
+        writer,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      domain.execute(
+        "update_resource",
+        { projectId: project.id, resourceId: added.id, expectedVersion: 1, title: "Read only" },
+        writer,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      await domain.execute(
+        "list_resources",
+        { projectId: project.id, ticketId: current.id },
+        writer,
+      ),
+    ).toEqual([added]);
+
+    const titled = await domain.execute(
+      "update_resource",
+      { projectId: project.id, resourceId: added.id, expectedVersion: 1, title: "Release PR" },
+      owner,
+    );
+    expect(titled).toMatchObject({ title: "Release PR", provider: "GitHub", version: 2 });
+    await expect(
+      domain.execute(
+        "update_resource",
+        { projectId: project.id, resourceId: added.id, expectedVersion: 1, title: "Stale" },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict", details: { currentVersion: 2 } });
+    await fixture.database.pool.query(
+      "UPDATE resources SET remote_state = 'merged', remote_checked_at = now() WHERE id = $1",
+      [added.id],
+    );
+    const moved = await domain.execute(
+      "update_resource",
+      {
+        projectId: project.id,
+        resourceId: added.id,
+        expectedVersion: 2,
+        url: "https://docs.example.test/runbook",
+      },
+      owner,
+    );
+    expect(moved).toMatchObject({
+      title: "Release PR",
+      url: "https://docs.example.test/runbook",
+      provider: null,
+      remoteState: null,
+      remoteCheckedAt: null,
+      version: 3,
+    });
+    await expect(
+      domain.execute(
+        "delete_resource",
+        { projectId: project.id, resourceId: added.id, expectedVersion: 2 },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+
+    const worker = await domain.actor(owner.id, {
+      ownerId: "resource-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const claim = await domain.execute(
+      "claim_ticket",
+      {
+        projectId: project.id,
+        ticketId: current.id,
+        expectedVersion: 1,
+        workerId: "resource-worker",
+      },
+      worker,
+    );
+    await expect(
+      domain.execute(
+        "update_resource",
+        { projectId: project.id, resourceId: added.id, expectedVersion: 3, title: "No claim" },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await expect(
+      domain.execute(
+        "add_resource",
+        { projectId: project.id, ticketId: current.id, url: "https://example.test/log" },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await domain.execute(
+      "delete_resource",
+      { projectId: project.id, resourceId: added.id, expectedVersion: 3, claimId: claim.id },
+      worker,
+    );
+    expect(
+      await domain.execute(
+        "list_resources",
+        { projectId: project.id, ticketId: current.id },
+        owner,
+      ),
+    ).toEqual([]);
+    expect(
+      await domain.execute("list_evidence", { projectId: project.id, ticketId: current.id }, owner),
+    ).toEqual([]);
+    expect(
+      (await domain.readEvents(owner, cursor, project.id)).items
+        .filter((event) => event.type.startsWith("resource."))
+        .map((event) => [event.type, event.ticketId, event.data.resourceId]),
+    ).toEqual([
+      ["resource.added", current.id, added.id],
+      ["resource.updated", current.id, added.id],
+      ["resource.updated", current.id, added.id],
+      ["resource.removed", current.id, added.id],
+    ]);
+  });
 });

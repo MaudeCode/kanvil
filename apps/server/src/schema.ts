@@ -327,6 +327,29 @@ export const evidence = pgTable("evidence", {
   note: text("note").notNull(),
   createdAt: time("created_at"),
 });
+export const resources = pgTable(
+  "resources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    actorId: actor(),
+    url: text("url").notNull(),
+    title: text("title").notNull().default(""),
+    provider: text("provider"),
+    // Written only by a configured connection; null means the remote state is unknown.
+    remoteState: text("remote_state"),
+    remoteCheckedAt: timestamp("remote_checked_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [index("resource_ticket").on(table.ticketId)],
+);
 export const subscriptions = pgTable(
   "subscriptions",
   {

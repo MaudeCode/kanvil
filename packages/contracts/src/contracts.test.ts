@@ -8,6 +8,8 @@ import {
   operations,
   parseRelationChoice,
   relationChoices,
+  resourceHost,
+  resourceProvider,
   ticketFilter,
   ticketPredicates,
 } from "./index.ts";
@@ -189,6 +191,17 @@ describe("ticket filter predicates", () => {
       operations.list_tickets.input.safeParse({ projectId: "p", kind: "bug", kindNot: ["bug"] })
         .success,
     ).toBe(false);
+  });
+  it("names a link's provider only for an exact recognized host", () => {
+    expect(resourceProvider("https://www.GitHub.com/org/repo/pull/1")).toBe("GitHub");
+    expect(resourceProvider("https://user@gitlab.com:8443/group/project")).toBe("GitLab");
+    expect(resourceHost("https://user@Docs.Example.test:8443/a?b#c")).toBe("docs.example.test");
+    for (const url of [
+      "https://github.com.example.test/org/repo",
+      "https://example.test/?next=https://github.com",
+      "https://constructor/",
+    ])
+      expect(resourceProvider(url)).toBeNull();
   });
 });
 const updated = (changedFields: string[]) => ({
