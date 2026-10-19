@@ -1,6 +1,6 @@
 import { createAuth } from "./auth.ts";
 import { createEventDelivery } from "./event-delivery.ts";
-import { createPushDelivery } from "./push.ts";
+import { defaultSenders } from "./outbox.ts";
 import { createObjectStore } from "./adapters/object-stores.ts";
 import { createTicketIndex } from "./adapters/ticket-indexes.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
@@ -9,7 +9,7 @@ import type { JobScheduler, ObjectStoreFactory, TicketIndexFactory } from "./ada
 export interface RuntimeAdapters {
   auth: typeof createAuth;
   realtime: typeof createEventDelivery;
-  push: typeof createPushDelivery;
+  senders: typeof defaultSenders;
   objectStore: ObjectStoreFactory;
   ticketIndex: TicketIndexFactory;
   jobs: JobScheduler;
@@ -17,7 +17,7 @@ export interface RuntimeAdapters {
 export const defaultAdapters: RuntimeAdapters = {
   auth: createAuth,
   realtime: createEventDelivery,
-  push: createPushDelivery,
+  senders: defaultSenders,
   objectStore: createObjectStore,
   ticketIndex: createTicketIndex,
   jobs: createPollingJob,

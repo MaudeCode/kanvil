@@ -2,9 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus
 import { eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
-import { deliverPushBatch } from "./push.ts";
+import { deliverBatch } from "./outbox.ts";
+import { createPollingJob } from "./adapters/polling-jobs.ts";
+import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
-import { members, pushDeliveries, pushDevices } from "./schema.ts";
+import { members, deliveries, pushDevices } from "./schema.ts";
 import { session } from "./auth-schema.ts";
 import type { Actor } from "./domain.ts";
 import type { Project, Ticket } from "@kanvil/contracts";
@@ -57,13 +59,24 @@ describe("durable optional native push", () => {
       .map((value) => value.split(";")[0])
       .join("; ");
   }
-  const tick = () => deliverPushBatch(fixture.database, fixture.config, transport);
+  const tick = () =>
+    deliverBatch(
+      fixture.database,
+      fixture.config,
+      { push: transport, http: async () => ({ status: 500 }) },
+      deliverySecrets(fixture.config),
+    );
   beforeAll(async () => {
     fixture = await createFixture();
-    app = await createApplication(fixture.database, {
-      ...fixture.config,
-      KANVIL_PUSH_ENABLED: true,
-    });
+    app = await createApplication(
+      fixture.database,
+      { ...fixture.config, KANVIL_PUSH_ENABLED: true },
+      // Test-owned scheduling and transports: only `tick` sends, and nothing leaves the machine.
+      {
+        jobs: (name, _interval, run) => createPollingJob(name, 86_400_000, run),
+        senders: () => ({ push: transport, http: async () => ({ status: 500 }) }),
+      },
+    );
     const created = await fixture.auth.api.createUser({
       body: {
         name: "Push owner",
@@ -135,50 +148,48 @@ describe("durable optional native push", () => {
   });
   it("commits the outbox with the event, retains receipts across workers, and excludes private ticket text", async () => {
     expect(await (await request("/notifications")).json()).toEqual([]);
-    expect(await fixture.database.db.select().from(pushDeliveries)).toHaveLength(1);
+    expect(await fixture.database.db.select().from(deliveries)).toHaveLength(1);
     await tick();
     expect(sent).toHaveLength(1);
     expect(JSON.stringify(sent)).not.toContain(ticket.title);
     expect(sent[0]?.data).toMatchObject({ projectId: project.id, ticketId: ticket.id });
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]).toMatchObject({
+    expect((await fixture.database.db.select().from(deliveries))[0]).toMatchObject({
       receiptId: "test-receipt",
       finishedAt: null,
     });
-    await fixture.database.db.update(pushDeliveries).set({ availableAt: new Date(0) });
+    await fixture.database.db.update(deliveries).set({ availableAt: new Date(0) });
     await tick();
     expect(sent).toHaveLength(1);
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.finishedAt).toBeInstanceOf(
+    expect((await fixture.database.db.select().from(deliveries))[0]?.finishedAt).toBeInstanceOf(
       Date,
     );
   });
   it("retries a transport failure after restart and removes unregistered devices", async () => {
     mode = "offline";
     await tick();
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]).toMatchObject({
+    expect((await fixture.database.db.select().from(deliveries))[0]).toMatchObject({
       attempts: 1,
       error: "transport_error",
       finishedAt: null,
     });
     mode = "unregistered";
-    await fixture.database.db.update(pushDeliveries).set({ availableAt: new Date(0) });
+    await fixture.database.db.update(deliveries).set({ availableAt: new Date(0) });
     await tick();
     expect(await fixture.database.db.select().from(pushDevices)).toHaveLength(0);
-    expect(await fixture.database.db.select().from(pushDeliveries)).toHaveLength(0);
+    expect(await fixture.database.db.select().from(deliveries)).toHaveLength(0);
   });
   it("rechecks project access before sending queued work", async () => {
     await fixture.database.db.delete(members).where(eq(members.projectId, project.id));
     await tick();
     expect(sent).toHaveLength(0);
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
-      "access_revoked",
-    );
+    expect((await fixture.database.db.select().from(deliveries))[0]?.error).toBe("access_revoked");
   });
   it("removes device registrations and pending delivery when the login session is revoked", async () => {
     const device = (await fixture.database.db.select().from(pushDevices))[0];
     expect(device).toBeDefined();
     await fixture.database.db.delete(session).where(eq(session.id, device!.sessionId));
     expect(await fixture.database.db.select().from(pushDevices)).toHaveLength(0);
-    expect(await fixture.database.db.select().from(pushDeliveries)).toHaveLength(0);
+    expect(await fixture.database.db.select().from(deliveries)).toHaveLength(0);
     await tick();
     expect(sent).toHaveLength(0);
   });
@@ -192,7 +203,7 @@ describe("durable optional native push", () => {
     await tick();
     expect(sent).toHaveLength(1);
     expect(
-      (await fixture.database.db.select().from(pushDeliveries)).filter(
+      (await fixture.database.db.select().from(deliveries)).filter(
         (row) => row.error === "access_revoked",
       ),
     ).toHaveLength(1);
@@ -208,7 +219,7 @@ describe("durable optional native push", () => {
     const current = (await fixture.database.db.select().from(pushDevices))[0];
     expect(current?.id).not.toBe(previous?.id);
     expect(current?.userId).toBe(other.user.id);
-    expect(await fixture.database.db.select().from(pushDeliveries)).toHaveLength(0);
+    expect(await fixture.database.db.select().from(deliveries)).toHaveLength(0);
     await tick();
     expect(sent).toHaveLength(0);
   });
@@ -236,7 +247,7 @@ describe("durable optional native push", () => {
     await tick();
     expect(sent).toHaveLength(2);
     expect(
-      (await fixture.database.db.select().from(pushDeliveries)).some(
+      (await fixture.database.db.select().from(deliveries)).some(
         (row) => row.error === "access_revoked",
       ),
     ).toBe(false);
@@ -254,9 +265,7 @@ describe("durable optional native push", () => {
     );
     await tick();
     expect(sent).toHaveLength(0);
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
-      "unsubscribed",
-    );
+    expect((await fixture.database.db.select().from(deliveries))[0]?.error).toBe("unsubscribed");
   });
   it("pushes a mention to a member who does not follow the ticket", async () => {
     const teammate = await fixture.auth.api.createUser({
@@ -297,7 +306,7 @@ describe("durable optional native push", () => {
     });
     await tick();
     expect(sent).toHaveLength(0);
-    expect((await fixture.database.db.select().from(pushDeliveries))[0]?.error).toBe(
+    expect((await fixture.database.db.select().from(deliveries))[0]?.error).toBe(
       "category_disabled",
     );
   });
@@ -327,11 +336,11 @@ describe("durable optional native push", () => {
       },
       machine,
     );
-    await fixture.database.db.update(pushDeliveries).set({ availableAt: new Date(0) });
+    await fixture.database.db.update(deliveries).set({ availableAt: new Date(0) });
     await tick();
     expect(sent.filter((message) => message.data?.ticketId === ticket.id)).toHaveLength(1);
-    expect(
-      (await fixture.database.db.select().from(pushDeliveries)).map((row) => row.error),
-    ).toContain("reminder_stale");
+    expect((await fixture.database.db.select().from(deliveries)).map((row) => row.error)).toContain(
+      "reminder_stale",
+    );
   });
 });

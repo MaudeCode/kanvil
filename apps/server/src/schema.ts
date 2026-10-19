@@ -1,5 +1,6 @@
 import {
   bigint,
+  check,
   customType,
   boolean,
   index,
@@ -414,25 +415,91 @@ export const pushDevices = pgTable("push_devices", {
   token: text("token").notNull().unique(),
   createdAt: time("created_at"),
 });
-export const pushDeliveries = pgTable(
-  "push_deliveries",
+// Delivery health shared by account channels and project destinations.
+const health = () => ({
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastError: text("last_error"),
+});
+// One person's outbound channel. `settings` is sealed: it holds the endpoint and its secrets.
+export const notificationChannels = pgTable(
+  "notification_channels",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    notificationId: uuid("notification_id")
+    userId: text("user_id")
       .notNull()
-      .references(() => notifications.id, { onDelete: "cascade" }),
-    deviceId: uuid("device_id")
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    settings: text("settings").notNull(),
+    paused: boolean("paused").notNull().default(false),
+    routes: jsonb("routes")
+      .$type<{ workspaceId: string; mode: string; projectIds: string[] }[]>()
       .notNull()
-      .references(() => pushDevices.id, { onDelete: "cascade" }),
+      .default([]),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+    ...health(),
+  },
+  (table) => [index("notification_channel_user").on(table.userId)],
+);
+// A project's outbound activity feed; `events` lists the enabled destination events.
+export const projectDestinations = pgTable(
+  "project_destinations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    settings: text("settings").notNull(),
+    paused: boolean("paused").notNull().default(false),
+    events: text("events").array().notNull().default([]),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+    ...health(),
+  },
+  (table) => [index("project_destination_project").on(table.projectId)],
+);
+// The shared outbox. Each row targets one push device, account channel, or project destination;
+// a row without a notification or event is a test message.
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    notificationId: uuid("notification_id").references(() => notifications.id, {
+      onDelete: "cascade",
+    }),
+    eventId: bigint("event_id", { mode: "bigint" }).references(() => events.id, {
+      onDelete: "cascade",
+    }),
+    deviceId: uuid("device_id").references(() => pushDevices.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").references(() => notificationChannels.id, {
+      onDelete: "cascade",
+    }),
+    destinationId: uuid("destination_id").references(() => projectDestinations.id, {
+      onDelete: "cascade",
+    }),
     attempts: integer("attempts").notNull().default(0),
     availableAt: time("available_at"),
     receiptId: text("receipt_id"),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
+    createdAt: time("created_at"),
   },
   (table) => [
-    index("push_pending_idx").on(table.finishedAt, table.availableAt),
-    unique().on(table.notificationId, table.deviceId),
+    index("delivery_pending").on(table.finishedAt, table.availableAt),
+    unique("delivery_device").on(table.notificationId, table.deviceId),
+    unique("delivery_channel").on(table.notificationId, table.channelId),
+    unique("delivery_destination").on(table.eventId, table.destinationId),
+    check(
+      "delivery_one_target",
+      sql`num_nonnulls(${table.deviceId}, ${table.channelId}, ${table.destinationId}) = 1`,
+    ),
   ],
 );
 export const views = pgTable("saved_views", {

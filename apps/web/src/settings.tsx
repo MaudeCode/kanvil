@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { SettingsLayout, SettingsPanel, SettingRow } from "./components/settings-layout.tsx";
 import { Credentials } from "./components/credentials-settings.tsx";
+import { NotificationChannels } from "./components/delivery-settings.tsx";
 import { ProfileSettings } from "./components/profile-settings.tsx";
 import { AppearanceSettings } from "./components/appearance.tsx";
 import { TicketDisplayPreferences } from "./components/ticket-list-controls.tsx";
@@ -191,6 +192,7 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
       </SettingsPanel>
       <SettingsPanel value="notifications">
         <NotificationPreferences pushAvailable={info.data?.push ?? false} />
+        <NotificationChannels emailAvailable={info.data?.email ?? false} />
       </SettingsPanel>
     </SettingsLayout>
   );

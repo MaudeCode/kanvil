@@ -11,7 +11,7 @@ import {
   resources,
   subscriptions,
   notifications,
-  pushDeliveries,
+  deliveries,
   tickets,
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
@@ -356,13 +356,13 @@ export const collaborationHandlers: Pick<
         .delete(subscriptions)
         .where(and(eq(subscriptions.ticketId, ticket.id), eq(subscriptions.userId, ctx.actor.id)));
       await ctx.db
-        .update(pushDeliveries)
+        .update(deliveries)
         .set({ finishedAt: new Date(), error: "unsubscribed" })
         .where(
           and(
-            isNull(pushDeliveries.finishedAt),
+            isNull(deliveries.finishedAt),
             inArray(
-              pushDeliveries.notificationId,
+              deliveries.notificationId,
               ctx.db
                 .select({ id: notifications.id })
                 .from(notifications)

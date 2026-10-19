@@ -1,3 +1,4 @@
+import type { Expo } from "expo-server-sdk";
 export interface ObjectStore {
   keyFor(id: string): string;
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
@@ -52,3 +53,20 @@ export type WakeupBusFactory = (
   receive: (message: string) => void,
   changed: () => void,
 ) => Promise<WakeupBus>;
+// Outbound delivery transports. The outbox owns retries, authorization, and health.
+export interface OutboundRequest {
+  url: string;
+  headers?: Record<string, string> | undefined;
+  body: string;
+}
+export interface MailMessage {
+  to: string;
+  subject: string;
+  text: string;
+}
+export interface OutboundSenders {
+  push: Pick<Expo, "sendPushNotificationsAsync" | "getPushNotificationReceiptsAsync">;
+  http: (request: OutboundRequest) => Promise<{ status: number }>;
+  // Absent when the instance has no SMTP relay.
+  mail?: (message: MailMessage) => Promise<void>;
+}

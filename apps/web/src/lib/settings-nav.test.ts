@@ -41,6 +41,7 @@ it("expands the open project and locates its section", () => {
     "General",
     "Members",
     "Labels",
+    "Integrations",
   ]);
   const location = settingsLocation(groups, "/projects/p2/settings", "labels");
   expect([location?.group.title, location?.entry.label]).toEqual(["Project settings", "Labels"]);

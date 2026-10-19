@@ -52,6 +52,9 @@ const settledBy: Record<string, string[]> = {
   list_label_colors: ["label."],
   list_views: ["label.", "project."],
   get_project: ["project.", "label."],
+  list_project_destinations: ["destination.", "project."],
+  // Personal; writes invalidate it and pending sends poll it.
+  list_notification_channels: [],
 };
 // Decides which cached queries a realtime event can have changed.
 export function affectedBy(event: ChangeEvent) {

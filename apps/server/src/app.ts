@@ -36,7 +36,9 @@ import {
 } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor, one } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
+import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
+import { deliverBatch } from "./outbox.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -93,15 +95,18 @@ export async function createApplication(
       adapters.jobs,
     ),
     search = createTicketSearch(integrationDatabase, instance, adapters.ticketIndex, adapters.jobs);
+  const secrets = deliverySecrets(config);
   const auth = adapters.auth(database, config),
-    domain = createDomain(database, { blobs, search }),
+    domain = createDomain(database, { blobs, search, secrets }),
     access = createAccess(auth, domain, config, database),
     realtime = await adapters.realtime(config, instance, integrationDatabase);
   const unsubscribeJobs = realtime.subscribe(() => {
     void blobs.sync().catch(() => {});
     void search.sync().catch(() => {});
   });
-  const push = adapters.push(database, config);
+  // Queued deliveries are durable, so a restart resumes where the last worker stopped.
+  const senders = adapters.senders(config),
+    outbox = adapters.jobs("outbox", 5000, () => deliverBatch(database, config, senders, secrets));
   const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
   const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
@@ -213,6 +218,7 @@ export async function createApplication(
       authentication: await instance.authentication(),
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
+      email: !!config.SMTP_URL,
       oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,
     }),
   );
@@ -742,7 +748,7 @@ export async function createApplication(
       await search.close();
       await blobs.close();
       await integrationDatabase.pool.end();
-      await push.close();
+      await outbox.close();
       await reminders.close();
     },
   };

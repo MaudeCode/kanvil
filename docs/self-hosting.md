@@ -127,11 +127,19 @@ Native devices must also trust that authority. Never mount the authority's priva
 
 Administrators can edit the instance name and description, manage accounts, review every workspace with its administrators and member/project counts (Administration → Workspaces) and manage its members without joining it, and configure local/S3 file storage, PostgreSQL/Elasticsearch search, and PostgreSQL/RabbitMQ event delivery in Administration. See [optional infrastructure](infrastructure.md) for deployment variables, adapter interfaces, recovery behavior, and S3 backup requirements. OIDC, public URL, and push credentials remain deployment settings.
 
+## Optional outbound notifications
+
+People can add notification channels in Settings → Notifications (ntfy, Gotify, a signed webhook, or email), and project administrators can send ticket activity to Slack, Discord, Mattermost, Telegram, or a signed webhook from Project settings → Integrations. Nothing is sent until someone configures a channel or destination; see [the API reference](api.md#notification-channels-and-project-destinations) for routing, signing, retries, and health.
+
+- Email channels need an SMTP relay: set `SMTP_URL` (for example `smtp://user:password@mail.example.com:587`, or `smtps://` for implicit TLS) and `SMTP_FROM` (for example `Kanvil <kanvil@example.com>`). Without them the email option is hidden.
+- Outbound HTTP refuses loopback and private-network addresses. Set `KANVIL_DELIVERY_ALLOW_PRIVATE=true` when channels must reach services on your own network, such as a LAN ntfy or Gotify. Only enable it when everyone who can add a channel or destination may reach those hosts.
+- Channel and destination settings, including tokens, webhook URLs, and signing secrets, are encrypted with a key derived from `BETTER_AUTH_SECRET`. Keep that secret with your backups; without it the saved settings cannot be decrypted and must be entered again.
+
 ## Optional mobile push
 
 Set `KANVIL_PUSH_ENABLED=true` to enable the Expo push transport. If the Expo project has push access-token security enabled, also set its server-held `EXPO_ACCESS_TOKEN`. Recreate the app after changing configuration. A signed mobile build must contain the public Expo project ID and have APNs/FCM credentials configured; see [mobile setup](mobile.md). Accounts opt in through Settings and register each device separately.
 
-Push is disabled by default. Ticket storage, login, Inbox, realtime, and MCP work without Expo services. Push messages use a generic update or mention notice and ticket identifiers, without ticket titles, descriptions, comments, or evidence. The database outbox commits with each subscribed event, checks current account/project/session/subscription access before every send (a mention needs no subscription), retries failures, and checks Expo receipts. Expired login sessions and explicit session revocation remove their device registrations. A failed or interrupted transport may deliver duplicates; queued notices expire after one day. Delivery status is available in the `push_deliveries` table. Backups contain device tokens, so protect them alongside authentication state.
+Push is disabled by default. Ticket storage, login, Inbox, realtime, and MCP work without Expo services. Push messages use a generic update or mention notice and ticket identifiers, without ticket titles, descriptions, comments, or evidence. The database outbox commits with each subscribed event, checks current account/project/session/subscription access before every send (a mention needs no subscription), retries failures, and checks Expo receipts. Expired login sessions and explicit session revocation remove their device registrations. A failed or interrupted transport may deliver duplicates; queued notices expire after one day. Delivery status is available in the `deliveries` table. Backups contain device tokens, so protect them alongside authentication state.
 
 ## Backup
 

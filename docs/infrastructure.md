@@ -78,9 +78,9 @@ RabbitMQ improves notification distribution for operators who already run it. It
 
 ## Adapter interfaces
 
-The application composition root is `apps/server/src/runtime-adapters.ts`. It selects authentication, push, realtime delivery, object storage, indexing, and background scheduling. HTTP and MCP share domain handlers and receive application services instead of importing provider SDKs.
+The application composition root is `apps/server/src/runtime-adapters.ts`. It selects authentication, outbound senders (Expo push, HTTP, and SMTP), realtime delivery, object storage, indexing, and background scheduling. HTTP and MCP share domain handlers and receive application services instead of importing provider SDKs.
 
-`adapters/ports.ts` defines the external I/O interfaces. S3 drivers implement `ObjectStore`, search drivers implement `TicketIndex`, and message brokers implement `WakeupBus`. Provider registries select the driver. The blob service owns transactions, object references, integrity checks, and cleanup; the search service owns indexing checkpoints and SQL authorization; event delivery owns durable notification checkpoints and PostgreSQL fallback. Provider drivers perform only their protocol operations.
+`adapters/ports.ts` defines the external I/O interfaces. S3 drivers implement `ObjectStore`, search drivers implement `TicketIndex`, message brokers implement `WakeupBus`, and outbound transports implement `OutboundSenders`. Provider registries select the driver. The blob service owns transactions, object references, integrity checks, and cleanup; the search service owns indexing checkpoints and SQL authorization; event delivery owns durable notification checkpoints and PostgreSQL fallback; the outbox owns retries, send-time authorization, and channel health while its HTTP transport owns address checks. Provider drivers perform only their protocol operations.
 
 To add a provider, implement its matching interface, register its factory, add validated and sanitized configuration, and cover real I/O and failure recovery. Do not change ticket handlers or add provider checks to HTTP/MCP operations. PostgreSQL transactions, ordered event cursors, version checks, and claims are intentional durability contracts, not a generic database abstraction.
 

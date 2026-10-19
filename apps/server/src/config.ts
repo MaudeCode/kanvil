@@ -47,6 +47,14 @@ const envSchema = z
       .default("false")
       .transform((value) => value === "true"),
     EXPO_ACCESS_TOKEN: optionalEnv(z.string().min(1)),
+    // SMTP relay for email notification channels, such as smtp://user:pass@mail.example.com:587.
+    SMTP_URL: optionalEnv(z.url({ protocol: /^smtps?$/ })),
+    SMTP_FROM: optionalEnv(z.string().min(3)),
+    // Lets channels and destinations reach loopback and private networks, such as a LAN ntfy.
+    KANVIL_DELIVERY_ALLOW_PRIVATE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {
@@ -82,6 +90,8 @@ const envSchema = z
     ].filter(Boolean).length;
     if (supplied !== 0 && supplied !== 3)
       ctx.addIssue({ code: "custom", message: "Configure all three OIDC settings together" });
+    if (value.SMTP_URL && !value.SMTP_FROM)
+      ctx.addIssue({ code: "custom", message: "SMTP_FROM is required with SMTP_URL" });
     if (!new URL(value.DATABASE_URL).protocol.startsWith("postgres"))
       ctx.addIssue({ code: "custom", message: "DATABASE_URL must be PostgreSQL" });
     if (value.NODE_ENV === "production" && !value.KANVIL_URL.startsWith("https://"))
