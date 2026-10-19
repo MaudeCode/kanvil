@@ -244,8 +244,10 @@ test("the workspace directory lists every workspace and manages members the admi
   await adding.getByRole("button", { name: "Add member", exact: true }).click();
   await expect(adding).toHaveCount(0);
   await expect(sheet.locator(".member-row").filter({ hasText: ownerEmail })).toBeVisible();
-  await choose(page, "Role for Riley Outsider", "Can edit");
-  await expect(sheet.getByRole("alert")).toContainText("Keep at least one workspace administrator");
+  // Riley created the workspace and owns it, so the role stays Admin until ownership moves.
+  const riley = sheet.locator(".member-row").filter({ hasText: email });
+  await expect(riley.getByText("Owner", { exact: true })).toBeVisible();
+  await expect(riley.getByRole("combobox", { name: "Role for Riley Outsider" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await expect(sheet).toHaveCount(0);
   await expect(row.getByRole("cell", { name: "2", exact: true })).toBeVisible();

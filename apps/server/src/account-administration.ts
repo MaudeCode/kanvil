@@ -324,6 +324,7 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
               id: workspaces.id,
               name: workspaces.name,
               slug: workspaces.slug,
+              ownerId: workspaces.ownerId,
               createdAt: workspaces.createdAt,
               // Drizzle leaves columns unqualified in single-table selects; qualify the correlation.
               memberCount: sql<number>`(SELECT count(*)::int FROM workspace_members m WHERE m.workspace_id = workspaces.id)`,

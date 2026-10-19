@@ -38,7 +38,7 @@ export function MemberDirectory({
   error: unknown;
   canAdmin: boolean;
   // The workspace owner keeps the Admin role until ownership is transferred.
-  ownerId?: string | null;
+  ownerId?: string | null | undefined;
   scope: "project" | "workspace";
   onChange: (email: string, role: (typeof roles)[number] | null) => Promise<unknown>;
 }) {
@@ -92,7 +92,13 @@ export function MemberDirectory({
       ) : matches.length ? (
         <ItemGroup className="gap-0">
           {matches.map((person) => {
-            const owner = scope === "workspace" && person.userId === ownerId;
+            const owner = scope === "workspace" && person.userId === ownerId,
+              badge =
+                scope === "project" && person.source === "workspace"
+                  ? "Workspace access"
+                  : owner
+                    ? "Owner"
+                    : null;
             return (
               <Item
                 key={person.userId}
@@ -100,14 +106,9 @@ export function MemberDirectory({
               >
                 <ItemContent className="min-w-0">
                   <UserIdentity name={person.name} email={person.email} image={person.image} />
-                  {scope === "project" && person.source === "workspace" && (
+                  {badge && (
                     <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
-                      Workspace access
-                    </Badge>
-                  )}
-                  {owner && (
-                    <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
-                      Owner
+                      {badge}
                     </Badge>
                   )}
                 </ItemContent>

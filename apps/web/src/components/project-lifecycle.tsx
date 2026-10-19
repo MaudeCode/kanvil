@@ -265,22 +265,18 @@ function DeletionRow({
   onDelete: (typed: string) => Promise<unknown>;
   footer?: ReactNode;
 }) {
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState(""),
+    toggle = (next: boolean) => {
+      onOpenChange(next);
+      if (!next) setTyped("");
+    };
   return (
     <SettingRow title="Delete" description={description}>
-      <Button variant="destructive" onClick={() => onOpenChange(true)}>
+      <Button variant="destructive" onClick={() => toggle(true)}>
         <Trash2 />
         {label}
       </Button>
-      <Modal
-        title={`Delete ${name}`}
-        open={open}
-        onOpenChange={(next) => {
-          onOpenChange(next);
-          if (!next) setTyped("");
-        }}
-        busy={pending}
-      >
+      <Modal title={`Delete ${name}`} open={open} onOpenChange={toggle} busy={pending}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -306,7 +302,7 @@ function DeletionRow({
             submitLabel={label}
             pendingLabel="Deleting…"
             submitDisabled={typed.trim().toLowerCase() !== confirm.toLowerCase() || !ready}
-            onCancel={() => onOpenChange(false)}
+            onCancel={() => toggle(false)}
           />
         </form>
       </Modal>

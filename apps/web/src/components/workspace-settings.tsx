@@ -55,72 +55,74 @@ function WorkspaceOwnerRow({
       }
     >
       {canTransfer && (
-        <Button
-          onClick={() => {
-            setEmail("");
-            setOpen(true);
-          }}
-        >
-          Transfer ownership
-        </Button>
+        <>
+          <Button
+            onClick={() => {
+              setEmail("");
+              setOpen(true);
+            }}
+          >
+            Transfer ownership
+          </Button>
+          <Modal
+            title="Transfer ownership"
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next);
+              if (!next) transfer.reset();
+            }}
+            busy={transfer.isPending}
+          >
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!chosen) return;
+                void transfer
+                  .mutateAsync({
+                    workspaceId: workspace.id,
+                    expectedVersion: workspace.version,
+                    userId: chosen.userId,
+                  })
+                  .then(() => {
+                    setOpen(false);
+                    toast.success(`${chosen.name} now owns ${workspace.name}`);
+                  })
+                  .catch(() => {});
+              }}
+            >
+              {eligible.length ? (
+                <UserPicker
+                  people={eligible}
+                  value={email}
+                  onChange={setEmail}
+                  disabled={transfer.isPending}
+                  label="New owner"
+                  anyAccount={false}
+                />
+              ) : (
+                <p className="mt-0 text-sm text-muted-foreground">
+                  Ownership goes to an active workspace administrator. Make another member an
+                  administrator first.
+                </p>
+              )}
+              <p className="mt-0 text-sm text-muted-foreground">
+                {chosen
+                  ? `${chosen.name} can then transfer or delete the workspace.`
+                  : "The new owner can transfer or delete the workspace."}{" "}
+                {owner ? `${owner.name} stays an administrator.` : ""}
+              </p>
+              <FormActions
+                error={transfer.error}
+                pending={transfer.isPending}
+                submitLabel="Transfer ownership"
+                pendingLabel="Transferring…"
+                submitDisabled={!chosen}
+                onCancel={() => setOpen(false)}
+              />
+            </form>
+          </Modal>
+        </>
       )}
-      <Modal
-        title="Transfer ownership"
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) transfer.reset();
-        }}
-        busy={transfer.isPending}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!chosen) return;
-            void transfer
-              .mutateAsync({
-                workspaceId: workspace.id,
-                expectedVersion: workspace.version,
-                userId: chosen.userId,
-              })
-              .then(() => {
-                setOpen(false);
-                toast.success(`${chosen.name} now owns ${workspace.name}`);
-              })
-              .catch(() => {});
-          }}
-        >
-          {eligible.length ? (
-            <UserPicker
-              people={eligible}
-              value={email}
-              onChange={setEmail}
-              disabled={transfer.isPending}
-              label="New owner"
-              anyAccount={false}
-            />
-          ) : (
-            <p className="mt-0 text-sm text-muted-foreground">
-              Ownership goes to an active workspace administrator. Make another member an
-              administrator first.
-            </p>
-          )}
-          <p className="mt-0 text-sm text-muted-foreground">
-            {chosen
-              ? `${chosen.name} can then transfer or delete the workspace.`
-              : "The new owner can transfer or delete the workspace."}{" "}
-            {owner ? `${owner.name} stays an administrator.` : ""}
-          </p>
-          <FormActions
-            error={transfer.error}
-            pending={transfer.isPending}
-            submitLabel="Transfer ownership"
-            pendingLabel="Transferring…"
-            submitDisabled={!chosen}
-            onCancel={() => setOpen(false)}
-          />
-        </form>
-      </Modal>
     </SettingRow>
   );
 }
