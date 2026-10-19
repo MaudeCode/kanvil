@@ -737,6 +737,12 @@ it("reauthorizes workspace receipts after membership revocation and credential n
       { workspaceId: space.id, email: people[1]!.user.email, role: "admin" },
       creator,
     );
+    // The creator owns the workspace and hands it on before leaving.
+    await domain.execute(
+      "transfer_workspace",
+      { workspaceId: space.id, userId: successor.id, expectedVersion: 2 },
+      creator,
+    );
     await domain.execute(
       "set_workspace_member",
       { workspaceId: space.id, email: people[0]!.user.email, role: null },

@@ -166,6 +166,7 @@ export const workspaceHandlers: Pick<
         email: user.email,
         image: user.image,
         role: workspaceMembers.role,
+        disabled: sql<boolean>`coalesce(${user.banned}, false)`,
       })
       .from(workspaceMembers)
       .innerJoin(user, eq(user.id, workspaceMembers.userId))

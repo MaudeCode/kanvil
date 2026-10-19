@@ -27,6 +27,7 @@ export function MemberDirectory({
   loading,
   error,
   canAdmin,
+  ownerId,
   scope,
   onChange,
 }: {
@@ -36,6 +37,8 @@ export function MemberDirectory({
   loading: boolean;
   error: unknown;
   canAdmin: boolean;
+  // The workspace owner keeps the Admin role until ownership is transferred.
+  ownerId?: string | null;
   scope: "project" | "workspace";
   onChange: (email: string, role: (typeof roles)[number] | null) => Promise<unknown>;
 }) {
@@ -88,64 +91,77 @@ export function MemberDirectory({
         <Loading />
       ) : matches.length ? (
         <ItemGroup className="gap-0">
-          {matches.map((person) => (
-            <Item
-              key={person.userId}
-              className="member-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-3"
-            >
-              <ItemContent className="min-w-0">
-                <UserIdentity name={person.name} email={person.email} image={person.image} />
-                {scope === "project" && person.source === "workspace" && (
-                  <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
-                    Workspace access
-                  </Badge>
-                )}
-              </ItemContent>
-              <ItemActions>
-                <Select
-                  label={`Role for ${person.name}`}
-                  labelHidden
-                  className="mb-0 w-36"
-                  value={person.role}
-                  disabled={
-                    !canAdmin ||
-                    pending ||
-                    (scope === "project" &&
-                      person.source === "workspace" &&
-                      person.role === "admin")
-                  }
-                  onValueChange={(role) => {
-                    void change(person.email, z.enum(roles).parse(role)).catch(() => {});
-                  }}
-                >
-                  {roles.map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {roleLabels[role]}
-                    </SelectItem>
-                  ))}
-                </Select>
-                {canAdmin && (scope === "workspace" || person.source !== "workspace") && (
-                  <Confirm
-                    label={
-                      scope === "project" && person.inheritedRole
-                        ? "Use workspace access"
-                        : "Remove member"
+          {matches.map((person) => {
+            const owner = scope === "workspace" && person.userId === ownerId;
+            return (
+              <Item
+                key={person.userId}
+                className="member-row rounded-none border-x-0 border-t-0 border-b-border px-0 py-3"
+              >
+                <ItemContent className="min-w-0">
+                  <UserIdentity name={person.name} email={person.email} image={person.image} />
+                  {scope === "project" && person.source === "workspace" && (
+                    <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
+                      Workspace access
+                    </Badge>
+                  )}
+                  {owner && (
+                    <Badge variant="outline" className="mt-1.5 ml-11 w-fit font-normal">
+                      Owner
+                    </Badge>
+                  )}
+                </ItemContent>
+                <ItemActions>
+                  <Select
+                    label={`Role for ${person.name}`}
+                    labelHidden
+                    className="mb-0 w-36"
+                    value={person.role}
+                    disabled={
+                      !canAdmin ||
+                      pending ||
+                      owner ||
+                      (scope === "project" &&
+                        person.source === "workspace" &&
+                        person.role === "admin")
                     }
-                    icon={scope === "project" && person.inheritedRole ? <RotateCcw /> : <Trash2 />}
-                    danger={!(scope === "project" && person.inheritedRole)}
-                    description={
-                      scope === "workspace"
-                        ? `Remove ${person.name} from this workspace and all of its projects?`
-                        : person.inheritedRole
-                          ? `Restore ${roleLabels[person.inheritedRole]} workspace access for ${person.name}?`
-                          : `Remove ${person.name}'s project access?`
-                    }
-                    onConfirm={() => change(person.email, null)}
-                  />
-                )}
-              </ItemActions>
-            </Item>
-          ))}
+                    onValueChange={(role) => {
+                      void change(person.email, z.enum(roles).parse(role)).catch(() => {});
+                    }}
+                  >
+                    {roles.map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {roleLabels[role]}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                  {canAdmin &&
+                    !owner &&
+                    (scope === "workspace" || person.source !== "workspace") && (
+                      <Confirm
+                        label={
+                          scope === "project" && person.inheritedRole
+                            ? "Use workspace access"
+                            : "Remove member"
+                        }
+                        icon={
+                          scope === "project" && person.inheritedRole ? <RotateCcw /> : <Trash2 />
+                        }
+                        danger={!(scope === "project" && person.inheritedRole)}
+                        description={
+                          scope === "workspace"
+                            ? `Remove ${person.name} from this workspace and all of its projects?`
+                            : person.inheritedRole
+                              ? `Restore ${roleLabels[person.inheritedRole]} workspace access for ${person.name}?`
+                              : `Remove ${person.name}'s project access?`
+                        }
+                        onConfirm={() => change(person.email, null)}
+                      />
+                    )}
+                </ItemActions>
+              </Item>
+            );
+          })}
         </ItemGroup>
       ) : (
         <EmptyState title={query ? "No matching members" : "No members"} className="py-10" />

@@ -504,6 +504,8 @@ export const memberSchema = z.object({
   image: z.string().nullable().optional(),
   source: z.enum(["project", "workspace"]).optional(),
   inheritedRole: z.enum(roles).nullable().optional(),
+  // Workspace member lists flag disabled accounts, which cannot receive ownership.
+  disabled: z.boolean().optional(),
 });
 // A pending invitation grants its role on the whole workspace, or only on the listed projects.
 // The token itself is never readable; create and resend return its link once.

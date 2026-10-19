@@ -17,11 +17,16 @@ export function UserPicker({
   value,
   onChange,
   disabled,
+  label = "Account",
+  anyAccount = true,
 }: {
   people: z.output<typeof memberSchema>[];
   value: string;
   onChange: (email: string) => void;
   disabled?: boolean;
+  label?: string;
+  // Offers any account by email, not only the listed people.
+  anyAccount?: boolean;
 }) {
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -36,7 +41,7 @@ export function UserPicker({
   }
   return (
     <Field className="mb-4">
-      <FieldLabel id={id}>Account</FieldLabel>
+      <FieldLabel id={id}>{label}</FieldLabel>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
@@ -74,13 +79,18 @@ export function UserPicker({
                   {value === person.email && <Check className="ml-auto" />}
                 </CommandItem>
               ))}
-              {z.email().safeParse(query.trim()).success &&
+              {anyAccount &&
+                z.email().safeParse(query.trim()).success &&
                 !matches.some((person) => person.email === query.trim()) && (
                   <CommandItem value={query.trim()} onSelect={() => choose(query.trim())}>
                     Use {query.trim()}
                   </CommandItem>
                 )}
-              <CommandEmpty>Search for a member or enter an existing account’s email.</CommandEmpty>
+              <CommandEmpty>
+                {anyAccount
+                  ? "Search for a member or enter an existing account’s email."
+                  : "No matching members"}
+              </CommandEmpty>
             </CommandList>
           </Command>
         </PopoverContent>
