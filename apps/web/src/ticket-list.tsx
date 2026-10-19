@@ -1495,7 +1495,7 @@ export function TicketList({
                                   : undefined
                             }
                             className={cn(
-                              "relative h-8 bg-transparent px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase",
+                              "relative h-8 overflow-hidden bg-transparent px-3 text-[10.5px] font-medium tracking-[0.08em] text-ellipsis text-muted-foreground uppercase",
                               sort && "p-0",
                             )}
                             style={{ width: header.getSize() }}
@@ -1503,6 +1503,11 @@ export function TicketList({
                             {sort ? (
                               <Button
                                 variant="ghost"
+                                title={
+                                  typeof header.column.columnDef.header === "string"
+                                    ? header.column.columnDef.header
+                                    : undefined
+                                }
                                 className={cn(
                                   "h-8 w-full justify-start gap-1 rounded-none px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase hover:text-foreground",
                                   sorted && "text-foreground",
@@ -1520,9 +1525,12 @@ export function TicketList({
                                   })
                                 }
                               >
-                                <table.FlexRender header={header} />
-                                {direction === "asc" && <ArrowUp className="size-3" />}
-                                {direction === "desc" && <ArrowDown className="size-3" />}
+                                {/* Long column names, as in German, end in an ellipsis. */}
+                                <span className="min-w-0 truncate">
+                                  <table.FlexRender header={header} />
+                                </span>
+                                {direction === "asc" && <ArrowUp className="size-3 shrink-0" />}
+                                {direction === "desc" && <ArrowDown className="size-3 shrink-0" />}
                               </Button>
                             ) : (
                               <table.FlexRender header={header} />

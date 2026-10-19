@@ -148,6 +148,22 @@ export const defaultWorkflow = states.map((category) => ({
   name: stateLabels[category],
   category,
 }));
+// A state that still has its default name reads in the interface language; a renamed state shows
+// the name its project gave it. `defaultWorkflow` holds the English names the server stores.
+export const workflowStateName = (state: {
+  slug: string;
+  name: string;
+  category: (typeof states)[number];
+}) =>
+  state.slug === state.category &&
+  state.name === defaultWorkflow.find((item) => item.slug === state.category)?.name
+    ? stateLabels[state.category]
+    : state.name;
+export const presentWorkflow = <
+  S extends { slug: string; name: string; category: (typeof states)[number] },
+>(
+  workflow: S[],
+) => workflow.map((state) => ({ ...state, name: workflowStateName(state) }));
 // Workflow states list by category in canonical order, then by position.
 const categoryRank = (category: string) => states.findIndex((state) => state === category);
 export const workflowOrder = (

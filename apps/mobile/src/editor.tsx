@@ -13,6 +13,7 @@ import {
   stateLabels,
   states,
   type Ticket,
+  presentWorkflow,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import {
@@ -80,7 +81,10 @@ function Editor({
     update = useOperation("update_ticket");
   const members = useQuery(api.query("list_members", { projectId }));
   // Older servers have no workflow; the editor then offers the canonical statuses.
-  const workflow = useQuery(api.query("list_workflow_states", { projectId }));
+  const workflow = useQuery({
+    ...api.query("list_workflow_states", { projectId }),
+    select: presentWorkflow,
+  });
   useEffect(() => {
     let mounted = true;
     void AsyncStorage.getItem(key)

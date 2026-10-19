@@ -31,6 +31,7 @@ import {
   stateLabels,
   stateTones,
   type Ticket,
+  presentWorkflow,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 
@@ -448,6 +449,7 @@ export function Status({ ticket }: { ticket: Pick<Ticket, "projectId" | "status"
     { api } = useConnection();
   const workflow = useQuery({
     ...api.query("list_workflow_states", { projectId: ticket.projectId }),
+    select: presentWorkflow,
     enabled: !!ticket.stateId,
   });
   const name = workflow.data?.find((state) => state.id === ticket.stateId)?.name;

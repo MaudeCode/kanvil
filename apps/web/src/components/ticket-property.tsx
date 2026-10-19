@@ -38,6 +38,7 @@ import {
   type Ticket,
   type Output,
   type WorkflowState,
+  presentWorkflow,
 } from "@kanvil/contracts";
 import { format, parseISO } from "date-fns";
 import { formatList, labelTable, t } from "@kanvil/contracts/i18n";
@@ -81,6 +82,7 @@ export function parseStatus(value: StatusValue) {
 export const useWorkflow = (projectId: string, enabled = true) =>
   useQuery({
     ...api.query("list_workflow_states", { projectId }),
+    select: presentWorkflow,
     enabled: enabled && !!projectId,
   });
 export type PropertyValues = {
@@ -201,20 +203,25 @@ export function PropertyValue({
     case "kind": {
       const Icon = kindIcons[props.value];
       return (
-        <span className="inline-flex items-center gap-1.5">
-          <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          {!iconOnly && kindLabels[props.value]}
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {!iconOnly && <span className="truncate">{kindLabels[props.value]}</span>}
         </span>
       );
     }
     case "difficulty": {
-      const difficulty = props.value;
+      const difficulty = props.value,
+        label = difficulty ? difficultyLabels[difficulty] : t("common.difficulty.none");
       return (
         <span
-          className={cn("inline-flex items-center gap-1.5", !difficulty && "text-muted-foreground")}
+          className={cn(
+            "inline-flex min-w-0 items-center gap-1.5",
+            !difficulty && "text-muted-foreground",
+          )}
+          title={iconOnly ? undefined : label}
         >
           <DifficultyBars level={difficulty} className={cn(difficulty && "text-foreground")} />
-          {!iconOnly && (difficulty ? difficultyLabels[difficulty] : t("common.difficulty.none"))}
+          {!iconOnly && <span className="truncate">{label}</span>}
         </span>
       );
     }
