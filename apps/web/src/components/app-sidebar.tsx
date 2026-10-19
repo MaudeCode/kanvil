@@ -22,6 +22,7 @@ import {
   api,
   signOut,
   useIdentity,
+  useProject,
   useProjects,
   useProjectAccess,
   useWorkspace,
@@ -280,7 +281,7 @@ function CommandPalette() {
     pathname = useRouterState({ select: (state) => state.location.pathname });
   const resolved = document.documentElement.classList.contains("dark") ? "dark" : "light";
   const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1];
-  const project = projects.data?.find((item) => item.id === projectId);
+  const project = useProject(projectId ?? "").data;
   const access = useProjectAccess(projectId ?? "", !!projectId);
   const ticketId = pathname.match(/^\/projects\/[^/]+\/tickets\/([^/]+)/)?.[1];
   const current = useQuery({
@@ -570,9 +571,9 @@ function CommandPalette() {
   );
 }
 export function WorkspaceHeader() {
-  const pathname = useRouterState({ select: (state) => state.location.pathname }),
-    projects = useProjects();
-  const project = projects.data?.find((item) => pathname.startsWith(`/projects/${item.id}`));
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // Archived projects still open by link, so the header resolves them too.
+  const project = useProject(pathname.match(/^\/projects\/([^/]+)/)?.[1] ?? "").data;
   const ticketId = pathname.match(/\/tickets\/([^/]+)/)?.[1];
   const ticket = useQuery({
     ...api.query("get_ticket", { projectId: project?.id ?? "", ticketId: ticketId ?? "" }),

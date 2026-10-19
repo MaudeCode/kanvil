@@ -167,7 +167,7 @@ function WorkspaceDetails({
       enabled: !!workspace,
     }),
     projects = useQuery({
-      ...api.query("list_projects", { workspaceId }),
+      ...api.query("list_projects", { workspaceId, archived: "include" }),
       enabled: !!workspace,
     }),
     member = useOperation("set_workspace_member");

@@ -1,7 +1,7 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { and, asc, eq, gt, inArray, ne, or, sql, type SQLWrapper } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import {
   closedStates,
   eventCategories,
@@ -33,6 +33,7 @@ import type { MailMessage } from "./adapters/ports.ts";
 import {
   claims,
   deliveries,
+  eventAudiences,
   eventClock,
   events,
   notificationChannels,
@@ -49,6 +50,7 @@ import type { Connection, Database, Transaction } from "./database.ts";
 import { projectRole, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
+import { lifecycleHandlers } from "./project-lifecycle.ts";
 import { labelHandlers } from "./label-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
@@ -112,6 +114,7 @@ export function assertVersion(
 export function toProject(row: typeof projects.$inferSelect): Project {
   return projectSchema.parse({
     ...row,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   });
@@ -192,7 +195,10 @@ async function context(
       .select()
       .from(projects)
       .where(
-        or(eq(projects.key, projectId.toUpperCase()), sql`${projects.id}::text = ${projectId}`),
+        and(
+          isNull(projects.deletedAt),
+          or(eq(projects.key, projectId.toUpperCase()), sql`${projects.id}::text = ${projectId}`),
+        ),
       )
       .limit(1),
   );
@@ -406,7 +412,8 @@ export async function notify(
   await insertAll(queued, (batch) => db.insert(deliveries).values(batch).returning());
 }
 // Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
-export async function publishMany(ctx: Context, pending: PendingEvent[]) {
+// `notifyFollowers: false` records the events without notifying anyone, as deleting a project does.
+export async function publishMany(ctx: Context, pending: PendingEvent[], notifyFollowers = true) {
   if (!pending.length) return [];
   const ticketIds = [...new Set(pending.flatMap((item) => (item.ticketId ? [item.ticketId] : [])))];
   const titles = new Map(
@@ -430,7 +437,7 @@ export async function publishMany(ctx: Context, pending: PendingEvent[]) {
       data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
     })),
   );
-  if (ticketIds.length) {
+  if (ticketIds.length && notifyFollowers) {
     // A person never notifies themselves; an agent's actions still reach its owner.
     const others = ctx.actor.machine ? undefined : ne(user.id, ctx.actor.id);
     const followers = await ctx.db
@@ -535,6 +542,7 @@ export function createDomain(
   const handlers: Handlers = {
     ...workspaceHandlers,
     ...projectHandlers,
+    ...lifecycleHandlers,
     ...labelHandlers,
     ...ticketHandlers,
     ...collaborationHandlers,
@@ -544,6 +552,20 @@ export function createDomain(
     ...workflowHandlers,
     ...customFieldHandlers,
   };
+  // The writes an archived project still accepts: its lifecycle, details, order, and access, and
+  // removing what reaches outside it. Everything else waits for a restore.
+  const whileArchived: ReadonlySet<Operation> = new Set([
+    "archive_project",
+    "transfer_project",
+    "delete_project",
+    "update_project",
+    "set_project_icon",
+    "set_project_background",
+    "move_project",
+    "set_member",
+    "revoke_calendar_feed",
+    "delete_project_destination",
+  ]);
   // Operations that act for the person signed in, never for a credential.
   const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
@@ -588,29 +610,33 @@ export function createDomain(
     const committed = await database.db.transaction(async (tx) => {
       // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
-      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
       const requestId = "requestId" in input ? input.requestId : undefined;
       const hash = createHash("sha256").update(JSON.stringify({ name, input })).digest("hex");
-      if (requestId) {
-        const receipt = (
-          await tx
-            .select()
-            .from(receipts)
-            .where(and(eq(receipts.actorId, actor.id), eq(receipts.requestId, requestId)))
-            .limit(1)
-        )[0];
-        if (receipt) {
-          if (receipt.hash !== hash || receipt.operation !== name)
-            fail(409, "idempotency_conflict", "This requestId was already used for another write");
-          const prior = parseOutput(name, receipt.result);
-          // Creation has no input subject ID, so its stored result must also be authorized on replay.
-          if (name === "create_project")
-            await context(tx, actor, "read", projectSchema.parse(prior).id);
-          if (name === "create_workspace")
-            await requireWorkspace(ctx, workspaceSchema.parse(prior).id);
-          return prior;
-        }
+      const receipt = requestId
+        ? (
+            await tx
+              .select()
+              .from(receipts)
+              .where(and(eq(receipts.actorId, actor.id), eq(receipts.requestId, requestId)))
+              .limit(1)
+          )[0]
+        : undefined;
+      if (receipt && (receipt.hash !== hash || receipt.operation !== name))
+        fail(409, "idempotency_conflict", "This requestId was already used for another write");
+      // A deleted project authorizes no one, so a retried deletion replays its author's receipt.
+      if (receipt && name === "delete_project") return parseOutput(name, receipt.result);
+      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
+      if (receipt) {
+        const prior = parseOutput(name, receipt.result);
+        // Creation has no input subject ID, so its stored result must also be authorized on replay.
+        if (name === "create_project")
+          await context(tx, actor, "read", projectSchema.parse(prior).id);
+        if (name === "create_workspace")
+          await requireWorkspace(ctx, workspaceSchema.parse(prior).id);
+        return prior;
       }
+      if (ctx.project?.archivedAt && !whileArchived.has(name))
+        fail(409, "project_archived", "Restore this archived project before changing it");
       const result = await invoke(ctx);
       if (requestId)
         await tx
@@ -659,14 +685,37 @@ export function createDomain(
       fail(410, "snapshot_required", "Fetch a fresh snapshot before reconnecting", {
         cursor: clock.value.toString(),
       });
-    const rows = ids.length
-      ? await database.db
-          .select()
-          .from(events)
-          .where(and(inArray(events.projectId, ids), gt(events.id, cursor)))
-          .orderBy(asc(events.id))
-          .limit(200)
-      : [];
+    // People a deletion or move cut off still receive the event that did it, so their clients drop
+    // what they cached. The audience was recorded with the event; instance administrators read all.
+    const farewell = projectId
+      ? undefined
+      : and(
+          inArray(events.type, ["project.deleted", "project.transferred"]),
+          identity.projectIds ? inArray(events.projectId, [...identity.projectIds]) : undefined,
+          identity.admin
+            ? undefined
+            : inArray(
+                events.id,
+                database.db
+                  .select({ id: eventAudiences.eventId })
+                  .from(eventAudiences)
+                  .where(eq(eventAudiences.userId, identity.id)),
+              ),
+        );
+    const rows =
+      ids.length || farewell
+        ? await database.db
+            .select()
+            .from(events)
+            .where(
+              and(
+                or(ids.length ? inArray(events.projectId, ids) : undefined, farewell),
+                gt(events.id, cursor),
+              ),
+            )
+            .orderBy(asc(events.id))
+            .limit(200)
+        : [];
     const last = rows.at(-1)?.id ?? cursor;
     return { items: rows, cursor: rows.length === 200 || last > clock.value ? last : clock.value };
   }
@@ -701,7 +750,15 @@ export function createDomain(
           await tx
             .select()
             .from(projects)
-            .where(and(eq(projects.id, input.projectId), eq(projects.publicReadEnabled, true)))
+            .where(
+              and(
+                eq(projects.id, input.projectId),
+                eq(projects.publicReadEnabled, true),
+                // Archiving pauses a public link like a calendar feed; deletion ends it.
+                isNull(projects.archivedAt),
+                isNull(projects.deletedAt),
+              ),
+            )
         )[0];
         if (!row) fail(404, "not_found", "Project was not found");
         const ctx: Context = { ...baseContext(tx, publicActor), project: toProject(row) };

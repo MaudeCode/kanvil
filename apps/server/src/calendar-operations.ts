@@ -136,6 +136,7 @@ export async function readCalendarFeed(db: Context["db"], token: string, baseUrl
   )[0];
   if (!found) return null;
   const { feed, project: owner } = found;
+  // An archived project's feed stays subscribed but empty until the project is restored.
   // ponytail: one feed renders at most 2000 tickets per fetch; page or cache if projects outgrow it.
   const rows = await db
     .select()
@@ -143,6 +144,7 @@ export async function readCalendarFeed(db: Context["db"], token: string, baseUrl
     .where(
       and(
         eq(tickets.projectId, owner.id),
+        owner.archivedAt ? sql`false` : undefined,
         eq(tickets.archived, false),
         openTicket,
         or(isNotNull(tickets.startAt), isNotNull(tickets.dueAt)),

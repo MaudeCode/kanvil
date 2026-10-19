@@ -91,7 +91,7 @@ export const projectHandlers: Pick<
     return row;
   },
   async list_projects(ctx, input) {
-    const rows = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    const rows = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, input.archived);
     if (!rows.length) return [];
     const counts = await ctx.db
       .select({

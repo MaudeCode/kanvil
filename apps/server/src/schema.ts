@@ -94,6 +94,11 @@ export const projects = pgTable(
     // Place in the workspace's shared project order; see ordering.ts.
     position: bigint("position", { mode: "number" }).notNull().default(0),
     version: integer("version").notNull().default(1),
+    // Archived projects leave default lists, search, My work, feeds, and agent queues and are read
+    // only; restoring clears it.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // A deleted project keeps this row, its prefix, and its event history; no one can open it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: time("created_at"),
     updatedAt: time("updated_at"),
   },
@@ -326,6 +331,23 @@ export const events = pgTable(
   (table) => [
     index("event_project_cursor").on(table.projectId, table.id),
     index("event_ticket").on(table.ticketId, table.id),
+  ],
+);
+// Who may still replay an event of a project they can no longer read: the readers a deletion or
+// move cut off, recorded when it happened so later membership changes grant nothing.
+export const eventAudiences = pgTable(
+  "event_audiences",
+  {
+    eventId: bigint("event_id", { mode: "bigint" })
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.eventId, table.userId] }),
+    index("event_audience_user").on(table.userId, table.eventId),
   ],
 );
 export const eventClock = pgTable("event_clock", {

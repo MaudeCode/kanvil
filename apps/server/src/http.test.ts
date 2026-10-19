@@ -72,6 +72,13 @@ describe("HTTP, realtime, and MCP", () => {
       headers: sessionHeaders,
       fetch: async (input, init) => application.app.fetch(new Request(input, init)),
     });
+  const listedProjects = async (query = "") =>
+    z
+      .array(z.object({ id: z.string() }))
+      .parse(
+        await (await request(`/api/v1/projects${query}`, { headers: sessionHeaders() })).json(),
+      )
+      .map((row) => row.id);
   const newProject = () =>
     client().call("create_project", {
       key: `H${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
@@ -435,6 +442,10 @@ describe("HTTP, realtime, and MCP", () => {
         "create_workspace_label",
         "update_workspace_label",
         "delete_workspace_label",
+        "archive_project",
+        "get_project_impact",
+        "transfer_project",
+        "delete_project",
       ])
         expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
       const managedLabel = await client().call("create_project_label", {
@@ -634,6 +645,40 @@ describe("HTTP, realtime, and MCP", () => {
     expect((await request(path(kept.id), { headers: sessionHeaders() })).status).toBe(200);
     await api.call("discard_upload", { projectId: project.id, uploadId: dropped.id });
     expect((await request(path(dropped.id), { headers: sessionHeaders() })).status).toBe(404);
+  });
+  it("archives, restores, previews, and deletes a project through HTTP", async () => {
+    const project = await newProject();
+    const send = (method: string, path: string, body?: unknown) =>
+      request(`/api/v1/projects/${project.id}${path}`, {
+        method,
+        headers: sessionHeaders(),
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+
+    const archived = await send("POST", "/archive", {
+      expectedVersion: project.version,
+      archived: true,
+    });
+    expect(archived.status).toBe(200);
+    const { version } = z.object({ version: z.number() }).parse(await archived.json());
+    expect(await listedProjects()).not.toContain(project.id);
+    expect(await listedProjects("?archived=only")).toContain(project.id);
+    const blocked = await send("POST", "/tickets", { title: "Not while archived" });
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toMatchObject({ error: { code: "project_archived" } });
+    expect(
+      (await send("POST", "/archive", { expectedVersion: version, archived: false })).status,
+    ).toBe(200);
+    expect(await listedProjects()).toContain(project.id);
+    const impact = await send("GET", "/impact");
+    expect(impact.status).toBe(200);
+    expect(await impact.json()).toMatchObject({ tickets: 0, blockers: [], transfer: null });
+    const current = z.object({ version: z.number() }).parse(await (await send("GET", "")).json());
+    expect(
+      (await send("DELETE", "", { expectedVersion: current.version, confirmKey: project.key }))
+        .status,
+    ).toBe(200);
+    expect((await send("GET", "")).status).toBe(404);
   });
   it("retries a lost write response without creating duplicate work", async () => {
     const project = await newProject();

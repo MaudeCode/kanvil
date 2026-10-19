@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   hasAdminRole,
   invitationStatuses,
@@ -79,6 +79,32 @@ const announce = (ctx: Context, row: Row) =>
     invitationId: row.id,
     status: row.status,
   });
+// A project leaving its workspace, by a move or deletion, leaves its pending invitations too; one
+// left without projects would grant nothing, so it is revoked.
+export async function dropProjectFromInvitations(
+  ctx: Context,
+  project: { id: string; workspaceId: string },
+) {
+  const remaining = sql`array_remove(${invitations.projectIds}, ${project.id}::uuid)`;
+  const rows = await ctx.db
+    .update(invitations)
+    .set({
+      projectIds: remaining,
+      status: sql`CASE WHEN cardinality(${remaining}) = 0 THEN 'revoked' ELSE ${invitations.status} END`,
+      version: sql`${invitations.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(invitations.workspaceId, project.workspaceId),
+        eq(invitations.status, "pending"),
+        sql`${project.id}::uuid = ANY(${invitations.projectIds})`,
+      ),
+    )
+    .returning();
+  for (const row of rows) await announce(ctx, row);
+  return rows.length;
+}
 // Issues a fresh token, stores only its hash, and queues the email when the instance has a relay.
 async function send(ctx: Context, write: (tokenHash: string) => Promise<Row[]>) {
   const token = randomBytes(32).toString("base64url");
@@ -184,7 +210,13 @@ export const invitationHandlers: Pick<
       const found = await ctx.db
         .select({ id: projects.id })
         .from(projects)
-        .where(and(eq(projects.workspaceId, space.id), inArray(projects.id, wanted)));
+        .where(
+          and(
+            eq(projects.workspaceId, space.id),
+            inArray(projects.id, wanted),
+            isNull(projects.deletedAt),
+          ),
+        );
       if (found.length !== wanted.length)
         fail(404, "not_found", "A selected project is not in this workspace");
     }

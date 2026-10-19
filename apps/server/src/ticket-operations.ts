@@ -127,6 +127,8 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
     .where(and(inArray(relations.sourceId, ids), eq(relations.type, "duplicate")));
   for (const ticket of selected) {
     const reasons: Output<"get_ticket">["readiness"]["reasons"] = [];
+    if (project(ctx).archivedAt)
+      reasons.push({ code: "project_archived", message: "The project is archived" });
     if (ticket.status !== "todo" || ticket.archived)
       reasons.push({ code: "not_open", message: "Ticket must be in a To do state and unarchived" });
     if (!ticket.automationReady)
@@ -619,7 +621,7 @@ export const ticketHandlers: Pick<
     return pageOf(ctx, where, ticketOrder(input), input);
   },
   async list_my_work(ctx, input) {
-    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
     if (!allowed.length) return { items: [], total: 0, activity: [] };
     const ids = allowed.map((row) => row.id);
     const where = and(
@@ -793,7 +795,7 @@ export const ticketHandlers: Pick<
     };
   },
   async search_tickets(ctx, input) {
-    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
     if (!allowed.length) return { items: [] };
     const ids = allowed.map((row) => row.id);
     const rows = await ctx.db
@@ -825,7 +827,7 @@ export const ticketHandlers: Pick<
   },
   async search_workspace(ctx, input) {
     const counts = { project: 0, ticket: 0, comment: 0, activity: 0 };
-    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
     if (!allowed.length)
       return { items: [], total: 0, counts, engine: "postgres" as const, indexing: false };
     const ids = allowed.map((row) => row.id);

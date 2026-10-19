@@ -42,7 +42,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 
 ## Ticket operations
 
-- Projects and stable ticket keys with permanent links.
+- Projects and stable ticket keys with permanent links. Project administrators archive and restore projects, move them to another workspace they administer with a reviewed access, label, and follow preview, and delete them after a reviewed impact summary; ticket keys never change or get reused.
 - Titles, Markdown descriptions, acceptance criteria, and attachments.
 - Status, priority, kind, difficulty, scopes, labels (per project or shared across a workspace), and assignment.
 - Per-project workflow states that administrators add, rename, recolor, reorder, recategorize, and delete with an explicit reassignment. Each maps to one canonical status, which every open, closed, readiness, claim, and filter rule reads, so status-only clients keep working.

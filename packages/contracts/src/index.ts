@@ -533,9 +533,37 @@ export const projectSchema = z.object({
   name: z.string(),
   description: z.string(),
   version,
+  // Set while the project is archived. Servers that predate archiving omit it.
+  archivedAt: timestamp.nullable().default(null),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
+// What deleting a project removes, and with `transfer`, what moving it to another workspace
+// changes. `blockers` must be empty before either write proceeds.
+const impactPerson = z.object({ userId: z.string(), name: z.string(), email: z.string() });
+const count = z.number().int().nonnegative();
+export const projectImpactSchema = z.object({
+  tickets: count,
+  comments: count,
+  attachments: count,
+  attachmentBytes: count,
+  events: count,
+  blockers: z.array(
+    z.object({ code: z.string(), message: z.string(), tickets: z.array(z.string()) }),
+  ),
+  transfer: z
+    .object({
+      workspaceId: z.uuid(),
+      losingAccess: z.array(impactPerson),
+      gainingAccess: z.array(impactPerson),
+      copiedLabels: z.array(z.string()),
+      mergedLabels: z.array(z.string()),
+      subscriptions: count,
+      invitations: count,
+    })
+    .nullable(),
+});
+export type ProjectImpact = z.output<typeof projectImpactSchema>;
 // Not strict like the editable fields: unknown fields, and storage-only columns such as the manual
 // order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
@@ -1061,6 +1089,10 @@ export const eventLabels: Record<string, string> = {
   "calendar_feed.revoked": "Calendar feed revoked",
   "project.created": "Project created",
   "project.updated": "Project updated",
+  "project.archived": "Project archived",
+  "project.restored": "Project restored",
+  "project.transferred": "Project moved to another workspace",
+  "project.deleted": "Project deleted",
   "membership.updated": "Project access changed",
   "invitation.updated": "Invitation changed",
   "destination.created": "Destination added",
@@ -1301,7 +1333,7 @@ export const operations = {
     "Accept an invitation addressed to the signed-in account's email.",
   ),
   list_projects: op(
-    z.object({ workspaceId: z.uuid().optional() }),
+    z.object({ workspaceId: z.uuid().optional(), archived: ticketFilter.shape.archived }),
     z.array(
       projectSchema.extend({
         openTickets: z.number().int().nonnegative(),
@@ -1315,7 +1347,7 @@ export const operations = {
     "GET",
     "/projects",
     "read",
-    "List projects accessible to the current identity, each with open, overdue, and closed ticket counts and the soonest upcoming open due date.",
+    "List projects accessible to the current identity, each with open, overdue, and closed ticket counts and the soonest upcoming open due date. Archived projects are left out unless `archived` is `include` or `only`.",
   ),
   create_project: op(
     z
@@ -1425,6 +1457,40 @@ export const operations = {
     "/projects/{projectId}/move",
     "admin",
     "Place a project directly before or after another accessible project of its workspace in the shared project order.",
+  ),
+  archive_project: op(
+    projectInput.extend({ ...mutation, expectedVersion: version, archived: z.boolean() }).strict(),
+    projectSchema,
+    "POST",
+    "/projects/{projectId}/archive",
+    "admin",
+    "Archive a project, or restore it with `archived: false`. An archived project keeps its tickets and history but leaves default project lists, search, My work, calendar feeds, public links, reminders, and agent queues, and its tickets and settings are read only. Fails with `claim_conflict` while any ticket is claimed.",
+  ),
+  get_project_impact: op(
+    projectInput.extend({ workspaceId: z.uuid().optional() }),
+    projectImpactSchema,
+    "GET",
+    "/projects/{projectId}/impact",
+    "admin",
+    "Preview what deleting the project removes, or with `workspaceId`, what moving it to that workspace changes: who loses or gains access, labels copied or merged, follows and invitations dropped, and blockers such as claimed tickets.",
+  ),
+  transfer_project: op(
+    projectInput.extend({ ...mutation, expectedVersion: version, workspaceId: z.uuid() }).strict(),
+    projectSchema,
+    "POST",
+    "/projects/{projectId}/transfer",
+    "admin",
+    "Move a project with its tickets, keys, and links to another workspace. Requires administration of both workspaces and applies the reconciliation `get_project_impact` previews in one transaction; blockers fail with their code.",
+  ),
+  delete_project: op(
+    projectInput
+      .extend({ ...mutation, expectedVersion: version, confirmKey: z.string().max(20) })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}",
+    "admin",
+    "Permanently delete a project's tickets, comments, attachments, labels, feeds, and destinations. `confirmKey` must repeat the project prefix. Fails with `claim_conflict` while any ticket is claimed. The prefix stays reserved and the activity history and deletion events are kept.",
   ),
   list_members: op(
     projectInput,

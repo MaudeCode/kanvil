@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { filterKey, filterList, isHexColor, ticketFilter } from "@kanvil/contracts";
 import { renameFeedLabel } from "./calendar-operations.ts";
@@ -172,7 +172,7 @@ async function changeWorkspaceLabelUsage(ctx: Context, name: string, replacement
   const rows = await ctx.db
     .select()
     .from(projects)
-    .where(eq(projects.workspaceId, workspace(ctx).id))
+    .where(and(eq(projects.workspaceId, workspace(ctx).id), isNull(projects.deletedAt)))
     .orderBy(projects.position, projects.id);
   for (const row of rows)
     await changeLabelUsage({ ...ctx, project: toProject(row), role: "admin" }, name, replacement);
@@ -400,7 +400,7 @@ export const labelHandlers: Pick<
       .from(projects)
       .where(
         ctx.actor.admin
-          ? undefined
+          ? isNull(projects.deletedAt)
           : inArray(projectRoleSQL(ctx.actor.id, projects.id), ["writer", "admin"]),
       );
     await publishMany(

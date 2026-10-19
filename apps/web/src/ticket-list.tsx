@@ -106,6 +106,7 @@ import { moveCommandNames, type MoveCommand } from "./lib/actions.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { useReorderDrag } from "./hooks/use-reorder-drag.ts";
 import { cn } from "@/lib/utils";
+import { ArchivedNotice } from "./components/project-lifecycle.tsx";
 
 import {
   searchSchema,
@@ -1086,6 +1087,7 @@ export function TicketList({
           className="project-background pointer-events-none absolute inset-0 -z-10 size-full object-cover opacity-15 mask-[linear-gradient(to_bottom,black,transparent_90%)] dark:opacity-20"
         />
       )}
+      {project && <ArchivedNotice project={project} />}
       <TicketListControls
         projectId={project?.id}
         archivedFilter={!planning}

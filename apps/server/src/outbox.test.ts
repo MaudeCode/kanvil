@@ -348,4 +348,33 @@ describe("durable optional native push", () => {
       "reminder_stale",
     );
   });
+  it("drops a queued reminder once its project is archived", async () => {
+    await tick();
+    const dueAt = new Date(Date.now() + 86_400_000);
+    await app.domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: ticket.id,
+        expectedVersion: ticket.version,
+        changes: { dueAt: dueAt.toISOString() },
+      },
+      machine,
+    );
+    await tick();
+    sent = [];
+    expect(await sendDueReminders(fixture.database, dueAt)).toBe(1);
+    const current = await app.domain.execute("get_project", { projectId: project.id }, owner);
+    await app.domain.execute(
+      "archive_project",
+      { projectId: project.id, expectedVersion: current.version, archived: true },
+      owner,
+    );
+    await fixture.database.db.update(deliveries).set({ availableAt: new Date(0) });
+    await tick();
+    expect(sent.filter((message) => message.data?.ticketId === ticket.id)).toHaveLength(0);
+    expect((await fixture.database.db.select().from(deliveries)).map((row) => row.error)).toContain(
+      "reminder_stale",
+    );
+  });
 });
