@@ -1,5 +1,5 @@
 {
-  "id": "3ea96906-1352-4084-a662-2e7df0618083",
+  "id": "19817b40-80e6-47b5-8ce4-7a7dcf09e453",
   "prevId": "0a340b46-5dad-497a-a96a-97697df6faac",
   "version": "7",
   "dialect": "postgresql",
@@ -2402,34 +2402,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "event_due_reminder": {
-          "name": "event_due_reminder",
-          "columns": [
-            {
-              "expression": "ticket_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "(\"data\"->>'dueAt')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"events\".\"type\" in ('ticket.due_soon', 'ticket.overdue')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -2913,6 +2885,12 @@
           "notNull": true,
           "default": "'update'"
         },
+        "reminder_key": {
+          "name": "reminder_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "read_at": {
           "name": "read_at",
           "type": "timestamp with time zone",
@@ -2977,6 +2955,14 @@
           "columns": [
             "event_id",
             "user_id"
+          ]
+        },
+        "notification_reminder": {
+          "name": "notification_reminder",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "reminder_key"
           ]
         }
       },

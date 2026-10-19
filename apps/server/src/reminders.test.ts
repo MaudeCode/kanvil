@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { createDomain, type Actor } from "./domain.ts";
 import { sendDueReminders } from "./reminders.ts";
-import { events, notificationPreferences, notifications } from "./schema.ts";
+import { events, notificationPreferences, notifications, tickets } from "./schema.ts";
 import type { Project, Ticket } from "@kanvil/contracts";
 
 describe("due-date reminders", () => {
@@ -58,6 +58,8 @@ describe("due-date reminders", () => {
   });
   beforeEach(async () => {
     await fixture.database.db.delete(notificationPreferences);
+    // Earlier tests' tickets keep their due dates; clear them so each test counts only its own.
+    await fixture.database.db.update(tickets).set({ dueAt: null });
     due = new Date(Date.now() + 3 * 86_400_000);
     ticket = await domain.execute(
       "create_ticket",
@@ -142,5 +144,45 @@ describe("due-date reminders", () => {
     );
     expect(sent.toSorted((a, b) => a - b)).toEqual([0, 0, 0, 1]);
     expect(await notices()).toEqual([["ticket.overdue", "overdue"]]);
+  });
+  it("publishes a fresh event for a follower whose later lead time opens", async () => {
+    const follower = await fixture.auth.api.createUser({
+      body: {
+        name: "Early follower",
+        email: `early-${crypto.randomUUID()}@example.test`,
+        password: "Isolated reminder password 42!",
+        role: "user",
+      },
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: follower.user.email, role: "reader" },
+      owner,
+    );
+    await domain.execute(
+      "set_subscription",
+      { projectId: project.id, ticketId: ticket.id, enabled: true },
+      await domain.actor(follower.user.id),
+    );
+    await prefer({ reminderAmount: 1, reminderUnit: "hours" });
+    await setDue(due);
+    expect(await sendDueReminders(fixture.database, at(-86_400_000))).toBe(1);
+    expect(await sendDueReminders(fixture.database, at(-60 * minute))).toBe(1);
+    const published = await fixture.database.db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.ticketId, ticket.id), eq(events.type, "ticket.due_soon")))
+      .orderBy(asc(events.id));
+    // Live clients refresh on new events, so the later follower's notice needs its own event.
+    expect(published).toHaveLength(2);
+    const [notice] = await fixture.database.db
+      .select({ eventId: notifications.eventId })
+      .from(notifications)
+      .where(and(eq(notifications.userId, owner.id), eq(notifications.eventId, published[1]!.id)));
+    expect(notice).toBeDefined();
+    expect(await notices(follower.user.id)).toEqual([
+      ["ticket.updated", "update"],
+      ["ticket.due_soon", "due_soon"],
+    ]);
   });
 });

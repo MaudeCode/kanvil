@@ -10,7 +10,6 @@ import {
   text,
   timestamp,
   unique,
-  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -211,10 +210,6 @@ export const events = pgTable(
   (table) => [
     index("event_project_cursor").on(table.projectId, table.id),
     index("event_ticket").on(table.ticketId, table.id),
-    // One reminder event per ticket, due date, and kind, however many workers or restarts race.
-    uniqueIndex("event_due_reminder")
-      .on(table.ticketId, table.type, sql`(${table.data}->>'dueAt')`)
-      .where(sql`${table.type} in ('ticket.due_soon', 'ticket.overdue')`),
   ],
 );
 export const eventClock = pgTable("event_clock", {
@@ -370,13 +365,18 @@ export const notifications = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     eventId: bigint("event_id", { mode: "bigint" }).notNull(),
     category: text("category").notNull().default("update"),
+    // Set on due-date reminders: kind, ticket, and due date, so each follower gets each at most once.
+    reminderKey: text("reminder_key"),
     readAt: timestamp("read_at", { withTimezone: true }),
     // Dismissal hides the entry from the Inbox; the row and its event stay as recorded.
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     inbox: boolean("inbox").notNull().default(true),
     createdAt: time("created_at"),
   },
-  (table) => [unique("notification_event_user").on(table.eventId, table.userId)],
+  (table) => [
+    unique("notification_event_user").on(table.eventId, table.userId),
+    unique("notification_reminder").on(table.userId, table.reminderKey),
+  ],
 );
 export const pushDevices = pgTable("push_devices", {
   id: uuid("id").primaryKey().defaultRandom(),

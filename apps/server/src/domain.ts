@@ -258,19 +258,20 @@ export const reachable = (projectId: SQLWrapper) =>
 // Records each (event, recipient) once under its first enabled category and queues push delivery.
 export async function notify(
   db: Context["db"],
-  pending: { event: typeof events.$inferSelect; recipient: Recipient }[],
+  pending: { event: typeof events.$inferSelect; recipient: Recipient; reminderKey?: string }[],
 ) {
-  const entries = pending.flatMap(({ event, recipient }) => {
+  const entries = pending.flatMap(({ event, recipient, reminderKey }) => {
     const category = eventCategories(event).find((name) => recipient.categories?.[name] !== false);
-    return category ? [{ event, recipient, category }] : [];
+    return category ? [{ event, recipient, category, reminderKey }] : [];
   });
   if (!entries.length) return;
   const created = await insertAll(
-    entries.map(({ event, recipient, category }) => ({
+    entries.map(({ event, recipient, category, reminderKey }) => ({
       userId: recipient.userId,
       projectId: event.projectId,
       eventId: event.id,
       category,
+      reminderKey,
       inbox: recipient.inApp ?? true,
     })),
     (batch) => db.insert(notifications).values(batch).onConflictDoNothing().returning(),

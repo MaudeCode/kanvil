@@ -17,8 +17,8 @@ const overdueWindow = 7 * 86_400_000;
 const source = { kind: "system", id: "due-reminders" };
 
 // Sends each follower one due-soon notice inside their lead time and one overdue notice per due date.
-// Runs under the global write lock and skips notices already recorded, so restarts, concurrent
-// workers, and retries cannot repeat one. The clock is a parameter so tests own it.
+// Runs under the global write lock and skips notices already recorded; a unique reminder key per
+// follower backs that up, so restarts, concurrent workers, and retries cannot repeat one. The clock is a parameter so tests own it.
 export async function sendDueReminders(database: Database, now = new Date()) {
   return database.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
@@ -64,35 +64,20 @@ export async function sendDueReminders(database: Database, now = new Date()) {
     }
     const pending = [];
     for (const { row, recipients } of groups.values()) {
-      const type = `ticket.${row.kind}`,
-        dueAt = row.dueAt?.toISOString();
-      // Followers with different lead times share the event of the first one reminded.
-      const event =
-        (
-          await tx
-            .select()
-            .from(events)
-            .where(
-              and(
-                eq(events.ticketId, row.ticketId),
-                eq(events.type, type),
-                sql`(${events.data} ->> 'dueAt')::timestamptz = ${row.dueAt}`,
-              ),
-            )
-            .limit(1)
-        )[0] ??
-        (
-          await appendEvents(tx, [
-            {
-              projectId: row.projectId,
-              ticketId: row.ticketId,
-              actorId: null,
-              type,
-              data: { dueAt, key: row.key, title: row.title, source },
-            },
-          ])
-        )[0];
-      if (event) pending.push(...recipients.map((recipient) => ({ event, recipient })));
+      const dueAt = row.dueAt?.toISOString();
+      // Each run publishes its own event, so live clients of the followers it reminds refresh.
+      const [event] = await appendEvents(tx, [
+        {
+          projectId: row.projectId,
+          ticketId: row.ticketId,
+          actorId: null,
+          type: `ticket.${row.kind}`,
+          data: { dueAt, key: row.key, title: row.title, source },
+        },
+      ]);
+      const reminderKey = `${row.kind}:${row.ticketId}:${dueAt}`;
+      if (event)
+        pending.push(...recipients.map((recipient) => ({ event, recipient, reminderKey })));
     }
     await notify(tx, pending);
     return pending.length;
