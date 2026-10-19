@@ -97,6 +97,85 @@ describe("workspace boundaries and inherited project access", () => {
       ),
     ).rejects.toMatchObject({ status: 403 });
   });
+  it("orders projects within their workspace and lets only project administrators move them", async () => {
+    const first = await project(),
+      second = await project(),
+      hidden = await project("private"),
+      third = await project();
+    const order = async (actor = owner) =>
+      (await domain.execute("list_projects", { workspaceId: workspace.id }, actor)).map(
+        (row) => row.id,
+      );
+    expect(await order()).toEqual([first.id, second.id, hidden.id, third.id]);
+    const moved = await domain.execute(
+      "move_project",
+      { projectId: third.id, expectedVersion: third.version, before: first.key },
+      owner,
+    );
+    expect(moved.version).toBe(third.version + 1);
+    expect(await order()).toEqual([third.id, first.id, second.id, hidden.id]);
+    await membership("admin");
+    // A workspace administrator sees the private project too; a writer sees only the others.
+    expect(await order(member)).toEqual([third.id, first.id, second.id, hidden.id]);
+    await membership("writer");
+    expect(await order(member)).toEqual([third.id, first.id, second.id]);
+    await expect(
+      domain.execute(
+        "move_project",
+        { projectId: first.id, expectedVersion: first.version, after: second.id },
+        member,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await domain.execute(
+      "set_member",
+      { projectId: first.id, email: "member@workspace.test", role: "admin" },
+      owner,
+    );
+    // The hidden project cannot serve as a neighbor for someone who cannot see it.
+    await expect(
+      domain.execute(
+        "move_project",
+        { projectId: first.id, expectedVersion: first.version, after: hidden.id },
+        member,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await domain.execute(
+      "move_project",
+      { projectId: first.id, expectedVersion: first.version, after: second.id },
+      member,
+    );
+    expect(await order()).toEqual([third.id, second.id, first.id, hidden.id]);
+    // Projects of another workspace are never neighbors, and its order is untouched.
+    const other = await domain.execute(
+      "create_workspace",
+      { name: "Other workspace", slug: `w-${crypto.randomUUID()}` },
+      owner,
+    );
+    const elsewhere = await domain.execute(
+      "create_project",
+      {
+        workspaceId: other.id,
+        key: `W${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        name: "Elsewhere",
+      },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "move_project",
+        { projectId: second.id, expectedVersion: second.version, before: elsewhere.id },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      domain.execute(
+        "move_project",
+        { projectId: second.id, expectedVersion: second.version + 5, before: third.id },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    expect(await order()).toEqual([third.id, second.id, first.id, hidden.id]);
+  });
   it("keeps project guests and project-bound keys out of workspace administration", async () => {
     const privateProject = await project("private"),
       other = await project();

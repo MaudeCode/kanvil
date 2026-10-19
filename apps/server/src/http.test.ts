@@ -183,6 +183,32 @@ describe("HTTP, realtime, and MCP", () => {
       ).status,
     ).toBe(403);
   });
+  it("moves a ticket next to a neighbor and lists the manual order over HTTP", async () => {
+    const project = await newProject(),
+      api = client(),
+      [first, second, third] = [
+        await api.call("create_ticket", { projectId: project.id, title: "First" }),
+        await api.call("create_ticket", { projectId: project.id, title: "Second" }),
+        await api.call("create_ticket", { projectId: project.id, title: "Third" }),
+      ];
+    const moved = await request(`/api/v1/projects/${project.id}/tickets/${third.key}/move`, {
+      method: "POST",
+      headers: sessionHeaders(),
+      body: JSON.stringify({ expectedVersion: third.version, before: first.id }),
+    });
+    expect(moved.status).toBe(200);
+    expect(ticketSchema.parse(await moved.json()).version).toBe(third.version + 1);
+    const listed = await request(`/api/v1/projects/${project.id}/tickets?sort=manual`, {
+      headers: sessionHeaders(),
+    });
+    expect(listed.status).toBe(200);
+    expect(
+      z
+        .object({ items: z.array(z.object({ key: z.string() })) })
+        .parse(await listed.json())
+        .items.map((item) => item.key),
+    ).toEqual([third.key, first.key, second.key]);
+  });
   it("evaluates repeated filter parameters over HTTP", async () => {
     const project = await newProject(),
       api = client(),

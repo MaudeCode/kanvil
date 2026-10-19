@@ -64,6 +64,8 @@ export const projects = pgTable(
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     nextNumber: integer("next_number").notNull().default(1),
+    // Place in the workspace's shared project order; see ordering.ts.
+    position: bigint("position", { mode: "number" }).notNull().default(0),
     version: integer("version").notNull().default(1),
     createdAt: time("created_at"),
     updatedAt: time("updated_at"),
@@ -131,6 +133,8 @@ export const tickets = pgTable(
     startAt: timestamp("start_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
     archived: boolean("archived").notNull().default(false),
+    // Place in the project's manual order; see ordering.ts.
+    position: bigint("position", { mode: "number" }).notNull().default(0),
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id),
@@ -142,6 +146,7 @@ export const tickets = pgTable(
     unique("ticket_project_number").on(table.projectId, table.number),
     index("ticket_project_status").on(table.projectId, table.status),
     index("ticket_parent").on(table.parentId),
+    index("ticket_project_position").on(table.projectId, table.position),
   ],
 );
 export const relations = pgTable(

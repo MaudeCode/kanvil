@@ -293,6 +293,9 @@ describe("notification categories", () => {
     ]);
     expect(eventCategories(updated(["status"]))).toEqual(["status"]);
     expect(eventCategories(updated([]))).toEqual(["update"]);
+    // A manual reorder alone reaches no one; a move that changes status still does.
+    expect(eventCategories(updated(["position"]))).toEqual([]);
+    expect(eventCategories(updated(["status", "position"]))).toEqual(["status"]);
     expect(eventCategories({ type: "comment.created", data: {} })).toEqual(["comment"]);
     expect(eventCategories({ type: "ticket.overdue", data: {} })).toEqual(["overdue"]);
     expect(eventCategories({ type: "relation.added", data: {} })).toEqual(["update"]);
