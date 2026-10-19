@@ -98,11 +98,22 @@ export interface RepositoryDelivery {
   // Null for events Kanvil does not use, such as the setup ping.
   change: RepositoryChange | null;
 }
+// The repository a request goes to: its path on the host and, for a self-managed host, the instance.
+export interface RepositoryTarget {
+  repository: string;
+  baseUrl: string | null;
+}
 export interface RepositoryDriver {
   signed(secret: string, headers: Headers, body: string): boolean;
   // Throws on a payload it cannot read.
   read(headers: Headers, body: string): RepositoryDelivery;
-  access(repository: string, token: string): OutboundRequest;
-  comment(repository: string, token: string, number: number, text: string): OutboundRequest;
+  access(target: RepositoryTarget, token: string): OutboundRequest;
+  // Comments on an issue or pull request; some hosts take them on separate endpoints.
+  comment(
+    target: RepositoryTarget,
+    token: string,
+    item: { kind: RepositoryChange["kind"]; number: number },
+    text: string,
+  ): OutboundRequest;
 }
 export type RepositoryDrivers = Record<RepositoryProvider, RepositoryDriver>;

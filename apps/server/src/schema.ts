@@ -674,6 +674,8 @@ export const repositoryConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
     repository: text("repository").notNull(),
+    // A self-managed Gitea or GitLab instance; null for GitHub.
+    baseUrl: text("base_url"),
     settings: text("settings").notNull(),
     paused: boolean("paused").notNull().default(false),
     commentOnLink: boolean("comment_on_link").notNull().default(false),
@@ -686,7 +688,11 @@ export const repositoryConnections = pgTable(
     lastEventError: text("last_event_error"),
     ...health(),
   },
-  (table) => [unique("repository_connection_name").on(table.projectId, table.repository)],
+  (table) => [
+    unique("repository_connection_name")
+      .on(table.projectId, table.provider, table.baseUrl, table.repository)
+      .nullsNotDistinct(),
+  ],
 );
 // Webhook deliveries already handled, so a redelivery or replay applies nothing twice.
 export const receivedWebhooks = pgTable(

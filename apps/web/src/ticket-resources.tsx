@@ -34,7 +34,7 @@ import {
   attachmentLimit,
   attachmentPath,
   evidenceFields,
-  remoteKindLabels,
+  remoteKindLabel,
   resourceHost,
   type Output,
   type Ticket,
@@ -416,10 +416,10 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
 }
 type Resource = Output<"list_resources">[number];
 // What a connection verified, such as "Pull request · Merged"; unknown without one.
-function remoteLabel({ remoteKind, remoteState }: Resource) {
+function remoteLabel({ remoteKind, remoteState, provider }: Resource) {
   const state = remoteState && remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
   if (!state) return "State unknown";
-  return remoteKind ? `${remoteKindLabels[remoteKind]} · ${state}` : state;
+  return remoteKind ? `${remoteKindLabel(remoteKind, provider)} · ${state}` : state;
 }
 export function Links({ ticket }: { ticket: Ticket }) {
   const access = useProjectAccess(ticket.projectId),

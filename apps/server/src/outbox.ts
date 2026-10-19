@@ -5,9 +5,11 @@ import {
   eventSchema,
   formatEvent,
   hasAdminRole,
+  remoteKinds,
   type DeliverySettings,
 } from "@kanvil/contracts";
 import { createHmac } from "node:crypto";
+import { z } from "zod";
 import { projectRoleSQL } from "./project-access.ts";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -394,16 +396,16 @@ function repositoryRequest(
   const { connection, event } = row,
     { token } = readRepositorySettings(secrets, connection.settings),
     driver = driverFor(repositories, connection);
-  if (!event) return driver.access(connection.repository, token);
-  const remote = event.data.remote,
-    number =
-      remote && typeof remote === "object" && "number" in remote ? Number(remote.number) : NaN;
-  if (!Number.isInteger(number)) throw new DeliveryError("invalid_event", false);
+  if (!event) return driver.access(connection, token);
+  const remote = z
+    .object({ kind: z.enum(remoteKinds), number: z.number().int().positive() })
+    .safeParse(event.data.remote);
+  if (!remote.success) throw new DeliveryError("invalid_event", false);
   const message = compose(config, row);
   return driver.comment(
-    connection.repository,
+    connection,
     token,
-    number,
+    remote.data,
     `Linked to [${markdownText(message.title)}](${message.url}) in Kanvil.`,
   );
 }

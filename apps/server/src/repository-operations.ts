@@ -2,9 +2,10 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-
 import { z } from "zod";
 import {
   ApiError,
-  repositoryProviderLabels,
+  repositoryProviderDefinitions,
   repositoryProviders,
   repositorySecretFields,
+  type RepositoryProvider,
 } from "@kanvil/contracts";
 import {
   deliveries,
@@ -83,14 +84,33 @@ async function assertTransitions(ctx: Context, transitions: Record<string, strin
         { path: `transitions.${trigger}`, message: "Choose a workflow state of this project" },
       ]);
 }
-async function assertAvailable(ctx: Context, repository: string, except?: string) {
+const invalid = (path: string, message: string) =>
+  fail(400, "validation_error", message, [{ path, message }]);
+// Checks a repository path and instance against the provider's rules and returns the instance.
+function assertTarget(provider: RepositoryProvider, repository: string, baseUrl?: string | null) {
+  const definition = repositoryProviderDefinitions[provider];
+  if (!definition.nested && repository.split("/").length !== 2)
+    invalid("repository", "Use owner/repository");
+  if (!definition.baseUrl) {
+    if (baseUrl) invalid("baseUrl", `${definition.label} uses the API URL the server configures`);
+    return null;
+  }
+  return baseUrl ?? definition.baseUrl.default ?? invalid("baseUrl", "Enter the server URL");
+}
+async function assertAvailable(
+  ctx: Context,
+  target: Pick<Connection, "provider" | "baseUrl" | "repository">,
+  except?: string,
+) {
   const taken = await ctx.db
     .select({ id: repositoryConnections.id })
     .from(repositoryConnections)
     .where(
       and(
         eq(repositoryConnections.projectId, project(ctx).id),
-        sql`lower(${repositoryConnections.repository}) = lower(${repository})`,
+        eq(repositoryConnections.provider, target.provider),
+        sql`${repositoryConnections.baseUrl} IS NOT DISTINCT FROM ${target.baseUrl}`,
+        sql`lower(${repositoryConnections.repository}) = lower(${target.repository})`,
       ),
     );
   if (taken.some((row) => row.id !== except))
@@ -99,6 +119,7 @@ async function assertAvailable(ctx: Context, repository: string, except?: string
 const connectionEvent = (row: Connection) => ({
   connectionId: row.id,
   provider: row.provider,
+  baseUrl: row.baseUrl,
   repository: row.repository,
   paused: row.paused,
   version: row.version,
@@ -146,14 +167,16 @@ export const repositoryHandlers: Pick<
     return rows.map((row) => present(ctx, row, pending));
   },
   async create_repository_connection(ctx, input) {
+    const baseUrl = assertTarget(input.provider, input.repository, input.baseUrl);
     await assertTransitions(ctx, input.transitions);
-    await assertAvailable(ctx, input.repository);
+    await assertAvailable(ctx, { provider: input.provider, baseUrl, repository: input.repository });
     const row = one(
       await ctx.db
         .insert(repositoryConnections)
         .values({
           projectId: project(ctx).id,
           provider: input.provider,
+          baseUrl,
           repository: input.repository,
           settings: ctx.secrets.seal({ token: input.token, webhookSecret: input.webhookSecret }),
           paused: input.paused,
@@ -171,16 +194,18 @@ export const repositoryHandlers: Pick<
   async update_repository_connection(ctx, input) {
     const current = await ownConnection(ctx, input.connectionId, input.expectedVersion);
     await assertTransitions(ctx, input.transitions);
-    if (input.repository) await assertAvailable(ctx, input.repository, current.id);
+    const repository = input.repository ?? current.repository,
+      baseUrl = assertTarget(providerOf(current), repository, input.baseUrl ?? current.baseUrl),
+      moved = repository !== current.repository || baseUrl !== current.baseUrl;
+    if (moved) await assertAvailable(ctx, { ...current, repository, baseUrl }, current.id);
     const saved = readRepositorySettings(ctx.secrets, current.settings),
-      recheck =
-        (input.repository !== undefined && input.repository !== current.repository) ||
-        (input.token !== undefined && input.token !== saved.token);
+      recheck = moved || (input.token !== undefined && input.token !== saved.token);
     const row = one(
       await ctx.db
         .update(repositoryConnections)
         .set({
-          repository: input.repository,
+          repository,
+          baseUrl,
           paused: input.paused,
           commentOnLink: input.commentOnLink,
           transitions: input.transitions,
@@ -198,7 +223,7 @@ export const repositoryHandlers: Pick<
         .where(eq(repositoryConnections.id, current.id))
         .returning(),
     );
-    if (row.repository !== current.repository)
+    if (moved)
       // Queued comments name issues of the old repository; never send them to the new one.
       await ctx.db
         .update(deliveries)
@@ -256,7 +281,7 @@ async function linkTicket(
   if (existing?.remoteCheckedAt && existing.remoteCheckedAt > occurredAt) return "stale";
   if (!existing && !change.creates) return "not_linked";
   const remote = {
-    provider: repositoryProviderLabels[providerOf(connection)],
+    provider: repositoryProviderDefinitions[providerOf(connection)].label,
     remoteKind: change.kind,
     remoteState: change.state,
     remoteCheckedAt: occurredAt,

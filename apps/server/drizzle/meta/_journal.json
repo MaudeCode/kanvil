@@ -218,6 +218,13 @@
       "when": 1792402010453,
       "tag": "0030_repository_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792403486146,
+      "tag": "0031_repository_providers",
+      "breakpoints": true
     }
   ]
 }
