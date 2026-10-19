@@ -427,13 +427,20 @@ const resourceProviders: Record<string, string> = {
   "gitlab.com": "GitLab",
   "bitbucket.org": "Bitbucket",
 };
-// A regex instead of URL: React Native's URL does not implement hostname, and older browsers
-// lack URL.parse. Like a browser, it ends the authority at a backslash and takes the host after
-// the last @, so the badge names the host a click actually opens.
+// Not URL: React Native's URL does not implement hostname, and older browsers lack URL.parse.
+// Like a browser, the authority ends at a backslash and the host follows the last @, so the
+// badge names the host a click opens. Plain slicing keeps this linear on hostile input.
 export function resourceHost(url: string): string | null {
-  return (
-    /^https?:\/\/(?:[^/\\?#]*@)?(\[[^\]]*\]|[^/\\:?#@]+)/i.exec(url)?.[1]?.toLowerCase() ?? null
-  );
+  const scheme = /^https?:\/\//i.exec(url)?.[0];
+  if (!scheme) return null;
+  const rest = url.slice(scheme.length),
+    end = rest.search(/[/\\?#]/),
+    authority = end === -1 ? rest : rest.slice(0, end),
+    hostPort = authority.slice(authority.lastIndexOf("@") + 1),
+    host = hostPort.startsWith("[")
+      ? hostPort.slice(0, hostPort.indexOf("]") + 1)
+      : hostPort.split(":")[0];
+  return host ? host.toLowerCase() : null;
 }
 export function resourceProvider(url: string): string | null {
   const host = resourceHost(url)?.replace(/^www\./, "");

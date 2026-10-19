@@ -209,6 +209,10 @@ describe("ticket filter predicates", () => {
     expect(resourceHost("https://evil.example.test\\@github.com/x")).toBe("evil.example.test");
     expect(resourceProvider("https://a@b@github.com/org/repo")).toBe("GitHub");
     expect(resourceHost("https://[::1]:8080/x")).toBe("[::1]");
+    const hostile = `http://[${"@[".repeat(20_000)}`,
+      started = Date.now();
+    expect(resourceHost(hostile)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(100);
     for (const url of [
       "https://github.com.example.test/org/repo",
       "https://example.test/?next=https://github.com",
