@@ -148,7 +148,7 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await page.keyboard.press("ControlOrMeta+k");
   await page.getByRole("combobox").fill("Navigation project");
-  await page.getByRole("option", { name: /Navigation project/ }).click();
+  await page.getByRole("option", { name: "Navigation project NAV", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Navigation project", exact: true }),
   ).toBeVisible();

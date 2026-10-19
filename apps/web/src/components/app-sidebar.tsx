@@ -278,17 +278,17 @@ function CommandPalette() {
     ...api.query("get_ticket", { projectId: projectId ?? "", ticketId: ticketId ?? "" }),
     enabled: open && !!projectId && !!ticketId,
   }).data?.ticket;
-  // Settings for the open project only; the Projects group below already lists every project.
+  const trimmed = query.trim();
+  // Other projects' settings join once a search is typed, so the empty list stays short.
   const settings = useSettingsGroups().flatMap((group) =>
     group.entries.flatMap((entry) =>
-      entry.project
-        ? entry.project.id === projectId
+      !entry.project
+        ? [{ ...entry, scope: group.label }]
+        : entry.project.id === projectId || trimmed
           ? (entry.children ?? []).map((child) => ({ ...child, scope: entry.label }))
-          : []
-        : [{ ...entry, scope: group.label }],
+          : [],
     ),
   );
-  const trimmed = query.trim();
   const workspace = useWorkspace();
   const tickets = useQuery({
     ...api.query("search_tickets", {

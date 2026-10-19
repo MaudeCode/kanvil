@@ -111,7 +111,7 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
   return groups;
 }
 // A project expands to its sections while one of them is open.
-export const expanded = (entry: SettingsEntry<unknown>, pathname: string) =>
+export const expanded = <P>(entry: SettingsEntry<P>, pathname: string): SettingsEntry<P>[] =>
   entry.children && entry.to === pathname ? entry.children : [];
 export const settingsEntries = <P>(groups: SettingsGroup<P>[]) =>
   groups.flatMap((group) => group.entries.flatMap((entry) => [entry, ...(entry.children ?? [])]));

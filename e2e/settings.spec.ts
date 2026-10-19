@@ -405,6 +405,11 @@ test("one settings navigation reaches every scope and keeps history, palette, an
     await expect(help.getByRole("heading", { name: category, exact: true })).toBeVisible();
   await expect(help.getByText("Open the next or previous ticket", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  // Away from the project, its settings are still one search away.
+  await page.keyboard.press("ControlOrMeta+k");
+  await palette.getByRole("combobox").fill("navigation labels");
+  await palette.getByRole("option", { name: "Labels Settings navigation", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/settings\\?section=labels$`));
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
   await expect(page.getByRole("heading", { name: "Palette copy actions" })).toBeVisible();

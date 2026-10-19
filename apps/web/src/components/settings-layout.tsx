@@ -80,7 +80,7 @@ export function SettingsLayout({
       search={{ section: entry.section }}
       aria-current={current(entry) ? "page" : undefined}
       onClick={() => {
-        refocus = settingsHref(entry);
+        refocus = current(entry) ? undefined : settingsHref(entry);
       }}
     />
   );

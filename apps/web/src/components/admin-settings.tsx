@@ -38,8 +38,11 @@ const query = {
   queryFn: () => api.request("/api/v1/admin/instance", adminInstanceSchema),
 };
 export function AdminSettings({ section }: { section: (typeof adminSections)[number] }) {
+  // Rendering waits for a read made after mount, so a cached copy still counts as fresh only once
+  // it has been refetched; without "always", returning within the stale time stayed on Loading.
   const result = useQuery({
     ...query,
+    refetchOnMount: "always",
     refetchInterval: ["search", "storage", "events"].includes(section) ? 5000 : false,
   });
   return result.data && result.isFetchedAfterMount ? (
