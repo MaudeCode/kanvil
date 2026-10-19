@@ -137,6 +137,13 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
     .toBe("Edited from the context menu");
   await page.unroute(`**${ticketPath}`);
   await edited.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Duplicate ticket", exact: true }).click();
+  await expect(page.getByText(`Created ${project.key}-2`, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Edited from the context menu (copy)", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await edited.click({ button: "right" });
   await page.screenshot({ path: "test-results/ticket-context-menu.png", fullPage: true });
   await page.getByRole("menuitem", { name: "Delete ticket", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();

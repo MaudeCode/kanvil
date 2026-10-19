@@ -168,6 +168,11 @@ test("readers see readable ticket content without mutation controls", async ({ p
     await reader.goto(`/projects/${project.id}/tickets/${ticket.id}`);
     await expect(reader.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
     await expect(reader.getByRole("button", { name: "Edit ticket", exact: true })).toBeDisabled();
+    await reader.getByRole("button", { name: "Ticket actions", exact: true }).click();
+    await expect(
+      reader.getByRole("menuitem", { name: "Duplicate ticket", exact: true }),
+    ).toBeDisabled();
+    await reader.keyboard.press("Escape");
     await expect(reader.getByRole("combobox", { name: "Status", exact: true })).toBeDisabled();
     await expect(
       reader.getByRole("checkbox", { name: "Reviewed by a writer", exact: true }),

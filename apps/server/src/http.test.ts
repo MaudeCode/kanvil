@@ -153,6 +153,30 @@ describe("HTTP, realtime, and MCP", () => {
     expect(z.object({ total: z.number() }).parse(await work.json()).total).toBe(0);
     expect(document.paths["/api/v1/my-work"]).toBeDefined();
   });
+  it("duplicates a ticket over HTTP and refuses read-only credentials", async () => {
+    const project = await newProject();
+    const original = await client().call("create_ticket", {
+      projectId: project.id,
+      title: "Copied over HTTP",
+    });
+    const path = `/api/v1/projects/${project.id}/tickets/${original.key}/duplicate`;
+    const response = await request(path, { method: "POST", headers: sessionHeaders(), body: "{}" });
+    expect(response.status).toBe(200);
+    expect(ticketSchema.parse(await response.json())).toMatchObject({
+      title: "Copied over HTTP (copy)",
+      key: `${project.key}-2`,
+    });
+    const token = await credential(project.id, ["read"]);
+    expect(
+      (
+        await request(path, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token.key}`, "Content-Type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(403);
+  });
   it("enforces project and operation scopes on credentials and allows revocation", async () => {
     const project = await newProject(),
       other = await newProject(),

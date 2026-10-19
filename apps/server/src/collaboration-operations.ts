@@ -22,6 +22,7 @@ import {
   project,
   publish,
   publishMany,
+  relationEvents,
   requireRow,
   subscribe,
   type Context,
@@ -42,20 +43,6 @@ async function editableComment(ctx: Context, commentId: string, expectedVersion:
     fail(403, "forbidden", "Only the author or a project administrator can edit this comment");
   assertVersion(row, expectedVersion, "comment");
   return row;
-}
-async function publishRelation(
-  ctx: Context,
-  type: "relation.added" | "relation.removed",
-  relation: typeof relations.$inferSelect,
-) {
-  await publishMany(
-    ctx,
-    [relation.sourceId, relation.targetId].map((ticketId) => ({
-      type,
-      ticketId,
-      data: { relation },
-    })),
-  );
 }
 export const collaborationHandlers: Pick<
   Handlers,
@@ -117,7 +104,7 @@ export const collaborationHandlers: Pick<
         })
         .returning(),
     );
-    await publishRelation(ctx, "relation.added", row);
+    await publishMany(ctx, relationEvents("relation.added", row));
     return row;
   },
   async remove_relation(ctx, input) {
@@ -127,7 +114,7 @@ export const collaborationHandlers: Pick<
         .where(and(eq(relations.projectId, project(ctx).id), eq(relations.id, input.relationId)))
         .returning(),
     );
-    await publishRelation(ctx, "relation.removed", row);
+    await publishMany(ctx, relationEvents("relation.removed", row));
     return { ok: true };
   },
   async list_comments(ctx, input) {

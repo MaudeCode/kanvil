@@ -505,6 +505,141 @@ describe("ticket operations on PostgreSQL", () => {
     ).rejects.toMatchObject({ code: "idempotency_conflict" });
     expect((await ticket("Next ticket")).number).toBe(2);
   });
+  it("duplicates requirements and properties once per request and resets ownership", async () => {
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const parent = await ticket("Parent");
+    const created = await domain.execute(
+      "create_ticket",
+      {
+        projectId: project.id,
+        title: "x".repeat(500),
+        description: "Copied description",
+        acceptanceCriteria: "Copied criteria",
+        priority: "high",
+        kind: "bug",
+        difficulty: "high",
+        dueAt: "2030-01-01T00:00:00.000Z",
+        labels: ["web"],
+        scopes: ["server"],
+        assigneeId: writer.id,
+        parentId: parent.id,
+        automationReady: true,
+      },
+      owner,
+    );
+    await domain.execute(
+      "add_comment",
+      { projectId: project.id, ticketId: created.id, body: "Not copied" },
+      owner,
+    );
+    const worker = await domain.actor(owner.id, { ownerId: "worker", scopes: ["read", "claim"] });
+    await domain.execute(
+      "claim_ticket",
+      { projectId: project.id, ticketId: created.id, workerId: "w1", expectedVersion: 1 },
+      worker,
+    );
+    await ticket("Child").then((child) =>
+      domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: child.id,
+          expectedVersion: child.version,
+          changes: { parentId: created.id },
+        },
+        owner,
+      ),
+    );
+    const requestId = crypto.randomUUID(),
+      input = { projectId: project.id, ticketId: created.key, requestId };
+    const copy = await domain.execute("duplicate_ticket", input, writer);
+    expect(await domain.execute("duplicate_ticket", input, writer)).toEqual(copy);
+    expect(copy).toMatchObject({
+      title: `${"x".repeat(493)} (copy)`,
+      description: "Copied description",
+      acceptanceCriteria: "Copied criteria",
+      status: "todo",
+      priority: "high",
+      kind: "bug",
+      difficulty: "high",
+      dueAt: "2030-01-01T00:00:00.000Z",
+      labels: ["web"],
+      scopes: ["server"],
+      assigneeId: writer.id,
+      parentId: parent.id,
+      automationReady: false,
+      claimRequired: false,
+      archived: false,
+      createdBy: writer.id,
+      version: 1,
+    });
+    expect(copy.key).not.toBe(created.key);
+    const read = await domain.execute(
+      "get_ticket",
+      { projectId: project.id, ticketId: copy.id },
+      owner,
+    );
+    expect(read.claim).toBeNull();
+    for (const [operation, filter] of [
+      ["list_comments", { ticketId: copy.id }],
+      ["list_tickets", { parentId: copy.id }],
+    ] as const)
+      expect(
+        (await domain.execute(operation, { projectId: project.id, ...filter }, owner)).total,
+      ).toBe(0);
+    expect(
+      await domain.execute("list_relations", { projectId: project.id, ticketId: copy.id }, owner),
+    ).toEqual([
+      expect.objectContaining({ sourceId: copy.id, targetId: created.id, type: "clones" }),
+    ]);
+    const activity = await domain.execute(
+      "list_activity",
+      { projectId: project.id, ticketId: copy.id },
+      owner,
+    );
+    expect(activity.items.filter((event) => event.type === "ticket.created")).toEqual([
+      expect.objectContaining({
+        actorId: writer.id,
+        data: expect.objectContaining({ duplicateOf: created.id }),
+      }),
+    ]);
+    const second = await domain.execute(
+      "duplicate_ticket",
+      { ...input, requestId: crypto.randomUUID() },
+      writer,
+    );
+    expect(second.id).not.toBe(copy.id);
+    // A former member stays on the original but is not assigned to new copies.
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: null },
+      owner,
+    );
+    expect(
+      (
+        await domain.execute(
+          "duplicate_ticket",
+          { projectId: project.id, ticketId: copy.id },
+          owner,
+        )
+      ).assigneeId,
+    ).toBeNull();
+    const total = (await domain.execute("list_tickets", { projectId: project.id }, owner)).total;
+    const readOnly = await domain.actor(owner.id, { ownerId: "reader", scopes: ["read"] });
+    await expect(
+      domain.execute("duplicate_ticket", { projectId: project.id, ticketId: copy.id }, readOnly),
+    ).rejects.toMatchObject({ code: "insufficient_scope" });
+    await expect(
+      domain.execute("duplicate_ticket", { projectId: project.id, ticketId: copy.id }, outsider),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await domain.execute("list_tickets", { projectId: project.id }, owner)).total).toBe(
+      total,
+    );
+  });
   it("allows only one concurrent update to the same version", async () => {
     const current = await ticket();
     const outcomes = await Promise.allSettled(

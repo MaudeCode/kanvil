@@ -324,6 +324,16 @@ export async function publish(
 ) {
   return one(await publishMany(ctx, [{ type, ticketId, data }]));
 }
+// A relationship change appears in both tickets' activity.
+export const relationEvents = (
+  type: "relation.added" | "relation.removed",
+  relation: { sourceId: string; targetId: string },
+): PendingEvent[] =>
+  [relation.sourceId, relation.targetId].map((ticketId) => ({
+    type,
+    ticketId,
+    data: { relation },
+  }));
 export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
   return (
     claim.ownerId === ctx.actor.ownerId &&
