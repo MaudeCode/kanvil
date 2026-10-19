@@ -776,6 +776,8 @@ const ticketPayload = z
     stateRef: z.string(),
     parentRef: z.string().nullable(),
     customFields: z.record(z.string(), customFieldValue),
+    // Set once the record falls back to no assignee; every retry then repeats that write.
+    unassigned: z.boolean().default(false),
   })
   .loose();
 const linkedPayload = z.object({ ticketRef: z.string() }).loose();
@@ -922,7 +924,8 @@ export async function processImports(domain: Domain) {
         case "label":
           return (await write("create_project_label", payload)).id;
         case "ticket": {
-          const { stateRef, parentRef, customFields, ...ticket } = ticketPayload.parse(payload);
+          const { stateRef, parentRef, customFields, unassigned, ...ticket } =
+            ticketPayload.parse(payload);
           const fieldIds = await targets("field", Object.keys(customFields));
           const input = {
             ...ticket,
@@ -939,12 +942,20 @@ export async function processImports(domain: Domain) {
               }),
             ),
           };
+          const unassign = () =>
+            write("create_ticket", { ...input, assigneeId: null }, "unassigned");
+          if (unassigned) return (await unassign()).id;
           try {
             return (await write("create_ticket", input)).id;
           } catch (error) {
-            // The assignee lost access since the preview; the ticket still arrives.
+            // The assignee lost access since the preview; the ticket still arrives. The choice is
+            // stored before the write, so a retry repeats the request that may have committed.
             if (!(error instanceof ApiError && error.code === "invalid_assignee")) throw error;
-            return (await write("create_ticket", { ...input, assigneeId: null }, "unassigned")).id;
+            await db
+              .update(importRecords)
+              .set({ payload: { ...payload, unassigned: true } })
+              .where(and(eq(importRecords.runId, run.id), eq(importRecords.seq, record.seq)));
+            return (await unassign()).id;
           }
         }
         case "relation": {

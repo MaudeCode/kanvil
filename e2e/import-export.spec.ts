@@ -39,7 +39,20 @@ test("exports a project as JSON and imports it into a new project", async ({ pag
   const dialog = page.getByRole("dialog", { name: "Import project", exact: true });
   const submit = dialog.getByRole("button", { name: "Preview", exact: true });
   await expect(submit).toBeDisabled();
+  // A file chosen while an earlier one is still being read wins, even if that read ends last.
+  await page.evaluate(`File.prototype.text = function () {
+    const delay = this.name === "slow.json" ? 1000 : 0;
+    return new Promise((resolve) => setTimeout(resolve, delay)).then(() => new Response(this).text());
+  }`);
+  await dialog.getByLabel("Export file", { exact: true }).setInputFiles({
+    name: "slow.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({ ...bundle, project: { ...bundle.project, name: "Slow" } }),
+    ),
+  });
   await dialog.getByLabel("Export file", { exact: true }).setInputFiles(path);
+  await page.waitForTimeout(1500);
   await expect(dialog.getByLabel("Project name", { exact: true })).toHaveValue("Export source");
   // The source still holds its prefix, so the preview blocks the import until it changes.
   await submit.click();

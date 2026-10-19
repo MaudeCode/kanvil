@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { and, count, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import {
   mentionLink,
   projectSchema,
@@ -446,6 +447,46 @@ describe("ticket export and import runs", () => {
     expect(new Set(settled.map((record) => record.targetId))).toEqual(
       new Set(rows.map((row) => row.id)),
     );
+  });
+
+  it("repeats an unassigned fallback after an interruption even when the assignee returns", async () => {
+    let interrupted = false;
+    const fallback = z.object({ title: z.literal("Parent work"), assigneeId: z.null() }).loose();
+    // The fallback write commits, then the worker dies before it records the outcome.
+    async function execute<K extends Operation>(
+      name: K,
+      value: unknown,
+      actor: Actor,
+      provenance?: { importRun: string },
+    ) {
+      const result = await domain.execute(name, value, actor, provenance);
+      if (name === "create_ticket" && !interrupted && fallback.safeParse(value).success) {
+        interrupted = true;
+        throw new Error("Simulated restart");
+      }
+      return result;
+    }
+    const member = (role: "writer" | null) =>
+      domain.execute(
+        "set_workspace_member",
+        { workspaceId, email: "writer@example.test", role },
+        owner,
+      );
+    const run = await preview(prefix("U"));
+    await start(run);
+    // The assignee loses access after the preview, then gets it back before the retry.
+    await member(null);
+    await expect(processImports({ ...domain, execute })).rejects.toThrow("Simulated restart");
+    await member("writer");
+    await drain();
+    const finished = await read(run.id);
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const rows = await fixture.database.db
+      .select({ title: tickets.title, assigneeId: tickets.assigneeId })
+      .from(tickets)
+      .where(eq(tickets.projectId, finished.projectId!));
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row.title === "Parent work")?.assigneeId).toBeNull();
   });
 
   it("stops a run whose project stops accepting writes instead of failing every record", async () => {

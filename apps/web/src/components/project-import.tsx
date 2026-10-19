@@ -166,6 +166,8 @@ function ImportForm({
           discard();
           setFileError(undefined);
           if (!file) return;
+          // A file chosen while an earlier one is still being read replaces it.
+          const chosen = edits.current;
           void file
             .text()
             .then((text) => {
@@ -173,6 +175,7 @@ function ImportForm({
               if (!ticketExportSchema.pick({ format: true }).safeParse(data).success)
                 throw new Error(notExport);
               const parsed = ticketImportSchema.parse(data);
+              if (edits.current !== chosen) return;
               setBundle(parsed);
               setName(parsed.project.name);
               setKey(
@@ -181,9 +184,10 @@ function ImportForm({
                   : suggestKey(parsed.project.name),
               );
             })
-            .catch((error: unknown) =>
-              setFileError(error instanceof SyntaxError ? new Error(notExport) : error),
-            );
+            .catch((error: unknown) => {
+              if (edits.current === chosen)
+                setFileError(error instanceof SyntaxError ? new Error(notExport) : error);
+            });
         }}
       />
       <ErrorNotice error={fileError} />
