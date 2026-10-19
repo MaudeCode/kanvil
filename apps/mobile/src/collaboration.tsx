@@ -83,7 +83,7 @@ export function Relations({
             <Row
               key={child.id}
               title={`${child.key} · ${child.title}`}
-              trailing={<Status value={child.status} />}
+              trailing={<Status ticket={child} />}
               onPress={() =>
                 navigation.push("Ticket", { projectId: ticket.projectId, ticketId: child.id })
               }

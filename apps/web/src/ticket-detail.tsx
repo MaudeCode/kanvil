@@ -34,7 +34,6 @@ import {
   Modal,
   PageHeader,
   RelativeTime,
-  TicketIndicator,
   Textarea,
   FormActions,
   reportError,
@@ -43,7 +42,13 @@ import { TicketEditor } from "./ticket-editor.tsx";
 import { Relations } from "./relations.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
-import { TagsProperty, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
+import {
+  PropertyValue,
+  TagsProperty,
+  TicketProperty,
+  statusValue,
+  useTicketChange,
+} from "./components/ticket-property.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { ScheduleDates } from "./components/date-picker.tsx";
 import { copyText } from "./lib/browser.ts";
@@ -308,7 +313,11 @@ export function TicketDetail({
                   {ticket.key}
                   {copied && <CheckIcon className="size-3 text-[var(--success)]" />}
                 </Button>
-                <TicketIndicator property="status" value={ticket.status} />
+                <PropertyValue
+                  property="status"
+                  value={statusValue(ticket)}
+                  projectId={projectId}
+                />
                 {ticket.archived && <strong>Archived</strong>}
                 {pending && <Spinner className="size-3.5 text-muted-foreground" />}
               </div>
@@ -373,7 +382,7 @@ export function TicketDetail({
               variant="row"
               property="status"
               projectId={projectId}
-              value={ticket.status}
+              value={statusValue(ticket)}
               disabled={!editable}
               onChange={(status) => void change({ status })}
             />

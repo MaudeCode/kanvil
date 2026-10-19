@@ -11,6 +11,7 @@ import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./se
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
+import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
 import { ProjectDestinations } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
 import type { projectSections } from "../search.ts";
@@ -145,6 +146,9 @@ export function ProjectSettings({
             scope="project"
             onChange={(email, role) => member.mutateAsync({ projectId: project.id, email, role })}
           />
+        </SettingsPanel>
+        <SettingsPanel value="workflow">
+          <ProjectWorkflowSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="labels">
           <ProjectLabelSettings projectId={project.id} canAdmin={access.canAdmin} />

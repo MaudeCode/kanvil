@@ -21,6 +21,7 @@ import {
   propertyLabels,
   propertyOf,
   propertyOrder,
+  type TicketChange,
 } from "./ticket-property.tsx";
 import { DatePicker, endOfDay } from "./date-picker.tsx";
 
@@ -78,7 +79,7 @@ export function TicketSelectionToolbar({
     }
   }
   // Larger selections go in consecutive batches; each batch is atomic on the server.
-  const write = (changes: Partial<Ticket>) =>
+  const write = (changes: TicketChange) =>
     run(async () => {
       for (let done = 0; done < tickets.length; done += batchSize)
         await bulk
@@ -88,7 +89,7 @@ export function TicketSelectionToolbar({
             throw error;
           });
     });
-  function apply(changes: Partial<Ticket>, label: string) {
+  function apply(changes: TicketChange, label: string) {
     if (busy) return;
     void write(changes)
       .then(() => {

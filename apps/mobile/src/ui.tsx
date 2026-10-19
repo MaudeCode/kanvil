@@ -23,6 +23,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path } from "react-native-svg";
 import { Renderer, useMarkdown } from "react-native-marked";
 import { brandMark, palettes } from "@kanvil/contracts/theme";
+import { useQuery } from "@tanstack/react-query";
+import { useConnection } from "./data.tsx";
 import {
   errorMessage,
   mentionScheme,
@@ -434,13 +436,25 @@ export function Row({
     </Pressable>
   );
 }
-export function Status({ value }: { value: Ticket["status"] }) {
-  const color = usePalette();
+// A ticket's workflow state, tinted by its category. Older servers show the canonical status.
+export function Status({ ticket }: { ticket: Pick<Ticket, "projectId" | "status" | "stateId"> }) {
+  const color = usePalette(),
+    { api } = useConnection();
+  const workflow = useQuery({
+    ...api.query("list_workflow_states", { projectId: ticket.projectId }),
+    enabled: !!ticket.stateId,
+  });
+  const name = workflow.data?.find((state) => state.id === ticket.stateId)?.name;
   return (
     <Text
-      style={{ color: color[stateTones[value]], fontSize: 13, fontWeight: "500", lineHeight: 20 }}
+      style={{
+        color: color[stateTones[ticket.status]],
+        fontSize: 13,
+        fontWeight: "500",
+        lineHeight: 20,
+      }}
     >
-      ● {stateLabels[value]}
+      ● {name ?? stateLabels[ticket.status]}
     </Text>
   );
 }

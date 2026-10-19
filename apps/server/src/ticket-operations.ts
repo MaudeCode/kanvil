@@ -47,6 +47,7 @@ import {
 } from "./domain.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
+import { resolveState } from "./workflow-operations.ts";
 import { likePattern } from "./search.ts";
 import { z } from "zod";
 import {
@@ -120,7 +121,7 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
   for (const ticket of selected) {
     const reasons: Output<"get_ticket">["readiness"]["reasons"] = [];
     if (ticket.status !== "todo" || ticket.archived)
-      reasons.push({ code: "not_open", message: "Ticket must be in To do and unarchived" });
+      reasons.push({ code: "not_open", message: "Ticket must be in a To do state and unarchived" });
     if (!ticket.automationReady)
       reasons.push({ code: "not_enabled", message: "Agent work has not been enabled" });
     if (ticket.holdReason) reasons.push({ code: "hold", message: ticket.holdReason });
@@ -221,6 +222,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   assertVersion(current, input.expectedVersion, "ticket");
   await assertWorkerClaim(ctx, current, input.claimId);
   await validateReferences(ctx, current.id, input.changes);
+  const state = await resolveState(ctx, input.changes, current);
   const { startAt, dueAt, ...changes } = input.changes,
     dates = dateColumns({ startAt, dueAt });
   assertSchedule(
@@ -233,6 +235,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
       .update(tickets)
       .set({
         ...changes,
+        ...state,
         ...dates,
         version: current.version + 1,
         updatedAt: new Date(),
@@ -244,7 +247,13 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   const event: PendingEvent = {
     type: "ticket.updated",
     ticketId: row.id,
-    data: { version: row.version, changedFields: Object.keys(input.changes) },
+    // A state change is a status change, whichever of the two the caller wrote.
+    data: {
+      version: row.version,
+      changedFields: [
+        ...new Set([...Object.keys(input.changes), ...(state ? ["status", "stateId"] : [])]),
+      ],
+    },
   };
   return { row, event };
 }
@@ -330,7 +339,10 @@ function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">)
     due: by(tickets.dueAt),
     start: by(scheduleStart),
     number: by(tickets.number),
-    status: by(rank(tickets.status, states)),
+    // The state's category, then its place within the category.
+    status: by(
+      sql`${rank(tickets.status, states)} * 1000 + (SELECT workflow_states.position FROM workflow_states WHERE workflow_states.id = tickets.state_id)`,
+    ),
     difficulty: by(rank(tickets.difficulty, difficulties)),
     kind: by(tickets.kind),
     assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
@@ -381,11 +393,18 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
     } = input,
     dates = dateColumns({ startAt, dueAt });
   assertSchedule(dates.startAt ?? null, dates.dueAt ?? null);
+  const state = requireRow(
+    await resolveState(ctx, {
+      status: input.status ?? (input.stateId ? undefined : "todo"),
+      stateId: input.stateId,
+    }),
+  );
   const row = one(
     await ctx.db
       .insert(tickets)
       .values({
         ...fields,
+        ...state,
         ...dates,
         id,
         projectId: counter.id,
@@ -555,6 +574,7 @@ export const ticketHandlers: Pick<
       predicateWhere(input),
       input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
       dueWhere(input.due),
+      input.stateId ? eq(tickets.stateId, input.stateId) : undefined,
       input.scheduledFrom ? sql`${scheduleEnd} >= ${input.scheduledFrom}::timestamptz` : undefined,
       input.scheduledTo ? sql`${scheduleStart} < ${input.scheduledTo}::timestamptz` : undefined,
       search?.where,
@@ -664,9 +684,9 @@ export const ticketHandlers: Pick<
       anchor = neighbor ? await getTicket(ctx, neighbor) : undefined;
     if (anchor?.id === current.id)
       fail(400, "validation_error", "A ticket cannot be placed next to itself");
-    const status = input.status ?? current.status,
+    const state = (await resolveState(ctx, input, current)) ?? current,
       changedFields = [
-        ...(status === current.status ? [] : ["status"]),
+        ...(state.stateId === current.stateId ? [] : ["status", "stateId"]),
         ...(anchor ? ["position"] : []),
       ];
     if (!changedFields.length) return current;
@@ -674,7 +694,8 @@ export const ticketHandlers: Pick<
       await ctx.db
         .update(tickets)
         .set({
-          status,
+          status: state.status,
+          stateId: state.stateId,
           ...(anchor && {
             position: await positionNear(
               ctx,
@@ -908,7 +929,7 @@ export const ticketHandlers: Pick<
       await ctx.db
         .update(tickets)
         .set({
-          status: "in_progress",
+          ...(await resolveState(ctx, { status: "in_progress" }, ticket)),
           claimRequired: true,
           version: ticket.version + 1,
           updatedAt: new Date(),

@@ -1,8 +1,13 @@
-import { createTicketDraft, ticketDraftSchema, ticketDefaults } from "@kanvil/contracts/drafts";
+import {
+  createTicketDraft,
+  draftFields,
+  ticketDraftSchema,
+  ticketDefaults,
+} from "@kanvil/contracts/drafts";
 import { useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError, ticketFields, type Ticket } from "@kanvil/contracts";
+import { ApiError, type Ticket } from "@kanvil/contracts";
 import { z } from "zod";
 import { api, useIdentity, useOperation } from "./data.tsx";
 import { Button, ErrorNotice, Input, Textarea, reportError, useModalBusy } from "./ui.tsx";
@@ -28,7 +33,13 @@ import { TicketPicker } from "./components/ticket-picker.tsx";
 import { ScheduleDates } from "./components/date-picker.tsx";
 import { TagInput } from "./components/tag-input.tsx";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
-import { ProjectProperty, TagsProperty, TicketProperty } from "./components/ticket-property.tsx";
+import {
+  ProjectProperty,
+  TagsProperty,
+  TicketProperty,
+  parseStatus,
+  statusValue,
+} from "./components/ticket-property.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { useInlineUpload } from "./ticket-resources.tsx";
 import { cn } from "@/lib/utils";
@@ -144,7 +155,8 @@ export function TicketEditor({
     changeDraft({
       ...latest.current,
       projectId: next === projectId ? undefined : next,
-      fields: { ...latest.current.fields, parentId: null },
+      // A state belongs to one project; its category carries over.
+      fields: { ...latest.current.fields, parentId: null, stateId: null },
     });
     setSwitching(true);
     let members: { userId: string }[] = [];
@@ -183,7 +195,7 @@ export function TicketEditor({
     event.preventDefault();
     // The ref also stops a second ⌘↵ that lands before the pending state renders.
     if (blocked || submitting.current) return;
-    const values = ticketFields.parse(fields);
+    const values = draftFields(fields);
     // Only the staged files the text still embeds become attachments; removed ones are discarded.
     const claimed = draft.uploads.filter(
       (id) => fields.description.includes(id) || fields.acceptanceCriteria.includes(id),
@@ -274,8 +286,8 @@ export function TicketEditor({
       <TicketProperty
         property="status"
         projectId={target}
-        value={fields.status}
-        onChange={(status) => set("status", status)}
+        value={statusValue(fields)}
+        onChange={(value) => setFields(parseStatus(value))}
       />
       <TicketProperty
         property="priority"
@@ -484,8 +496,8 @@ export function TicketEditor({
                 variant="row"
                 property="status"
                 projectId={target}
-                value={fields.status}
-                onChange={(status) => set("status", status)}
+                value={statusValue(fields)}
+                onChange={(value) => setFields(parseStatus(value))}
               />
               <TicketProperty
                 variant="row"

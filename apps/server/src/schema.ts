@@ -3,6 +3,7 @@ import {
   check,
   customType,
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -131,6 +132,31 @@ export const labelColors = pgTable("label_colors", {
   createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+// A project's named ticket states, each mapped to a canonical category (`states` in contracts).
+export const workflowStates = pgTable(
+  "workflow_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    category: text("category").notNull(),
+    color: text("color").notNull().default("default"),
+    position: integer("position").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [
+    unique("workflow_state_slug").on(table.projectId, table.slug),
+    // The target of tickets' state key, which carries the category into `tickets.status`.
+    unique("workflow_state_category").on(table.projectId, table.id, table.category),
+    check(
+      "workflow_state_category_check",
+      sql`${table.category} IN ('backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled')`,
+    ),
+  ],
+);
 export const tickets = pgTable(
   "tickets",
   {
@@ -143,7 +169,10 @@ export const tickets = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     acceptanceCriteria: text("acceptance_criteria").notNull().default(""),
-    status: text("status").notNull().default("todo"),
+    // The category of `stateId`, kept equal to it by the foreign key below: a state's category
+    // change cascades here, and a write naming a state of another category is rejected.
+    status: text("status").notNull(),
+    stateId: uuid("state_id").notNull(),
     priority: text("priority").notNull().default("medium"),
     kind: text("kind").notNull().default("feature"),
     difficulty: text("difficulty"),
@@ -171,6 +200,12 @@ export const tickets = pgTable(
     index("ticket_project_status").on(table.projectId, table.status),
     index("ticket_parent").on(table.parentId),
     index("ticket_project_position").on(table.projectId, table.position),
+    index("ticket_state").on(table.stateId),
+    foreignKey({
+      name: "ticket_workflow_state",
+      columns: [table.projectId, table.stateId, table.status],
+      foreignColumns: [workflowStates.projectId, workflowStates.id, workflowStates.category],
+    }).onUpdate("cascade"),
   ],
 );
 export const relations = pgTable(

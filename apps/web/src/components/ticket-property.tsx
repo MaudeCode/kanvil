@@ -24,6 +24,7 @@ import {
   states,
   type Ticket,
   type Output,
+  type WorkflowState,
 } from "@kanvil/contracts";
 import { api, useIdentity, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { TicketIndicator, reportError } from "../ui.tsx";
@@ -42,8 +43,25 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
+// A status value: a canonical category alone, for filters and drafts without a state, or with the
+// workflow state it names, so the category still renders before the project's workflow loads.
+export type StatusValue = Ticket["status"] | `${Ticket["status"]}:${string}`;
+export const statusValue = (ticket: Pick<Ticket, "status" | "stateId">): StatusValue =>
+  ticket.stateId ? `${ticket.status}:${ticket.stateId}` : ticket.status;
+export const stateValue = (state: Pick<WorkflowState, "category" | "id">) =>
+  statusValue({ status: state.category, stateId: state.id });
+export function parseStatus(value: StatusValue) {
+  const [category, stateId] = value.split(":");
+  return { status: states.find((state) => state === category) ?? "todo", stateId: stateId ?? null };
+}
+// The project's workflow states in display order.
+export const useWorkflow = (projectId: string, enabled = true) =>
+  useQuery({
+    ...api.query("list_workflow_states", { projectId }),
+    enabled: enabled && !!projectId,
+  });
 export type PropertyValues = {
-  status: Ticket["status"];
+  status: StatusValue;
   priority: Ticket["priority"];
   kind: Ticket["kind"];
   difficulty: Ticket["difficulty"];
@@ -73,7 +91,7 @@ export const propertyIcons: Record<PropertyName, typeof Bug> = {
   assignee: UserRound,
 };
 const readers: { [P in PropertyName]: (ticket: Ticket) => PropertyValues[P] } = {
-  status: (ticket) => ticket.status,
+  status: statusValue,
   priority: (ticket) => ticket.priority,
   kind: (ticket) => ticket.kind,
   difficulty: (ticket) => ticket.difficulty,
@@ -82,9 +100,14 @@ const readers: { [P in PropertyName]: (ticket: Ticket) => PropertyValues[P] } = 
 export function propertyOf<P extends PropertyName>(ticket: Ticket, property: P) {
   return readers[property](ticket);
 }
+// A ticket edit as update_ticket takes it: a state is written by ID, never cleared.
+export type TicketChange = Omit<Partial<Ticket>, "stateId"> & { stateId?: string };
 // The ticket change that sets a property; only the assignee is stored under another name.
-const writers: { [P in PropertyName]: (value: PropertyValues[P]) => Partial<Ticket> } = {
-  status: (status) => ({ status }),
+const writers: { [P in PropertyName]: (value: PropertyValues[P]) => TicketChange } = {
+  status: (value) => {
+    const { status, stateId } = parseStatus(value);
+    return stateId ? { status, stateId } : { status };
+  },
   priority: (priority) => ({ priority }),
   kind: (kind) => ({ kind }),
   difficulty: (difficulty) => ({ difficulty }),
@@ -147,9 +170,22 @@ export function PropertyValue({
     ...api.query("list_members", { projectId }),
     enabled: props.property === "assignee" && !!props.value,
   });
+  const workflow =
+    useWorkflow(projectId, props.property === "status" && props.value.includes(":")).data ?? [];
   switch (props.property) {
-    case "status":
-      return <TicketIndicator property="status" value={props.value} iconOnly={iconOnly} />;
+    case "status": {
+      const { status, stateId } = parseStatus(props.value),
+        state = stateId ? workflow.find((item) => item.id === stateId) : undefined;
+      return (
+        <TicketIndicator
+          property="status"
+          value={status}
+          label={state?.name}
+          color={state?.color}
+          iconOnly={iconOnly}
+        />
+      );
+    }
     case "priority":
       return <TicketIndicator property="priority" value={props.value} iconOnly={iconOnly} />;
     case "kind": {
@@ -198,8 +234,21 @@ export function PropertyValue({
 
 type Option<V> = { value: V; label: string; keywords?: string[] };
 type Member = { userId: string; name: string; email: string };
-const optionsFor: { [P in PropertyName]: (members: Member[]) => Option<PropertyValues[P]>[] } = {
-  status: () => states.map((status) => ({ value: status, label: stateLabels[status] })),
+const optionsFor: {
+  [P in PropertyName]: (
+    members: Member[],
+    workflow: Output<"list_workflow_states">,
+  ) => Option<PropertyValues[P]>[];
+} = {
+  // A server without workflows offers the categories themselves.
+  status: (_, workflow) =>
+    workflow.length
+      ? workflow.map((state) => ({
+          value: stateValue(state),
+          label: state.name,
+          keywords: [stateLabels[state.category]],
+        }))
+      : states.map((status) => ({ value: status, label: stateLabels[status] })),
   priority: () =>
     priorities.map((priority) => ({ value: priority, label: priorityLabels[priority] })),
   kind: () => kinds.map((kind) => ({ value: kind, label: kindLabels[kind] })),
@@ -228,7 +277,8 @@ export function usePropertyOptions<P extends PropertyName>(
     ...api.query("list_members", { projectId }),
     enabled: enabled && property === "assignee",
   });
-  return optionsFor[property](members.data ?? []);
+  const workflow = useWorkflow(projectId, enabled && property === "status").data ?? [];
+  return optionsFor[property](members.data ?? [], workflow);
 }
 
 // Pairs a generic property with its value as the discriminated union PropertyValue renders.
@@ -362,12 +412,16 @@ export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "vers
   return {
     pending: update.isPending,
     change: (
-      changes: Partial<PropertyValues> & Partial<Ticket>,
+      changes: Partial<PropertyValues> & Omit<TicketChange, "status">,
       target: Pick<Ticket, "id" | "projectId" | "version"> | undefined = ticket,
     ) => {
       if (!target) return Promise.resolve();
-      const { assignee, ...rest } = changes;
-      const patch = { ...rest, ...(assignee === undefined ? {} : { assigneeId: assignee }) };
+      const { assignee, status, ...rest } = changes;
+      const patch = {
+        ...rest,
+        ...(status === undefined ? {} : writers.status(status)),
+        ...(assignee === undefined ? {} : { assigneeId: assignee }),
+      };
       // Show the edit at once in project lists and My work; the success invalidation or the
       // failure refetch settles it.
       for (const queryKey of [

@@ -40,6 +40,7 @@ it("expands the open project and locates its section", () => {
   expect(expanded(beta!, "/projects/p2/settings").map((entry) => entry.label)).toEqual([
     "General",
     "Members",
+    "Workflow",
     "Labels",
     "Integrations",
     "Calendar feeds",

@@ -125,6 +125,7 @@ export const workspaceSections = ["general", "members"] as const;
 export const projectSections = [
   "general",
   "members",
+  "workflow",
   "labels",
   "integrations",
   "calendar",

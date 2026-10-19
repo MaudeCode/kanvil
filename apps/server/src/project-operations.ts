@@ -7,6 +7,7 @@ import { filterList, isHexColor, roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, projectPositions } from "./ordering.ts";
+import { seedWorkflow } from "./workflow-operations.ts";
 import {
   members,
   labelColors,
@@ -406,6 +407,7 @@ export const projectHandlers: Pick<
         .returning(),
     );
     await ctx.db.insert(members).values({ projectId: row.id, userId: ctx.actor.id, role: "admin" });
+    await seedWorkflow(ctx, row.id);
     await publish({ ...ctx, project: toProject(row) }, "project.created", null, {
       projectId: row.id,
     });
