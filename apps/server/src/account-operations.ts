@@ -104,7 +104,9 @@ async function blockers(db: Reader, person: typeof user.$inferSelect): Promise<B
       message: "Make another account an instance administrator first",
       tickets: [],
     });
-  // A workspace without an owner can still depend on this account as its only administrator.
+  // A workspace without an owner can still depend on this account as its only administrator;
+  // a disabled account already runs nothing.
+  if (person.banned) return found;
   const sole = await db
     .select({ name: workspaces.name })
     .from(workspaceMembers)
@@ -139,6 +141,8 @@ async function subject(ctx: Context, userId: string, lock = false) {
     .where(and(eq(user.id, userId), isNull(user.deletedAt)));
   return requireRow((lock ? await query.for("update") : await query)[0]);
 }
+// The sessions an account holds: its own, and those it opened by impersonating someone else.
+const sessionsOf = (id: string) => or(eq(session.userId, id), eq(session.impersonatedBy, id));
 const total = async (rows: Promise<{ value: number }[]>) => (await rows)[0]?.value ?? 0;
 async function impact(db: Reader, person: typeof user.$inferSelect): Promise<AccountImpact> {
   const id = person.id;
@@ -150,7 +154,7 @@ async function impact(db: Reader, person: typeof user.$inferSelect): Promise<Acc
       db
         .select({ value: count() })
         .from(session)
-        .where(and(eq(session.userId, id), gt(session.expiresAt, new Date()))),
+        .where(and(sessionsOf(id), gt(session.expiresAt, new Date()))),
     ),
     counted(apikey, eq(apikey.referenceId, id)),
     counted(oauthConsent, eq(oauthConsent.userId, id)),
@@ -229,8 +233,10 @@ export const accountHandlers: Pick<
     const [blocker, ...rest] = await blockers(ctx.db, person);
     if (blocker) fail(409, blocker.code, blocker.message, { blockers: [blocker, ...rest] });
     const id = person.id;
-    // Every project the account could see through a membership announces the change, so member
-    // lists and pickers drop it; released claims appear in their tickets' activity.
+    // Every project the account could see through a membership, or where its history or an
+    // assignment remains, announces the change, so member lists drop it and readers learn to show
+    // Deleted account; released claims appear in their tickets' activity.
+    // ponytail: scans events by actor once per deletion; index `events.actor_id` if that gets slow.
     const reached = await ctx.db
       .selectDistinct({ id: projects.id, workspaceId: projects.workspaceId })
       .from(projects)
@@ -249,6 +255,20 @@ export const accountHandlers: Pick<
               projects.id,
               ctx.db.select({ id: members.projectId }).from(members).where(eq(members.userId, id)),
             ),
+            inArray(
+              projects.id,
+              ctx.db
+                .selectDistinct({ id: events.projectId })
+                .from(events)
+                .where(eq(events.actorId, id)),
+            ),
+            inArray(
+              projects.id,
+              ctx.db
+                .select({ id: tickets.projectId })
+                .from(tickets)
+                .where(eq(tickets.assigneeId, id)),
+            ),
           ),
         ),
       );
@@ -265,7 +285,7 @@ export const accountHandlers: Pick<
     // Push devices hang off sessions and leave with them. Sessions the account opened while
     // impersonating someone else go too.
     await ctx.db.delete(pushDevices).where(eq(pushDevices.userId, id));
-    await ctx.db.delete(session).where(or(eq(session.userId, id), eq(session.impersonatedBy, id)));
+    await ctx.db.delete(session).where(sessionsOf(id));
     await ctx.db.delete(notificationChannels).where(eq(notificationChannels.userId, id));
     await ctx.db.delete(notificationPreferences).where(eq(notificationPreferences.userId, id));
     await ctx.db.delete(notifications).where(eq(notifications.userId, id));

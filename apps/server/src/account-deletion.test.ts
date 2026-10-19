@@ -366,6 +366,10 @@ describe("account deletion", () => {
     // Deleting an administrator ends the sessions it opened as someone else.
     const borrowed = await impersonate(peerCookie);
     expect((await request("/api/v1/workspaces", "GET", undefined, borrowed)).status).toBe(200);
+    // The preview counts it with the administrator's own session.
+    expect(await (await request(`/api/v1/accounts/${peer.id}/impact`)).json()).toMatchObject({
+      sessions: 2,
+    });
     expect((await remove(peer.id, peer.email)).status).toBe(200);
     expect((await request("/api/v1/workspaces", "GET", undefined, borrowed)).status).toBe(401);
     expect(
@@ -400,6 +404,64 @@ describe("account deletion", () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({
       error: { code: "last_administrator", message: expect.stringContaining("Unowned") },
+    });
+  });
+
+  it("lets a disabled sole administrator of an ownerless workspace go", async () => {
+    const personCookie = await login(person.email);
+    const space = await parsed(
+      request("/api/v1/workspaces", "POST", { name: "Dormant", slug: "dormant" }, personCookie),
+    );
+    await fixture.database.db
+      .update(workspaces)
+      .set({ ownerId: null })
+      .where(eq(workspaces.id, space.id));
+    expect((await request("/api/auth/admin/ban-user", "POST", { userId: person.id })).status).toBe(
+      200,
+    );
+    expect(await (await request(`/api/v1/accounts/${person.id}/impact`)).json()).toMatchObject({
+      blockers: [],
+    });
+    expect((await remove(person.id, person.email)).status).toBe(200);
+  });
+
+  it("announces the deletion where only the account's history remains", async () => {
+    const space = await parsed(
+      request("/api/v1/workspaces", "POST", { name: "History", slug: "history" }),
+    );
+    const access = `/api/v1/workspaces/${space.id}/members`;
+    expect((await request(access, "POST", { email: person.email, role: "writer" })).status).toBe(
+      200,
+    );
+    const project = await parsed(
+      request("/api/v1/projects", "POST", {
+        workspaceId: space.id,
+        visibility: "workspace",
+        key: "HIST",
+        name: "History",
+      }),
+    );
+    await parsed(
+      request(
+        `/api/v1/projects/${project.id}/tickets`,
+        "POST",
+        { title: "Left behind" },
+        await login(person.email),
+      ),
+    );
+    expect((await request(access, "POST", { email: person.email, role: null })).status).toBe(200);
+    const before = await fixture.database.db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.projectId, project.id), eq(events.type, "membership.updated")));
+    expect((await remove(person.id, person.email)).status).toBe(200);
+    const after = await fixture.database.db
+      .select({ data: events.data })
+      .from(events)
+      .where(and(eq(events.projectId, project.id), eq(events.type, "membership.updated")));
+    expect(after.length).toBe(before.length + 1);
+    expect(after).toContainEqual({
+      data: expect.objectContaining({ userId: person.id, deleted: true }),
     });
   });
 
