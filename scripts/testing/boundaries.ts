@@ -37,15 +37,17 @@ interface State {
 const key = Symbol.for("kanvil.test.boundaries");
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
+// The dedicated test PostgreSQL server, by the name or address tests connect with.
+function testDatabase() {
+  const url = new URL(
+    process.env.TEST_DATABASE_URL ?? "postgres://kanvil:kanvil@127.0.0.1:55462/kanvil",
+  );
+  return { host: url.hostname.replace(/^\[|\]$/g, ""), port: Number(url.port || 5432) };
+}
 export function classifyTarget(host: string | undefined, port: number | undefined): Boundary {
-  const database = new URL(
-      process.env.TEST_DATABASE_URL ?? "postgres://kanvil:kanvil@127.0.0.1:55462/kanvil",
-    ),
+  const database = testDatabase(),
     name = (host ?? "localhost").replace(/^\[|\]$/g, "");
-  if (
-    Number(port) === Number(database.port || 5432) &&
-    (name === database.hostname || loopbackHosts.has(name))
-  )
+  if (Number(port) === database.port && (name === database.host || loopbackHosts.has(name)))
     return "database";
   return loopbackHosts.has(name) ? "loopback" : "network";
 }
@@ -121,7 +123,8 @@ function install(current: State) {
   replace(net.Socket.prototype, "connect", {
     apply(target: () => unknown, socket: net.Socket, args: unknown[]) {
       const { path, host, port, options, callback } = connectTarget(args);
-      if (host && !isIP(host) && !loopbackHosts.has(host)) {
+      // The database's own host name is the database boundary, whatever it resolves to.
+      if (host && !isIP(host) && !loopbackHosts.has(host) && host !== testDatabase().host) {
         // A host name crosses a boundary when it resolves to an address the socket connects to;
         // an injected resolver that answers without DNS reaches nothing.
         const custom: unknown = Reflect.get(options, "lookup");
@@ -181,7 +184,12 @@ function install(current: State) {
   const lookupAttempt = (hostname: unknown) =>
     typeof hostname === "string" && loopbackHosts.has(hostname)
       ? undefined
-      : attempt(current, "network", `dns ${String(hostname)}`, "dns");
+      : attempt(
+          current,
+          hostname === testDatabase().host ? "database" : "network",
+          `dns ${String(hostname)}`,
+          "dns",
+        );
   replace(dns, "lookup", {
     apply(target: () => unknown, owner: unknown, args: unknown[]) {
       const refused = lookupAttempt(args[0]);

@@ -38,6 +38,26 @@ describe("boundary guard", () => {
     ]);
   });
 
+  it("treats a named test database host as the database, not the network", async () => {
+    const configured = process.env.TEST_DATABASE_URL;
+    process.env.TEST_DATABASE_URL = "postgres://kanvil:kanvil@kanvil-db.invalid:5432/kanvil";
+    try {
+      const watch = watchBoundaries([]);
+      expect(await refusal(lookup("kanvil-db.invalid"))).toMatch(/database dns kanvil-db\.invalid/);
+      const socket = connect(5432, "kanvil-db.invalid");
+      expect(
+        await refusal(new Promise((done, fail) => socket.on("error", fail).on("connect", done))),
+      ).toMatch(/database kanvil-db\.invalid:5432/);
+      expect(watch.take().violations.map(({ boundary }) => boundary)).toEqual([
+        "database",
+        "database",
+      ]);
+    } finally {
+      if (configured === undefined) delete process.env.TEST_DATABASE_URL;
+      else process.env.TEST_DATABASE_URL = configured;
+    }
+  });
+
   it("lets a boundary fake answer without reaching anything", async () => {
     const watch = watchBoundaries([]);
     const error: unknown = await createHttpSender({
