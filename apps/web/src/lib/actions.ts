@@ -62,6 +62,48 @@ export const actions = {
     category: "Markdown",
   },
 } satisfies Record<string, Action>;
+// Moves of the highlighted ticket: the list's shortcuts, its ticket menu, and the project menu
+// (top, up, down, bottom) read these. `menu` is the shorter menu wording.
+export const moveCommands = {
+  top: {
+    label: "Move the highlighted ticket to the top",
+    menu: "Move to top",
+    keys: "⌥ ⇧ ↑",
+    category: "Ticket list",
+  },
+  up: {
+    label: "Move the highlighted ticket up",
+    menu: "Move up",
+    keys: "⌥ ↑",
+    category: "Ticket list",
+  },
+  down: {
+    label: "Move the highlighted ticket down",
+    menu: "Move down",
+    keys: "⌥ ↓",
+    category: "Ticket list",
+  },
+  bottom: {
+    label: "Move the highlighted ticket to the bottom",
+    menu: "Move to bottom",
+    keys: "⌥ ⇧ ↓",
+    category: "Ticket list",
+  },
+  previous: {
+    label: "Move the highlighted ticket to the previous status",
+    menu: "Move to previous status",
+    keys: "[",
+    category: "Ticket list",
+  },
+  next: {
+    label: "Move the highlighted ticket to the next status",
+    menu: "Move to next status",
+    keys: "]",
+    category: "Ticket list",
+  },
+} satisfies Record<string, Action & { menu: string }>;
+export type MoveCommand = keyof typeof moveCommands;
+export const moveCommandNames: MoveCommand[] = ["top", "up", "down", "bottom", "previous", "next"];
 const markdownActions = markdownFormats.flatMap((format): Action[] => {
   const spec = formats[format];
   return "shortcut" in spec
@@ -76,7 +118,7 @@ const markdownActions = markdownFormats.flatMap((format): Action[] => {
 });
 export const shortcutGroups = actionCategories.map((category) => ({
   category,
-  actions: [...Object.values(actions), ...markdownActions].filter(
+  actions: [...Object.values(actions), ...Object.values(moveCommands), ...markdownActions].filter(
     (action) => action.category === category,
   ),
 }));

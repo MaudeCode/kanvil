@@ -20,11 +20,16 @@ export function useShortcut(
   {
     enabled = true,
     mod = false,
+    alt = false,
+    shift,
     guard,
     scope,
   }: {
     enabled?: boolean;
     mod?: boolean;
+    // Single-key shortcuts ignore Shift unless `shift` is set; Alt (Option) must match `alt`.
+    alt?: boolean;
+    shift?: boolean;
     // Skips the shortcut (and leaves the key's default) when it returns false.
     guard?: (event: KeyboardEvent) => boolean;
     scope?: string | undefined;
@@ -38,7 +43,8 @@ export function useShortcut(
     if (!enabled) return undefined;
     const listener = (event: KeyboardEvent) => {
       if (event.key !== key || event.defaultPrevented || event.repeat) return;
-      if (mod ? !(event.metaKey || event.ctrlKey) : event.metaKey || event.ctrlKey || event.altKey)
+      if (mod ? !(event.metaKey || event.ctrlKey) : event.metaKey || event.ctrlKey) return;
+      if ((!mod && event.altKey !== alt) || (shift !== undefined && event.shiftKey !== shift))
         return;
       if (!mod && isTypingContext(event.target, scope)) return;
       if (current.current.guard && !current.current.guard(event)) return;
@@ -47,5 +53,5 @@ export function useShortcut(
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [key, enabled, mod, scope]);
+  }, [key, enabled, mod, alt, shift, scope]);
 }

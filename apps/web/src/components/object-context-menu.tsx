@@ -3,6 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Archive,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpToLine,
   Bell,
   BellOff,
   CalendarDays,
@@ -18,8 +24,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { type Ticket, type Project } from "@kanvil/contracts";
-import { api, useOperation, useProjectAccess } from "../data.tsx";
+import { type Ticket, type Project, type Output } from "@kanvil/contracts";
+import { useQueryClient } from "@tanstack/react-query";
+import { api, useOperation, useProjectAccess, useProjects } from "../data.tsx";
 import { Confirm, Modal, Loading, reportError } from "../ui.tsx";
 import {
   PropertyValue,
@@ -43,7 +50,15 @@ import {
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "../lib/browser.ts";
-import { ticketCopyActions, type CopyAction, type CopySource } from "../lib/actions.ts";
+import {
+  moveCommandNames,
+  moveCommands,
+  ticketCopyActions,
+  type CopyAction,
+  type CopySource,
+  type MoveCommand,
+} from "../lib/actions.ts";
+import { neighborFor, placeNear } from "../lib/list-order.ts";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -57,6 +72,7 @@ import {
   ContextMenuSubContent,
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
+  ContextMenuShortcut,
 } from "@/components/ui/context-menu";
 // A property submenu built from the same options, icons, and value renderer as TicketProperty.
 function PropertyMenu({
@@ -109,11 +125,64 @@ async function copy(value: string, label: string) {
 }
 export const copyTicket = (action: CopyAction, ticket: CopySource) =>
   copy(action.value(ticket), action.copied);
+const moveIcons: Record<MoveCommand, typeof ArrowUp> = {
+  top: ArrowUpToLine,
+  up: ArrowUp,
+  down: ArrowDown,
+  bottom: ArrowDownToLine,
+  previous: ArrowLeft,
+  next: ArrowRight,
+};
+// Move items for a ticket or project menu; a move with nowhere to go stays listed but disabled.
+function MoveItems({
+  moves,
+  keys = true,
+}: {
+  moves: { command: MoveCommand; run?: (() => void) | undefined }[];
+  keys?: boolean;
+}) {
+  return moves.map(({ command, run }) => {
+    const Icon = moveIcons[command];
+    return (
+      <ContextMenuItem key={command} disabled={!run} onClick={run}>
+        <Icon />
+        {moveCommands[command].menu}
+        {keys && <ContextMenuShortcut>{moveCommands[command].keys}</ContextMenuShortcut>}
+      </ContextMenuItem>
+    );
+  });
+}
+// Places a project next to a neighbor of its workspace; the sidebar shows the new order at once.
+export function useProjectMove() {
+  const move = useOperation("move_project"),
+    cache = useQueryClient();
+  return {
+    pending: move.isPending,
+    place: (project: Project, anchor: string, below: boolean) => {
+      if (move.isPending) return;
+      cache.setQueryData<Output<"list_projects">>(
+        api.query("list_projects", {}).queryKey,
+        (rows) => rows && placeNear(rows, project.id, anchor, below),
+      );
+      void move
+        .mutateAsync({
+          projectId: project.id,
+          expectedVersion: project.version,
+          ...(below ? { after: anchor } : { before: anchor }),
+        })
+        .catch((error: unknown) => {
+          void cache.invalidateQueries({ queryKey: ["kanvil"] });
+          reportError(error);
+        });
+    },
+  };
+}
 export function TicketContextMenu({
   ticket,
   children,
   onEdit,
   onPreview,
+  moves,
   variant = "context",
 }: {
   ticket: Ticket;
@@ -121,6 +190,8 @@ export function TicketContextMenu({
   onEdit?: () => void;
   // Lists open the ticket in their preview sheet.
   onPreview?: () => void;
+  // The moves a list offers for this ticket, read when the menu opens.
+  moves?: (() => { command: MoveCommand; run?: (() => void) | undefined }[]) | undefined;
   variant?: "context" | "dropdown";
 }) {
   const [open, setOpen] = useState(false),
@@ -215,6 +286,17 @@ export function TicketContextMenu({
               onChange={change}
             />
           ))}
+          {open && moves && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <ArrowUp />
+                Move
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-60">
+                <MoveItems moves={moves()} />
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={!access.canWrite || update.pending}>
               <CalendarDays />
@@ -316,7 +398,18 @@ export function ProjectContextMenu({
 }) {
   const [open, setOpen] = useState(false),
     [creating, setCreating] = useState(false),
-    access = useProjectAccess(project.id, open);
+    access = useProjectAccess(project.id, open),
+    siblings = useProjects().data?.map((item) => item.id) ?? [],
+    reorder = useProjectMove();
+  const moves = moveCommandNames
+    .filter((command) => command !== "previous" && command !== "next")
+    .map((command) => {
+      const target = access.canAdmin ? neighborFor(siblings, project.id, command) : undefined;
+      return {
+        command,
+        run: target && (() => reorder.place(project, target.anchor, target.below)),
+      };
+    });
   return (
     <>
       <ContextMenu open={open} onOpenChange={setOpen}>
@@ -357,6 +450,8 @@ export function ProjectContextMenu({
             <Settings />
             Project settings
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <MoveItems moves={moves} keys={false} />
         </ContextMenuContent>
       </ContextMenu>
       <Modal size="composer" title="New ticket" open={creating} onOpenChange={setCreating}>

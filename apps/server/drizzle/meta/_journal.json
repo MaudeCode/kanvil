@@ -155,6 +155,13 @@
       "when": 1792392812920,
       "tag": "0021_staged_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792393653927,
+      "tag": "0022_manual_order",
+      "breakpoints": true
     }
   ]
 }

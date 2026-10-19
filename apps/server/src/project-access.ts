@@ -52,5 +52,5 @@ export async function accessibleProjectRows(db: Context["db"], actor: Actor, wor
           : undefined,
       ),
     )
-    .orderBy(projects.name);
+    .orderBy(projects.position, projects.name);
 }

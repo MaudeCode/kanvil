@@ -46,6 +46,7 @@ import {
   one,
 } from "./domain.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
+import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
 import { likePattern } from "./search.ts";
 import { z } from "zod";
 import {
@@ -333,6 +334,7 @@ function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">)
     difficulty: by(rank(tickets.difficulty, difficulties)),
     kind: by(tickets.kind),
     assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
+    manual: by(tickets.position),
   };
   return [primary[input.sort], asc(tickets.number)];
 }
@@ -389,6 +391,7 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
         projectId: counter.id,
         number: counter.nextNumber - 1,
         key: `${counter.key}-${counter.nextNumber - 1}`,
+        position: endPosition(ticketPositions, eq(tickets.projectId, counter.id)),
         createdBy: ctx.actor.id,
       })
       .returning(),
@@ -505,6 +508,7 @@ export const ticketHandlers: Pick<
   | "create_ticket"
   | "duplicate_ticket"
   | "update_ticket"
+  | "move_ticket"
   | "bulk_update_tickets"
   | "delete_ticket"
   | "bulk_delete_tickets"
@@ -652,6 +656,43 @@ export const ticketHandlers: Pick<
     return row;
   },
   update_ticket: updateTicket,
+  async move_ticket(ctx, input) {
+    const current = await getTicket(ctx, input.ticketId);
+    assertVersion(current, input.expectedVersion, "ticket", "moving");
+    await assertWorkerClaim(ctx, current, input.claimId);
+    const neighbor = input.before ?? input.after,
+      anchor = neighbor ? await getTicket(ctx, neighbor) : undefined;
+    if (anchor?.id === current.id)
+      fail(400, "validation_error", "A ticket cannot be placed next to itself");
+    const status = input.status ?? current.status,
+      changedFields = [
+        ...(status === current.status ? [] : ["status"]),
+        ...(anchor ? ["position"] : []),
+      ];
+    if (!changedFields.length) return current;
+    const row = one(
+      await ctx.db
+        .update(tickets)
+        .set({
+          status,
+          ...(anchor && {
+            position: await positionNear(
+              ctx,
+              ticketPositions,
+              current.id,
+              anchor.id,
+              input.before ? "before" : "after",
+            ),
+          }),
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.id, current.id))
+        .returning(),
+    );
+    await publish(ctx, "ticket.updated", row.id, { version: row.version, changedFields });
+    return row;
+  },
   async bulk_update_tickets(ctx, input) {
     const result = [],
       pending: PendingEvent[] = [];

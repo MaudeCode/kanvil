@@ -96,6 +96,10 @@ const pagination = {
   offset: z.coerce.number().int().min(0).default(0),
 };
 const mutation = { requestId: z.uuid().optional() };
+// Manual placement names one neighbor in the shared order, never a numeric position.
+const placement = { before: id.optional(), after: id.optional() };
+const oneNeighbor = (input: { before?: string | undefined; after?: string | undefined }) =>
+  input.before === undefined || input.after === undefined;
 const projectInput = z.object({ projectId: id });
 const ticketInput = projectInput.extend({ ticketId: id });
 // Filterable ticket fields. Each takes one value or a list (any of them), and its `Not` twin
@@ -207,6 +211,7 @@ export const ticketFilter = z
         "difficulty",
         "kind",
         "assignee",
+        "manual",
       ])
       .default("priority"),
     order: z.enum(["asc", "desc"]).optional(),
@@ -226,6 +231,7 @@ export const sortLabels: Record<z.output<typeof ticketFilter>["sort"], string> =
   difficulty: "Difficulty",
   kind: "Kind",
   assignee: "Assignee",
+  manual: "Manual",
 };
 // The direction each sort uses unless the caller sets `order`.
 export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" | "desc"> = {
@@ -241,6 +247,7 @@ export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" |
   difficulty: "asc",
   kind: "asc",
   assignee: "asc",
+  manual: "asc",
 };
 export const dueFilterLabels: Record<NonNullable<z.output<typeof ticketFilter>["due"]>, string> = {
   overdue: "Overdue",
@@ -309,7 +316,10 @@ export const projectSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
-export const ticketSchema = ticketFields.extend({
+// Not strict like the editable fields: storage-only columns, such as the manual order's position,
+// stay on the server.
+export const ticketSchema = z.object({
+  ...ticketFields.shape,
   // Servers that predate start dates omit the field.
   startAt: dueDate.nullable().default(null),
   claimRequired: z.boolean(),
@@ -570,9 +580,11 @@ export function eventCategories(event: {
     return ["update"];
   const fields = new Set<unknown>(event.data.changedFields);
   const found: NotificationCategory[] = [];
+  // A manual reorder alone notifies nobody.
+  const reordered = fields.delete("position");
   if (fields.delete("assigneeId")) found.push("assignment");
   if (fields.delete("status")) found.push("status");
-  if (fields.size || !found.length) found.push("update");
+  if (fields.size || (!found.length && !reordered)) found.push("update");
   return found;
 }
 export const reminderUnits = ["minutes", "hours", "days", "weeks"] as const;
@@ -1037,6 +1049,18 @@ export const operations = {
     "admin",
     "Update project details without changing its prefix.",
   ),
+  move_project: op(
+    projectInput
+      .extend({ ...mutation, expectedVersion: version, ...placement })
+      .strict()
+      .refine(oneNeighbor, "Name one neighbor: before or after")
+      .refine((input) => input.before ?? input.after, "Name a neighbor: before or after"),
+    projectSchema,
+    "POST",
+    "/projects/{projectId}/move",
+    "admin",
+    "Place a project directly before or after another accessible project of its workspace in the shared project order.",
+  ),
   list_members: op(
     projectInput,
     z.array(memberSchema),
@@ -1207,6 +1231,27 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}",
     "write",
     "Update a ticket with optimistic concurrency. Worker completion requires its active claim.",
+  ),
+  move_ticket: op(
+    ticketInput
+      .extend({
+        ...mutation,
+        expectedVersion: version,
+        ...placement,
+        status: z.enum(states).optional(),
+        claimId: z.uuid().optional(),
+      })
+      .strict()
+      .refine(oneNeighbor, "Name one neighbor: before or after")
+      .refine(
+        (input) => input.before ?? input.after ?? input.status,
+        "Name a neighbor, a status, or both",
+      ),
+    ticketSchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/move",
+    "write",
+    "Place a ticket directly before or after another ticket of the project in the manual order (`sort: manual`), optionally changing its status in the same versioned write. Only the moved ticket changes place; reorders alone notify no one.",
   ),
   bulk_update_tickets: op(
     projectInput

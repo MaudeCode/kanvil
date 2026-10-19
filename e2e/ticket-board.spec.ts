@@ -63,19 +63,17 @@ test("the board keeps filters and selection and moves tickets by drag or keyboar
     .toBe("backlog");
 
   // A rejected move returns the ticket to its lane and reports the failure.
-  await page.route("**/api/v1/projects/*/tickets/*", (route) =>
-    route.request().method() === "PATCH"
-      ? route.fulfill({
-          status: 409,
-          json: { error: { code: "version_conflict", message: "Someone changed this ticket" } },
-        })
-      : route.fallback(),
+  await page.route("**/api/v1/projects/*/tickets/*/move", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: { code: "version_conflict", message: "Someone changed this ticket" } },
+    }),
   );
   await card(page, "Charlie").dragTo(lane(page, "To do"));
   await expect(page.getByText("Someone changed this ticket")).toBeVisible();
   await expect(lane(page, "In progress").locator("li.ticket-row")).toContainText("Charlie");
   await expect(lane(page, "To do").locator("li.ticket-row")).toHaveCount(1);
-  await page.unroute("**/api/v1/projects/*/tickets/*");
+  await page.unroute("**/api/v1/projects/*/tickets/*/move");
 
   // Keyboard: J highlights the first ticket, S opens its status picker.
   await page.keyboard.press("j");

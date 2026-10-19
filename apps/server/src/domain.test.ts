@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import { eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
-import { createDomain, type Actor, type Domain } from "./domain.ts";
+import { notifications } from "./schema.ts";
+import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
 import { relationReference, relationChoices, type Project } from "@kanvil/contracts";
 
 const sorted = (...rows: { id: string }[]) => rows.map((row) => row.id).toSorted();
@@ -333,7 +335,7 @@ describe("ticket operations on PostgreSQL", () => {
     await expect(
       domain.execute("remove_label_color", { value: "#1e90ff" }, writer),
     ).rejects.toMatchObject({ status: 403 });
-    const cursor = (await domain.readEvents(owner, 0n)).cursor;
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
     await domain.execute("remove_label_color", { value: "#1e90ff" }, owner);
     expect(
       (await domain.execute("list_label_colors", {}, owner)).map((entry) => entry.value),
@@ -686,6 +688,239 @@ describe("ticket operations on PostgreSQL", () => {
       total,
     );
   });
+  const manual = async (filter: { status?: "todo" | "in_review"; label?: string } = {}) =>
+    (
+      await domain.execute(
+        "list_tickets",
+        { projectId: project.id, sort: "manual", ...filter },
+        owner,
+      )
+    ).items.map((row) => row.title);
+  const move = async (
+    title: string,
+    placement: { before?: string; after?: string; status?: "todo" | "in_review" },
+    actor = owner,
+  ) => {
+    const rows = (
+      await domain.execute("list_tickets", { projectId: project.id, sort: "manual" }, owner)
+    ).items;
+    const find = (name?: string) => rows.find((row) => row.title === name);
+    const current = requireRow(find(title));
+    return domain.execute(
+      "move_ticket",
+      {
+        projectId: project.id,
+        ticketId: current.key,
+        expectedVersion: current.version,
+        ...(placement.before && { before: requireRow(find(placement.before)).id }),
+        ...(placement.after && { after: requireRow(find(placement.after)).id }),
+        ...(placement.status && { status: placement.status }),
+      },
+      actor,
+    );
+  };
+  const createTitled = async (...titles: string[]) => {
+    for (const title of titles)
+      await domain.execute(
+        "create_ticket",
+        { projectId: project.id, title, labels: title.startsWith("x") ? ["x"] : [] },
+        owner,
+      );
+  };
+  it("manual order: places tickets next to a neighbor and changes status in the same versioned write", async () => {
+    await createTitled("A", "B", "C", "D");
+    expect(await manual()).toEqual(["A", "B", "C", "D"]);
+    await move("D", { before: "A" });
+    expect(await manual()).toEqual(["D", "A", "B", "C"]);
+    await move("D", { after: "C" });
+    expect(await manual()).toEqual(["A", "B", "C", "D"]);
+    const moved = await move("C", { status: "in_review", before: "A" });
+    expect(moved).toMatchObject({ status: "in_review", version: 2 });
+    expect(await manual({ status: "todo" })).toEqual(["A", "B", "D"]);
+    expect(await manual({ status: "in_review" })).toEqual(["C"]);
+    const events = (
+      await domain.execute("list_activity", { projectId: project.id, ticketId: moved.id }, owner)
+    ).items.filter((event) => event.type === "ticket.updated");
+    expect(events.map((event) => event.data.changedFields)).toEqual([["status", "position"]]);
+    // Computed sorts ignore the manual order.
+    expect(
+      (
+        await domain.execute("list_tickets", { projectId: project.id, sort: "number" }, owner)
+      ).items.map((row) => row.title),
+    ).toEqual(["A", "B", "C", "D"]);
+    await expect(
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: moved.id, expectedVersion: 1, after: moved.id },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    await expect(move("A", { after: "A" })).rejects.toMatchObject({ status: 400 });
+    await expect(
+      domain.execute(
+        "move_ticket",
+        {
+          projectId: project.id,
+          ticketId: moved.id,
+          expectedVersion: 2,
+          before: "A",
+          after: "B",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+  });
+  it("manual order: moves within a filtered subset without reordering hidden tickets", async () => {
+    await createTitled("x1", "hidden1", "x2", "hidden2", "x3");
+    await move("x3", { before: "x1" });
+    expect(await manual({ label: "x" })).toEqual(["x3", "x1", "x2"]);
+    await move("x1", { after: "x2" });
+    expect(await manual({ label: "x" })).toEqual(["x3", "x2", "x1"]);
+    expect(await manual()).toEqual(["x3", "hidden1", "x2", "x1", "hidden2"]);
+  });
+  it("manual order: renumbers only when neighbors leave no room and keeps every relative order", async () => {
+    await createTitled("A", "B", "C", "D");
+    // Each move halves the gap before B, so the scope is renumbered along the way.
+    for (let round = 0; round < 12; round++) {
+      await move(round % 2 ? "C" : "D", { before: "B" });
+      await move(round % 2 ? "D" : "C", { after: "A" });
+    }
+    const order = await manual();
+    expect(order).toHaveLength(4);
+    expect(order.toSorted()).toEqual(["A", "B", "C", "D"]);
+    expect(order.at(0)).toBe("A");
+    expect(order.at(-1)).toBe("B");
+    await move("B", { before: "A" });
+    expect((await manual()).slice(0, 2)).toEqual(["B", "A"]);
+  });
+  it("manual order: rejects stale or foreign anchors and replays retries without moving twice", async () => {
+    await createTitled("A", "B", "C");
+    const [a, , c] = (
+      await domain.execute("list_tickets", { projectId: project.id, sort: "manual" }, owner)
+    ).items;
+    await domain.execute(
+      "delete_ticket",
+      { projectId: project.id, ticketId: requireRow(a).id, expectedVersion: 1 },
+      owner,
+    );
+    await expect(move("C", { before: "B" }).then(() => manual())).resolves.toEqual(["C", "B"]);
+    await expect(
+      domain.execute(
+        "move_ticket",
+        {
+          projectId: project.id,
+          ticketId: requireRow(c).id,
+          expectedVersion: 2,
+          after: requireRow(a).id,
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const other = await domain.execute(
+      "create_project",
+      { key: `K${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Other project" },
+      owner,
+    );
+    const foreign = await domain.execute(
+      "create_ticket",
+      { projectId: other.id, title: "Elsewhere" },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "move_ticket",
+        {
+          projectId: project.id,
+          ticketId: requireRow(c).id,
+          expectedVersion: 2,
+          after: foreign.id,
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(await manual()).toEqual(["C", "B"]);
+    const rows = (
+      await domain.execute("list_tickets", { projectId: project.id, sort: "manual" }, owner)
+    ).items;
+    const retry = {
+      projectId: project.id,
+      ticketId: requireRow(rows[0]).id,
+      expectedVersion: requireRow(rows[0]).version,
+      after: requireRow(rows[1]).id,
+      requestId: crypto.randomUUID(),
+    };
+    const first = await domain.execute("move_ticket", retry, owner);
+    expect(await domain.execute("move_ticket", retry, owner)).toEqual(first);
+    expect(await manual()).toEqual(["B", "C"]);
+  });
+  it("manual order: serializes concurrent moves without duplicating or dropping tickets", async () => {
+    await createTitled("A", "B", "C", "D", "E");
+    const rows = (
+      await domain.execute("list_tickets", { projectId: project.id, sort: "manual" }, owner)
+    ).items;
+    const [a, b, c, d, e] = rows.map((row) => requireRow(row));
+    const outcomes = await Promise.allSettled([
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: e!.id, expectedVersion: 1, before: a!.id },
+        owner,
+      ),
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: d!.id, expectedVersion: 1, before: a!.id },
+        owner,
+      ),
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: a!.id, expectedVersion: 1, after: c!.id },
+        owner,
+      ),
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: b!.id, expectedVersion: 1, after: e!.id },
+        owner,
+      ),
+      domain.execute(
+        "move_ticket",
+        { projectId: project.id, ticketId: e!.id, expectedVersion: 1, after: d!.id },
+        owner,
+      ),
+    ]);
+    // The two moves of E share a version, so exactly one of them wins.
+    expect(
+      outcomes.flatMap((outcome) => (outcome.status === "rejected" ? [outcome.reason] : [])),
+    ).toEqual([expect.objectContaining({ code: "version_conflict" })]);
+    const order = await manual();
+    expect(order.toSorted()).toEqual(["A", "B", "C", "D", "E"]);
+  });
+  it("manual order: lets only writers move tickets and keeps pure reorders out of follower inboxes", async () => {
+    await createTitled("A", "B");
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    await expect(move("B", { before: "A" }, writer)).rejects.toMatchObject({ status: 403 });
+    await expect(move("B", { before: "A" }, outsider)).rejects.toMatchObject({ status: 404 });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const inbox = async () =>
+      (
+        await fixture.database.db
+          .select({ id: notifications.id })
+          .from(notifications)
+          .where(eq(notifications.userId, owner.id))
+      ).length;
+    const before = await inbox();
+    await move("B", { before: "A" }, writer);
+    expect(await inbox()).toBe(before);
+    await move("B", { status: "in_review" }, writer);
+    expect(await inbox()).toBe(before + 1);
+    expect(await manual()).toEqual(["B", "A"]);
+  });
   it("allows only one concurrent update to the same version", async () => {
     const current = await ticket();
     const outcomes = await Promise.allSettled(
@@ -826,7 +1061,7 @@ describe("ticket operations on PostgreSQL", () => {
   it("publishes bulk edits as one consecutive batch of per-ticket events", async () => {
     const first = await ticket("Batch one"),
       second = await ticket("Batch two");
-    const cursor = (await domain.readEvents(owner, 0n)).cursor;
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
     const rows = await domain.execute(
       "bulk_update_tickets",
       {
@@ -896,7 +1131,7 @@ describe("ticket operations on PostgreSQL", () => {
         domain.execute("bulk_delete_tickets", { projectId: project.id, tickets }, actor),
       ).rejects.toMatchObject({ code });
     expect(await remaining()).toBe(4);
-    const cursor = (await domain.readEvents(owner, 0n)).cursor;
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
     const input = { projectId: project.id, tickets: selection, requestId: crypto.randomUUID() };
     expect(await domain.execute("bulk_delete_tickets", input, owner)).toEqual({ ok: true });
     expect(await domain.execute("bulk_delete_tickets", input, owner)).toEqual({ ok: true });

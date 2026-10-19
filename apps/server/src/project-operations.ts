@@ -6,6 +6,7 @@ import { user } from "./auth-schema.ts";
 import { filterList, isHexColor, roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
+import { endPosition, positionNear, projectPositions } from "./ordering.ts";
 import {
   members,
   labelColors,
@@ -137,6 +138,7 @@ export const projectHandlers: Pick<
   | "list_projects"
   | "create_project"
   | "update_project"
+  | "move_project"
   | "list_members"
   | "set_member"
   | "list_views"
@@ -399,6 +401,7 @@ export const projectHandlers: Pick<
           key: input.key,
           name: input.name,
           description: input.description,
+          position: endPosition(projectPositions, eq(projects.workspaceId, workspaceId)),
         })
         .returning(),
     );
@@ -425,6 +428,40 @@ export const projectHandlers: Pick<
         .returning(),
     );
     await publish(ctx, "project.updated", null, { version: row.version });
+    return row;
+  },
+  async move_project(ctx, input) {
+    const current = project(ctx);
+    assertVersion(current, input.expectedVersion, "project", "moving");
+    // The neighbor must be a project of the same workspace that the caller can already see.
+    const neighbor = input.before ?? input.after ?? "",
+      anchor = (await accessibleProjectRows(ctx.db, ctx.actor, current.workspaceId)).find(
+        (row) => row.id === neighbor || row.key === neighbor.toUpperCase(),
+      );
+    if (!anchor) fail(404, "not_found", "Project was not found");
+    if (anchor.id === current.id)
+      fail(400, "validation_error", "A project cannot be placed next to itself");
+    const row = one(
+      await ctx.db
+        .update(projects)
+        .set({
+          position: await positionNear(
+            ctx,
+            projectPositions,
+            current.id,
+            anchor.id,
+            input.before ? "before" : "after",
+          ),
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, current.id))
+        .returning(),
+    );
+    await publish(ctx, "project.updated", null, {
+      version: row.version,
+      changedFields: ["position"],
+    });
     return row;
   },
   async list_members(ctx) {
