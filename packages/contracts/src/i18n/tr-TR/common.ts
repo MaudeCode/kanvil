@@ -360,6 +360,26 @@ export default {
     deleted: "Silinmiş hesap",
     former: "Eski üye",
   },
+  signIn: {
+    codeTitle: "Kodla oturum aç",
+    resetTitle: "Parolayı sıfırla",
+    codeSent:
+      "{{email}} adresinin bir hesabı varsa kod yolda. Kodun süresi 10 dakika içinde dolar.",
+    code: "Kod",
+    newPassword: "Yeni parola",
+    sendCode: "Kodu e-postayla gönder",
+    back: "Oturum açmaya dön",
+    resend: "Kodu yeniden gönder",
+    resent: "Kod yeniden gönderildi",
+    emailCode: "Oturum açma kodunu e-postayla gönder",
+    forgot: "Parolanızı mı unuttunuz?",
+    resetDone: "Parola sıfırlandı. Yeni parolayla oturum açın.",
+    resetDoneTitle: "Parola sıfırlandı",
+    resetDoneBody: "Yeni parolayla oturum açın.",
+    invalidCode:
+      "Bu kod yanlış, kullanılmış veya süresi dolmuş. Geçerli bir kod almak için yeniden gönderin.",
+    localPassword: "Yerel parola",
+  },
   language: {
     label: "Dil",
     system: "Sistem varsayılanı",

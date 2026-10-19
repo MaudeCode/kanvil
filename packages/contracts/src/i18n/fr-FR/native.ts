@@ -201,7 +201,7 @@ export default {
     },
     oidc: {
       linked: "Compte lié",
-      explanation: "Liez ce compte avant de vous connecter avec votre fournisseur d’identité.",
+      explanation: "Liez ce compte avant de vous connecter avec ce fournisseur.",
       link: "Lier {{provider}}",
     },
     signOut: {

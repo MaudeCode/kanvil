@@ -198,7 +198,7 @@ export default {
     },
     oidc: {
       linked: "Akun tertaut",
-      explanation: "Tautkan akun ini sebelum masuk dengan penyedia identitas Anda.",
+      explanation: "Tautkan akun ini sebelum masuk dengan penyedia ini.",
       link: "Tautkan {{provider}}",
     },
     signOut: {

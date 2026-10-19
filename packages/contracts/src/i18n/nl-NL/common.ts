@@ -360,6 +360,26 @@ export default {
     deleted: "Verwijderd account",
     former: "Voormalig lid",
   },
+  signIn: {
+    codeTitle: "Inloggen met een code",
+    resetTitle: "Wachtwoord opnieuw instellen",
+    codeSent:
+      "Als {{email}} een account heeft, is er een code onderweg. Die verloopt over 10 minuten.",
+    code: "Code",
+    newPassword: "Nieuw wachtwoord",
+    sendCode: "Code per e-mail sturen",
+    back: "Terug naar inloggen",
+    resend: "Code opnieuw sturen",
+    resent: "Code opnieuw gestuurd",
+    emailCode: "Inlogcode per e-mail sturen",
+    forgot: "Wachtwoord vergeten?",
+    resetDone: "Wachtwoord opnieuw ingesteld. Log in met het nieuwe wachtwoord.",
+    resetDoneTitle: "Wachtwoord opnieuw ingesteld",
+    resetDoneBody: "Log in met het nieuwe wachtwoord.",
+    invalidCode:
+      "Deze code is onjuist, al gebruikt of verlopen. Stuur hem opnieuw voor een geldige code.",
+    localPassword: "Lokaal wachtwoord",
+  },
   language: {
     label: "Taal",
     system: "Systeemstandaard",

@@ -201,7 +201,7 @@ export default {
     },
     oidc: {
       linked: "Hesap bağlandı",
-      explanation: "Kimlik sağlayıcınızla oturum açmadan önce bu hesabı bağlayın.",
+      explanation: "Bu sağlayıcıyla oturum açmadan önce bu hesabı bağlayın.",
       link: "{{provider}} bağla",
     },
     signOut: {

@@ -140,6 +140,8 @@ export default {
     title: "Autentifikasiya",
     saved: "Autentifikasiya yadda saxlanıldı",
     emailPassword: "E-poçt və şifrə ilə daxil olma",
+    emailPasswordDescription:
+      "E-poçtla göndərilən daxil olma kodlarını və şifrə sıfırlamanı əhatə edir.",
     ssoProvision: "SSO-dan istifadəçiləri avtomatik yarat",
     ssoProvisionDescription:
       "Yeni SSO istifadəçilərinin dəvət edilənə qədər iş sahəsinə və ya layihəyə girişi olmur.",
@@ -147,11 +149,14 @@ export default {
     registrationClosed: "Bağlı",
     identityProvider: "İdentiklik provayderi",
     notConfigured: "Konfiqurasiya edilməyib",
+    linkedProviders: "Bağlı hesab provayderləri",
+    linkedProvidersDescription:
+      "Yalnız onları bağlamış hesablarla daxil olmağa imkan verir; heç vaxt hesab yaratmır.",
     save: "Autentifikasiyanı yadda saxla",
     discoveryUrl: "OIDC kəşf URL-i",
     clientId: "OIDC klient ID-si",
     oidcSetup:
-      "Yerləşdirmənizdə OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET və OIDC_NAME dəyərlərini konfiqurasiya edin, sonra Kanvil-i yenidən başladın. Provayder sirləri heç vaxt brauzerə qaytarılmır.",
+      "Yerləşdirmənizdə OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET və OIDC_NAME dəyərlərini və ya GITHUB_, GOOGLE_ ya da DISCORD_ üçün CLIENT_ID və CLIENT_SECRET cütünü konfiqurasiya edin, sonra Kanvil-i yenidən başladın. Provayder sirləri heç vaxt brauzerə qaytarılmır.",
     consumers: "İstehlakçı interfeysləri",
     mcpEndpoint: "MCP ünvanı",
     eventFeed: "Real vaxt hadisə lenti",

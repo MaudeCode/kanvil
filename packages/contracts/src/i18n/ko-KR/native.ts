@@ -198,7 +198,7 @@ export default {
     },
     oidc: {
       linked: "계정 연결됨",
-      explanation: "ID 공급자로 로그인하기 전에 이 계정을 연결하세요.",
+      explanation: "이 공급자로 로그인하기 전에 이 계정을 연결하세요.",
       link: "{{provider}} 연결",
     },
     signOut: {

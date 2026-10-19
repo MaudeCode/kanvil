@@ -200,7 +200,7 @@ export default {
     },
     oidc: {
       linked: "アカウントはリンク済みです",
-      explanation: "IDプロバイダーでサインインする前に、このアカウントをリンクしてください。",
+      explanation: "このプロバイダーでサインインする前に、このアカウントをリンクしてください。",
       link: "{{provider}}をリンク",
     },
     signOut: {

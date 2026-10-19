@@ -135,6 +135,7 @@ export default {
     title: "प्रमाणीकरण",
     saved: "प्रमाणीकरण सहेजा गया",
     emailPassword: "ईमेल और पासवर्ड से साइन-इन",
+    emailPasswordDescription: "इसमें ईमेल से भेजे गए साइन-इन कोड और पासवर्ड रीसेट शामिल हैं।",
     ssoProvision: "SSO से उपयोगकर्ता अपने आप बनाएं",
     ssoProvisionDescription:
       "आमंत्रित किए जाने तक नए SSO उपयोगकर्ताओं के पास कोई वर्कस्पेस या प्रोजेक्ट एक्सेस नहीं होता।",
@@ -142,11 +143,14 @@ export default {
     registrationClosed: "बंद",
     identityProvider: "आइडेंटिटी प्रोवाइडर",
     notConfigured: "कॉन्फ़िगर नहीं",
+    linkedProviders: "लिंक किए गए खातों के प्रोवाइडर",
+    linkedProvidersDescription:
+      "केवल उन खातों को साइन इन करते हैं जिन्होंने इन्हें लिंक किया है; ये कभी खाते नहीं बनाते।",
     save: "प्रमाणीकरण सहेजें",
     discoveryUrl: "OIDC डिस्कवरी URL",
     clientId: "OIDC क्लाइंट ID",
     oidcSetup:
-      "अपने डिप्लॉयमेंट में OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET और OIDC_NAME कॉन्फ़िगर करें, फिर Kanvil को पुनः आरंभ करें। प्रोवाइडर सीक्रेट कभी ब्राउज़र को नहीं लौटाए जाते।",
+      "अपने डिप्लॉयमेंट में OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET और OIDC_NAME, या GITHUB_, GOOGLE_ अथवा DISCORD_ के लिए CLIENT_ID और CLIENT_SECRET की जोड़ी कॉन्फ़िगर करें, फिर Kanvil को पुनः आरंभ करें। प्रोवाइडर सीक्रेट कभी ब्राउज़र को नहीं लौटाए जाते।",
     consumers: "उपभोक्ता इंटरफ़ेस",
     mcpEndpoint: "MCP एंडपॉइंट",
     eventFeed: "रीयलटाइम इवेंट फ़ीड",

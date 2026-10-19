@@ -138,6 +138,7 @@ export default {
     title: "Authenticatie",
     saved: "Authenticatie opgeslagen",
     emailPassword: "Inloggen met e-mail en wachtwoord",
+    emailPasswordDescription: "Inclusief inlogcodes per e-mail en wachtwoordherstel.",
     ssoProvision: "Gebruikers automatisch aanmaken vanuit SSO",
     ssoProvisionDescription:
       "Nieuwe SSO-gebruikers hebben geen toegang tot werkruimtes of projecten tot ze worden uitgenodigd.",
@@ -145,11 +146,14 @@ export default {
     registrationClosed: "Gesloten",
     identityProvider: "Identiteitsprovider",
     notConfigured: "Niet geconfigureerd",
+    linkedProviders: "Providers voor gekoppelde accounts",
+    linkedProvidersDescription:
+      "Loggen alleen accounts in die ze hebben gekoppeld; ze maken nooit accounts aan.",
     save: "Authenticatie opslaan",
     discoveryUrl: "OIDC-discovery-URL",
     clientId: "OIDC-client-ID",
     oidcSetup:
-      "Configureer OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET en OIDC_NAME in je deployment en start Kanvil daarna opnieuw. Providergeheimen worden nooit naar de browser gestuurd.",
+      "Configureer OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET en OIDC_NAME, of een paar CLIENT_ID en CLIENT_SECRET voor GITHUB_, GOOGLE_ of DISCORD_, in je deployment en start Kanvil daarna opnieuw. Providergeheimen worden nooit naar de browser gestuurd.",
     consumers: "Interfaces voor consumenten",
     mcpEndpoint: "MCP-endpoint",
     eventFeed: "Realtime gebeurtenisfeed",

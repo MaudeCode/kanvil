@@ -201,7 +201,7 @@ export default {
     },
     oidc: {
       linked: "Hesab bağlandı",
-      explanation: "İdentiklik provayderinizlə daxil olmazdan əvvəl bu hesabı bağlayın.",
+      explanation: "Bu provayderlə daxil olmazdan əvvəl bu hesabı bağlayın.",
       link: "{{provider}} bağla",
     },
     signOut: {

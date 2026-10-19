@@ -202,8 +202,7 @@ export default {
     },
     oidc: {
       linked: "Konto verknüpft",
-      explanation:
-        "Verknüpfen Sie dieses Konto, bevor Sie sich mit Ihrem Identitätsanbieter anmelden.",
+      explanation: "Verknüpfen Sie dieses Konto, bevor Sie sich mit diesem Anbieter anmelden.",
       link: "{{provider}} verknüpfen",
     },
     signOut: {

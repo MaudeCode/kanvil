@@ -136,6 +136,7 @@ export default {
     title: "Autentikasi",
     saved: "Autentikasi disimpan",
     emailPassword: "Masuk dengan email dan kata sandi",
+    emailPasswordDescription: "Termasuk kode masuk lewat email dan pengaturan ulang kata sandi.",
     ssoProvision: "Buat pengguna dari SSO secara otomatis",
     ssoProvisionDescription:
       "Pengguna SSO baru tidak memiliki akses ruang kerja atau proyek hingga diundang.",
@@ -143,11 +144,14 @@ export default {
     registrationClosed: "Ditutup",
     identityProvider: "Penyedia identitas",
     notConfigured: "Belum dikonfigurasi",
+    linkedProviders: "Penyedia akun tertaut",
+    linkedProvidersDescription:
+      "Hanya memasukkan akun yang telah menautkannya; tidak pernah membuat akun.",
     save: "Simpan autentikasi",
     discoveryUrl: "URL discovery OIDC",
     clientId: "ID klien OIDC",
     oidcSetup:
-      "Konfigurasikan OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, dan OIDC_NAME di deployment Anda, lalu mulai ulang Kanvil. Rahasia penyedia tidak pernah dikembalikan ke browser.",
+      "Konfigurasikan OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, dan OIDC_NAME, atau pasangan CLIENT_ID dan CLIENT_SECRET untuk GITHUB_, GOOGLE_, atau DISCORD_, di deployment Anda, lalu mulai ulang Kanvil. Rahasia penyedia tidak pernah dikembalikan ke browser.",
     consumers: "Antarmuka konsumen",
     mcpEndpoint: "Endpoint MCP",
     eventFeed: "Feed peristiwa realtime",

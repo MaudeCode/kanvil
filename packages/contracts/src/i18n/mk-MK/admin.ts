@@ -140,6 +140,7 @@ export default {
     title: "Автентикација",
     saved: "Автентикацијата е зачувана",
     emailPassword: "Најава со е-пошта и лозинка",
+    emailPasswordDescription: "Вклучува кодови за најава по е-пошта и ресетирање лозинка.",
     ssoProvision: "Автоматски креирај корисници од SSO",
     ssoProvisionDescription:
       "Новите SSO-корисници немаат пристап до работни простори или проекти додека не бидат поканети.",
@@ -147,11 +148,14 @@ export default {
     registrationClosed: "Затворено",
     identityProvider: "Давател на идентитет",
     notConfigured: "Не е конфигурирано",
+    linkedProviders: "Даватели за поврзани сметки",
+    linkedProvidersDescription:
+      "Најавуваат само сметки што ги поврзале; никогаш не креираат сметки.",
     save: "Зачувај автентикација",
     discoveryUrl: "OIDC discovery URL",
     clientId: "OIDC client ID",
     oidcSetup:
-      "Конфигурирајте OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET и OIDC_NAME во распоредувањето, па рестартирајте го Kanvil. Тајните на давателот никогаш не се враќаат во прелистувачот.",
+      "Конфигурирајте OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET и OIDC_NAME или пар CLIENT_ID и CLIENT_SECRET за GITHUB_, GOOGLE_ или DISCORD_ во распоредувањето, па рестартирајте го Kanvil. Тајните на давателот никогаш не се враќаат во прелистувачот.",
     consumers: "Интерфејси за потрошувачи",
     mcpEndpoint: "MCP-крајна точка",
     eventFeed: "Извод на настани во реално време",

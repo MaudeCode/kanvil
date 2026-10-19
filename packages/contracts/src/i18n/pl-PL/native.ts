@@ -210,7 +210,7 @@ export default {
     },
     oidc: {
       linked: "Konto połączone",
-      explanation: "Połącz to konto przed zalogowaniem się przez dostawcę tożsamości.",
+      explanation: "Połącz to konto przed zalogowaniem się przez tego dostawcę.",
       // {{provider}} is the identity provider's configured name.
       link: "Połącz {{provider}}",
     },

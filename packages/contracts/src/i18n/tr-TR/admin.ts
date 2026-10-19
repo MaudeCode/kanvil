@@ -139,6 +139,8 @@ export default {
     title: "Kimlik doğrulama",
     saved: "Kimlik doğrulama kaydedildi",
     emailPassword: "E-posta ve parolayla oturum açma",
+    emailPasswordDescription:
+      "E-postayla gönderilen oturum açma kodlarını ve parola sıfırlamayı içerir.",
     ssoProvision: "SSO’dan kullanıcıları otomatik oluştur",
     ssoProvisionDescription:
       "Yeni SSO kullanıcılarının davet edilene kadar çalışma alanı veya proje erişimi yoktur.",
@@ -146,11 +148,14 @@ export default {
     registrationClosed: "Kapalı",
     identityProvider: "Kimlik sağlayıcı",
     notConfigured: "Yapılandırılmadı",
+    linkedProviders: "Bağlı hesap sağlayıcıları",
+    linkedProvidersDescription:
+      "Yalnızca kendilerini bağlamış hesaplarda oturum açar; asla hesap oluşturmaz.",
     save: "Kimlik doğrulamayı kaydet",
     discoveryUrl: "OIDC keşif URL’si",
     clientId: "OIDC istemci kimliği",
     oidcSetup:
-      "Dağıtımınızda OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET ve OIDC_NAME değerlerini yapılandırıp Kanvil’i yeniden başlatın. Sağlayıcı gizli anahtarları tarayıcıya asla gönderilmez.",
+      "Dağıtımınızda OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET ve OIDC_NAME değerlerini ya da GITHUB_, GOOGLE_ veya DISCORD_ için bir CLIENT_ID ve CLIENT_SECRET çiftini yapılandırıp Kanvil’i yeniden başlatın. Sağlayıcı gizli anahtarları tarayıcıya asla gönderilmez.",
     consumers: "Tüketici arayüzleri",
     mcpEndpoint: "MCP uç noktası",
     eventFeed: "Gerçek zamanlı olay akışı",
