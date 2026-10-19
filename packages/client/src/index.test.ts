@@ -65,3 +65,48 @@ it("does not repeat a write without a requestId when its response is lost", asyn
   ).rejects.toThrow("Lost response");
   expect(attempts).toBe(1);
 });
+it("reads public projections under /api/public and drops fields outside them", async () => {
+  const urls: string[] = [];
+  const client = createClient({
+    baseUrl: "http://localhost:5180",
+    fetch: async (input) => {
+      urls.push(input instanceof Request ? input.url : input.toString());
+      return Response.json({
+        items: [
+          {
+            id: "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+            projectId: "7f9619ff-8b86-4011-b42d-00c04fc964ff",
+            key: "PUB-1",
+            number: 1,
+            title: "Shared",
+            description: "",
+            acceptanceCriteria: "",
+            status: "todo",
+            stateId: null,
+            priority: "none",
+            kind: "feature",
+            difficulty: null,
+            labels: [],
+            scopes: [],
+            parentId: null,
+            startAt: null,
+            dueAt: null,
+            archived: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            assigneeId: "someone",
+          },
+        ],
+        total: 1,
+      });
+    },
+  });
+  const page = await client.callPublic("list_public_tickets", {
+    projectId: "7f9619ff-8b86-4011-b42d-00c04fc964ff",
+    limit: 100,
+  });
+  expect(urls).toEqual([
+    "http://localhost:5180/api/public/projects/7f9619ff-8b86-4011-b42d-00c04fc964ff/tickets?limit=100&offset=0",
+  ]);
+  expect(page.items[0]).not.toHaveProperty("assigneeId");
+});

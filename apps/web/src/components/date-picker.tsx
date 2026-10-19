@@ -9,7 +9,7 @@ import { fieldClass } from "../ui.tsx";
 import { preferences, usePreference, weekStarts } from "../hooks/use-preference.ts";
 import { cn } from "@/lib/utils";
 
-const format = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+export const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 // One calendar picker for form fields, property rows, and composer pills.
 export function DatePicker({
   label,
@@ -58,7 +58,7 @@ export function DatePicker({
         aria-label={label}
       >
         <CalendarDays className={cn(variant !== "field" && "size-3.5 text-muted-foreground")} />
-        <span className={textClassName}>{value ? format.format(value) : placeholder}</span>
+        <span className={textClassName}>{value ? dayFormat.format(value) : placeholder}</span>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0">
         <DateCalendar

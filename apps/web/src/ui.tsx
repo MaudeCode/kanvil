@@ -749,6 +749,9 @@ export function DueDate({
     </span>
   );
 }
+// A ticket page's title, shared by the member and public views.
+export const ticketTitleClass =
+  "mt-4 mb-6 max-w-4xl text-2xl leading-snug font-semibold tracking-tight";
 export function PageHeader({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <header className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3">

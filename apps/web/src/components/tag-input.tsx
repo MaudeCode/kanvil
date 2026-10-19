@@ -101,7 +101,7 @@ export function TagInput({
                     .filter((entry) => !value.includes(entry.name))
                     .map((entry) => (
                       <CommandItem
-                        key={entry.id}
+                        key={entry.name}
                         value={entry.name}
                         onSelect={() => {
                           add([entry.name]);

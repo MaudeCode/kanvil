@@ -84,6 +84,8 @@ export const projects = pgTable(
       .notNull()
       .references(() => workspaces.id),
     visibility: text("visibility").notNull().default("private"),
+    // Anonymous read-only access through /api/public; independent of membership and visibility.
+    publicReadEnabled: boolean("public_read_enabled").notNull().default(false),
     id: uuid("id").primaryKey().defaultRandom(),
     key: text("key").notNull().unique(),
     name: text("name").notNull(),

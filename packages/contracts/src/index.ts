@@ -380,6 +380,9 @@ export const projectSchema = z.object({
   background: z.string().nullable().default(null),
   workspaceId: z.uuid(),
   visibility: z.enum(["workspace", "private"]),
+  // Anyone with the project's public link can read its public projection. Servers that predate
+  // public sharing omit it.
+  publicReadEnabled: z.boolean().default(false),
   id: z.uuid(),
   key: z.string(),
   name: z.string(),
@@ -1251,6 +1254,7 @@ export const operations = {
         ...mutation,
         expectedVersion: version,
         visibility: z.enum(["workspace", "private"]).optional(),
+        publicReadEnabled: z.boolean().optional(),
         name: text.max(120),
         description: z.string().max(5000),
       })
@@ -1259,7 +1263,7 @@ export const operations = {
     "PATCH",
     "/projects/{projectId}",
     "admin",
-    "Update project details without changing its prefix.",
+    "Update project details without changing its prefix. `publicReadEnabled` shares or stops sharing the project's read-only public view (see the public operations).",
   ),
   move_project: op(
     projectInput
@@ -2058,6 +2062,110 @@ export const operations = {
     "Queue a test message to a project destination; its health shows the result.",
   ),
 } as const;
+
+// Anonymous, read-only views of projects whose administrators turned on public read. The server
+// answers them under /api/public without a session or credential. Each output is the public
+// projection of the matching member read: parsing drops every field these schemas do not name, so
+// people, comments, activity, attachments, evidence, claims, and coordination fields stay private.
+// Archived tickets are not published at all.
+// A mention publishes the name its author wrote, never the member's account ID.
+const publicText = z
+  .string()
+  .overwrite((value) => value.replaceAll(/\[(@(?:\\.|[^\]\\])*)\]\(mention:[^)\s]*\)/g, "$1"));
+export const publicTicketSchema = ticketSchema
+  .pick({
+    id: true,
+    projectId: true,
+    key: true,
+    number: true,
+    title: true,
+    description: true,
+    acceptanceCriteria: true,
+    status: true,
+    stateId: true,
+    priority: true,
+    kind: true,
+    difficulty: true,
+    labels: true,
+    scopes: true,
+    parentId: true,
+    startAt: true,
+    dueAt: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({ description: publicText, acceptanceCriteria: publicText });
+export type PublicTicket = z.output<typeof publicTicketSchema>;
+const publicReference = publicTicketSchema.pick({
+  id: true,
+  key: true,
+  title: true,
+  status: true,
+  stateId: true,
+});
+export const publicProjectSchema = projectSchema
+  .pick({ id: true, key: true, name: true, iconName: true, iconColor: true })
+  .extend({
+    description: publicText,
+    states: z.array(
+      workflowStateSchema.pick({
+        id: true,
+        name: true,
+        category: true,
+        color: true,
+        position: true,
+      }),
+    ),
+    labels: z.array(z.object({ name: z.string(), color: labelColor })),
+  });
+export type PublicProject = z.output<typeof publicProjectSchema>;
+const publicProjectInput = z.object({ projectId: z.uuid() });
+const publicOp = <I extends z.ZodObject, O extends z.ZodType>(
+  input: I,
+  output: O,
+  path: string,
+  description: string,
+) => ({ input, output, method: "GET" as const, path, description });
+export const publicOperations = {
+  get_public_project: publicOp(
+    publicProjectInput,
+    publicProjectSchema,
+    "/projects/{projectId}",
+    "Read a shared project's name, description, icon, workflow states, and the colors of labels its unarchived tickets use.",
+  ),
+  list_public_tickets: publicOp(
+    publicProjectInput.extend(pagination).strict(),
+    page(publicTicketSchema),
+    "/projects/{projectId}/tickets",
+    "List a shared project's unarchived tickets by status, then number.",
+  ),
+  get_public_ticket: publicOp(
+    publicProjectInput.extend({ ticketId: id }).strict(),
+    z.object({
+      ticket: publicTicketSchema,
+      parent: publicReference.nullable(),
+      children: z.array(publicReference),
+      relations: z.array(relationSchema.omit({ projectId: true })),
+    }),
+    "/projects/{projectId}/tickets/{ticketId}",
+    "Read a shared project's unarchived ticket by ID or key with its unarchived parent, children, and related tickets.",
+  ),
+} as const;
+export type PublicOperation = keyof typeof publicOperations;
+export type PublicInput<K extends PublicOperation> = z.input<(typeof publicOperations)[K]["input"]>;
+export type PublicOutput<K extends PublicOperation> = z.output<
+  (typeof publicOperations)[K]["output"]
+>;
+export function isPublicOperation(name: string): name is PublicOperation {
+  return Object.hasOwn(publicOperations, name);
+}
+export function parsePublicOutput<K extends PublicOperation>(
+  name: K,
+  value: unknown,
+): PublicOutput<K> {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The registry key selects and validates the generic result schema.
+  return publicOperations[name].output.parse(value) as PublicOutput<K>;
+}
 
 export type Operation = keyof typeof operations;
 export type Input<K extends Operation> = z.input<(typeof operations)[K]["input"]>;

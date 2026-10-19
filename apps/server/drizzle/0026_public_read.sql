@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "public_read_enabled" boolean DEFAULT false NOT NULL;

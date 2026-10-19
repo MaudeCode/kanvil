@@ -86,6 +86,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Project planning view with complete Planned (backlog) and Archived groups, moving planned work to To do, restoring archived tickets, and a way back to active work.
 - Start and due dates on tickets, with read-only Calendar (month) and Timeline (six-week) layouts of a project's filtered tickets, period navigation and Today, and project calendar feeds that administrators share and revoke as iCalendar links. Drag-to-reschedule and dependency editing on the timeline stay out of scope.
 - Ticket detail view containing requirements, relationships, editable links, discussion, attachments, activity, and supplied evidence.
+- Read-only public links that project administrators turn on and off under Project settings, showing anyone with the link the project's unarchived tickets and their requirements, properties, labels, dates, and relationships, without people, discussion, attachments, or coordination details.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
 - Comment mentions: typing `@` in a comment offers the project's members and inserts a `mention:` link that renders as "@Name"; mentioned members are notified even when they do not follow the ticket, and the Inbox has a Mentions view.
 - Inbox that opens an update's ticket in the same preview sheet, with its discussion and reply composer, and marks entries read or unread, dismisses them, clears read entries, and marks all read, from the keyboard as well.

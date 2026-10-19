@@ -93,6 +93,12 @@ const AccountSettings = lazy(() =>
 const AdminSettings = lazy(() =>
   import("./components/admin-settings.tsx").then((module) => ({ default: module.AdminSettings })),
 );
+const PublicProject = lazy(() =>
+  import("./public-project.tsx").then((module) => ({ default: module.PublicProject })),
+);
+const PublicTicket = lazy(() =>
+  import("./public-project.tsx").then((module) => ({ default: module.PublicTicket })),
+);
 const ProjectSettings = lazy(() =>
   import("./components/project-settings.tsx").then((module) => ({
     default: module.ProjectSettings,
@@ -100,10 +106,15 @@ const ProjectSettings = lazy(() =>
 );
 function Root() {
   const session = auth.useSession();
+  const shared = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/public/"),
+  });
   // The session hook reports pending again on every background refetch (for example on window
   // focus); only the first resolution may replace the screen, or the login form loses its input.
   const [settled, setSettled] = useState(false);
   if (!session.isPending && !settled) setSettled(true);
+  // Shared projects read without an account, from the app's unpersisted cache.
+  if (shared) return <Outlet />;
   if (session.isPending && !settled) return <Loading />;
   if (!session.data) return <Login />;
   return (
@@ -573,6 +584,21 @@ const invitation = createRoute({
     return <AcceptInvitation token={invitation.useParams().token} />;
   },
 });
+const publicProject = createRoute({
+  getParentRoute: () => root,
+  path: "/public/projects/$projectId",
+  component: function PublicProjectPage() {
+    return <PublicProject projectId={publicProject.useParams().projectId} />;
+  },
+});
+const publicTicket = createRoute({
+  getParentRoute: () => root,
+  path: "/public/projects/$projectId/tickets/$ticketId",
+  component: function PublicTicketPage() {
+    const params = publicTicket.useParams();
+    return <PublicTicket key={`${params.projectId}:${params.ticketId}`} {...params} />;
+  },
+});
 const inbox = createRoute({
   getParentRoute: () => shell,
   path: "/inbox",
@@ -756,6 +782,8 @@ const router = createRouter({
     login,
     consent,
     invitation,
+    publicProject,
+    publicTicket,
   ]),
   defaultPreload: "intent",
 });
