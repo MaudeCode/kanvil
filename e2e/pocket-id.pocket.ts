@@ -1,5 +1,6 @@
 import { accountMenu, appearance, signOut } from "./controls.ts";
-import { test, expect, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { z } from "zod";
 import { signIn, ownerEmail, ownerPassword } from "./auth.ts";
 
@@ -237,7 +238,7 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
       ).toEqual(membersBefore);
       await signOut(page);
       await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
-      await signIn(page);
+      await signIn(page, { form: true });
       const local = sessionSchema.parse(
         await (await page.request.get("/api/auth/get-session")).json(),
       );
@@ -272,7 +273,7 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
         (await accounts(page)).filter((account) => account.providerId === "oidc"),
       ).toHaveLength(0);
       await signOut(page);
-      await signIn(page);
+      await signIn(page, { form: true });
       expect(await accounts(page)).toEqual(linked);
       await unlink(page, origin);
       await signOut(page);
@@ -286,7 +287,7 @@ for (const email of [ownerEmail, "sso-different@example.test"]) {
       await page.getByRole("button", { name: "Sign in with PocketID", exact: true }).click();
       await authorize(page);
       await expect(page.getByRole("alert")).toContainText("not linked to a Kanvil account");
-      await signIn(page);
+      await signIn(page, { form: true });
       expect(
         (await accounts(page)).filter((account) => account.providerId === "oidc"),
       ).toHaveLength(0);
@@ -340,7 +341,7 @@ test("PocketID passkeys support explicit linking and subsequent OIDC login witho
     expect(after.user.id).toBe(before.user.id);
     await signOut(page);
     await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
-    await signIn(page);
+    await signIn(page, { form: true });
     const local = sessionSchema.parse(
       await (await page.request.get("/api/auth/get-session")).json(),
     );

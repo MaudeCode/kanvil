@@ -6,7 +6,9 @@ import { randomBytes } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
+import { writeScriptReport } from "./testing/policy.ts";
 
+const started = new Date();
 const project = `kanvil-smoke-${crypto.randomUUID().slice(0, 8)}`;
 const base = "http://localhost:5191",
   directory = await mkdtemp(join(tmpdir(), project));
@@ -239,6 +241,9 @@ try {
   console.info(
     "Container verification passed: browser setup, ticket writes, MCP, authenticated sessions, scoped credentials, and restored workspace, attachment, and project icon content.",
   );
+  // One case per native architecture, as the CI matrix runs it.
+  const architecture = process.arch === "arm64" ? "arm64" : "amd64";
+  writeScriptReport(`docker-${architecture}`, "scripts/docker-smoke.ts", started, architecture);
 } catch (error) {
   await run("docker", ["compose", "logs", "--no-color", "--tail", "80", "app"], env).catch(
     () => {},

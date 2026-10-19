@@ -1,3 +1,4 @@
+import { lookup } from "node:dns";
 import { Server } from "node:http";
 import { createServer } from "node:https";
 import { readFileSync } from "node:fs";
@@ -9,10 +10,29 @@ import { createFixture, startMailbox } from "./test-fixture.ts";
 import { fakeOAuthProviders } from "./oauth-provider-fixture.ts";
 import { createApplication } from "./app.ts";
 import { createImportSources } from "./adapters/import-sources.ts";
-import { createHttpSender } from "./adapters/outbound.ts";
+import { createHttpSender, type Resolve } from "./adapters/outbound.ts";
+import { createPollingJob } from "./adapters/polling-jobs.ts";
+import { defaultSenders } from "./outbox.ts";
 import { startImportSources } from "./import-source-fixture.ts";
 import { z } from "zod";
+import { watchBoundaries } from "../../../scripts/testing/boundaries.ts";
+import { serverAccountingFile } from "../../../scripts/testing/policy.ts";
 
+// The browser suites reach PostgreSQL and fakes on loopback only. Everything this server reaches
+// is recorded for the suite's accounting report, and anything else fails the run.
+const boundaries = watchBoundaries(["database", "loopback"]);
+const recordBoundaries = () =>
+  writeFileSync(serverAccountingFile, JSON.stringify(boundaries.peek()));
+recordBoundaries();
+setInterval(recordBoundaries, 200).unref();
+const resolveTestHosts: Resolve = (hostname, options, callback) => {
+  if (!hostname.endsWith(".invalid")) return lookup(hostname, options, callback);
+  const error = Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), {
+    code: "ENOTFOUND",
+    hostname,
+  });
+  process.nextTick(() => callback(error, []));
+};
 const fixture = await createFixture();
 // Imports read fake trackers on loopback; no real account is involved.
 const sources = await startImportSources();
@@ -82,6 +102,18 @@ const application = await createApplication(
   {
     importSources: () =>
       createImportSources(createHttpSender({ allowPrivate: true }), sources.urls),
+    // Deliveries keep the production sender, but `.invalid` hosts get the resolver's answer
+    // (they never resolve) without asking DNS.
+    senders: (config) => ({
+      ...defaultSenders(config),
+      http: createHttpSender({
+        allowPrivate: config.KANVIL_DELIVERY_ALLOW_PRIVATE,
+        resolve: resolveTestHosts,
+      }),
+    }),
+    // Background work runs on the production code paths, polled every quarter second instead of
+    // every few seconds so specs do not wait out production intervals.
+    jobs: (name, intervalMs, run) => createPollingJob(name, Math.min(intervalMs, 250), run),
   },
 );
 const server = serve(
@@ -103,6 +135,7 @@ async function stop() {
   await sources.close();
   await mailbox.close();
   await fixture.close();
+  recordBoundaries();
   if (oidc)
     await fetch(`${pocketUrl}/api/oidc/clients/${oidc.id}`, {
       method: "DELETE",

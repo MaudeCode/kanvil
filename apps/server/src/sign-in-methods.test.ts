@@ -535,7 +535,9 @@ describe.each(["github", "google", "discord"] as const)("%s sign-in", (provider)
     expect(response.headers.getSetCookie().join()).not.toContain("session_token=");
   });
 
-  it.runIf(provider === "google").each(["signature", "audience"] as const)(
+  // Only Google signs ID tokens; the other providers never collect these cases.
+  if (provider !== "google") return;
+  it.each(["signature", "audience"] as const)(
     "rejects a Google ID token with a bad %s",
     async (invalid) => {
       const person = identity("google-bad@elsewhere.test", { invalid });
@@ -549,16 +551,13 @@ describe.each(["github", "google", "discord"] as const)("%s sign-in", (provider)
     },
   );
 
-  it.runIf(provider === "google")(
-    "refuses posted ID tokens outside the redirect flow",
-    async () => {
-      const response = await request(
-        "/api/auth/sign-in/social",
-        "POST",
-        { provider, idToken: { token: providers.googleToken({ sub: "1", aud: "google-client" }) } },
-        "",
-      );
-      expect(response.ok).toBe(false);
-    },
-  );
+  it("refuses posted ID tokens outside the redirect flow", async () => {
+    const response = await request(
+      "/api/auth/sign-in/social",
+      "POST",
+      { provider, idToken: { token: providers.googleToken({ sub: "1", aud: "google-client" }) } },
+      "",
+    );
+    expect(response.ok).toBe(false);
+  });
 });

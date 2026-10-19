@@ -1,4 +1,4 @@
-import { lookup as resolve } from "node:dns";
+import { lookup, type LookupAddress } from "node:dns";
 import { request as plainRequest } from "node:http";
 import { request as tlsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
@@ -52,20 +52,29 @@ export function isReservedAddress(address: string) {
   return family === 0 || reserved.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
+// Name resolution in the shape the sender asks for: every address of a host.
+export type Resolve = (
+  hostname: string,
+  options: { all: true; family?: number | "IPv4" | "IPv6" | undefined },
+  callback: (error: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void,
+) => void;
 // Sends JSON to a configured endpoint. Every resolved address is checked and the connection uses
 // the checked address, so DNS rebinding cannot reach an internal host; redirects are not followed.
 export function createHttpSender({
   allowPrivate,
   timeout = 10_000,
   responseLimit = 1_048_576,
+  resolve = lookup,
 }: {
   allowPrivate: boolean;
   timeout?: number;
   // The most a read response body may hold.
   responseLimit?: number;
+  // Name resolution; tests answer without DNS.
+  resolve?: Resolve;
 }) {
   const allowed = (address: string) => allowPrivate || !isReservedAddress(address);
-  const lookup: LookupFunction = (hostname, options, callback) => {
+  const checkedLookup: LookupFunction = (hostname, options, callback) => {
     resolve(hostname, { all: true, family: options.family }, (error, addresses) => {
       if (error) return callback(error, "", 4);
       const usable = addresses.filter((entry) => allowed(entry.address));
@@ -90,7 +99,7 @@ export function createHttpSender({
         url,
         {
           method: request.method ?? "POST",
-          lookup,
+          lookup: checkedLookup,
           headers: {
             "Content-Type": "application/json",
             "User-Agent": "Kanvil",

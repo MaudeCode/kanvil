@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn, useEmailLogin } from "./auth.ts";
 
 test("transfers workspace ownership and deletes the workspace from its settings", async ({

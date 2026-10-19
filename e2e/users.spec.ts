@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { ownerEmail, signIn, useEmailLogin } from "./auth.ts";
 import { accountMenu, choose, openSearch } from "./controls.ts";
 

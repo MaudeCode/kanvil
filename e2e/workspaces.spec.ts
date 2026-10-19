@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { type Locator } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn, useEmailLogin } from "./auth.ts";
 import { choose, openSearch, settingsLink } from "./controls.ts";
 

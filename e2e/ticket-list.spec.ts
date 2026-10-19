@@ -1,8 +1,10 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { type Locator } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 import {
   choose,
   chooseTicketView,
+  holdRequests,
   openSaveView,
   openSearch,
   setProperty,
@@ -390,18 +392,15 @@ test("selection floats without moving rows and retains selection on failed updat
       json: { error: { code: "version_conflict", message: "Reload changed tickets" } },
     }),
   );
-  // The failure refetch is slow; until it lands the selection still holds stale versions.
+  // The failure refetch is held; until it lands the selection still holds stale versions.
   const listPath = (url: URL) => url.pathname === `/api/v1/projects/${project.id}/tickets`;
-  await page.route(listPath, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    await route.fallback();
-  });
-  const failed = page.waitForResponse((response) => response.url().endsWith("/tickets/bulk"));
+  const release = await holdRequests(page, listPath);
+  const refetch = page.waitForRequest((request) => listPath(new URL(request.url())));
   await setProperty(dock, "Status", "In review");
-  await failed;
-  await page.waitForTimeout(300);
+  await refetch;
   const status = dock.getByRole("combobox", { name: "Status", exact: true });
   expect(await status.isDisabled()).toBe(true);
+  release();
   await expect(page.getByText("Reload changed tickets", { exact: true })).toBeVisible();
   await expect(status).toBeEnabled();
   await page.unroute(listPath);
@@ -592,13 +591,11 @@ test("bulk edits replace labels, set and clear due dates, and change difficulty"
   await selectBoth();
   // A pending write disables every control so the same edit cannot be applied twice.
   const bulkPath = `**/api/v1/projects/${project.id}/tickets/bulk`;
-  await page.route(bulkPath, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    await route.fallback();
-  });
+  const release = await holdRequests(page, bulkPath);
   await setProperty(dock, "Difficulty", "High");
   await expect(dock.getByRole("combobox", { name: "Status", exact: true })).toBeDisabled();
   await expect(dock.getByRole("button", { name: "Due date", exact: true })).toBeDisabled();
+  release();
   await expect(dock).toHaveCount(0);
   await page.unroute(bulkPath);
   await expect

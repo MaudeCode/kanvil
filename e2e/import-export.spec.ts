@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
-import { choose } from "./controls.ts";
+import { choose, holdRequests } from "./controls.ts";
 
 // The request that stages an import preview.
 const staged = (request: { method: () => string; url: () => string }) =>
@@ -41,9 +41,17 @@ test("exports a project as JSON and imports it into a new project", async ({ pag
   const submit = dialog.getByRole("button", { name: "Preview", exact: true });
   await expect(submit).toBeDisabled();
   // A file chosen while an earlier one is still being read wins, even if that read ends last.
+  // The slow file's read is held until the test releases it after the later file has loaded.
   await page.evaluate(`File.prototype.text = function () {
-    const delay = this.name === "slow.json" ? 1000 : 0;
-    return new Promise((resolve) => setTimeout(resolve, delay)).then(() => new Response(this).text());
+    const text = () => new Response(this).text();
+    if (this.name !== "slow.json") return text();
+    return new Promise((resolve) => {
+      window.releaseSlowRead = () => {
+        const read = text();
+        resolve(read);
+        return read;
+      };
+    });
   }`);
   await dialog.getByLabel("Export file", { exact: true }).setInputFiles({
     name: "slow.json",
@@ -53,30 +61,27 @@ test("exports a project as JSON and imports it into a new project", async ({ pag
     ),
   });
   await dialog.getByLabel("Export file", { exact: true }).setInputFiles(path);
-  await page.waitForTimeout(1500);
-  await expect(dialog.getByLabel("Project name", { exact: true })).toHaveValue("Export source");
+  const name = dialog.getByLabel("Project name", { exact: true });
+  await expect(name).toHaveValue("Export source");
+  // The slow read ends last; give its answer two frames to render before checking it lost.
+  await page.evaluate(`window.releaseSlowRead().then(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  )`);
+  await expect(name).toHaveValue("Export source");
   // The source still holds its prefix, so the preview blocks the import until it changes.
   await submit.click();
   const preview = dialog.getByRole("region", { name: "Import preview", exact: true });
   await expect(preview.getByText("EXPORTS is in use or reserved by another project")).toBeVisible();
   await expect(submit).toBeDisabled();
   // An edit made while a preview is pending discards that preview's answer.
-  let release: (() => void) | undefined;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route("**/imports", async (route) => {
-    if (!staged(route.request())) return route.fallback();
-    await held;
-    return route.continue();
-  });
+  const release = await holdRequests(page, "**/imports", staged);
   await dialog.getByLabel("Ticket prefix", { exact: true }).fill("STALE");
   const sent = page.waitForRequest(staged);
   await submit.click();
   await sent;
   await dialog.getByLabel("Ticket prefix", { exact: true }).fill("IMPORTED");
   const answered = page.waitForResponse((response) => staged(response.request()));
-  release?.();
+  release();
   await answered;
   await page.waitForTimeout(300);
   await expect(preview).toHaveCount(0);

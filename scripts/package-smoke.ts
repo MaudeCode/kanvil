@@ -9,8 +9,10 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { releaseVersion } from "./release-version.ts";
 import { createFixture } from "../apps/server/src/test-fixture.ts";
+import { writeScriptReport } from "./testing/policy.ts";
 
 const exec = promisify(execFile);
+const started = new Date();
 const directory = await mkdtemp(join(tmpdir(), "kanvil-package-"));
 const fixture = await createFixture();
 let server: ReturnType<typeof spawn> | undefined;
@@ -133,6 +135,7 @@ try {
   console.info(
     "Installed npm tarball verified: CLI, private config, migrations, web assets, health, and owner setup.",
   );
+  writeScriptReport("package", "scripts/package-smoke.ts", started);
 } finally {
   if (server && server.exitCode === null && server.signalCode === null) {
     const exited = once(server, "exit");

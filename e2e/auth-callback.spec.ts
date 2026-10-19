@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 
 test("link callback errors survive reload, hide provider details, and clear on retry", async ({

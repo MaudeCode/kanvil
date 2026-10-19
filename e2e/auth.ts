@@ -1,33 +1,45 @@
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 export const ownerEmail = "owner@example.test";
 export const ownerPassword = "test-only-owner-password-234";
-export async function signIn(page: Page) {
-  const info = z
-    .object({ setupRequired: z.boolean() })
-    .parse(await (await page.request.get("/api/v1/info")).json());
-  await page.goto("/login");
-  await expect(
-    page.getByRole("heading", {
-      name: info.setupRequired ? "Create your owner account" : "Sign in",
-      exact: true,
-    }),
-  ).toBeVisible();
-  if (info.setupRequired) {
-    await page.getByLabel("Name", { exact: true }).fill("Test Owner");
+const setupSchema = z.object({ setupRequired: z.boolean() });
+// Signs the owner in and lands on Projects. A fresh test server's first case creates the owner
+// through the login page. After that, a case whose purpose is not signing in gets its own session
+// from the sign-in API; cases about signing in pass `form` to use the login page.
+export async function signIn(page: Page, { form = false } = {}) {
+  const { setupRequired } = setupSchema.parse(
+    await (await page.request.get("/api/v1/info")).json(),
+  );
+  if (!setupRequired && !form) {
+    const response = await page.request.post("/api/auth/sign-in/email", {
+      data: { email: ownerEmail, password: ownerPassword },
+      headers: { Origin: new URL(test.info().project.use.baseURL ?? "").origin },
+    });
+    expect(response.ok()).toBe(true);
+    await page.goto("/");
+  } else {
+    await page.goto("/login");
+    await expect(
+      page.getByRole("heading", {
+        name: setupRequired ? "Create your owner account" : "Sign in",
+        exact: true,
+      }),
+    ).toBeVisible();
+    if (setupRequired) {
+      await page.getByLabel("Name", { exact: true }).fill("Test Owner");
+      await page
+        .getByLabel("Setup token", { exact: true })
+        .fill("kanvil-browser-tests-only-setup-token");
+    } else await useEmailLogin(page);
+    await page.getByLabel("Email", { exact: true }).fill(ownerEmail);
+    await page.getByLabel("Password", { exact: true }).fill(ownerPassword);
     await page
-      .getByLabel("Setup token", { exact: true })
-      .fill("kanvil-browser-tests-only-setup-token");
+      .getByRole("button", { name: setupRequired ? "Create account" : "Sign in", exact: true })
+      .click();
   }
-  if (!info.setupRequired) await useEmailLogin(page);
-  await page.getByLabel("Email", { exact: true }).fill(ownerEmail);
-  await page.getByLabel("Password", { exact: true }).fill(ownerPassword);
-  await page
-    .getByRole("button", { name: info.setupRequired ? "Create account" : "Sign in", exact: true })
-    .click();
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
 }
 // Opens the password form, which configured sign-in providers fold behind a button.

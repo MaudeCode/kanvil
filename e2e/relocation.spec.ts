@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 
 const create = async (page: Page, path: string, data: Record<string, unknown>) =>

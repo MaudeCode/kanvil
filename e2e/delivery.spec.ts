@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 
 // Endpoints under .invalid never resolve, so the browser suite sends nothing off the machine.
