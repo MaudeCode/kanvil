@@ -296,7 +296,8 @@ export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
 }
 // Queues each ticket event for the project's active destinations that carry its kind of activity.
 async function queueDestinations(db: Context["db"], rows: (typeof events.$inferSelect)[]) {
-  const ticketEvents = rows.filter((event) => event.ticketId);
+  // A move-away names no ticket, so the source keeps no link to it, yet it is ticket activity.
+  const ticketEvents = rows.filter((event) => event.ticketId || event.type === "ticket.moved_away");
   if (!ticketEvents.length) return;
   const targets = await db
     .select({

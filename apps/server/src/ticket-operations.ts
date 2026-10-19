@@ -878,12 +878,13 @@ export const ticketHandlers: Pick<
   async relocate_ticket(ctx, input) {
     const current = await getTicket(ctx, input.ticketId);
     assertVersion(current, input.expectedVersion, "ticket", "moving");
-    await assertWorkerClaim(ctx, current);
     const { target, blockers, fields } = await relocation(ctx, current, input.destinationProjectId);
     if (blockers.length)
       fail(409, "relocation_blocked", blockers.map((item) => item.message).join(". "), {
         blockers,
       });
+    // After the blockers, so a claimed ticket answers every caller with the same blocker.
+    await assertWorkerClaim(ctx, current);
     const state = requireRow(
       await resolveState(target, {
         status: input.status ?? (input.stateId ? undefined : z.enum(states).parse(current.status)),
@@ -896,7 +897,7 @@ export const ticketHandlers: Pick<
       {
         type: "ticket.moved_away",
         ticketId: null,
-        data: { ticketId: current.id, key: current.key },
+        data: { ticketId: current.id, key: current.key, title: current.title },
       },
     ]);
     // Every key it had here, under each prefix the project has used, keeps naming it.

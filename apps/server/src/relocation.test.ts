@@ -286,6 +286,41 @@ describe("project prefixes and ticket moves", () => {
     ).toBe(ticket.id);
   });
 
+  it("delivers the source's move-away event to its outbound destinations", async () => {
+    const source = await newProject(),
+      destination = await newProject(),
+      ticket = await newTicket(source);
+    const [target] = (
+      await fixture.database.pool.query<{ id: string }>(
+        `INSERT INTO project_destinations (project_id, kind, name, settings, events)
+         VALUES ($1, 'webhook', 'Source feed', 'sealed', ARRAY['update']) RETURNING id`,
+        [source.id],
+      )
+    ).rows;
+    await domain.execute(
+      "relocate_ticket",
+      {
+        projectId: source.id,
+        ticketId: ticket.id,
+        expectedVersion: ticket.version,
+        destinationProjectId: destination.id,
+      },
+      owner,
+    );
+    const queued = await fixture.database.pool.query<{
+      type: string;
+      data: Record<string, unknown>;
+    }>(
+      `SELECT events.type, events.data FROM deliveries JOIN events ON events.id = deliveries.event_id
+       WHERE deliveries.destination_id = $1`,
+      [target!.id],
+    );
+    expect(queued.rows).toMatchObject([
+      { type: "ticket.moved_away", data: { key: ticket.key, title: ticket.title } },
+    ]);
+    expect(JSON.stringify(queued.rows)).not.toContain(destination.key);
+  });
+
   it("checks versions, states, and the destination before moving", async () => {
     const source = await newProject(),
       destination = await newProject(),
@@ -425,6 +460,32 @@ describe("project prefixes and ticket moves", () => {
         )
       ).blockers.map((blocker) => blocker.code),
     ).toEqual(["claimed"]);
+    // A worker credential gets the same documented blocker as a person.
+    const worker = await domain.actor(owner.id, {
+      ownerId: owner.id,
+      scopes: ["read", "write", "claim"],
+      projectIds: [source.id, destination.id],
+    });
+    const claimed = await domain.execute(
+      "get_ticket",
+      { projectId: source.id, ticketId: ready.id },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "relocate_ticket",
+        {
+          projectId: source.id,
+          ticketId: ready.id,
+          expectedVersion: claimed.ticket.version,
+          destinationProjectId: destination.id,
+        },
+        worker,
+      ),
+    ).rejects.toMatchObject({
+      code: "relocation_blocked",
+      details: { blockers: [{ code: "claimed" }] },
+    });
   });
 
   it("keeps custom field values with their project and applies the destination's defaults", async () => {
