@@ -7,6 +7,7 @@ import {
   BellOff,
   CalendarDays,
   Copy,
+  CopyPlus,
   ExternalLink,
   FolderOpen,
   Link2,
@@ -132,6 +133,7 @@ export function TicketContextMenu({
       read.data && read.data.ticket.version > ticket.version ? read.data.ticket : ticket,
     update = useTicketChange(current),
     remove = useOperation("delete_ticket"),
+    duplicate = useOperation("duplicate_ticket"),
     subscribe = useOperation("set_subscription");
   const Root = variant === "dropdown" ? DropdownMenu : ContextMenu,
     Trigger = variant === "dropdown" ? DropdownMenuTrigger : ContextMenuTrigger,
@@ -174,6 +176,24 @@ export function TicketContextMenu({
           >
             <Pencil />
             Edit ticket
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!access.canWrite || duplicate.isPending}
+            onClick={() => {
+              void duplicate
+                .mutateAsync({ projectId: current.projectId, ticketId: current.id })
+                .then(async (created) => {
+                  toast.success(`Created ${created.key}`);
+                  await navigate({
+                    to: "/projects/$projectId/tickets/$ticketId",
+                    params: { projectId: created.projectId, ticketId: created.id },
+                  });
+                })
+                .catch(reportError);
+            }}
+          >
+            <CopyPlus />
+            Duplicate ticket
           </ContextMenuItem>
           {propertyOrder.map((name) => (
             <PropertyMenu

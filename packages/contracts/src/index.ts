@@ -733,6 +733,14 @@ export const operations = {
     "write",
     "Create a ticket. Reuse requestId when retrying this write.",
   ),
+  duplicate_ticket: op(
+    ticketInput.extend(mutation).strict(),
+    ticketSchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/duplicate",
+    "write",
+    "Copy a ticket into a new To do ticket in the same project, linked to the original by a clones relationship. Copies requirements, properties, labels, scopes, and parent; resets agent readiness and never copies claims, comments, evidence, attachments, or children. Reuse requestId when retrying this write.",
+  ),
   update_ticket: op(
     ticketInput
       .extend({

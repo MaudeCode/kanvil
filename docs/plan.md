@@ -45,7 +45,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 - Titles, Markdown descriptions, acceptance criteria, and attachments.
 - Status, priority, kind, difficulty, scopes, labels, and assignment.
 - Parent/child relationships, blockers, related tickets, and duplicate references.
-- Comments, activity history, subscriptions, archiving, and deletion behavior.
+- Comments, activity history, subscriptions, duplication, archiving, and deletion behavior.
 - Search, filtering, sorting, pagination, and bulk edits.
 - Optimistic concurrency checks that prevent silent overwrites.
 - Idempotent writes that remain safe when a client retries a request.

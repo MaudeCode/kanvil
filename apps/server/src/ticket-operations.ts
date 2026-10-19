@@ -17,7 +17,6 @@ import {
 import {
   claims,
   events,
-  members,
   projects,
   projectLabels,
   relations,
@@ -34,6 +33,7 @@ import {
   project,
   publish,
   publishMany,
+  relationEvents,
   requireRow,
   subscribe,
   type Context,
@@ -41,11 +41,12 @@ import {
   type PendingEvent,
   one,
 } from "./domain.ts";
-import { accessibleProjectRows } from "./project-access.ts";
+import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
   closedStates,
   defaultOrder,
   difficulties,
+  operations,
   priorities,
   states,
   type ParsedInput,
@@ -130,6 +131,16 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
 export async function readiness(ctx: Context, ticket: typeof tickets.$inferSelect) {
   return requireRow((await readinessMany(ctx, [ticket])).get(ticket.id));
 }
+// Uses the effective role, so workspace members of a workspace-visible project count.
+async function projectMember(ctx: Context, userId: string) {
+  const { id } = project(ctx);
+  return !!one(
+    await ctx.db
+      .select({ role: projectRoleSQL(userId, id) })
+      .from(projects)
+      .where(eq(projects.id, id)),
+  ).role;
+}
 async function validateReferences(
   ctx: Context,
   ticketId: string,
@@ -140,16 +151,7 @@ async function validateReferences(
       .insert(projectLabels)
       .values(changes.labels.map((name) => ({ projectId: project(ctx).id, name })))
       .onConflictDoNothing();
-  if (
-    changes.assigneeId &&
-    !(
-      await ctx.db
-        .select()
-        .from(members)
-        .where(and(eq(members.projectId, project(ctx).id), eq(members.userId, changes.assigneeId)))
-        .limit(1)
-    ).length
-  )
+  if (changes.assigneeId && !(await projectMember(ctx, changes.assigneeId)))
     fail(400, "invalid_assignee", "Assign a project member");
   if (changes.parentId) {
     await getTicket(ctx, changes.parentId);
@@ -289,6 +291,41 @@ async function pageOf(
       : 0);
   return { items: rows.map(({ total: _total, ...row }) => row), total };
 }
+const copySuffix = " (copy)";
+// Inserts one ticket with the next project number and returns its event for the caller to publish.
+async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">) {
+  const id = crypto.randomUUID();
+  await validateReferences(ctx, id, input);
+  const counter = one(
+    await ctx.db
+      .update(projects)
+      .set({ nextNumber: sql`${projects.nextNumber} + 1` })
+      .where(eq(projects.id, project(ctx).id))
+      .returning(),
+  );
+  const { projectId: _projectId, requestId: _requestId, dueAt, ...fields } = input;
+  const row = one(
+    await ctx.db
+      .insert(tickets)
+      .values({
+        ...fields,
+        ...dueColumn(dueAt),
+        id,
+        projectId: counter.id,
+        number: counter.nextNumber - 1,
+        key: `${counter.key}-${counter.nextNumber - 1}`,
+        createdBy: ctx.actor.id,
+      })
+      .returning(),
+  );
+  await subscribe(ctx, row.projectId, row.id, [ctx.actor.id, row.assigneeId]);
+  const event: PendingEvent = {
+    type: "ticket.created",
+    ticketId: row.id,
+    data: { key: row.key, version: row.version },
+  };
+  return { row, event };
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -296,6 +333,7 @@ export const ticketHandlers: Pick<
   | "list_ticket_labels"
   | "get_ticket"
   | "create_ticket"
+  | "duplicate_ticket"
   | "update_ticket"
   | "bulk_update_tickets"
   | "delete_ticket"
@@ -396,32 +434,47 @@ export const ticketHandlers: Pick<
     };
   },
   async create_ticket(ctx, input) {
-    const id = crypto.randomUUID();
-    await validateReferences(ctx, id, input);
-    const counter = one(
+    const { row, event } = await createTicketRow(ctx, input);
+    await publish(ctx, event.type, event.ticketId, event.data);
+    return row;
+  },
+  async duplicate_ticket(ctx, input) {
+    const source = await getTicket(ctx, input.ticketId);
+    // Parsing narrows the stored text columns to the contract's enums.
+    const copy = operations.create_ticket.input.parse({
+      projectId: source.projectId,
+      title: source.title.slice(0, 500 - copySuffix.length) + copySuffix,
+      description: source.description,
+      acceptanceCriteria: source.acceptanceCriteria,
+      // The copy is new, unclaimed work: status and agent readiness start over.
+      status: "todo",
+      priority: source.priority,
+      kind: source.kind,
+      difficulty: source.difficulty,
+      dueAt: source.dueAt?.toISOString() ?? null,
+      labels: source.labels,
+      scopes: source.scopes,
+      // A former member stays on old tickets but cannot be assigned new ones.
+      assigneeId:
+        source.assigneeId && (await projectMember(ctx, source.assigneeId))
+          ? source.assigneeId
+          : null,
+      parentId: source.parentId,
+      automationReady: false,
+      holdReason: null,
+      archived: false,
+    });
+    const { row, event } = await createTicketRow(ctx, copy);
+    const relation = one(
       await ctx.db
-        .update(projects)
-        .set({ nextNumber: sql`${projects.nextNumber} + 1` })
-        .where(eq(projects.id, project(ctx).id))
+        .insert(relations)
+        .values({ projectId: row.projectId, sourceId: row.id, targetId: source.id, type: "clones" })
         .returning(),
     );
-    const { projectId: _projectId, requestId: _requestId, dueAt, ...fields } = input;
-    const row = one(
-      await ctx.db
-        .insert(tickets)
-        .values({
-          ...fields,
-          ...dueColumn(dueAt),
-          id,
-          projectId: counter.id,
-          number: counter.nextNumber - 1,
-          key: `${counter.key}-${counter.nextNumber - 1}`,
-          createdBy: ctx.actor.id,
-        })
-        .returning(),
-    );
-    await subscribe(ctx, row.projectId, row.id, [ctx.actor.id, row.assigneeId]);
-    await publish(ctx, "ticket.created", row.id, { key: row.key, version: row.version });
+    await publishMany(ctx, [
+      { ...event, data: { ...event.data, duplicateOf: source.id } },
+      ...relationEvents("relation.added", relation),
+    ]);
     return row;
   },
   update_ticket: updateTicket,
