@@ -176,6 +176,29 @@ export default {
       setup:
         "Jira Cloud masuk dengan email akun Anda dan token API dari id.atlassian.com; Data Center dan Server menggunakan token akses pribadi. Akses Browse ke proyek sudah cukup.",
     },
+    trello: {
+      project: "Papan",
+      setup:
+        "Gunakan kunci API dari Power-Up yang Anda kelola di trello.com/power-ups/admin dan token yang dibuat untuknya; akses baca sudah cukup.",
+    },
+    plane: {
+      project: "Proyek",
+      setup:
+        "Buat token akses pribadi di Profile settings › Personal access tokens di Plane. Alamat API Plane Cloud adalah https://api.plane.so; kunci URL ruang kerja adalah bagian pertama alamat webnya.",
+    },
+    planka: {
+      project: "Papan",
+      setup:
+        "Masuk dengan akun PLANKA yang dapat membuka papan; sesi yang dibuka Kanvil berakhir saat pembacaan selesai. Administrator PLANKA 2 dapat menerbitkan kunci API sebagai gantinya.",
+    },
+    kaneo: {
+      project: "Proyek",
+      setup: "Buat kunci API di Settings › Account › Developer di Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Nama pengguna dan kata sandi",
+    api_key: "Kunci API",
   },
   jiraEdition: {
     cloud: "Cloud",

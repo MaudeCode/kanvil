@@ -172,6 +172,29 @@ export default {
       setup:
         "Jira Cloud 使用账户邮箱和在 id.atlassian.com 创建的 API 令牌登录；Data Center 和 Server 使用个人访问令牌。拥有项目的浏览权限即可。",
     },
+    trello: {
+      project: "看板",
+      setup:
+        "使用你在 trello.com/power-ups/admin 管理的 Power-Up 的 API 密钥及为其生成的令牌，只读权限即可。",
+    },
+    plane: {
+      project: "项目",
+      setup:
+        "在 Plane 的 Profile settings › Personal access tokens 中创建个人访问令牌。Plane Cloud 的 API 地址为 https://api.plane.so；工作区 URL 标识是其网址的第一部分。",
+    },
+    planka: {
+      project: "看板",
+      setup:
+        "使用可以打开该看板的 PLANKA 账户登录；Kanvil 打开的会话在读取结束后即关闭。PLANKA 2 管理员也可以改为签发 API 密钥。",
+    },
+    kaneo: {
+      project: "项目",
+      setup: "在 Kaneo 的 Settings › Account › Developer 中创建 API 密钥。",
+    },
+  },
+  plankaSignIn: {
+    password: "用户名和密码",
+    api_key: "API 密钥",
   },
   jiraEdition: {
     cloud: "Cloud",

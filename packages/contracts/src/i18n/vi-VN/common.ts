@@ -179,6 +179,29 @@ export default {
       setup:
         "Jira Cloud đăng nhập bằng email tài khoản và token API từ id.atlassian.com; Data Center và Server dùng token truy cập cá nhân. Quyền duyệt dự án là đủ.",
     },
+    trello: {
+      project: "Bảng",
+      setup:
+        "Dùng khóa API của một Power-Up bạn quản trị tại trello.com/power-ups/admin và token được tạo cho nó; quyền đọc là đủ.",
+    },
+    plane: {
+      project: "Dự án",
+      setup:
+        "Tạo token truy cập cá nhân trong Profile settings › Personal access tokens của Plane. Địa chỉ API của Plane Cloud là https://api.plane.so; mã URL không gian làm việc là phần đầu tiên trong địa chỉ web của nó.",
+    },
+    planka: {
+      project: "Bảng",
+      setup:
+        "Đăng nhập bằng tài khoản PLANKA có thể mở bảng; phiên do Kanvil mở sẽ kết thúc khi đọc xong. Quản trị viên PLANKA 2 có thể cấp khóa API thay thế.",
+    },
+    kaneo: {
+      project: "Dự án",
+      setup: "Tạo khóa API trong Settings › Account › Developer của Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Tên người dùng và mật khẩu",
+    api_key: "Khóa API",
   },
   jiraEdition: {
     cloud: "Cloud",

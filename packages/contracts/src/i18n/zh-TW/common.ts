@@ -172,6 +172,29 @@ export default {
       setup:
         "Jira Cloud 使用帳號電子郵件及在 id.atlassian.com 建立的 API 權杖登入；Data Center 和 Server 使用個人存取權杖。具備專案的瀏覽權限即可。",
     },
+    trello: {
+      project: "看板",
+      setup:
+        "請使用你在 trello.com/power-ups/admin 管理的 Power-Up 的 API 金鑰及為其產生的權杖，具備讀取權限即可。",
+    },
+    plane: {
+      project: "專案",
+      setup:
+        "請在 Plane 的 Profile settings › Personal access tokens 建立個人存取權杖。Plane Cloud 的 API 位址為 https://api.plane.so；工作區 URL 代碼是其網址的第一段。",
+    },
+    planka: {
+      project: "看板",
+      setup:
+        "請使用可開啟該看板的 PLANKA 帳號登入；Kanvil 開啟的工作階段會在讀取結束時關閉。PLANKA 2 管理員也可以改為核發 API 金鑰。",
+    },
+    kaneo: {
+      project: "專案",
+      setup: "請在 Kaneo 的 Settings › Account › Developer 建立 API 金鑰。",
+    },
+  },
+  plankaSignIn: {
+    password: "使用者名稱和密碼",
+    api_key: "API 金鑰",
   },
   jiraEdition: {
     cloud: "Cloud",

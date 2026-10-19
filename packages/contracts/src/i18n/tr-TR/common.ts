@@ -181,6 +181,29 @@ export default {
       setup:
         "Jira Cloud, hesap e-postanız ve id.atlassian.com adresinden alınan bir API belirteciyle oturum açar; Data Center ve Server kişisel erişim belirteci kullanır. Projeye göz atma erişimi yeterlidir.",
     },
+    trello: {
+      project: "Pano",
+      setup:
+        "trello.com/power-ups/admin adresinde yönettiğiniz bir Power-Up’ın API anahtarını ve onun için oluşturulmuş bir belirteci kullanın; okuma erişimi yeterlidir.",
+    },
+    plane: {
+      project: "Proje",
+      setup:
+        "Plane’de Profile settings › Personal access tokens altında kişisel bir erişim belirteci oluşturun. Plane Cloud API adresi: https://api.plane.so; çalışma alanı URL anahtarı, web adresinin ilk bölümüdür.",
+    },
+    planka: {
+      project: "Pano",
+      setup:
+        "Panoyu açabilen bir PLANKA hesabıyla oturum açın; Kanvil’in açtığı oturum okuma bitince sona erer. PLANKA 2 yöneticileri bunun yerine API anahtarı verebilir.",
+    },
+    kaneo: {
+      project: "Proje",
+      setup: "Kaneo’da Settings › Account › Developer altında bir API anahtarı oluşturun.",
+    },
+  },
+  plankaSignIn: {
+    password: "Kullanıcı adı ve parola",
+    api_key: "API anahtarı",
   },
   jiraEdition: {
     cloud: "Cloud",

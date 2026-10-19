@@ -181,6 +181,29 @@ export default {
       setup:
         "O Jira Cloud usa o e-mail da sua conta e um token de API de id.atlassian.com; Data Center e Server usam um token de acesso pessoal. Acesso de navegação ao projeto é suficiente.",
     },
+    trello: {
+      project: "Quadro",
+      setup:
+        "Use a chave de API de um Power-Up que você administra em trello.com/power-ups/admin e um token gerado para ele; acesso de leitura é suficiente.",
+    },
+    plane: {
+      project: "Projeto",
+      setup:
+        "Crie um token de acesso pessoal em Profile settings › Personal access tokens no Plane. O endereço da API do Plane Cloud é https://api.plane.so; a chave de URL do espaço de trabalho é a primeira parte do endereço web dele.",
+    },
+    planka: {
+      project: "Quadro",
+      setup:
+        "Entre com uma conta do PLANKA que possa abrir o quadro; a sessão aberta pelo Kanvil termina junto com a leitura. Administradores do PLANKA 2 podem emitir chaves de API em vez disso.",
+    },
+    kaneo: {
+      project: "Projeto",
+      setup: "Crie uma chave de API em Settings › Account › Developer no Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Usuário e senha",
+    api_key: "Chave de API",
   },
   jiraEdition: {
     cloud: "Cloud",

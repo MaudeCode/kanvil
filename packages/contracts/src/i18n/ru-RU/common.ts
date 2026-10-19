@@ -188,6 +188,29 @@ export default {
       setup:
         "Jira Cloud входит по адресу электронной почты аккаунта и API-токену с id.atlassian.com; Data Center и Server используют личный токен доступа. Достаточно доступа на просмотр проекта.",
     },
+    trello: {
+      project: "Доска",
+      setup:
+        "Используйте API-ключ Power-Up, которым вы управляете на trello.com/power-ups/admin, и созданный для него токен; достаточно доступа на чтение.",
+    },
+    plane: {
+      project: "Проект",
+      setup:
+        "Создайте личный токен доступа в Plane в разделе Profile settings › Personal access tokens. API-адрес Plane Cloud — https://api.plane.so; URL-ключ рабочего пространства — первая часть его веб-адреса.",
+    },
+    planka: {
+      project: "Доска",
+      setup:
+        "Войдите с аккаунтом PLANKA, у которого есть доступ к доске; сессия, открытая Kanvil, завершается вместе с чтением. Администраторы PLANKA 2 могут вместо этого выпускать API-ключи.",
+    },
+    kaneo: {
+      project: "Проект",
+      setup: "Создайте API-ключ в Kaneo в разделе Settings › Account › Developer.",
+    },
+  },
+  plankaSignIn: {
+    password: "Имя пользователя и пароль",
+    api_key: "API-ключ",
   },
   jiraEdition: {
     cloud: "Cloud",

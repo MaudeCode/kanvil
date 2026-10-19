@@ -475,7 +475,8 @@ export default {
     progressFailed_many: "{{status}} · {{done}} z {{count}} rekordów · nieudane: {{failed}}",
     progressFailed_other: "{{status}} · {{done}} z {{count}} rekordu · nieudane: {{failed}}",
     title: "Import",
-    description: "Tworzy projekt z eksportu zadań Kanvil, zespołu Linear lub projektu Jira.",
+    description:
+      "Tworzy projekt z eksportu zadań Kanvil lub innego systemu do śledzenia zadań: Linear, Jira, Trello, Plane, PLANKA lub Kaneo.",
     action: "Importuj projekt",
     detailsOf: "Szczegóły: {{name}}",
     details: "Szczegóły",
@@ -488,6 +489,13 @@ export default {
     apiKey: "Klucz API",
     apiToken: "Token API",
     personalToken: "Osobisty token dostępu",
+    token: "Token",
+    apiUrl: "URL API",
+    workspaceSlug: "Klucz URL przestrzeni roboczej",
+    signInWith: "Logowanie przez",
+    username: "Nazwa użytkownika lub e-mail",
+    password: "Hasło",
+    checkConnection: "Sprawdź dane połączenia",
     noProjects:
       "Te poświadczenia nie mają dostępu do odczytu żadnego elementu: {{label, lowercase}}.",
     includeComments: "Uwzględnij komentarze",

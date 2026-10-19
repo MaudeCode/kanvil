@@ -185,6 +185,29 @@ export default {
       setup:
         "Jira Cloud се најавува со е-поштата на вашата сметка и API-токен од id.atlassian.com; Data Center и Server користат личен токен за пристап. Доволен е пристап за прелистување на проектот.",
     },
+    trello: {
+      project: "Табла",
+      setup:
+        "Користете го API-клучот на Power-Up што го администрирате на trello.com/power-ups/admin и токен генериран за него; доволен е пристап за читање.",
+    },
+    plane: {
+      project: "Проект",
+      setup:
+        "Креирајте личен токен за пристап во Profile settings › Personal access tokens во Plane. API-адресата на Plane Cloud е https://api.plane.so; URL-клучот на работниот простор е првиот дел од неговата веб-адреса.",
+    },
+    planka: {
+      project: "Табла",
+      setup:
+        "Најавете се со PLANKA-сметка што може да ја отвори таблата; сесијата што ја отвора Kanvil завршува со читањето. Администраторите на PLANKA 2 наместо тоа можат да издаваат API-клучеви.",
+    },
+    kaneo: {
+      project: "Проект",
+      setup: "Креирајте API-клуч во Settings › Account › Developer во Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Корисничко име и лозинка",
+    api_key: "API-клуч",
   },
   jiraEdition: {
     cloud: "Cloud",

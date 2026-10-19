@@ -442,7 +442,8 @@ export default {
     progressFailed_one: "{{status}} · {{done}} από {{count}} εγγραφή · {{failed}} απέτυχαν",
     progressFailed_other: "{{status}} · {{done}} από {{count}} εγγραφές · {{failed}} απέτυχαν",
     title: "Εισαγωγή",
-    description: "Δημιουργεί έργο από εξαγωγή δελτίων Kanvil, ομάδα Linear ή έργο Jira.",
+    description:
+      "Δημιουργεί έργο από εξαγωγή δελτίων Kanvil ή από άλλο σύστημα παρακολούθησης: Linear, Jira, Trello, Plane, PLANKA ή Kaneo.",
     action: "Εισαγωγή έργου",
     detailsOf: "Λεπτομέρειες του {{name}}",
     details: "Λεπτομέρειες",
@@ -455,6 +456,13 @@ export default {
     apiKey: "Κλειδί API",
     apiToken: "Διακριτικό API",
     personalToken: "Προσωπικό διακριτικό πρόσβασης",
+    token: "Διακριτικό",
+    apiUrl: "URL API",
+    workspaceSlug: "Κωδικός URL χώρου εργασίας",
+    signInWith: "Σύνδεση με",
+    username: "Όνομα χρήστη ή email",
+    password: "Κωδικός πρόσβασης",
+    checkConnection: "Ελέγξτε τα στοιχεία σύνδεσης",
     noProjects:
       "Αυτά τα διαπιστευτήρια δεν έχουν πρόσβαση ανάγνωσης σε κανένα στοιχείο «{{label}}».",
     includeComments: "Συμπερίληψη σχολίων",

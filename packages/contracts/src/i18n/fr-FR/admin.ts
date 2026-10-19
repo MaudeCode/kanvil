@@ -451,7 +451,7 @@ export default {
       "{{status}} · {{done}} sur {{count}} enregistrements · {{failed}} en échec",
     title: "Importation",
     description:
-      "Crée un projet à partir d’un export de tickets Kanvil, d’une équipe Linear ou d’un projet Jira.",
+      "Crée un projet à partir d’un export de tickets Kanvil ou d’un autre outil de suivi : Linear, Jira, Trello, Plane, PLANKA ou Kaneo.",
     action: "Importer un projet",
     detailsOf: "Détails de {{name}}",
     details: "Détails",
@@ -464,6 +464,13 @@ export default {
     apiKey: "Clé API",
     apiToken: "Jeton API",
     personalToken: "Jeton d’accès personnel",
+    token: "Jeton",
+    apiUrl: "URL de l’API",
+    workspaceSlug: "Clé d’URL de l’espace de travail",
+    signInWith: "Se connecter avec",
+    username: "Nom d’utilisateur ou e-mail",
+    password: "Mot de passe",
+    checkConnection: "Vérifiez les informations de connexion",
     noProjects:
       "Ces identifiants ne permettent de lire aucun élément de type {{label, lowercase}}.",
     includeComments: "Inclure les commentaires",

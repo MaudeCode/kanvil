@@ -173,6 +173,29 @@ export default {
       setup:
         "Jira Cloud는 계정 이메일과 id.atlassian.com에서 발급한 API 토큰으로 로그인합니다. Data Center와 Server는 개인 액세스 토큰을 사용합니다. 프로젝트 탐색 권한이면 충분합니다.",
     },
+    trello: {
+      project: "보드",
+      setup:
+        "trello.com/power-ups/admin에서 관리하는 Power-Up의 API 키와 해당 Power-Up용으로 생성한 토큰을 사용하세요. 읽기 권한이면 충분합니다.",
+    },
+    plane: {
+      project: "프로젝트",
+      setup:
+        "Plane의 Profile settings › Personal access tokens에서 개인 액세스 토큰을 만드세요. Plane Cloud의 API 주소는 https://api.plane.so 입니다. 워크스페이스 URL 키는 웹 주소의 첫 부분입니다.",
+    },
+    planka: {
+      project: "보드",
+      setup:
+        "보드를 열 수 있는 PLANKA 계정으로 로그인하세요. Kanvil이 연 세션은 읽기가 끝나면 종료됩니다. PLANKA 2 관리자는 대신 API 키를 발급할 수 있습니다.",
+    },
+    kaneo: {
+      project: "프로젝트",
+      setup: "Kaneo의 Settings › Account › Developer에서 API 키를 만드세요.",
+    },
+  },
+  plankaSignIn: {
+    password: "사용자 이름과 비밀번호",
+    api_key: "API 키",
   },
   jiraEdition: {
     cloud: "Cloud",

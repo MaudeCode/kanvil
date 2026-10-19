@@ -181,6 +181,29 @@ export default {
       setup:
         "Jira Cloud meldt zich aan met je account-e-mailadres en een API-token van id.atlassian.com; Data Center en Server gebruiken een persoonlijk toegangstoken. Bladertoegang tot het project is voldoende.",
     },
+    trello: {
+      project: "Bord",
+      setup:
+        "Gebruik de API-sleutel van een Power-Up die je beheert op trello.com/power-ups/admin en een token dat ervoor is gegenereerd; leestoegang is voldoende.",
+    },
+    plane: {
+      project: "Project",
+      setup:
+        "Maak een persoonlijk toegangstoken aan onder Profile settings › Personal access tokens in Plane. Het API-adres van Plane Cloud is https://api.plane.so; de URL-sleutel van de werkruimte is het eerste deel van het webadres ervan.",
+    },
+    planka: {
+      project: "Bord",
+      setup:
+        "Log in met een PLANKA-account dat het bord kan openen; de sessie die Kanvil opent, eindigt zodra het lezen klaar is. Beheerders van PLANKA 2 kunnen in plaats daarvan API-sleutels uitgeven.",
+    },
+    kaneo: {
+      project: "Project",
+      setup: "Maak een API-sleutel aan onder Settings › Account › Developer in Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Gebruikersnaam en wachtwoord",
+    api_key: "API-sleutel",
   },
   jiraEdition: {
     cloud: "Cloud",

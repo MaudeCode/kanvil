@@ -181,6 +181,29 @@ export default {
       setup:
         "Το Jira Cloud συνδέεται με το email του λογαριασμού σας και ένα διακριτικό API από το id.atlassian.com· τα Data Center και Server χρησιμοποιούν προσωπικό διακριτικό πρόσβασης. Αρκεί πρόσβαση περιήγησης στο έργο.",
     },
+    trello: {
+      project: "Πίνακας",
+      setup:
+        "Χρησιμοποιήστε το κλειδί API ενός Power-Up που διαχειρίζεστε στο trello.com/power-ups/admin και ένα διακριτικό που δημιουργήθηκε γι’ αυτό· αρκεί πρόσβαση ανάγνωσης.",
+    },
+    plane: {
+      project: "Έργο",
+      setup:
+        "Δημιουργήστε ένα προσωπικό διακριτικό πρόσβασης στο Profile settings › Personal access tokens του Plane. Η διεύθυνση API του Plane Cloud είναι https://api.plane.so· ο κωδικός URL του χώρου εργασίας είναι το πρώτο μέρος της διεύθυνσης web του.",
+    },
+    planka: {
+      project: "Πίνακας",
+      setup:
+        "Συνδεθείτε με έναν λογαριασμό PLANKA που μπορεί να ανοίξει τον πίνακα· η συνεδρία που ανοίγει το Kanvil λήγει μαζί με την ανάγνωση. Οι διαχειριστές του PLANKA 2 μπορούν εναλλακτικά να εκδίδουν κλειδιά API.",
+    },
+    kaneo: {
+      project: "Έργο",
+      setup: "Δημιουργήστε ένα κλειδί API στο Settings › Account › Developer του Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Όνομα χρήστη και κωδικός πρόσβασης",
+    api_key: "Κλειδί API",
   },
   jiraEdition: {
     cloud: "Cloud",

@@ -185,6 +185,29 @@ export default {
       setup:
         "Jira Cloud hesabınızın e-poçtu və id.atlassian.com-dan alınan API tokeni ilə daxil olur; Data Center və Server şəxsi giriş tokenindən istifadə edir. Layihəyə baxış icazəsi kifayətdir.",
     },
+    trello: {
+      project: "Lövhə",
+      setup:
+        "trello.com/power-ups/admin ünvanında idarə etdiyiniz Power-Up-ın API açarından və onun üçün yaradılmış tokendən istifadə edin; oxuma icazəsi kifayətdir.",
+    },
+    plane: {
+      project: "Layihə",
+      setup:
+        "Plane-də Profile settings › Personal access tokens bölməsində şəxsi giriş tokeni yaradın. Plane Cloud API ünvanı: https://api.plane.so; iş sahəsinin URL açarı onun veb ünvanının ilk hissəsidir.",
+    },
+    planka: {
+      project: "Lövhə",
+      setup:
+        "Lövhəni aça bilən PLANKA hesabı ilə daxil olun; Kanvil-in açdığı sessiya oxuma bitəndə başa çatır. PLANKA 2 administratorları bunun əvəzinə API açarları verə bilər.",
+    },
+    kaneo: {
+      project: "Layihə",
+      setup: "Kaneo-da Settings › Account › Developer bölməsində API açarı yaradın.",
+    },
+  },
+  plankaSignIn: {
+    password: "İstifadəçi adı və şifrə",
+    api_key: "API açarı",
   },
   jiraEdition: {
     cloud: "Cloud",

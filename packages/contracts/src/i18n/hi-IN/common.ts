@@ -180,6 +180,29 @@ export default {
       setup:
         "Jira Cloud आपके खाते के ईमेल और id.atlassian.com से मिले API टोकन से साइन इन करता है; Data Center और Server व्यक्तिगत एक्सेस टोकन का उपयोग करते हैं। प्रोजेक्ट की Browse अनुमति पर्याप्त है।",
     },
+    trello: {
+      project: "बोर्ड",
+      setup:
+        "trello.com/power-ups/admin पर आपके द्वारा प्रबंधित किसी Power-Up की API कुंजी और उसके लिए बनाया गया टोकन उपयोग करें; पढ़ने की अनुमति पर्याप्त है।",
+    },
+    plane: {
+      project: "प्रोजेक्ट",
+      setup:
+        "Plane में Profile settings › Personal access tokens के अंतर्गत एक व्यक्तिगत एक्सेस टोकन बनाएं। Plane Cloud का API पता https://api.plane.so है; वर्कस्पेस URL कुंजी उसके वेब पते का पहला भाग है।",
+    },
+    planka: {
+      project: "बोर्ड",
+      setup:
+        "ऐसे PLANKA खाते से साइन इन करें जो बोर्ड खोल सके; Kanvil द्वारा खोला गया सत्र पढ़ना पूरा होते ही समाप्त हो जाता है। PLANKA 2 के व्यवस्थापक इसके बजाय API कुंजियां जारी कर सकते हैं।",
+    },
+    kaneo: {
+      project: "प्रोजेक्ट",
+      setup: "Kaneo में Settings › Account › Developer के अंतर्गत एक API कुंजी बनाएं।",
+    },
+  },
+  plankaSignIn: {
+    password: "उपयोगकर्ता नाम और पासवर्ड",
+    api_key: "API कुंजी",
   },
   jiraEdition: {
     cloud: "Cloud",

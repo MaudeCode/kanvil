@@ -188,6 +188,29 @@ export default {
       setup:
         "Jira Cloud se connecte avec l’e-mail de votre compte et un jeton API créé sur id.atlassian.com ; Data Center et Server utilisent un jeton d’accès personnel. L’accès en consultation au projet suffit.",
     },
+    trello: {
+      project: "Tableau",
+      setup:
+        "Utilisez la clé API d’un Power-Up que vous administrez sur trello.com/power-ups/admin et un jeton généré pour celui-ci ; un accès en lecture suffit.",
+    },
+    plane: {
+      project: "Projet",
+      setup:
+        "Créez un jeton d’accès personnel sous Profile settings › Personal access tokens dans Plane. L’adresse API de Plane Cloud est https://api.plane.so ; la clé d’URL de l’espace de travail est la première partie de son adresse web.",
+    },
+    planka: {
+      project: "Tableau",
+      setup:
+        "Connectez-vous avec un compte PLANKA qui peut ouvrir le tableau ; la session ouverte par Kanvil prend fin avec la lecture. Les administrateurs de PLANKA 2 peuvent à la place émettre des clés API.",
+    },
+    kaneo: {
+      project: "Projet",
+      setup: "Créez une clé API sous Settings › Account › Developer dans Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Nom d’utilisateur et mot de passe",
+    api_key: "Clé API",
   },
   jiraEdition: {
     cloud: "Cloud",
