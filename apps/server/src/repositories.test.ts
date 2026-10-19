@@ -679,6 +679,34 @@ describe("repository connections", () => {
     expect(cancelled?.finishedAt).toBeInstanceOf(Date);
   });
 
+  it("applies nothing to an archived project and still lets administrators disconnect", async () => {
+    const connection = await connect();
+    await app.domain.execute(
+      "archive_project",
+      { projectId: project.id, expectedVersion: project.version, archived: true },
+      owner,
+    );
+    const archived = await send(
+      connection,
+      "pull_request",
+      pullRequest(3, "opened", { ref: `${ticket.key}-x` }),
+    );
+    expect(archived.body).toMatchObject({ outcome: "project_archived" });
+    expect(await links()).toEqual([]);
+    await expect(
+      app.domain.execute(
+        "verify_repository_connection",
+        { projectId: project.id, connectionId: connection.id },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "project_archived" });
+    await app.domain.execute(
+      "delete_repository_connection",
+      { projectId: project.id, connectionId: connection.id, expectedVersion: connection.version },
+      owner,
+    );
+  });
+
   it("moves mapped transitions with a deleted workflow state's tickets", async () => {
     const extra = await app.domain.execute(
       "create_workflow_state",
