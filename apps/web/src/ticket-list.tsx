@@ -257,7 +257,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     accessorKey: "title",
     header: t("ticket.list.title"),
-    size: 400,
+    size: 372,
     enableHiding: false,
     minSize: 200,
     cell: ({ row }) => (
@@ -299,7 +299,8 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     accessorKey: "priority",
     header: ticketColumnLabels.priority,
-    size: 72,
+    // Room for the heading and its sort arrow; longer names in other languages truncate.
+    size: 100,
     minSize: 64,
     cell: ({ row }) => (
       <PropertyCell
@@ -313,7 +314,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   {
     accessorKey: "difficulty",
     header: ticketColumnLabels.difficulty,
-    size: 90,
+    size: 110,
     minSize: 85,
     cell: ({ row }) => (
       <PropertyCell ticket={row.original} property="difficulty" value={row.original.difficulty} />
