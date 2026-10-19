@@ -257,6 +257,10 @@ export async function createApplication(
       await tx
         .insert(workspaceMembers)
         .values({ workspaceId: workspace.id, userId: created.user.id, role: "admin" });
+      await tx
+        .update(workspaces)
+        .set({ ownerId: created.user.id })
+        .where(and(eq(workspaces.id, workspace.id), isNull(workspaces.ownerId)));
     });
     return Response.json({ ok: true }, { status: 201 });
   });

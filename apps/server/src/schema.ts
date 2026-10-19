@@ -27,7 +27,13 @@ export const workspaces = pgTable("workspaces", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
+  // An active administrator member; only a transfer changes it, and the handlers refuse to remove,
+  // demote, disable, or delete the account while it owns a live workspace. Null only on a
+  // workspace that had no active administrator when ownership was introduced.
+  ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
   version: integer("version").notNull().default(1),
+  // A deleted workspace keeps this row, its URL key, and its projects' tombstones.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: time("created_at"),
   updatedAt: time("updated_at"),
 });

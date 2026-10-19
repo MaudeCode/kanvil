@@ -72,6 +72,9 @@ export interface Actor {
   ownerId: string;
   scopes: readonly (typeof scopes)[number][];
   projectIds?: readonly string[];
+  // When the session signed in; credentials have none. Destructive account-level writes need a
+  // recent one.
+  signedInAt?: Date;
 }
 export interface Context {
   blobs: BlobWriter;
@@ -589,7 +592,11 @@ export function createDomain(
     "delete_repository_connection",
   ]);
   // Operations that act for the person signed in, never for a credential.
-  const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);
+  const sessionOnly: ReadonlySet<Operation> = new Set([
+    "get_invitation",
+    "accept_invitation",
+    "delete_workspace",
+  ]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([
     "list_projects",
@@ -666,8 +673,10 @@ export function createDomain(
         : undefined;
       if (receipt && (receipt.hash !== hash || receipt.operation !== name))
         fail(409, "idempotency_conflict", "This requestId was already used for another write");
-      // A deleted project authorizes no one, so a retried deletion replays its author's receipt.
-      if (receipt && name === "delete_project") return parseOutput(name, receipt.result);
+      // A deleted project or workspace authorizes no one, so a retried deletion replays its
+      // author's receipt.
+      if (receipt && (name === "delete_project" || name === "delete_workspace"))
+        return parseOutput(name, receipt.result);
       const ctx = await context(tx, actor, spec.scope, projectId, workspaceId);
       if (receipt) {
         const prior = parseOutput(name, receipt.result);
@@ -703,6 +712,7 @@ export function createDomain(
       scopes: readonly (typeof scopes)[number][];
       projectIds?: readonly string[];
     },
+    signedInAt?: Date,
   ): Promise<Actor> {
     const row = one(await database.db.select().from(user).where(eq(user.id, id)).limit(1));
     if (row.banned) fail(403, "account_disabled", "This account is disabled");
@@ -713,6 +723,7 @@ export function createDomain(
       ownerId: credential?.ownerId ?? id,
       scopes: credential?.scopes ?? scopes,
       ...(credential?.projectIds ? { projectIds: credential.projectIds } : {}),
+      ...(signedInAt && !credential ? { signedInAt } : {}),
     };
   }
   // Realtime and routes need the rows only; `list_projects` adds counts that would run per wake-up.

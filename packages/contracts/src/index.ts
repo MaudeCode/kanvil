@@ -487,6 +487,9 @@ export const workspaceSchema = z.object({
   slug: text.max(80),
   name: text.max(120),
   description: z.string(),
+  // The administrator who alone transfers or deletes the workspace; null until an instance
+  // administrator assigns one. Servers that predate ownership omit it.
+  ownerId: z.string().nullable().default(null),
   version,
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -572,6 +575,15 @@ export const projectImpactSchema = z.object({
     .nullable(),
 });
 export type ProjectImpact = z.output<typeof projectImpactSchema>;
+// What deleting a workspace removes: every project, archived ones included, with the totals the
+// project deletion preview reports. `blockers` must be empty before the deletion proceeds.
+export const workspaceImpactSchema = projectImpactSchema.omit({ transfer: true }).extend({
+  projects: z.array(z.object({ ...projectRef.shape, archived: z.boolean(), tickets: count })),
+  members: count,
+  invitations: count,
+  labels: count,
+});
+export type WorkspaceImpact = z.output<typeof workspaceImpactSchema>;
 // Not strict like the editable fields: unknown fields, and storage-only columns such as the manual
 // order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
@@ -1200,6 +1212,7 @@ export const eventLabels: Record<string, string> = {
   "project.transferred": "Project moved to another workspace",
   "project.deleted": "Project deleted",
   "membership.updated": "Project access changed",
+  "workspace.owner_changed": "Workspace owner changed",
   "invitation.updated": "Invitation changed",
   "destination.created": "Destination added",
   "destination.updated": "Destination changed",
@@ -1306,6 +1319,44 @@ export const operations = {
     "/workspaces/{workspaceId}/members",
     "admin",
     "Manage workspace access; removal also revokes direct project access in this workspace.",
+  ),
+  transfer_workspace: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        expectedVersion: version,
+        userId: z.string().min(1),
+      })
+      .strict(),
+    workspaceSchema,
+    "POST",
+    "/workspaces/{workspaceId}/owner",
+    "admin",
+    "Make another active administrator of the workspace its owner. Only the owner or an instance administrator can transfer, and the previous owner stays an administrator. Fails with `owner_ineligible` when the person is not an active workspace administrator.",
+  ),
+  get_workspace_impact: op(
+    z.object({ workspaceId: z.uuid() }),
+    workspaceImpactSchema,
+    "GET",
+    "/workspaces/{workspaceId}/impact",
+    "admin",
+    "Preview what deleting the workspace removes: each project with its tickets, comments, files, and activity, its members, pending invitations, and shared labels, and blockers such as claimed tickets.",
+  ),
+  delete_workspace: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        expectedVersion: version,
+        confirmSlug: z.string().max(80),
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/workspaces/{workspaceId}",
+    "admin",
+    "Permanently delete a workspace and every project in it as `delete_project` does, with its memberships, invitations, and shared labels. Only the owner or an instance administrator, signed in within the last 15 minutes, can delete; `confirmSlug` must repeat the workspace URL key. Fails with `claim_conflict` while any ticket is claimed. Accounts, the URL key, and the activity history are kept.",
   ),
   list_workspace_labels: op(
     z.object({ workspaceId: z.uuid() }),

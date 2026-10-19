@@ -6,6 +6,7 @@ import {
   accountDetailsSchema,
   adminWorkspacesSchema,
 } from "@kanvil/contracts/users";
+import { workspaceSchema } from "@kanvil/contracts";
 import { requireRow } from "./domain.ts";
 
 describe("instance account administration", () => {
@@ -132,6 +133,51 @@ describe("instance account administration", () => {
       ).status,
     ).toBe(400);
     expect((await application.domain.actor(owner.id)).admin).toBe(true);
+  });
+  it("keeps workspace owners active until ownership moves, then deletes through a fresh session", async () => {
+    const personCookie = await login(person.email);
+    const created = await request(
+      "/api/v1/workspaces",
+      "POST",
+      { name: "Owned space", slug: "owned-space" },
+      personCookie,
+    );
+    const workspace = workspaceSchema.parse(await created.json());
+    for (const [path, body] of [
+      ["ban-user", { userId: person.id }],
+      ["update-user", { userId: person.id, data: { banned: true } }],
+      ["remove-user", { userId: person.id }],
+    ] as const) {
+      const refused = await request(`/api/auth/admin/${path}`, "POST", body);
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({
+        error: { code: "workspace_owner", details: { workspaces: ["Owned space"] } },
+      });
+    }
+    expect((await application.domain.actor(person.id)).id).toBe(person.id);
+    const base = `/api/v1/workspaces/${workspace.id}`;
+    expect(
+      (await request(`${base}/members`, "POST", { email: peer.email, role: "admin" }, personCookie))
+        .status,
+    ).toBe(200);
+    const moved = await request(
+      `${base}/owner`,
+      "POST",
+      { userId: peer.id, expectedVersion: workspace.version },
+      personCookie,
+    );
+    expect(moved.status).toBe(200);
+    expect((await request("/api/auth/admin/ban-user", "POST", { userId: person.id })).status).toBe(
+      200,
+    );
+    const deleted = await request(
+      base,
+      "DELETE",
+      { expectedVersion: workspace.version + 1, confirmSlug: workspace.slug },
+      peerCookie,
+    );
+    expect(deleted.status).toBe(200);
+    expect((await request(`${base}/members`, "GET", undefined, peerCookie)).status).toBe(404);
   });
   it("serializes concurrent role changes without losing all administrators", async () => {
     const results = await Promise.all([
