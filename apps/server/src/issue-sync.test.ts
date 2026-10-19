@@ -14,7 +14,7 @@ import { createGitLabDriver } from "./adapters/gitlab.ts";
 import { defaultAdapters } from "./runtime-adapters.ts";
 import { deliverBatch } from "./outbox.ts";
 import { deliverySecrets } from "./sealing.ts";
-import { deliveries, issueLinks } from "./schema.ts";
+import { deliveries, issueLinks, repositoryConnections } from "./schema.ts";
 import type { Actor } from "./domain.ts";
 
 type Issue = {
@@ -67,7 +67,7 @@ async function fakeForge() {
       const delay = scripted?.delay ?? 0;
       const parsed: unknown = raw ? JSON.parse(raw) : {};
       const sent = z.record(z.string(), z.unknown()).parse(parsed);
-      const path = url.replace(/^\/api\/v3\/repos\/acme\/widgets/, "");
+      const path = url.replace(/^\/api\/v3\/repos\/acme\/[\w-]+/, "");
       const edit = /^\/issues\/(\d+)$/.exec(path),
         commented = /^\/issues\/(\d+)\/comments$/.exec(path);
       if (method === "POST" && path === "/issues") {
@@ -191,12 +191,12 @@ describe("issue sync", () => {
     match,
   });
   const off: SyncRule = { enabled: false, labels: [], match: "any" };
-  const connect = () =>
+  const connect = (path = "acme/widgets") =>
     app.domain.execute(
       "create_repository_connection",
       {
         projectId: project.id,
-        repository: "acme/widgets",
+        repository: path,
         token: "ghp_isolatedTestToken",
         webhookSecret: "hook-secret",
       },
@@ -689,6 +689,64 @@ describe("issue sync", () => {
     await reconcile(ticket, "kanvil");
     expect(await flush()).toMatchObject([{ method: "PATCH" }]);
     expect(forge.state.issues.get(number)?.title).toBe("Never arrives");
+  });
+
+  it("copies a ticket comment to each linked issue once", async () => {
+    const ticket = await create("Linked twice", [await labelName()]);
+    await exported(ticket);
+    await apply(await connect("acme/gadgets"), rule());
+    await flush();
+    await app.domain.execute(
+      "add_comment",
+      { projectId: project.id, ticketId: ticket.id, body: "For both" },
+      owner,
+    );
+    const posted = await flush();
+    expect(posted.map((request) => request.url).toSorted()).toEqual([
+      expect.stringMatching(/^\/api\/v3\/repos\/acme\/gadgets\/issues\/\d+\/comments$/),
+      expect.stringMatching(/^\/api\/v3\/repos\/acme\/widgets\/issues\/\d+\/comments$/),
+    ]);
+    expect(await flush()).toEqual([]);
+  });
+
+  it("lets rules drop labels that no longer exist in the workspace", async () => {
+    const connection = await connect();
+    const gone = crypto.randomUUID();
+    await fixture.database.db
+      .update(repositoryConnections)
+      .set({ outbound: { enabled: true, labels: [gone], match: "any" } })
+      .where(eq(repositoryConnections.id, connection.id));
+    // Turning the rule off, or saving it without the stale label, still works.
+    await expect(
+      preview(connection, { enabled: false, labels: [gone], match: "any" }),
+    ).resolves.toMatchObject({ export: 0 });
+    await expect(preview(connection, rule())).resolves.toMatchObject({ export: 0 });
+  });
+
+  it("stops links for review when a sync is skipped for archiving or lost access", async () => {
+    const ticket = await create("Archived later", [await labelName()]);
+    await exported(ticket);
+    await update(ticket, { title: "Unsent" });
+    const archived = await app.domain.execute(
+      "archive_project",
+      {
+        projectId: project.id,
+        expectedVersion: (await app.domain.execute("get_project", { projectId: project.id }, owner))
+          .version,
+        archived: true,
+      },
+      owner,
+    );
+    expect(await flush()).toEqual([]);
+    expect(await linkOf(ticket)).toMatchObject({ state: "review", reason: "project_archived" });
+    await app.domain.execute(
+      "archive_project",
+      { projectId: project.id, expectedVersion: archived.version, archived: false },
+      owner,
+    );
+    await reconcile(ticket, "kanvil");
+    expect(await flush()).toMatchObject([{ method: "PATCH" }]);
+    expect(await linkOf(ticket)).toMatchObject({ state: "active" });
   });
 
   it("imports qualifying issues and keeps issue state for review while the connection is paused", async () => {

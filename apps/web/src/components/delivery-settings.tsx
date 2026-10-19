@@ -1142,14 +1142,21 @@ function IssueSyncRules({
   const labels = useQuery(api.query("list_workspace_labels", { workspaceId }));
   const preview = useOperation("preview_repository_sync"),
     apply = useOperation("apply_repository_sync");
-  const [rules, setRules] = useState({
-    outbound: connection.outbound,
-    inbound: connection.inbound,
+  const [rules, setRules] = useState<{ outbound: SyncRule; inbound: SyncRule } | null>(null);
+  const catalog = labels.data ?? [];
+  // Labels deleted since the rules were saved, or left behind by a workspace move, are dropped.
+  const known = (rule: SyncRule) => ({
+    ...rule,
+    labels: rule.labels.filter((id) => catalog.some((item) => item.id === id)),
   });
+  const current = rules ?? {
+    outbound: known(connection.outbound),
+    inbound: known(connection.inbound),
+  };
   const [previewed, setPreviewed] = useState<SyncPreview | null>(null);
   const busy = preview.isPending || apply.isPending;
-  const change = (next: Partial<typeof rules>) => {
-    setRules({ ...rules, ...next });
+  const change = (next: Partial<typeof current>) => {
+    setRules({ ...current, ...next });
     setPreviewed(null);
     apply.reset();
   };
@@ -1157,7 +1164,7 @@ function IssueSyncRules({
     event.preventDefault();
     if (!previewed) {
       void preview
-        .mutateAsync({ projectId, connectionId: connection.id, ...rules })
+        .mutateAsync({ projectId, connectionId: connection.id, ...current })
         .then(setPreviewed)
         .catch(() => {});
       return;
@@ -1167,7 +1174,7 @@ function IssueSyncRules({
         projectId,
         connectionId: connection.id,
         expectedVersion: connection.version,
-        ...rules,
+        ...current,
         fingerprint: previewed.fingerprint,
       })
       .then(() => {
@@ -1176,7 +1183,6 @@ function IssueSyncRules({
       })
       .catch(() => setPreviewed(null));
   }
-  const catalog = labels.data ?? [];
   return (
     <Modal
       title={`Issue sync · ${connection.repository}`}
@@ -1198,7 +1204,7 @@ function IssueSyncRules({
                 description="Open tickets get a new issue; title, description, state, and new comments stay in step."
                 labelsLabel="Only tickets with these labels"
                 emptyText="Every open ticket"
-                rule={rules.outbound}
+                rule={current.outbound}
                 labels={catalog}
                 onChange={(outbound) => change({ outbound })}
               />
@@ -1208,7 +1214,7 @@ function IssueSyncRules({
                 description={`Open issues import when ${host} next reports them.`}
                 labelsLabel="Only issues with these labels"
                 emptyText="Every open issue"
-                rule={rules.inbound}
+                rule={current.inbound}
                 labels={catalog}
                 onChange={(inbound) => change({ inbound })}
               />

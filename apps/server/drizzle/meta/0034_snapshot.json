@@ -1,5 +1,5 @@
 {
-  "id": "5dda2c17-4fa0-4d89-b8e4-af133d38eb6b",
+  "id": "0fa24f4f-abe2-4b87-8187-dd781ef1bfe9",
   "prevId": "21590833-d177-4a7b-9ba7-d924bcb149e6",
   "version": "7",
   "dialect": "postgresql",
@@ -5860,6 +5860,7 @@
           "name": "synced_comment_local",
           "nullsNotDistinct": false,
           "columns": [
+            "link_id",
             "comment_id"
           ]
         }

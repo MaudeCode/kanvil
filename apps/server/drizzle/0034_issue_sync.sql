@@ -23,7 +23,7 @@ CREATE TABLE "synced_comments" (
 	"comment_id" uuid,
 	"remote_id" text NOT NULL,
 	CONSTRAINT "synced_comments_link_id_remote_id_pk" PRIMARY KEY("link_id","remote_id"),
-	CONSTRAINT "synced_comment_local" UNIQUE("comment_id")
+	CONSTRAINT "synced_comment_local" UNIQUE("link_id","comment_id")
 );
 --> statement-breakpoint
 ALTER TABLE "deliveries" ADD COLUMN "issue_link_id" uuid;--> statement-breakpoint

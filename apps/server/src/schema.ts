@@ -753,7 +753,7 @@ export const syncedComments = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.linkId, table.remoteId] }),
-    unique("synced_comment_local").on(table.commentId),
+    unique("synced_comment_local").on(table.linkId, table.commentId),
   ],
 );
 // Webhook deliveries already handled, so a redelivery or replay applies nothing twice.

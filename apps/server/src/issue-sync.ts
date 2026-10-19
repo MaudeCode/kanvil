@@ -266,11 +266,12 @@ export async function queueIssueSync(db: Db, rows: (typeof events.$inferSelect)[
       ]),
     );
   const commentEvents = relevant.filter((event) => event.type === "comment.created");
+  // Comments already on an issue, or copied from it, by link.
   const copied = new Set(
     commentEvents.length
       ? (
           await db
-            .select({ id: syncedComments.commentId })
+            .select({ linkId: syncedComments.linkId, id: syncedComments.commentId })
             .from(syncedComments)
             .where(
               inArray(
@@ -278,7 +279,7 @@ export async function queueIssueSync(db: Db, rows: (typeof events.$inferSelect)[
                 commentEvents.map((event) => String(event.data.commentId)),
               ),
             )
-        ).map((row) => row.id)
+        ).map((row) => `${row.linkId}:${row.id}`)
       : [],
   );
   for (const ticket of found)
@@ -322,7 +323,9 @@ export async function queueIssueSync(db: Db, rows: (typeof events.$inferSelect)[
       else if (link.state === "active" && !connection.paused) {
         await queueSync(db, [link]);
         const fresh = commentEvents.filter(
-          (event) => event.ticketId === ticket.id && !copied.has(String(event.data.commentId)),
+          (event) =>
+            event.ticketId === ticket.id &&
+            !copied.has(`${link.id}:${String(event.data.commentId)}`),
         );
         if (fresh.length)
           await db
@@ -648,6 +651,18 @@ export async function sendIssueSync(
         : ticket.projectId !== connection.projectId
           ? "moved"
           : null;
+  // Lost access and archiving end without a resume that would send the change, so the link stops
+  // for review instead of claiming to sync; a paused connection queues its links again on resume.
+  if (skip === "access_revoked" || skip === "project_archived")
+    return locked(database, async (db) => {
+      await finish(db, job, skip);
+      const current = await fresh(db, link.id);
+      if (current?.state === "active" || current?.state === "creating")
+        await setLink(db, connection.projectId, current, {
+          state: current.state === "active" ? "review" : "paused",
+          reason: skip,
+        });
+    });
   if (skip) return finish(database.db, job, skip);
   const driver = driverFor(drivers, connection),
     { token } = readRepositorySettings(secrets, connection.settings),
@@ -672,7 +687,9 @@ export async function sendIssueSync(
     const copied = await database.db
       .select({ id: syncedComments.remoteId })
       .from(syncedComments)
-      .where(eq(syncedComments.commentId, comment.comment.id));
+      .where(
+        and(eq(syncedComments.linkId, link.id), eq(syncedComments.commentId, comment.comment.id)),
+      );
     if (copied.length) return finish(database.db, job, null);
     if (link.state !== "active" || link.number === null) return finish(database.db, job, "paused");
     const sent = await settle(
@@ -880,13 +897,15 @@ const ids = (items: { id: string }[]) => items.map((item) => item.id).toSorted()
 async function plan(ctx: Context, connection: Connection, { inbound, outbound }: Rules) {
   const rules = { inbound, outbound };
   const names = await labelNames(ctx.db, project(ctx).workspaceId, [inbound, outbound]);
+  // A rule that is off may keep labels that were deleted since; turning it off must still work.
   for (const [side, rule] of Object.entries(rules))
-    rule.labels.forEach((id, index) => {
-      if (!names.has(id))
-        fail(400, "validation_error", "Choose labels of this workspace", [
-          { path: `${side}.labels.${index}`, message: "Choose labels of this workspace" },
-        ]);
-    });
+    if (rule.enabled)
+      rule.labels.forEach((id, index) => {
+        if (!names.has(id))
+          fail(400, "validation_error", "Choose labels of this workspace", [
+            { path: `${side}.labels.${index}`, message: "Choose labels of this workspace" },
+          ]);
+      });
   const rows = await ctx.db
     .select({ link: issueLinks, ticket: tickets })
     .from(issueLinks)
