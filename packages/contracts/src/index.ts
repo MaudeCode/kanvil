@@ -1231,6 +1231,182 @@ export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const key = typeof event.data.key === "string" ? event.data.key : event.ticketId;
   return `${label} · ${key}${typeof event.data.title === "string" ? ` · ${event.data.title}` : ""}`;
 }
+// The versioned ticket export, and the one shape every import reads; sources from other trackers
+// translate into it. Records name each other by `ref`, the source's stable ID, never by key, so
+// links survive new keys. `completeness.omitted` lists what the export left out.
+export const ticketExportFormat = "kanvil.tickets";
+export const importLimits = {
+  members: 1000,
+  labels: 1000,
+  tickets: 5000,
+  relations: 20_000,
+  comments: 20_000,
+  evidence: 10_000,
+  resources: 10_000,
+} as const;
+const sourceRef = z.string().min(1).max(200);
+// Exports carry projects of any size; `capped` applies `importLimits` to what an import accepts.
+const bundleSchema = (capped: boolean) => {
+  const exported = <T extends z.ZodType>(item: T, max: number) => {
+    const items = z.array(item);
+    return (capped ? items.max(max) : items).default([]);
+  };
+  return z.object({
+    format: z.literal(ticketExportFormat),
+    version: z.literal(1),
+    exportedAt: timestamp,
+    project: z.object({
+      ref: sourceRef,
+      key: z.string().max(20),
+      name: text.max(120),
+      description: z.string().max(5000).default(""),
+    }),
+    completeness: z
+      .object({
+        omitted: z
+          .array(
+            z.object({
+              content: z.string().max(80),
+              // Null when the source did not count it.
+              count: count.nullable(),
+              reason: z.string().max(500),
+            }),
+          )
+          .max(50),
+      })
+      .default({ omitted: [] }),
+    // The people records name: assignees, ticket creators, and authors. Imports match them by email.
+    members: exported(
+      z.object({ ref: sourceRef, name: z.string().max(200), email: z.string().max(320) }),
+      importLimits.members,
+    ),
+    workflow: z
+      .array(
+        z.object({
+          ref: sourceRef,
+          name: text.max(40),
+          category: z.enum(states),
+          color: labelColor.default("default"),
+        }),
+      )
+      .min(1)
+      .max(50),
+    customFields: exported(
+      customFieldSchema
+        .pick({ name: true, type: true, options: true, required: true, defaultValue: true })
+        .extend({ ref: sourceRef }),
+      customFieldLimit,
+    ),
+    labels: exported(
+      z.object({ name: text.max(40), color: labelColor.default("gray") }),
+      importLimits.labels,
+    ),
+    tickets: exported(
+      z.object({
+        ...ticketFields.pick({
+          title: true,
+          description: true,
+          acceptanceCriteria: true,
+          priority: true,
+          kind: true,
+          difficulty: true,
+          labels: true,
+          scopes: true,
+          automationReady: true,
+          holdReason: true,
+          startAt: true,
+          dueAt: true,
+          archived: true,
+        }).shape,
+        ref: sourceRef,
+        // The key in the source; an import issues new keys.
+        key: z.string().max(40),
+        stateRef: sourceRef,
+        assigneeRef: sourceRef.nullable().default(null),
+        parentRef: sourceRef.nullable().default(null),
+        // Values by field `ref`.
+        customFields: z.record(sourceRef, customFieldValue).default({}),
+        createdByRef: sourceRef.nullable().default(null),
+        createdAt: timestamp.nullable().default(null),
+      }),
+      importLimits.tickets,
+    ),
+    relations: exported(
+      z.object({ sourceRef, targetRef: sourceRef, type: relationSchema.shape.type }),
+      importLimits.relations,
+    ),
+    comments: exported(
+      z.object({
+        ref: sourceRef,
+        ticketRef: sourceRef,
+        authorRef: sourceRef.nullable(),
+        body: text.max(50_000),
+        createdAt: timestamp,
+      }),
+      importLimits.comments,
+    ),
+    evidence: exported(
+      evidenceFields.extend({
+        ref: sourceRef,
+        ticketRef: sourceRef,
+        authorRef: sourceRef.nullable(),
+        createdAt: timestamp,
+      }),
+      importLimits.evidence,
+    ),
+    resources: exported(
+      resourceFields.extend({ ref: sourceRef, ticketRef: sourceRef, createdAt: timestamp }),
+      importLimits.resources,
+    ),
+  });
+};
+export const ticketExportSchema = bundleSchema(false);
+export const ticketImportSchema = bundleSchema(true);
+export type TicketExport = z.output<typeof ticketExportSchema>;
+// A staged import into a new project: previewed, then started, then written in the background.
+export const importStatuses = ["previewed", "running", "completed", "failed", "cancelled"] as const;
+export const importStatusLabels: Record<(typeof importStatuses)[number], string> = {
+  previewed: "Ready to import",
+  running: "Importing",
+  completed: "Imported",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+export const importRunSchema = z.object({
+  id: z.uuid(),
+  workspaceId: z.uuid(),
+  // Set once the run has created its project.
+  projectId: z.uuid().nullable(),
+  key: z.string(),
+  name: z.string(),
+  visibility: z.enum(["workspace", "private"]),
+  status: z.enum(importStatuses),
+  // Records the bundle holds by content: tickets, comments, and so on.
+  counts: z.record(z.string(), count),
+  // The account each person's assignments go to; null leaves their tickets unassigned.
+  members: z.array(
+    z.object({
+      ref: z.string(),
+      name: z.string(),
+      email: z.string(),
+      userId: z.string().nullable(),
+    }),
+  ),
+  // Errors block the start; warnings say what the import changes or leaves out.
+  issues: z.array(
+    z.object({ severity: z.enum(["error", "warning"]), code: z.string(), message: z.string() }),
+  ),
+  progress: z.object({ total: count, done: count, failed: count }),
+  // Records that could not be written, in import order; the first 100.
+  errors: z.array(
+    z.object({ kind: z.string(), label: z.string(), code: z.string(), message: z.string() }),
+  ),
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+export type ImportRun = z.output<typeof importRunSchema>;
+const importInput = z.object({ workspaceId: z.uuid(), importId: z.uuid() });
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
 // One uploaded file: attachments and staged inline uploads accept the same bytes.
@@ -1652,6 +1828,63 @@ export const operations = {
     "/projects/{projectId}",
     "admin",
     "Permanently delete a project's tickets, comments, attachments, labels, feeds, and destinations. `confirmKey` must repeat the project prefix. Fails with `claim_conflict` while any ticket is claimed. The prefix stays reserved and the activity history and deletion events are kept.",
+  ),
+  export_project: op(
+    projectInput,
+    ticketExportSchema,
+    "GET",
+    "/projects/{projectId}/export",
+    "read",
+    "Export the project's tickets, archived ones included, as a versioned `kanvil.tickets` bundle: workflow states, custom fields, labels, relationships, comments, evidence, and links, with the people they name. Records reference each other by source ID. `completeness.omitted` counts what the bundle leaves out, such as attachments and activity history.",
+  ),
+  preview_import: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        key: projectKey,
+        name: text.max(120),
+        visibility: z.enum(["workspace", "private"]).default("private"),
+        bundle: ticketImportSchema,
+      })
+      .strict(),
+    importRunSchema,
+    "POST",
+    "/workspaces/{workspaceId}/imports",
+    "write",
+    "Stage a `kanvil.tickets` bundle for import into a new project of the workspace and check it without writing tickets: references, workflow, custom field values, dependency cycles, and the prefix. People are matched by email to accounts that can open the new project. The run holds the issues found; errors block `start_import`. Signed-in accounts only; an unstarted run expires after 24 hours.",
+  ),
+  list_imports: op(
+    z.object({ workspaceId: z.uuid() }),
+    z.array(importRunSchema),
+    "GET",
+    "/workspaces/{workspaceId}/imports",
+    "read",
+    "List your 20 most recently started imports into the workspace with their progress. Previews that were never started are left out.",
+  ),
+  get_import: op(
+    importInput,
+    importRunSchema,
+    "GET",
+    "/workspaces/{workspaceId}/imports/{importId}",
+    "read",
+    "Read one of your imports: its preview, progress, and the records that failed.",
+  ),
+  start_import: op(
+    importInput.extend({ ...mutation, expectedVersion: version }).strict(),
+    importRunSchema,
+    "POST",
+    "/workspaces/{workspaceId}/imports/{importId}/start",
+    "write",
+    "Start a previewed import without errors. The server creates the project and writes its records in the background through the regular operations, as you, resuming after a restart without duplicates. Imported writes carry import provenance on their events, notify no one, and reach no project destination.",
+  ),
+  cancel_import: op(
+    importInput.extend({ ...mutation, expectedVersion: version }).strict(),
+    importRunSchema,
+    "POST",
+    "/workspaces/{workspaceId}/imports/{importId}/cancel",
+    "write",
+    "Cancel a previewed or running import. Records already written stay in the new project.",
   ),
   list_members: op(
     projectInput,

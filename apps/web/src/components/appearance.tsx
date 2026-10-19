@@ -16,17 +16,10 @@ import { Input as FileInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { downloadFile } from "../lib/browser.ts";
 const modes = ["system", "light", "dark"] as const;
-function download(theme: ThemeDefinition) {
-  const url = URL.createObjectURL(
-      new Blob([encodeThemeFile([theme])], { type: "application/json" }),
-    ),
-    anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${theme.id}.kanvil-theme.json`;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+const download = (theme: ThemeDefinition) =>
+  downloadFile(`${theme.id}.kanvil-theme.json`, encodeThemeFile([theme]));
 function ThemeChoice({
   theme,
   active,

@@ -21,6 +21,26 @@ import {
 } from "./index.ts";
 import { createTicketDraft, ticketDefaults, ticketDraftSchema } from "./drafts.ts";
 
+// A minimal exported ticket, for bundles over the import limits.
+const bigTicket = (index: number) => ({
+  ref: `t${index}`,
+  key: `BIG-${index}`,
+  title: `Ticket ${index}`,
+  description: "",
+  acceptanceCriteria: "",
+  priority: "medium",
+  kind: "feature",
+  difficulty: null,
+  labels: [],
+  scopes: [],
+  automationReady: false,
+  holdReason: null,
+  startAt: null,
+  dueAt: null,
+  archived: false,
+  stateRef: "todo",
+});
+
 describe("agent write contracts", () => {
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
     const legacy = {
@@ -419,5 +439,17 @@ describe("custom fields", () => {
         .success,
     ).toBe(true);
     expect(ticketFilter.safeParse({ customField: "severity:high" }).success).toBe(false);
+  });
+  it("exports projects of any size while imports keep their collection limits", () => {
+    const big = {
+      format: "kanvil.tickets",
+      version: 1,
+      exportedAt: "2026-10-19T00:00:00.000Z",
+      project: { ref: "p", key: "BIG", name: "Big" },
+      workflow: [{ ref: "todo", name: "To do", category: "todo" }],
+      tickets: Array.from({ length: 5001 }, (_, index) => bigTicket(index + 1)),
+    };
+    expect(operations.export_project.output.safeParse(big).success).toBe(true);
+    expect(operations.preview_import.input.shape.bundle.safeParse(big).success).toBe(false);
   });
 });

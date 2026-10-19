@@ -10,7 +10,7 @@ Judge the product by how reliably agents can discover work, obtain complete cont
 
 Build a self-hosted ticketing system with web and native mobile apps, local login, PocketID-compatible OIDC, a documented HTTP API, durable realtime events, and MCP tools.
 
-Start with a fresh workspace and native ticket storage. Kaneo compatibility, data import, and changes to T3 Code or Factory are outside this project. External consumers receive documented interfaces and example clients maintained in this repository.
+Start with a fresh workspace and native ticket storage. Projects export to a versioned JSON bundle and import from one into a new project through a previewed, restart-safe run; sources from other trackers translate into that bundle. Kaneo compatibility beyond such import sources and changes to T3 Code or Factory are outside this project. External consumers receive documented interfaces and example clients maintained in this repository.
 
 Use established libraries and the smallest implementation that meets the acceptance criteria. Each ticket operation, permission check, validation rule, and event write has one shared implementation across HTTP and MCP. Web and mobile share contracts and client logic while using platform-appropriate rendering and navigation.
 
@@ -50,6 +50,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 - Typed project custom fields (text, number, date, checkbox, select, and multi-select) that administrators define, order, and edit with required rules and defaults. Definitions are versioned and server-validated; removing a used option needs an explicit destination for its values, so nothing is erased silently.
 - Parent/child relationships, blockers, related tickets, and duplicate references.
 - Comments, activity history, subscriptions, duplication, archiving, and deletion behavior.
+- Versioned JSON export of a project's tickets and a previewed import into a new project that resumes after interruption without duplicates and notifies no one.
 - Workspace search across projects, tickets, comments, and activity with a results page; any-of and none-of property filters shared by lists, search, and saved views; sorting, pagination, and bulk edits.
 - Optimistic concurrency checks that prevent silent overwrites.
 - Idempotent writes that remain safe when a client retries a request.

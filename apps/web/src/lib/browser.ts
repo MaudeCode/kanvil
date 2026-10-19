@@ -22,6 +22,15 @@ export async function copyText(value: string) {
     if (previous instanceof HTMLElement) previous.focus();
   }
 }
+// Saves text as a file through a temporary link.
+export function downloadFile(name: string, text: string, type = "application/json") {
+  const url = URL.createObjectURL(new Blob([text], { type })),
+    anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 export function blobToBase64(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
