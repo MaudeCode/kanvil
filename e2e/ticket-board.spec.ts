@@ -40,6 +40,10 @@ test("the board keeps filters and selection and moves tickets by drag or keyboar
   await page.getByRole("checkbox", { name: "Select BOARD-1", exact: true }).check();
   await setLayout(page, "Board");
   await expect(page.getByRole("region", { name: "Ticket board", exact: true })).toBeVisible();
+  // Lanes scroll inside the board; the page itself never gains a horizontal scrollbar.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
   // The URL filter, the selection, and every lane survive the switch; empty lanes stay as targets.
   expect(new URL(page.url()).searchParams.get("label")).toContain("board");
   await expect(page.getByRole("region", { name: "Selected tickets", exact: true })).toBeVisible();

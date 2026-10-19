@@ -1013,7 +1013,7 @@ export function TicketList({
           role="region"
           aria-label="Ticket board"
           className={cn(
-            "ticket-board min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
+            "ticket-board relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
             densityClass,
           )}
           data-density={density}
