@@ -212,7 +212,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       try {
         await forgetDevicePush(connection, identity.id);
         const keys = await AsyncStorage.getAllKeys();
-        await AsyncStorage.multiRemove(
+        await AsyncStorage.removeMany(
           keys.filter((key) => key.startsWith(`${prefix}:${identity.id}:`)),
         );
         if (disconnect) await onDisconnect();
