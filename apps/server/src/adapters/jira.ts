@@ -195,7 +195,7 @@ export function createJiraReader(http: SourceHttp) {
           startAt += page.values.length;
           if (page.isLast || !page.values.length) break;
         }
-      return found.map((item) => ({ ref: item.id, key: item.key, name: item.name }));
+      return found.map((item) => ({ ref: item.id, key: item.key, name: item.name, group: "" }));
     },
     async bundle(source: Jira, projectRef: string, includeComments: boolean) {
       const project = await get(source, jiraProject, `project/${encodeURIComponent(projectRef)}`);

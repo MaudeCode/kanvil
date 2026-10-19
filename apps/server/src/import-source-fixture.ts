@@ -1,16 +1,20 @@
-// A fake Linear GraphQL API and Jira REST API on loopback, for the import suites. It serves one
-// Linear team and one Jira project in small pages, records every request, and can answer the next
-// requests with a scripted failure. No real account or token is involved.
+// Fake Linear, Jira, Trello, Plane, PLANKA, and Kaneo APIs on loopback, for the import suites.
+// Each serves one team, project, or board in small pages, every request is recorded, and the next
+// requests can answer with a scripted failure. Suites may change `data` to change what the
+// sources hold; `reset` restores it. No real account or token is involved.
 import { createServer, type IncomingHttpHeaders, type ServerResponse } from "node:http";
 import { z } from "zod";
+import { seed, sourceFakes, sourceOwnerEmail } from "./import-source-fakes.ts";
 
 export interface SourceRequest {
   method: string;
   path: string;
   authorization: string;
+  // The Plane or PLANKA API key header.
+  apiKey: string;
   body: string;
 }
-export const sourceOwnerEmail = "owner@example.test";
+export { fakeCredentials, sourceOwnerEmail } from "./import-source-fakes.ts";
 const ann = { id: "lin-user-ann", name: "Ann Linear", email: sourceOwnerEmail };
 const bob = { id: "lin-user-bob", name: "Bob Elsewhere", email: "bob@elsewhere.test" };
 const states = [
@@ -222,6 +226,7 @@ const pageOf = <T>(items: T[], cursor: string | null) => {
 
 export async function startImportSources() {
   const requests: SourceRequest[] = [];
+  let data = seed();
   let failures: { status: number; headers: Record<string, string>; body: string }[] = [];
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -233,10 +238,16 @@ export async function startImportSources() {
         method: request.method ?? "",
         path: url.pathname + url.search,
         authorization: header(request.headers, "authorization"),
+        apiKey: header(request.headers, "x-api-key"),
         body,
       });
       const failure = failures.shift();
       if (failure) return send(response, failure.status, failure.body, failure.headers);
+      for (const [prefix, serve] of Object.entries(sourceFakes)) {
+        if (!url.pathname.startsWith(`/${prefix}/`)) continue;
+        const answer = serve(data, request.method ?? "GET", url, request.headers, body);
+        return send(response, answer.status, answer.body);
+      }
       if (url.pathname === "/linear/graphql") return send(response, 200, linear(body));
       if (url.pathname.startsWith("/jira/")) {
         const found = jira(url);
@@ -254,7 +265,16 @@ export async function startImportSources() {
   return {
     linearUrl: `${origin}/linear/graphql`,
     jiraUrl: `${origin}/jira`,
+    trelloUrl: `${origin}/trello`,
+    planeUrl: `${origin}/plane`,
+    plankaUrl: `${origin}/planka`,
+    kaneoUrl: `${origin}/kaneo`,
+    // The addresses `createImportSources` takes.
+    urls: { linear: `${origin}/linear/graphql`, trello: `${origin}/trello` },
     requests,
+    get data() {
+      return data;
+    },
     // The next `times` requests answer with this status instead.
     fail(times: number, status: number, headers: Record<string, string> = {}, body = "{}") {
       failures = Array.from({ length: times }, () => ({ status, headers, body }));
@@ -262,6 +282,7 @@ export async function startImportSources() {
     reset() {
       requests.length = 0;
       failures = [];
+      data = seed();
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

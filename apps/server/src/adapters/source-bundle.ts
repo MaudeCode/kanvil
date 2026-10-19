@@ -1,10 +1,11 @@
-// What the Linear and Jira readers share: reading one response with retries, the errors a source
+// What the source readers share: reading one response with retries, the errors a source
 // answers with, and assembling what they read into a `kanvil.tickets` bundle.
 import {
   ApiError,
   defaultWorkflow,
   importLimits,
   importProviderDefinitions,
+  isPresetColor,
   ticketExportFormat,
   type ImportProvider,
   type TicketExport,
@@ -30,8 +31,21 @@ export const byStatus = (status: number): Outcome =>
             ? "failing"
             : "invalid";
 const attempts = 4;
-// The source's `Retry-After` when it sends one, up to 30 seconds; otherwise 1, 2, then 4 seconds.
-function delay(response: OutboundResponse | undefined, attempt: number) {
+// Sources that limit requests per window without saying when to retry: a limited read waits a
+// third of the window between attempts, so its four attempts outlast the window.
+const limitWindows: Partial<Record<ImportProvider, number>> = {
+  trello: 10_000,
+  plane: 60_000,
+  kaneo: 60_000,
+};
+// The source's `Retry-After` when it sends one, up to 30 seconds; otherwise a third of the
+// source's limit window for a rate limit, or 1, 2, then 4 seconds.
+function delay(
+  provider: ImportProvider,
+  response: OutboundResponse | undefined,
+  attempt: number,
+  outcome?: Outcome,
+) {
   const header = response?.headers?.["retry-after"],
     value = Array.isArray(header) ? header[0] : header;
   const seconds =
@@ -40,7 +54,9 @@ function delay(response: OutboundResponse | undefined, attempt: number) {
       : /^\d+$/.test(value)
         ? Number(value)
         : (Date.parse(value) - Date.now()) / 1000;
-  return Math.min(Number.isFinite(seconds) ? Math.max(seconds, 0) : 2 ** (attempt - 1), 30) * 1000;
+  if (Number.isFinite(seconds)) return Math.min(Math.max(seconds, 0), 30) * 1000;
+  const window = outcome === "limited" ? limitWindows[provider] : undefined;
+  return window ? window / 3 : 2 ** (attempt - 1) * 1000;
 }
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const unreadable = (provider: ImportProvider) =>
@@ -78,7 +94,7 @@ export async function readSource(
       if (!(error instanceof DeliveryError)) throw error;
       // A host that does not answer or resolve would only make the person wait longer.
       if (error.code === "network_error" && attempt < attempts) {
-        await wait(delay(undefined, attempt));
+        await wait(delay(provider, undefined, attempt));
         continue;
       }
       throw new ApiError(
@@ -99,7 +115,7 @@ export async function readSource(
       return data;
     }
     if ((outcome === "limited" || outcome === "failing") && attempt < attempts) {
-      await wait(delay(response, attempt));
+      await wait(delay(provider, response, attempt, outcome));
       continue;
     }
     if (outcome === "rejected")
@@ -131,19 +147,51 @@ export const category = (name: string, fallback: (typeof states)[number]) =>
 // A source date (YYYY-MM-DD) is due at the end of that day.
 export const dueAt = (date: string | null | undefined) =>
   date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T23:59:59.999Z` : null;
+// A source date or timestamp: a bare date is due at the end of its day and starts at its beginning.
+export const dueTime = (value: string | null | undefined) =>
+  value ? (dueAt(value) ?? isoTime(value)) : null;
+export const startTime = (value: string | null | undefined) =>
+  !value ? null : /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : isoTime(value);
 // Source timestamps in UTC; Jira writes offsets without a colon, such as +0000.
 export const isoTime = (value: string) =>
   new Date(value.replace(/([+-]\d{2})(\d{2})$/, "$1:$2")).toISOString();
 // Issues of a bug type or with a bug label are bugs; the rest are features.
 export const kindOf = (names: string[]) =>
   names.some((name) => name.trim().toLowerCase() === "bug") ? "bug" : "feature";
-export const hexOrGray = (color: string | null | undefined) =>
-  color && /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "gray";
+// A hex color, or the first Kanvil tone a color name holds, such as Trello's `green_dark` or
+// PLANKA's `berry-red`; gray otherwise.
+export function toneOf(color: string | null | undefined) {
+  if (!color) return "gray";
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color.toLowerCase();
+  return (
+    color
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .find(isPresetColor) ?? "gray"
+  );
+}
+// Checklists as Markdown task lists under their names, appended to a description.
+export function withChecklists(
+  description: string,
+  checklists: { name: string; items: { name: string; done: boolean }[] }[],
+) {
+  const lists = checklists
+    .filter((list) => list.items.length)
+    .map(
+      (list) =>
+        `### ${list.name.trim() || "Checklist"}\n\n${list.items
+          .map((item) => `- [${item.done ? "x" : " "}] ${item.name.trim()}`)
+          .join("\n")}`,
+    );
+  return [description.trim(), ...lists].filter(Boolean).join("\n\n");
+}
 export interface Person {
   ref: string;
   name: string;
   email: string;
 }
+// Someone a source names by ID but no longer lists.
+export const formerMember = (ref: string): Person => ({ ref, name: "Former member", email: "" });
 type Omitted = TicketExport["completeness"]["omitted"][number];
 
 // Collects what a reader translates and assembles the bundle. What Kanvil cannot hold is counted
@@ -179,27 +227,38 @@ export function bundleBuilder(provider: ImportProvider) {
     );
     return value.slice(0, max);
   };
+  // The ref of a person a record names, or null for none.
+  const person = (who: Person | null | undefined) => {
+    if (!who) return null;
+    if (!people.has(who.ref)) {
+      within(people.size, importLimits.members, "people");
+      people.set(who.ref, who);
+    }
+    return who.ref;
+  };
   return {
     note,
     clip,
-    // The ref of a person a record names, or null for none.
-    person(person: Person | null | undefined) {
-      if (!person) return null;
-      if (!people.has(person.ref)) {
-        within(people.size, importLimits.members, "people");
-        people.set(person.ref, person);
-      }
-      return person.ref;
+    person,
+    // A ticket has one assignee: the first of those a source item names.
+    assignee(who: Person[]) {
+      if (who.length > 1)
+        note(
+          "additional assignees",
+          "A ticket has one assignee; items with several keep the first.",
+          who.length - 1,
+        );
+      return person(who[0]);
     },
     // A ticket's label names; each label keeps the color of its first use.
-    labels(items: { name: string; color?: string | null }[]) {
+    labels(items: { name: string; color?: string | null | undefined }[]) {
       const names: string[] = [];
       for (const item of items) {
         const name = clip(item.name.trim(), 40);
         if (!name || names.includes(name)) continue;
         if (!labels.has(name)) {
           within(labels.size, importLimits.labels, "labels");
-          labels.set(name, { name, color: hexOrGray(item.color) });
+          labels.set(name, { name, color: toneOf(item.color) });
         }
         names.push(name);
       }
@@ -219,10 +278,20 @@ export function bundleBuilder(provider: ImportProvider) {
       within(comments.length, importLimits.comments, "comments");
       comments.push(comment);
     },
+    // Board lists often share a name, which a workflow cannot; repeats get a number.
     build(
       source: { ref: string; key: string; name: string; description: string },
       workflow: TicketExport["workflow"],
     ): TicketExport {
+      const taken = new Set<string>();
+      for (const state of workflow) {
+        const base = state.name || "Untitled";
+        let name = base;
+        for (let n = 2; taken.has(name.toLowerCase()); n++)
+          name = `${base.slice(0, 40 - ` ${n}`.length)} ${n}`;
+        taken.add(name.toLowerCase());
+        state.name = name;
+      }
       return {
         format: ticketExportFormat,
         version: 1,
@@ -266,7 +335,8 @@ export const sourceTicket = (
     | "createdAt"
     | "dueAt"
     | "archived"
-  >,
+  > &
+    Partial<Pick<TicketExport["tickets"][number], "startAt">>,
 ): TicketExport["tickets"][number] => ({
   acceptanceCriteria: "",
   difficulty: null,
