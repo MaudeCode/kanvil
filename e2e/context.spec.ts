@@ -108,6 +108,18 @@ test("sidebar resizing and contextual ticket and project actions work", async ({
   await page.getByRole("button", { name: "Save ticket", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const edited = page.getByRole("link", { name: "Edited from the context menu", exact: true });
+  // The menu's earlier ticket read is still cached; copies must use the refreshed row.
+  const ticketPath = `/api/v1/projects/${project.id}/tickets/${ticket.id}`;
+  await page.route(`**${ticketPath}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await route.fallback();
+  });
+  await edited.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy title", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("Edited from the context menu");
+  await page.unroute(`**${ticketPath}`);
   await edited.click({ button: "right" });
   await page.screenshot({ path: "test-results/ticket-context-menu.png", fullPage: true });
   await page.getByRole("menuitem", { name: "Delete ticket", exact: true }).click();

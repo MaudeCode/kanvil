@@ -81,7 +81,9 @@ export function TicketContextMenu({
     ...api.query("list_members", { projectId: ticket.projectId }),
     enabled: open && access.canWrite,
   });
-  const current = read.data?.ticket ?? ticket,
+  // A cached read can be older than the row that opened the menu; use whichever is newer.
+  const current =
+      read.data && read.data.ticket.version > ticket.version ? read.data.ticket : ticket,
     update = useOperation("update_ticket"),
     remove = useOperation("delete_ticket"),
     subscribe = useOperation("set_subscription");
