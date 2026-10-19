@@ -79,7 +79,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 
 ## Web and mobile
 
-- Web list with readable wrapping titles, adjustable columns, filters, selection, bulk actions, and keyboard navigation.
+- Web list with readable wrapping titles, adjustable columns, filters, selection, keyboard navigation, and atomic bulk actions for status, priority, assignee, kind, difficulty, labels (replace or clear), due date (set or clear), and archiving. Mixed selections show as mixed, never as the first row's value.
 - Ticket detail view containing requirements, relationships, discussion, attachments, activity, and supplied evidence.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
 - Project settings, account settings, and notification preferences.

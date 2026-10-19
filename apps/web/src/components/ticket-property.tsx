@@ -3,11 +3,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Bug,
+  ChartNoAxesColumnIncreasing,
   Check,
+  CircleDot,
   CircleUserRound,
+  Flag,
   FlaskConical,
+  Shapes,
   Sparkles,
   Tag,
+  UserRound,
   Wrench,
 } from "lucide-react";
 import {
@@ -52,6 +57,42 @@ export const propertyLabels: Record<PropertyName, string> = {
   difficulty: "Difficulty",
   assignee: "Assignee",
 };
+// The order every property toolbar and menu lists them in.
+export const propertyOrder = [
+  "status",
+  "priority",
+  "assignee",
+  "kind",
+  "difficulty",
+] as const satisfies PropertyName[];
+export const propertyIcons: Record<PropertyName, typeof Bug> = {
+  status: CircleDot,
+  priority: Flag,
+  kind: Shapes,
+  difficulty: ChartNoAxesColumnIncreasing,
+  assignee: UserRound,
+};
+const readers: { [P in PropertyName]: (ticket: Ticket) => PropertyValues[P] } = {
+  status: (ticket) => ticket.status,
+  priority: (ticket) => ticket.priority,
+  kind: (ticket) => ticket.kind,
+  difficulty: (ticket) => ticket.difficulty,
+  assignee: (ticket) => ticket.assigneeId,
+};
+export function propertyOf<P extends PropertyName>(ticket: Ticket, property: P) {
+  return readers[property](ticket);
+}
+// The ticket change that sets a property; only the assignee is stored under another name.
+const writers: { [P in PropertyName]: (value: PropertyValues[P]) => Partial<Ticket> } = {
+  status: (status) => ({ status }),
+  priority: (priority) => ({ priority }),
+  kind: (kind) => ({ kind }),
+  difficulty: (difficulty) => ({ difficulty }),
+  assignee: (assigneeId) => ({ assigneeId }),
+};
+export function propertyChange<P extends PropertyName>(property: P, value: PropertyValues[P]) {
+  return writers[property](value);
+}
 export const kindLabels: Record<Ticket["kind"], string> = {
   feature: "Feature",
   bug: "Bug",
@@ -178,7 +219,7 @@ const optionsFor: { [P in PropertyName]: (members: Member[]) => Option<PropertyV
     })),
   ],
 };
-function useOptions<P extends PropertyName>(
+export function usePropertyOptions<P extends PropertyName>(
   property: P,
   projectId: string,
   enabled: boolean,
@@ -225,6 +266,7 @@ export function TicketProperty<P extends PropertyName>({
   iconOnly = false,
   align = "start",
   ariaLabel,
+  mixed = false,
   className,
   children,
 }: {
@@ -238,11 +280,13 @@ export function TicketProperty<P extends PropertyName>({
   align?: "start" | "end";
   // Names the trigger when several pickers for the same property share a page.
   ariaLabel?: string;
+  // The value differs across a selection: nothing is marked current and every choice applies.
+  mixed?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const options = useOptions(property, projectId, open || property !== "assignee");
+  const options = usePropertyOptions(property, projectId, open || property !== "assignee");
   const label = propertyLabels[property];
   const trigger = (
     <PopoverTrigger
@@ -277,7 +321,7 @@ export function TicketProperty<P extends PropertyName>({
               if (!option || event.currentTarget.value || options.length > 9) return;
               event.preventDefault();
               setOpen(false);
-              if (option.value !== value) onChange(option.value);
+              if (mixed || option.value !== value) onChange(option.value);
             }}
           />
           <CommandList>
@@ -288,7 +332,7 @@ export function TicketProperty<P extends PropertyName>({
                 keywords={option.keywords ?? []}
                 onSelect={() => {
                   setOpen(false);
-                  if (option.value !== value) onChange(option.value);
+                  if (mixed || option.value !== value) onChange(option.value);
                 }}
               >
                 <PropertyValue {...pair(property, option.value)} projectId={projectId} />
@@ -297,7 +341,7 @@ export function TicketProperty<P extends PropertyName>({
                     {index + 1}
                   </kbd>
                 )}
-                {option.value === value && (
+                {!mixed && option.value === value && (
                   <Check className={options.length <= 9 ? "" : "ml-auto"} />
                 )}
               </CommandItem>
@@ -353,25 +397,36 @@ export function useTicketChange(ticket: Pick<Ticket, "id" | "projectId" | "versi
 }
 
 // Labels or scopes as a composer pill or a sidebar row: the tags show on the trigger, the editor
-// opens in a popover.
+// opens in a popover. `replace` drafts the set and applies it once, for editing a selection.
 export function TagsProperty({
   kind = "label",
   value,
   onChange,
   variant = "pill",
+  replace = false,
+  mixed = false,
   disabled = false,
   className,
+  textClassName,
 }: {
   kind?: "label" | "scope";
   value: string[];
   onChange: (tags: string[]) => void;
   variant?: "pill" | "row";
+  replace?: boolean;
+  // The selection's tags differ: the trigger says so and the draft starts empty.
+  mixed?: boolean;
   disabled?: boolean;
   className?: string;
+  // Styles the trigger's text, e.g. to leave only the icon on narrow toolbars.
+  textClassName?: string;
 }) {
+  const [open, setOpen] = useState(false),
+    [draft, setDraft] = useState<string[]>([]);
   const label = kind === "label" ? "Labels" : "Scopes",
-    shown = variant === "pill" ? value.slice(0, 3) : value,
-    hidden = value.length - shown.length;
+    current = mixed ? [] : value,
+    shown = variant === "pill" ? current.slice(0, 3) : current,
+    hidden = current.length - shown.length;
   const trigger = (
     <PopoverTrigger
       disabled={disabled}
@@ -386,9 +441,11 @@ export function TagsProperty({
             className,
           )}
           aria-label={
-            value.length
-              ? `Edit ${label.toLowerCase()}: ${value.join(", ")}`
-              : `Edit ${label.toLowerCase()}`
+            mixed
+              ? `Edit ${label.toLowerCase()}: mixed`
+              : current.length
+                ? `Edit ${label.toLowerCase()}: ${current.join(", ")}`
+                : `Edit ${label.toLowerCase()}`
           }
         />
       }
@@ -396,12 +453,16 @@ export function TagsProperty({
       {variant === "pill" && (
         <Tag className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       )}
-      {value.length === 0 ? (
-        <span className="text-muted-foreground">
-          {variant === "pill" ? label : `No ${label.toLowerCase()}`}
+      {current.length === 0 ? (
+        <span className={cn("text-muted-foreground", textClassName)}>
+          {mixed
+            ? `Mixed ${label.toLowerCase()}`
+            : variant === "pill"
+              ? label
+              : `No ${label.toLowerCase()}`}
         </span>
       ) : (
-        <span className="flex min-w-0 flex-wrap items-center gap-1">
+        <span className={cn("flex min-w-0 flex-wrap items-center gap-1", textClassName)}>
           {shown.map((tag) => (
             <TicketTag key={tag} tag={tag} kind={kind} className="max-w-28">
               <span className="truncate">{tag}</span>
@@ -412,8 +473,18 @@ export function TagsProperty({
       )}
     </PopoverTrigger>
   );
+  function apply(tags: string[]) {
+    setOpen(false);
+    onChange(tags);
+  }
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDraft(current);
+        setOpen(next);
+      }}
+    >
       {variant === "row" ? (
         <div className="grid grid-cols-[80px_minmax(0,1fr)] items-start gap-2">
           <span className="pt-1.5 text-xs text-muted-foreground">{label}</span>
@@ -423,7 +494,35 @@ export function TagsProperty({
         trigger
       )}
       <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-3">
-        <TagInput label={label} kind={kind} value={value} onChange={onChange} />
+        {replace ? (
+          <>
+            {mixed && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                The selected tickets have different {label.toLowerCase()}.
+              </p>
+            )}
+            <TagInput label={label} kind={kind} value={draft} onChange={setDraft} />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!mixed && !value.length}
+                onClick={() => apply([])}
+              >
+                Clear {label.toLowerCase()}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!draft.length || (!mixed && draft.join("\n") === value.join("\n"))}
+                onClick={() => apply(draft)}
+              >
+                Replace {label.toLowerCase()}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <TagInput label={label} kind={kind} value={value} onChange={onChange} />
+        )}
       </PopoverContent>
     </Popover>
   );

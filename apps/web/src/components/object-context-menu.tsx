@@ -5,11 +5,10 @@ import {
   Archive,
   Bell,
   BellOff,
-  CircleDot,
+  CalendarDays,
   Copy,
   ExternalLink,
   FileText,
-  Flag,
   FolderOpen,
   GitBranch,
   Link2,
@@ -18,13 +17,24 @@ import {
   Settings,
   Trash2,
   Type,
-  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
-import { states, priorities, type Ticket, type Project } from "@kanvil/contracts";
+import { type Ticket, type Project } from "@kanvil/contracts";
 import { api, useOperation, useProjectAccess } from "../data.tsx";
-import { Confirm, Modal, TicketIndicator, Loading, reportError } from "../ui.tsx";
+import { Confirm, Modal, Loading, reportError } from "../ui.tsx";
+import {
+  PropertyValue,
+  pair,
+  propertyChange,
+  propertyIcons,
+  propertyLabels,
+  propertyOf,
+  propertyOrder,
+  usePropertyOptions,
+  useTicketChange,
+  type PropertyName,
+} from "./ticket-property.tsx";
+import { DateCalendar, endOfDay } from "./date-picker.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -49,6 +59,47 @@ import {
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
 } from "@/components/ui/context-menu";
+// A property submenu built from the same options, icons, and value renderer as TicketProperty.
+function PropertyMenu({
+  property,
+  ticket,
+  enabled,
+  disabled,
+  onChange,
+}: {
+  property: PropertyName;
+  ticket: Ticket;
+  enabled: boolean;
+  disabled: boolean;
+  onChange: (changes: Partial<Ticket>) => void;
+}) {
+  const options = usePropertyOptions(property, ticket.projectId, enabled),
+    current = propertyOf(ticket, property);
+  const Icon = propertyIcons[property];
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger disabled={disabled}>
+        <Icon />
+        {propertyLabels[property]}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuRadioGroup
+          value={String(options.findIndex((option) => option.value === current))}
+          onValueChange={(index) => {
+            const option = options[Number(index)];
+            if (option) onChange(propertyChange(property, option.value));
+          }}
+        >
+          {options.map((option, index) => (
+            <ContextMenuRadioItem key={String(option.value)} value={String(index)}>
+              <PropertyValue {...pair(property, option.value)} projectId={ticket.projectId} />
+            </ContextMenuRadioItem>
+          ))}
+        </ContextMenuRadioGroup>
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
 async function copy(value: string, label: string) {
   try {
     await copyText(value);
@@ -77,30 +128,17 @@ export function TicketContextMenu({
     ...api.query("get_ticket", { projectId: ticket.projectId, ticketId: ticket.id }),
     enabled: open,
   });
-  const members = useQuery({
-    ...api.query("list_members", { projectId: ticket.projectId }),
-    enabled: open && access.canWrite,
-  });
   // A cached read can be older than the row that opened the menu; use whichever is newer.
   const current =
       read.data && read.data.ticket.version > ticket.version ? read.data.ticket : ticket,
-    update = useOperation("update_ticket"),
+    update = useTicketChange(current),
     remove = useOperation("delete_ticket"),
     subscribe = useOperation("set_subscription");
   const Root = variant === "dropdown" ? DropdownMenu : ContextMenu,
     Trigger = variant === "dropdown" ? DropdownMenuTrigger : ContextMenuTrigger,
     Content = variant === "dropdown" ? DropdownMenuContent : ContextMenuContent;
   const href = `/projects/${ticket.projectId}/tickets/${ticket.id}`;
-  const change = (changes: Partial<Ticket>) => {
-    void update
-      .mutateAsync({
-        projectId: current.projectId,
-        ticketId: current.id,
-        expectedVersion: current.version,
-        changes,
-      })
-      .catch(reportError);
-  };
+  const change = (changes: Partial<Ticket>) => void update.change(changes);
   return (
     <>
       <Root open={open} onOpenChange={setOpen}>
@@ -172,61 +210,39 @@ export function TicketContextMenu({
             <Pencil />
             Edit ticket
           </ContextMenuItem>
+          {propertyOrder.map((name) => (
+            <PropertyMenu
+              key={name}
+              property={name}
+              ticket={current}
+              enabled={open && access.canWrite}
+              disabled={!access.canWrite || update.pending}
+              onChange={change}
+            />
+          ))}
           <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={!access.canWrite}>
-              <CircleDot />
-              Status
+            <ContextMenuSubTrigger disabled={!access.canWrite || update.pending}>
+              <CalendarDays />
+              Due date
             </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuRadioGroup
-                value={current.status}
-                onValueChange={(value) => change({ status: z.enum(states).parse(value) })}
+            <ContextMenuSubContent className="w-auto p-0">
+              {/* The calendar keeps its own arrow-key grid; the menu still closes on Escape. */}
+              <div
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") event.stopPropagation();
+                }}
               >
-                {states.map((status) => (
-                  <ContextMenuRadioItem key={status} value={status}>
-                    <TicketIndicator property="status" value={status} />
-                  </ContextMenuRadioItem>
-                ))}
-              </ContextMenuRadioGroup>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={!access.canWrite}>
-              <Flag />
-              Priority
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuRadioGroup
-                value={current.priority}
-                onValueChange={(value) => change({ priority: z.enum(priorities).parse(value) })}
-              >
-                {priorities.map((priority) => (
-                  <ContextMenuRadioItem key={priority} value={priority}>
-                    <TicketIndicator property="priority" value={priority} />
-                  </ContextMenuRadioItem>
-                ))}
-              </ContextMenuRadioGroup>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger disabled={!access.canWrite}>
-              <UserRound />
-              Assignee
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuRadioGroup
-                value={current.assigneeId ?? ""}
-                onValueChange={(value) =>
-                  change({ assigneeId: typeof value === "string" && value ? value : null })
-                }
-              >
-                <ContextMenuRadioItem value="">Unassigned</ContextMenuRadioItem>
-                {members.data?.map((member) => (
-                  <ContextMenuRadioItem key={member.userId} value={member.userId}>
-                    {member.name}
-                  </ContextMenuRadioItem>
-                ))}
-              </ContextMenuRadioGroup>
+                <DateCalendar
+                  label="Due date"
+                  value={current.dueAt ? new Date(current.dueAt) : null}
+                  clearable={!!current.dueAt}
+                  autoFocus
+                  onChange={(date) => {
+                    setOpen(false);
+                    change({ dueAt: date ? endOfDay(date) : null });
+                  }}
+                />
+              </div>
             </ContextMenuSubContent>
           </ContextMenuSub>
           <ContextMenuItem

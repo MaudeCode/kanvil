@@ -9,7 +9,7 @@ import {
   ticketRows,
   toggleDisplay,
 } from "./controls.ts";
-import { priorities, priorityLabels } from "../packages/contracts/src/index.ts";
+import { operations, priorities, priorityLabels } from "../packages/contracts/src/index.ts";
 
 async function expectFullWidth(table: Locator) {
   expect(
@@ -316,8 +316,21 @@ test("selection floats without moving rows and retains selection on failed updat
       json: { error: { code: "version_conflict", message: "Reload changed tickets" } },
     }),
   );
+  // The failure refetch is slow; until it lands the selection still holds stale versions.
+  const listPath = (url: URL) => url.pathname === `/api/v1/projects/${project.id}/tickets`;
+  await page.route(listPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fallback();
+  });
+  const failed = page.waitForResponse((response) => response.url().endsWith("/tickets/bulk"));
   await setProperty(dock, "Status", "In review");
+  await failed;
+  await page.waitForTimeout(300);
+  const status = dock.getByRole("combobox", { name: "Status", exact: true });
+  expect(await status.isDisabled()).toBe(true);
   await expect(page.getByText("Reload changed tickets", { exact: true })).toBeVisible();
+  await expect(status).toBeEnabled();
+  await page.unroute(listPath);
   await expect(dock.getByRole("status")).toHaveText("2 selected");
   await page.unroute(bulkPath);
   await setProperty(dock, "Status", "In review");
@@ -333,6 +346,108 @@ test("selection floats without moving rows and retains selection on failed updat
     expect(box!.height).toBeLessThanOrEqual(width >= 768 ? 64 : 128);
     await dock.getByRole("button", { name: "Clear selection", exact: true }).click();
   }
+});
+
+test("a mixed selection applies the first row's value to every ticket", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "MIXED", name: "Mixed selection" } })
+  ).json();
+  for (const [title, status] of [
+    ["Mixed todo ticket", "todo"],
+    ["Mixed progress ticket", "in_progress"],
+  ])
+    expect(
+      (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+          data: { title, status },
+        })
+      ).ok(),
+    ).toBe(true);
+  await page.goto(`/projects/${project.id}`);
+  await page.getByRole("checkbox", { name: "Select MIXED-1", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select MIXED-2", exact: true }).check();
+  const dock = page.getByRole("region", { name: "Selected tickets", exact: true });
+  await setProperty(dock, "Status", "To do");
+  await expect(dock).toHaveCount(0);
+  await expect(page.getByRole("row").filter({ hasText: "Mixed progress ticket" })).toContainText(
+    "To do",
+  );
+});
+
+test("bulk edits replace labels, set and clear due dates, and change difficulty", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "BULKSET", name: "Bulk set" } })
+  ).json();
+  for (const [title, label] of [
+    ["Bulk labelled ux", "ux"],
+    ["Bulk labelled api", "api"],
+  ])
+    expect(
+      (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+          data: { title, labels: [label] },
+        })
+      ).ok(),
+    ).toBe(true);
+  const stored = async () =>
+    operations.list_tickets.output.parse(
+      await (await page.request.get(`/api/v1/projects/${project.id}/tickets`)).json(),
+    ).items;
+  await page.goto(`/projects/${project.id}`);
+  const dock = page.getByRole("region", { name: "Selected tickets", exact: true });
+  const selectBoth = async () => {
+    for (const key of ["BULKSET-1", "BULKSET-2"])
+      await page.getByRole("checkbox", { name: `Select ${key}`, exact: true }).check();
+    await expect(dock.getByRole("status")).toHaveText("2 selected");
+  };
+  await selectBoth();
+  await dock.getByRole("button", { name: "Edit labels: mixed", exact: true }).click();
+  const labels = page.getByLabel("Labels", { exact: true });
+  await expect(page.locator('[data-slot="popover-content"]').getByText("ux")).toHaveCount(0);
+  await labels.fill("shared");
+  await labels.press("Enter");
+  await page.getByRole("button", { name: "Replace labels", exact: true }).click();
+  await expect(dock).toHaveCount(0);
+  await expect
+    .poll(async () => (await stored()).map((ticket) => ticket.labels))
+    .toEqual([["shared"], ["shared"]]);
+  await selectBoth();
+  // A pending write disables every control so the same edit cannot be applied twice.
+  const bulkPath = `**/api/v1/projects/${project.id}/tickets/bulk`;
+  await page.route(bulkPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fallback();
+  });
+  await setProperty(dock, "Difficulty", "High");
+  await expect(dock.getByRole("combobox", { name: "Status", exact: true })).toBeDisabled();
+  await expect(dock.getByRole("button", { name: "Due date", exact: true })).toBeDisabled();
+  await expect(dock).toHaveCount(0);
+  await page.unroute(bulkPath);
+  await expect
+    .poll(async () => (await stored()).map((ticket) => ticket.difficulty))
+    .toEqual(["high", "high"]);
+  await selectBoth();
+  await dock.getByRole("button", { name: "Due date", exact: true }).click();
+  await page.getByRole("button", { name: /^Today/ }).click();
+  await expect(dock).toHaveCount(0);
+  await expect
+    .poll(async () => (await stored()).every((ticket) => ticket.dueAt !== null))
+    .toBe(true);
+  await selectBoth();
+  await dock.getByRole("button", { name: "Due date", exact: true }).click();
+  await page.getByRole("button", { name: "Clear due date", exact: true }).click();
+  await expect(dock).toHaveCount(0);
+  await expect
+    .poll(async () => (await stored()).map((ticket) => ticket.dueAt))
+    .toEqual([null, null]);
+  await selectBoth();
+  await dock.getByRole("button", { name: "Edit labels: shared", exact: true }).click();
+  await page.getByRole("button", { name: "Clear labels", exact: true }).click();
+  await expect.poll(async () => (await stored()).map((ticket) => ticket.labels)).toEqual([[], []]);
 });
 
 test("relationships can be created from either direction with readable inverse labels", async ({
