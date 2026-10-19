@@ -210,6 +210,7 @@ export function TicketProperty<P extends PropertyName>({
   variant = "pill",
   iconOnly = false,
   align = "start",
+  ariaLabel,
   className,
   children,
 }: {
@@ -221,6 +222,8 @@ export function TicketProperty<P extends PropertyName>({
   variant?: "pill" | "row" | "cell";
   iconOnly?: boolean;
   align?: "start" | "end";
+  // Names the trigger when several pickers for the same property share a page.
+  ariaLabel?: string;
   className?: string;
   children?: ReactNode;
 }) {
@@ -235,7 +238,7 @@ export function TicketProperty<P extends PropertyName>({
           variant="ghost"
           size={variant === "cell" ? "xs" : "sm"}
           role="combobox"
-          aria-label={label}
+          aria-label={ariaLabel ?? label}
           aria-expanded={open}
           className={cn(
             "max-w-full min-w-0 justify-start font-normal",

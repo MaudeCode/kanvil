@@ -293,10 +293,29 @@ export const ticketHandlers: Pick<
   },
   async list_tickets(ctx, input) {
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
+    const related = input.relatedTo ? await getTicket(ctx, input.relatedTo) : undefined;
     const search = input.q ? await ctx.search.where(ctx.db, [project(ctx).id], input.q) : undefined;
     const where = and(
       eq(tickets.projectId, project(ctx).id),
       parent ? eq(tickets.parentId, parent.id) : undefined,
+      related
+        ? or(
+            inArray(
+              tickets.id,
+              ctx.db
+                .select({ id: relations.targetId })
+                .from(relations)
+                .where(eq(relations.sourceId, related.id)),
+            ),
+            inArray(
+              tickets.id,
+              ctx.db
+                .select({ id: relations.sourceId })
+                .from(relations)
+                .where(eq(relations.targetId, related.id)),
+            ),
+          )
+        : undefined,
       input.status ? eq(tickets.status, input.status) : undefined,
       input.priority ? eq(tickets.priority, input.priority) : undefined,
       input.kind ? eq(tickets.kind, input.kind) : undefined,

@@ -384,6 +384,28 @@ describe("ticket operations on PostgreSQL", () => {
       ),
     ).toMatchObject({ color: "gray", count: 1 });
   });
+  it("lists the tickets linked to a ticket in either direction", async () => {
+    const current = await ticket("Linked hub"),
+      blocker = await ticket("Blocks the hub"),
+      peer = await ticket("Related to the hub"),
+      unrelated = await ticket("Not linked");
+    for (const [ticketId, targetId, type] of [
+      [blocker.id, current.id, "blocks"],
+      [current.id, peer.id, "related"],
+    ] as const)
+      await domain.execute(
+        "add_relation",
+        { projectId: project.id, ticketId, targetId, type },
+        owner,
+      );
+    const linked = await domain.execute(
+      "list_tickets",
+      { projectId: project.id, relatedTo: current.key, archived: "include", sort: "number" },
+      owner,
+    );
+    expect(linked.items.map((item) => item.id)).toEqual([blocker.id, peer.id]);
+    expect(linked.items.map((item) => item.id)).not.toContain(unrelated.id);
+  });
   it("normalizes incoming relationships, preserves inverse wording, and enforces blockers", async () => {
     const current = await ticket("Current work"),
       other = await ticket("Selected work");

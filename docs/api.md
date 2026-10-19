@@ -28,7 +28,7 @@ Tickets carry an optional `dueAt` ISO timestamp. `list_tickets` accepts `due` as
 
 `search_tickets` (`GET /api/v1/tickets/search?q=...`) finds unarchived tickets by exact key or text across every project the caller can read, optionally limited to one `workspaceId`, returning each ticket with its project `id`, `key`, and `name`. Exact key matches sort first.
 
-Use `list_tickets` with `parentId` set to a parent UUID or ticket key to page through child tickets. Set `archived: "include"` to include archived children. `list_relations` also returns the current source/target keys and full titles, so consumers can show readable dependency context without separate lookups.
+Use `list_tickets` with `parentId` set to a parent UUID or ticket key to page through child tickets. Set `archived: "include"` to include archived children. Set `relatedTo` to a ticket UUID or key to page through the tickets linked to it by any relationship, in either direction. `list_relations` also returns the current source/target keys and full titles, so consumers can show readable dependency context without separate lookups.
 
 `list_ticket_labels` (`GET /api/v1/projects/{projectId}/labels`) returns distinct label names and ticket counts for the whole authorized project. Its `archived` option matches ticket listing. The `label` ticket filter matches an exact label; combine it with other filters or saved views. `sort: "labels"` orders by the first label alphabetically, ignoring case and label-array order, followed by ticket number. Tickets without labels come last.
 
