@@ -39,6 +39,8 @@ export function createAuth(database: Database, config: Config) {
       }),
     },
     user: {
+      // Set once by account deletion; nothing a person or the authentication API sends can change it.
+      additionalFields: { deletedAt: { type: "date", required: false, input: false } },
       validateUserInfo: async ({ user, source }) => {
         if (source.method !== "oauth") return undefined;
         if (source.oauth?.providerId !== "oidc" || !user.email || user.emailVerified !== true)

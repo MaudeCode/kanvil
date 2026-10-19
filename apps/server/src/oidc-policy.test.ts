@@ -563,3 +563,31 @@ it("preserves ordinary users' usable sign-in methods without requiring administr
     expect((await setPolicy(true, false)).status).toBe(200);
   }
 });
+it("returns a deleted SSO identity only as a new, empty account", async () => {
+  expect((await setPolicy(true, true)).status).toBe(200);
+  const identity = { sub: "erased-subject", email: "erased@policy.test", email_verified: true };
+  const session = async (cookie: string) =>
+    (await request("/api/auth/get-session", "GET", undefined, cookie)).json();
+  const first = cookies(await callback(identity));
+  const erased = sessionSchema.parse(await session(first)).user.id;
+  expect(
+    (await request(`/api/v1/accounts/${erased}`, "DELETE", { confirmEmail: identity.email }, first))
+      .status,
+  ).toBe(200);
+  expect(await session(first)).toBeNull();
+  expect(
+    (
+      await fixture.database.pool.query(
+        `SELECT name, banned, (SELECT count(*)::int FROM account WHERE user_id = $1) AS bindings FROM "user" WHERE id = $1`,
+        [erased],
+      )
+    ).rows,
+  ).toEqual([{ name: "Deleted account", banned: true, bindings: 0 }]);
+  // The provider identity no longer reaches the tombstone: without provisioning it is refused,
+  // and with provisioning it becomes a different account.
+  expect((await setPolicy(true, false)).status).toBe(200);
+  expect((await callback(identity)).headers.get("location")).toContain("signup_disabled");
+  expect((await setPolicy(true, true)).status).toBe(200);
+  const returned = sessionSchema.parse(await session(cookies(await callback(identity)))).user.id;
+  expect(returned).not.toBe(erased);
+});

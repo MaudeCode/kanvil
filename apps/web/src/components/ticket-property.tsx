@@ -38,7 +38,14 @@ import {
   type WorkflowState,
 } from "@kanvil/contracts";
 import { format, parseISO } from "date-fns";
-import { api, useIdentity, useOperation, useProjectAccess, useProjects } from "../data.tsx";
+import {
+  api,
+  useIdentity,
+  useOperation,
+  usePerson,
+  useProjectAccess,
+  useProjects,
+} from "../data.tsx";
 import { Input, TicketIndicator, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
@@ -185,10 +192,7 @@ export function PropertyValue({
   ...props
 }: PropertyProps & { projectId: string; iconOnly?: boolean }) {
   const identity = useIdentity();
-  const members = useQuery({
-    ...api.query("list_members", { projectId }),
-    enabled: props.property === "assignee" && !!props.value,
-  });
+  const person = usePerson(projectId, props.property === "assignee" ? props.value : null);
   const workflow =
     useWorkflow(projectId, props.property === "status" && props.value.includes(":")).data ?? [];
   switch (props.property) {
@@ -236,9 +240,7 @@ export function PropertyValue({
             {!iconOnly && "Unassigned"}
           </span>
         );
-      const member = members.data?.find((person) => person.userId === id),
-        name = id === identity.id ? identity.name : (member?.name ?? "Former member"),
-        image = id === identity.id ? identity.image : member?.image;
+      const { name, image } = person;
       return (
         <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
           <UserAvatar name={name} image={image} className="size-4 text-[8px]" />

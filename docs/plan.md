@@ -34,6 +34,7 @@ Pin the latest stable compatible releases during implementation. Reuse existing 
 - PocketID setup through discovery URL, client ID, server-held secret, and documented callback URLs.
 - Explicit account linking and consistent project authorization across login methods.
 - Workspace owners who transfer ownership to another active administrator and delete the workspace after a reviewed impact summary, a recent sign-in, and a typed confirmation.
+- Account deletion by the person or an instance administrator after a reviewed impact summary, a recent sign-in, and a typed email: it removes every way to sign in or act as the account and its personal details, and keeps shared history attributed to a `Deleted account` tombstone.
 - Expiring, revocable email invitations to a workspace or selected projects, accepted once by the account with the invited address; they never open registration.
 - Secure mobile session storage and tested browser-to-app authentication callbacks.
 - Revocable credentials with project and operation scopes for unattended consumers.

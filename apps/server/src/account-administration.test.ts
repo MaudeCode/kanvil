@@ -120,10 +120,13 @@ describe("instance account administration", () => {
       ["%73et-role", { userId: owner.id, role: "user" }],
       ["update-user", { userId: owner.id, data: { role: "user" } }],
       ["ban-user", { userId: owner.id }],
-      ["remove-user", { userId: owner.id }],
     ] as const) {
       expect((await request(`/api/auth/admin/${path}`, "POST", body)).status).toBe(409);
     }
+    // Accounts are deleted only through delete_account, which keeps a tombstone for history.
+    const removal = await request("/api/auth/admin/remove-user", "POST", { userId: peer.id });
+    expect(removal.status).toBe(403);
+    expect(await removal.json()).toMatchObject({ error: { code: "forbidden" } });
     expect(
       (
         await request("/api/auth/admin/update-user", "POST", {
@@ -146,7 +149,6 @@ describe("instance account administration", () => {
     for (const [path, body] of [
       ["ban-user", { userId: person.id }],
       ["update-user", { userId: person.id, data: { banned: true } }],
-      ["remove-user", { userId: person.id }],
     ] as const) {
       const refused = await request(`/api/auth/admin/${path}`, "POST", body);
       expect(refused.status).toBe(409);

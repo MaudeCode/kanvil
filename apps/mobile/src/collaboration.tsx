@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
-import type { Ticket, Output } from "@kanvil/contracts";
+import { memberName, type Ticket, type Output } from "@kanvil/contracts";
 import { useConnection, useIdentity, useOperation } from "./data.tsx";
 import {
   Body,
@@ -243,6 +243,10 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
   const members = useQuery(api.query("list_members", { projectId: comment.projectId })),
+    deleted = useQuery({
+      ...api.query("list_deleted_accounts", {}),
+      enabled: !!members.data && !members.data.some((member) => member.userId === comment.actorId),
+    }),
     update = useOperation("update_comment"),
     remove = useOperation("delete_comment");
   return (
@@ -250,8 +254,7 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
       <Body muted>
         {comment.actorId === identity.id
           ? "You"
-          : (members.data?.find((member) => member.userId === comment.actorId)?.name ??
-            "Former member")}{" "}
+          : memberName(members.data, deleted.data, comment.actorId)}{" "}
         · {formatTimestamp(comment.createdAt)}
       </Body>
       <Markdown>{comment.body}</Markdown>

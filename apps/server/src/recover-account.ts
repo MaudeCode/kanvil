@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hasAdminRole } from "@kanvil/contracts";
 import { instanceSettings } from "./schema.ts";
@@ -22,9 +22,14 @@ export async function recoverLocalPassword(
   const hash = await context.password.hash(password);
   return database.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(7361083)`);
-    const identity = (
-      await tx.select().from(user).where(eq(user.email, normalizedEmail)).for("update")
-    )[0];
+    const identity = // A deleted account's tombstone keeps its history, never a way back in.
+      (
+        await tx
+          .select()
+          .from(user)
+          .where(and(eq(user.email, normalizedEmail), isNull(user.deletedAt)))
+          .for("update")
+      )[0];
     if (!identity) fail(404, "not_found", "No account has this email address");
     if (enablePasswordSignIn) {
       if (!hasAdminRole(identity.role) || identity.banned)

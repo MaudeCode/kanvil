@@ -5,6 +5,7 @@ import {
   formatCustomFieldValue,
   eventCategories,
   mentionLink,
+  memberName,
   infoSchema,
   notificationPreferencesSchema,
   notificationsSchema,
@@ -57,6 +58,13 @@ describe("agent write contracts", () => {
       });
     expect(() => parseRelationChoice("unknown:incoming")).toThrow();
     expect(() => parseRelationChoice("blocks:wrong")).toThrow();
+  });
+  it("names members, deleted accounts, and people who left", () => {
+    const people = [{ userId: "member", name: "Morgan" }];
+    expect(memberName(people, ["gone"], "member")).toBe("Morgan");
+    expect(memberName(people, ["gone"], "gone")).toBe("Deleted account");
+    expect(memberName(people, undefined, "gone")).toBe("Former member");
+    expect(memberName(undefined, [], "left")).toBe("Former member");
   });
   it("formats historical and current event context consistently", () => {
     const event = {

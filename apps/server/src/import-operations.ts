@@ -697,6 +697,24 @@ async function ownRun(ctx: Context, importId: string, expectedVersion?: number) 
   if (expectedVersion !== undefined) assertVersion(row, expectedVersion, "import", "changing it");
   return row;
 }
+// A cancelled run writes nothing more and drops the source data it had not written yet.
+async function cancelRun(ctx: Context, run: Run) {
+  await ctx.db
+    .update(importRecords)
+    .set({ payload: null })
+    .where(and(eq(importRecords.runId, run.id), eq(importRecords.status, "pending")));
+  return setStatus(ctx, run, "cancelled");
+}
+// Account deletion stops every import the account started.
+export async function cancelImportsBy(ctx: Context, actorId: string) {
+  const open = await ctx.db
+    .select()
+    .from(importRuns)
+    .where(
+      and(eq(importRuns.actorId, actorId), inArray(importRuns.status, ["previewed", "running"])),
+    );
+  for (const run of open) await cancelRun(ctx, run);
+}
 async function setStatus(ctx: Context, run: Run, status: Run["status"]) {
   return one(
     await ctx.db
@@ -757,11 +775,7 @@ export const importHandlers: Pick<
     const run = await ownRun(ctx, input.importId, input.expectedVersion);
     if (run.status !== "previewed" && run.status !== "running")
       fail(409, "import_closed", "This import already ended");
-    await ctx.db
-      .update(importRecords)
-      .set({ payload: null })
-      .where(and(eq(importRecords.runId, run.id), eq(importRecords.status, "pending")));
-    return toRun(ctx.db, await setStatus(ctx, run, "cancelled"));
+    return toRun(ctx.db, await cancelRun(ctx, run));
   },
 };
 

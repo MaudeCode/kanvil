@@ -206,7 +206,7 @@ A host operator can replace an existing account's local password:
 docker compose exec app node dist/recover.mjs --email admin@example.com
 ```
 
-The password is entered privately. For local source development, use `pnpm account:recover --email admin@example.com`. The command uses Better Auth's password format and revokes that account's sessions. Its role, linked OIDC account, and API credentials are retained. Revoke agent credentials separately if an account was compromised. Passwords are never accepted as command-line arguments.
+The password is entered privately. For local source development, use `pnpm account:recover --email admin@example.com`. The command uses Better Auth's password format and revokes that account's sessions. Its role, linked OIDC account, and API credentials are retained. Revoke agent credentials separately if an account was compromised. A deleted account cannot be recovered: its tombstone has no address to match. Passwords are never accepted as command-line arguments.
 
 Password recovery alone does not enable password sign-in. If the IdP is unavailable, a host operator can recover an active administrator and explicitly re-enable password sign-in with `--enable-password-sign-in` on the same recovery command. For example, `pnpm account:recover --email admin@example.com --enable-password-sign-in` for source development, or append that flag to the Docker command above. This updates the persisted policy and revokes the recovered account's sessions atomically, without restarting. Sign in locally, repair the deployment's OIDC settings, verify linking and SSO login, then disable passwords again in Administration. Keep host access and an active local administrator recovery account available.
 

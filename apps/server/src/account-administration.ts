@@ -12,7 +12,10 @@ import {
   adminWorkspacesSchema,
   localPasswordSchema,
 } from "@kanvil/contracts/users";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as authSchema from "./auth-schema.ts";
 import { account, session, user } from "./auth-schema.ts";
+import { otherActiveAdministrator, ownedWorkspaces, ownerBlocker } from "./account-operations.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
 import { fail, json, type Actor, one } from "./domain.ts";
 import type { Auth } from "./auth.ts";
@@ -55,7 +58,13 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
       );
     }
   }
-  async function mutate(request: Request, run: () => Promise<Response>, administratorOnly = true) {
+  async function mutate(
+    request: Request,
+    run: () => Promise<Response>,
+    administratorOnly = true,
+    // The account a route names in its path rather than in an authentication request body.
+    subjectId?: string,
+  ) {
     const login = await auth.api.getSession({ headers: request.headers });
     if (!login) fail(401, "unauthorized", "Sign in to continue");
     if ((administratorOnly && !hasAdminRole(login.user.role)) || login.user.banned)
@@ -103,24 +112,29 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
             );
         }
       }
-      let passwordUserId: string | undefined;
-      if (path.endsWith("/admin/set-user-password"))
-        passwordUserId = mutationBody.parse(await request.clone().json()).userId;
-      if (
-        ["set-role", "update-user", "ban-user", "remove-user"].some((name) =>
-          path.endsWith(`/admin/${name}`),
-        )
-      ) {
-        const body = mutationBody.parse(await request.clone().json());
-        if (body.userId) {
-          const current = one(
-            (
-              await lock.query<{ id: string; role: string | null; banned: boolean }>(
-                `SELECT id, role, coalesce(banned,false) AS banned FROM "user" WHERE id = $1`,
-                [body.userId],
-              )
-            ).rows,
-          );
+      // Removal through the authentication library would delete the row that keeps a person's
+      // tickets, comments, and activity attributed; `delete_account` leaves a tombstone instead.
+      if (path.endsWith("/admin/remove-user"))
+        fail(403, "forbidden", "Delete accounts with delete_account so their history stays intact");
+      const body = path.startsWith("/api/auth/admin/")
+        ? mutationBody.parse(await request.clone().json())
+        : undefined;
+      const userId = subjectId ?? body?.userId;
+      const passwordUserId = path.endsWith("/admin/set-user-password") ? userId : undefined;
+      if (administratorOnly && userId) {
+        // A deleted account is a tombstone: nothing re-enables, renames, or re-keys it.
+        const current = one(
+          (
+            await lock.query<{ id: string; role: string | null; banned: boolean }>(
+              `SELECT id, role, coalesce(banned,false) AS banned FROM "user" WHERE id = $1 AND deleted_at IS NULL`,
+              [userId],
+            )
+          ).rows,
+        );
+        if (
+          body &&
+          ["set-role", "update-user", "ban-user"].some((name) => path.endsWith(`/admin/${name}`))
+        ) {
           const role = body.role ?? body.data?.role ?? current.role;
           const candidate = z
             .union([z.string(), z.array(z.string())])
@@ -136,32 +150,19 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
             path.endsWith("/ban-user") ||
             body.data?.banned === true ||
             (body.data?.banned === undefined && current.banned);
-          // Ownership never passes silently: the owner hands each workspace on first.
-          if ((banned && !current.banned) || path.endsWith("/remove-user")) {
-            const owned = await lock.query<{ name: string }>(
-              `SELECT name FROM workspaces WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY name`,
-              [current.id],
-            );
-            if (owned.rowCount)
-              fail(
-                409,
-                "workspace_owner",
-                `Transfer ownership of ${owned.rows.map((row) => row.name).join(", ")} before disabling or deleting this account`,
-                { workspaces: owned.rows.map((row) => row.name) },
-              );
+          const guard = drizzle(lock, { schema: authSchema });
+          if (banned && !current.banned) {
+            const owned = await ownedWorkspaces(guard, current.id);
+            const [blocker] = ownerBlocker(owned);
+            if (blocker) fail(409, blocker.code, blocker.message, { workspaces: owned });
           }
           if (
             hasAdminRole(current.role) &&
             !current.banned &&
-            (!hasAdminRole(nextRole) || banned || path.endsWith("/remove-user"))
-          ) {
-            const remaining = await lock.query(
-              `SELECT id FROM "user" WHERE id <> $1 AND NOT coalesce(banned,false) AND 'admin' = ANY(string_to_array(role, ',')) LIMIT 1`,
-              [current.id],
-            );
-            if (!remaining.rowCount)
-              fail(409, "last_administrator", "Keep at least one active instance administrator");
-          }
+            (!hasAdminRole(nextRole) || banned) &&
+            !(await otherActiveAdministrator(guard, current.id))
+          )
+            fail(409, "last_administrator", "Keep at least one active instance administrator");
         }
       }
       const response = await run();
@@ -186,6 +187,7 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
         "unban-user",
         "remove-user",
         "set-user-password",
+        "impersonate-user",
       ].some((name) => path === `/api/auth/admin/${name}`);
       const unlink = path === "/api/auth/unlink-account";
       return request.method === "POST" && (guarded || unlink)
@@ -252,6 +254,8 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
           needle = pattern(input.q);
         const administrator = sql`'admin' = ANY(string_to_array(${user.role}, ','))`;
         const filter = and(
+          // Deleted accounts are tombstones for history, not accounts to manage.
+          isNull(user.deletedAt),
           input.q ? or(ilike(user.name, needle), ilike(user.email, needle)) : undefined,
           input.role === "admin"
             ? administrator
@@ -278,7 +282,12 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
       });
       app.get("/api/v1/admin/users/:id", async (c) => {
         const id = c.req.param("id"),
-          row = one(await database.db.select(person).from(user).where(eq(user.id, id)));
+          row = one(
+            await database.db
+              .select(person)
+              .from(user)
+              .where(and(eq(user.id, id), isNull(user.deletedAt))),
+          );
         const [spaces, direct, providers, sessions] = await Promise.all([
           database.db
             .select({ id: workspaces.id, name: workspaces.name, role: workspaceMembers.role })
@@ -372,16 +381,21 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
         );
       });
       app.post("/api/v1/admin/users/:id/password", async (c) =>
-        mutate(c.req.raw, async () => {
-          const input = localPasswordSchema.parse(await c.req.json()),
-            userId = c.req.param("id");
-          await auth.api.setUserPassword({
-            headers: c.req.raw.headers,
-            body: { userId, newPassword: input.password },
-          });
-          await revokeAfterPasswordChange(c.req.raw.headers, userId);
-          return Response.json({ ok: true });
-        }),
+        mutate(
+          c.req.raw,
+          async () => {
+            const input = localPasswordSchema.parse(await c.req.json()),
+              userId = c.req.param("id");
+            await auth.api.setUserPassword({
+              headers: c.req.raw.headers,
+              body: { userId, newPassword: input.password },
+            });
+            await revokeAfterPasswordChange(c.req.raw.headers, userId);
+            return Response.json({ ok: true });
+          },
+          true,
+          c.req.param("id"),
+        ),
       );
     },
   };
