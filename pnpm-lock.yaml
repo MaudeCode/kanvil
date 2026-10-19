@@ -374,6 +374,9 @@ importers:
       hono:
         specifier: 4.13.13
         version: 4.13.13
+      i18next:
+        specifier: 26.5.2
+        version: 26.5.2(typescript@7.0.2)
       jose:
         specifier: 6.2.12
         version: 6.2.12
