@@ -21,6 +21,7 @@ import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { LabelSettings } from "./label-settings.tsx";
 import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
+import { CustomFieldSettings } from "./custom-field-settings.tsx";
 import { ProjectDestinations } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
 import type { projectSections } from "../search.ts";
@@ -162,6 +163,9 @@ export function ProjectSettings({
         </SettingsPanel>
         <SettingsPanel value="labels">
           <LabelSettings owner={{ projectId: project.id }} canAdmin={access.canAdmin} />
+        </SettingsPanel>
+        <SettingsPanel value="fields">
+          <CustomFieldSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="integrations">
           <ProjectDestinations projectId={project.id} canAdmin={access.canAdmin} />

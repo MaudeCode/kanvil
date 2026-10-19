@@ -46,6 +46,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 - Titles, Markdown descriptions, acceptance criteria, and attachments.
 - Status, priority, kind, difficulty, scopes, labels (per project or shared across a workspace), and assignment.
 - Per-project workflow states that administrators add, rename, recolor, reorder, recategorize, and delete with an explicit reassignment. Each maps to one canonical status, which every open, closed, readiness, claim, and filter rule reads, so status-only clients keep working.
+- Typed project custom fields (text, number, date, checkbox, select, and multi-select) that administrators define, order, and edit with required rules and defaults. Definitions are versioned and server-validated; removing a used option needs an explicit destination for its values, so nothing is erased silently.
 - Parent/child relationships, blockers, related tickets, and duplicate references.
 - Comments, activity history, subscriptions, duplication, archiving, and deletion behavior.
 - Workspace search across projects, tickets, comments, and activity with a results page; any-of and none-of property filters shared by lists, search, and saved views; sorting, pagination, and bulk edits.
@@ -88,6 +89,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Ticket detail view containing requirements, relationships, editable links, discussion, attachments, activity, and supplied evidence.
 - Read-only public links that project administrators turn on and off under Project settings, showing anyone with the link the project's unarchived tickets and their requirements, properties, labels, dates, and relationships, without people, discussion, attachments, or coordination details.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
+- Custom fields edit through one property component in the composer, detail sidebar, list cells (shown from the Display menu), board cards, and selection toolbar, filter through the shared filter picker, and read on native ticket screens.
 - Comment mentions: typing `@` in a comment offers the project's members and inserts a `mention:` link that renders as "@Name"; mentioned members are notified even when they do not follow the ticket, and the Inbox has a Mentions view.
 - Inbox that opens an update's ticket in the same preview sheet, with its discussion and reply composer, and marks entries read or unread, dismisses them, clears read entries, and marks all read, from the keyboard as well.
 - Home overview of your assigned work, recent activity, and project progress, with a complete My work list across the workspace's projects grouped by due date or project.

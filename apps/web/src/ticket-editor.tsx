@@ -34,6 +34,7 @@ import { ScheduleDates } from "./components/date-picker.tsx";
 import { TagInput } from "./components/tag-input.tsx";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import {
+  CustomFieldProperties,
   ProjectProperty,
   TagsProperty,
   TicketProperty,
@@ -147,6 +148,8 @@ export function TicketEditor({
   const setFields = (change: Partial<Fields>) =>
     changeDraft({ ...latest.current, fields: { ...latest.current.fields, ...change } });
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => setFields({ [key]: value });
+  const setCustomField = (fieldId: string, value: Fields["customFields"][string]) =>
+    set("customFields", { ...latest.current.fields.customFields, [fieldId]: value });
   // A new ticket may target another writable project; its parent and assignee must belong there.
   // The target applies at once, and submitting waits until the assignee is checked against the
   // latest choice, so a ticket never goes to the previous project or with a stale assignee.
@@ -155,8 +158,9 @@ export function TicketEditor({
     changeDraft({
       ...latest.current,
       projectId: next === projectId ? undefined : next,
-      // A state belongs to one project; its category carries over.
-      fields: { ...latest.current.fields, parentId: null, stateId: null },
+      // A state and custom fields belong to one project; the status category carries over and the
+      // new project's field defaults apply.
+      fields: { ...latest.current.fields, parentId: null, stateId: null, customFields: {} },
     });
     setSwitching(true);
     let members: { userId: string }[] = [];
@@ -315,6 +319,13 @@ export function TicketEditor({
       />
       <TagsProperty value={fields.labels} onChange={(value) => set("labels", value)} />
       <ScheduleDates variant="pill" value={fields} onChange={setFields} />
+      <CustomFieldProperties
+        variant="pill"
+        projectId={target}
+        values={fields.customFields}
+        isNew={!ticket}
+        onChange={setCustomField}
+      />
       <TicketPicker
         variant="pill"
         label="Parent ticket"
@@ -528,6 +539,13 @@ export function TicketEditor({
                 onChange={(difficulty) => set("difficulty", difficulty)}
               />
               <ScheduleDates variant="row" value={fields} onChange={setFields} />
+              <CustomFieldProperties
+                variant="row"
+                projectId={target}
+                values={fields.customFields}
+                isNew={!ticket}
+                onChange={setCustomField}
+              />
               <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
                 <span className="text-xs text-muted-foreground">Agents</span>
                 <Toggle

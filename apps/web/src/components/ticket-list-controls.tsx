@@ -10,10 +10,15 @@ import {
   dueFilterLabels,
   sortLabels,
   defaultOrder,
+  customFieldFilter,
+  customFieldFilterChoice,
+  customFieldFilterText,
+  customFieldFilterTokens,
   filterFieldLabels,
   filterKey,
   filterList,
   ticketPredicates,
+  type CustomField,
   type FilterField,
   type FilterOperator,
 } from "@kanvil/contracts";
@@ -36,6 +41,7 @@ import {
   ticketGroupingSchema,
   ticketLayoutSchema,
   workGroupingSchema,
+  customFieldColumn,
   type TicketSearch,
 } from "../search.ts";
 import { preferences, usePreference } from "../hooks/use-preference.ts";
@@ -51,7 +57,13 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TicketTag } from "./ticket-tags.tsx";
-import { PropertyValue, difficultyLabels, kindLabels } from "./ticket-property.tsx";
+import {
+  FieldValue,
+  PropertyValue,
+  difficultyLabels,
+  kindLabels,
+  useCustomFields,
+} from "./ticket-property.tsx";
 import { cn } from "@/lib/utils";
 
 // Extends the list's existing filter popover with personal display preferences.
@@ -87,6 +99,7 @@ export function TicketListControls({
     }),
     enabled: filtersOpen && !!projectId,
   });
+  const fields = useCustomFields(projectId);
   const predicates = ticketPredicates(search);
   const activeFilters =
     predicates.length +
@@ -104,7 +117,10 @@ export function TicketListControls({
       }),
     );
   const projectKey = projectId ?? "";
-  const choices: Record<"status" | "priority" | "label" | "assigneeId", FilterChoice[]> = {
+  const choices: Record<
+    "status" | "priority" | "label" | "assigneeId" | "customField",
+    FilterChoice[]
+  > = {
     status: states.map((status) => ({
       value: status,
       text: stateLabels[status],
@@ -128,6 +144,25 @@ export function TicketListControls({
         .filter((member) => member.userId !== identity.id)
         .map((member) => ({ value: member.userId, text: member.name, keywords: [member.email] })),
     ],
+    customField: (fields.data ?? []).flatMap((field) =>
+      customFieldTokens(field).map((token) => {
+        const value = customFieldFilter(field.id, token);
+        return {
+          value,
+          text: customFieldFilterText(field, token),
+          node: (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-muted-foreground">{field.name}</span>
+              {field.options.some((option) => option.id === token) ? (
+                <FieldValue field={field} value={token} />
+              ) : (
+                customFieldFilterChoice(field, token)
+              )}
+            </span>
+          ),
+        };
+      }),
+    ),
   };
   // Kind and difficulty have no picker here, but links and the API can still set them.
   const valueNames: Record<FilterField, Record<string, string>> = {
@@ -137,6 +172,9 @@ export function TicketListControls({
     difficulty: difficultyLabels,
     label: {},
     assigneeId: Object.fromEntries(choices.assigneeId.map((choice) => [choice.value, choice.text])),
+    customField: Object.fromEntries(
+      choices.customField.map((choice) => [choice.value, choice.text]),
+    ),
   };
   const chipValue = (field: FilterField, value: string) =>
     field === "label" ? (
@@ -214,6 +252,14 @@ export function TicketListControls({
                   choices={choices.assigneeId}
                   onChange={setPredicate}
                 />
+                {!!choices.customField.length && (
+                  <FilterPicker
+                    field="customField"
+                    search={search}
+                    choices={choices.customField}
+                    onChange={setPredicate}
+                  />
+                )}
                 {archivedFilter && (
                   <Select
                     label="Archived"
@@ -271,7 +317,7 @@ export function TicketListControls({
                 ["desc", "Descending"],
               ]}
             />
-            <TicketDisplayPreferences work={!projectId} />
+            <TicketDisplayPreferences work={!projectId} fields={fields.data ?? []} />
             <Separator />
             <Button variant="ghost" onClick={onReset}>
               Reset display
@@ -350,7 +396,17 @@ const fieldText: Record<FilterField, { any: string; search: string }> = {
   difficulty: { any: "All difficulties", search: "Search difficulties" },
   label: { any: "All labels", search: "Search labels" },
   assigneeId: { any: "Anyone", search: "Search people" },
+  customField: { any: "Any field value", search: "Search fields" },
 };
+// The filterable values of a field: its options or a checked box, and no value.
+function customFieldTokens(field: CustomField) {
+  return [
+    ...(field.type === "checkbox"
+      ? [customFieldFilterTokens.checked]
+      : field.options.map((option) => option.id)),
+    customFieldFilterTokens.empty,
+  ];
+}
 // A searchable multi-select for one filter field. "Is" keeps tickets with any chosen value;
 // "Is not" keeps tickets with none of them.
 function FilterPicker({
@@ -477,7 +533,14 @@ function FilterPicker({
 
 // The personal list preferences, shared by the Display popover and Settings. My work (`work`)
 // has its own grouping choices.
-export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
+export function TicketDisplayPreferences({
+  work = false,
+  fields = [],
+}: {
+  work?: boolean;
+  // The project's custom fields, which show as columns too.
+  fields?: CustomField[];
+}) {
   const [grouping, setGrouping] = usePreference(preferences.grouping),
     [layout, setLayout] = usePreference(preferences.layout),
     [backgrounds, setBackgrounds] = usePreference(preferences.backgrounds),
@@ -557,11 +620,15 @@ export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
       <fieldset>
         <legend className="mb-2 text-xs font-medium text-muted-foreground">Properties</legend>
         <div className="grid grid-cols-2 gap-x-3">
-          {Object.entries(ticketColumnLabels).map(([id, label]) => (
+          {[
+            ...Object.entries(ticketColumnLabels).map(([id, label]) => [id, label, true] as const),
+            // Field columns start hidden, like the less common built-in ones.
+            ...fields.map((field) => [customFieldColumn(field.id), field.name, false] as const),
+          ].map(([id, label, shown]) => (
             <Check
               key={id}
               label={label}
-              checked={columns[id] ?? true}
+              checked={columns[id] ?? shown}
               onCheckedChange={(checked) => setColumns({ ...columns, [id]: checked })}
             />
           ))}

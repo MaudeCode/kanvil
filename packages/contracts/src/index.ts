@@ -259,20 +259,20 @@ export function parseCustomFieldFilter(value: string) {
   const at = value.indexOf(":");
   return { fieldId: value.slice(0, at), token: value.slice(at + 1) };
 }
-export function customFieldFilterText(
-  field: Pick<CustomField, "name" | "type" | "options">,
+// The value half of a filter choice, and the whole choice as chips and pickers name it.
+export function customFieldFilterChoice(
+  field: Pick<CustomField, "type" | "options">,
   token: string,
 ) {
-  const choice =
-    token === customFieldFilterTokens.empty
-      ? field.type === "checkbox"
-        ? "Not checked"
-        : "No value"
-      : token === customFieldFilterTokens.checked && field.type === "checkbox"
-        ? "Checked"
-        : optionNames(field, token).join("");
-  return `${field.name}: ${choice}`;
+  if (token === customFieldFilterTokens.empty)
+    return field.type === "checkbox" ? "Not checked" : "No value";
+  if (token === customFieldFilterTokens.checked && field.type === "checkbox") return "Checked";
+  return optionNames(field, token).join("");
 }
+export const customFieldFilterText = (
+  field: Pick<CustomField, "name" | "type" | "options">,
+  token: string,
+) => `${field.name}: ${customFieldFilterChoice(field, token)}`;
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),

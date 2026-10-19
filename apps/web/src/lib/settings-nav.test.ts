@@ -43,6 +43,7 @@ it("expands the open project and locates its section", () => {
     "Members",
     "Workflow",
     "Labels",
+    "Fields",
     "Integrations",
     "Calendar feeds",
   ]);

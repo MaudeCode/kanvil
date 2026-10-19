@@ -3,6 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Bug,
+  CalendarDays,
+  Hash,
+  ListChecks,
+  Square,
+  SquareCheck,
+  CircleChevronDown,
+  Type,
   ChartNoAxesColumnIncreasing,
   Check,
   CircleDot,
@@ -17,21 +24,27 @@ import {
 } from "lucide-react";
 import {
   difficulties,
+  formatCustomFieldValue,
   kinds,
   priorities,
   priorityLabels,
   stateLabels,
   states,
+  type CustomField,
+  type CustomFieldType,
+  type CustomFieldValue as StoredValue,
   type Ticket,
   type Output,
   type WorkflowState,
 } from "@kanvil/contracts";
+import { format, parseISO } from "date-fns";
 import { api, useIdentity, useOperation, useProjectAccess, useProjects } from "../data.tsx";
-import { TicketIndicator, reportError } from "../ui.tsx";
+import { Input, TicketIndicator, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { TagInput } from "./tag-input.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
+import { DatePicker } from "./date-picker.tsx";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -101,9 +114,15 @@ export function propertyOf<P extends PropertyName>(ticket: Ticket, property: P) 
   return readers[property](ticket);
 }
 // A ticket edit as update_ticket takes it: a state is written by ID, never cleared.
-export type TicketChange = Omit<Partial<Ticket>, "stateId"> & { stateId?: string };
+// An edit as clients send it. Custom field changes name only some fields; null clears one.
+export type TicketChange = Omit<Partial<Ticket>, "stateId" | "customFields"> & {
+  stateId?: string;
+  customFields?: Record<string, StoredValue | null>;
+};
 // The ticket change that sets a property; only the assignee is stored under another name.
-const writers: { [P in PropertyName]: (value: PropertyValues[P]) => TicketChange } = {
+const writers: {
+  [P in PropertyName]: (value: PropertyValues[P]) => Omit<TicketChange, "customFields">;
+} = {
   status: (value) => {
     const { status, stateId } = parseStatus(value);
     return stateId ? { status, stateId } : { status };
@@ -361,49 +380,81 @@ export function TicketProperty<P extends PropertyName>({
     <Popover open={open} onOpenChange={setOpen}>
       {variant === "row" ? <PropertyRow label={label}>{trigger}</PropertyRow> : trigger}
       <PopoverContent align={align} className="w-60 p-0">
-        <Command>
-          <CommandInput
-            placeholder={`${property === "assignee" ? "Assign to" : `Set ${label.toLowerCase()}`}…`}
-            aria-label={`Search ${label.toLowerCase()}`}
-            autoFocus
-            onKeyDown={(event) => {
-              const option = /^[1-9]$/.test(event.key) ? options[Number(event.key) - 1] : undefined;
-              if (!option || event.currentTarget.value || options.length > 9) return;
-              event.preventDefault();
-              setOpen(false);
-              if (mixed || option.value !== value) onChange(option.value);
-            }}
-          />
-          <CommandList>
-            {options.map((option, index) => (
-              <CommandItem
-                key={String(option.value)}
-                value={option.label}
-                keywords={option.keywords ?? []}
-                onSelect={() => {
-                  setOpen(false);
-                  if (mixed || option.value !== value) onChange(option.value);
-                }}
-              >
-                <PropertyValue {...pair(property, option.value)} projectId={projectId} />
-                {options.length <= 9 && (
-                  <kbd className="ml-auto text-[10px] text-muted-foreground" aria-hidden="true">
-                    {index + 1}
-                  </kbd>
-                )}
-                {!mixed && option.value === value && (
-                  <Check className={options.length <= 9 ? "" : "ml-auto"} />
-                )}
-              </CommandItem>
-            ))}
-            <CommandEmpty>No matches</CommandEmpty>
-          </CommandList>
-        </Command>
+        <ChoiceList
+          placeholder={`${property === "assignee" ? "Assign to" : `Set ${label.toLowerCase()}`}…`}
+          searchLabel={`Search ${label.toLowerCase()}`}
+          choices={options.map((option) => ({
+            ...option,
+            node: <PropertyValue {...pair(property, option.value)} projectId={projectId} />,
+            checked: !mixed && option.value === value,
+          }))}
+          onPick={(next) => {
+            setOpen(false);
+            if (mixed || next !== value) onChange(next);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );
 }
+// The searchable list inside every property popover. With nine choices or fewer, a digit picks one.
+function ChoiceList<V>({
+  choices,
+  placeholder,
+  searchLabel,
+  onPick,
+}: {
+  choices: (Option<V> & { node: ReactNode; checked: boolean })[];
+  placeholder: string;
+  searchLabel: string;
+  onPick: (value: V) => void;
+}) {
+  const numbered = choices.length <= 9;
+  return (
+    <Command>
+      <CommandInput
+        placeholder={placeholder}
+        aria-label={searchLabel}
+        autoFocus
+        onKeyDown={(event) => {
+          const choice = /^[1-9]$/.test(event.key) ? choices[Number(event.key) - 1] : undefined;
+          if (!choice || event.currentTarget.value || !numbered) return;
+          event.preventDefault();
+          onPick(choice.value);
+        }}
+      />
+      <CommandList>
+        {choices.map((choice, index) => (
+          <CommandItem
+            key={String(choice.value)}
+            value={choice.label}
+            keywords={choice.keywords ?? []}
+            onSelect={() => onPick(choice.value)}
+          >
+            {choice.node}
+            {numbered && (
+              <kbd className="ml-auto text-[10px] text-muted-foreground" aria-hidden="true">
+                {index + 1}
+              </kbd>
+            )}
+            {choice.checked && <Check className={numbered ? "" : "ml-auto"} />}
+          </CommandItem>
+        ))}
+        <CommandEmpty>No matches</CommandEmpty>
+      </CommandList>
+    </Command>
+  );
+}
 
+// Applies an edit to a cached ticket.
+export function applyPatch<T extends Ticket>(row: T, { customFields, ...rest }: TicketChange): T {
+  if (!customFields) return { ...row, ...rest };
+  const values = { ...row.customFields };
+  for (const [id, value] of Object.entries(customFields))
+    if (value === null) delete values[id];
+    else values[id] = value;
+  return { ...row, ...rest, customFields: values };
+}
 // Shared mutation wrapper so every inline edit reports failures the same way.
 // `target` edits another ticket than the hook's own, e.g. the one dropped on a board lane.
 export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "version">) {
@@ -433,7 +484,7 @@ export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "vers
           (page) =>
             page && {
               ...page,
-              items: page.items.map((row) => (row.id === target.id ? { ...row, ...patch } : row)),
+              items: page.items.map((row) => (row.id === target.id ? applyPatch(row, patch) : row)),
             },
         );
       cache.setQueriesData<Output<"get_ticket">>(
@@ -441,7 +492,7 @@ export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "vers
           queryKey: api.query("get_ticket", { projectId: target.projectId, ticketId: target.id })
             .queryKey,
         },
-        (data) => data && { ...data, ticket: { ...data.ticket, ...patch } },
+        (data) => data && { ...data, ticket: applyPatch(data.ticket, patch) },
       );
       return update
         .mutateAsync({
@@ -588,6 +639,289 @@ export function TagsProperty({
       </PopoverContent>
     </Popover>
   );
+}
+
+export const customFieldIcons: Record<CustomFieldType, typeof Bug> = {
+  text: Type,
+  number: Hash,
+  date: CalendarDays,
+  checkbox: SquareCheck,
+  select: CircleChevronDown,
+  multiselect: ListChecks,
+};
+// One read of a project's field definitions; every view of its tickets shares the cached query.
+export function useCustomFields(projectId: string | undefined) {
+  return useQuery({
+    ...api.query("list_custom_fields", { projectId: projectId ?? "" }),
+    enabled: !!projectId,
+  });
+}
+// One renderer for a custom field value: choices as colored tags, a checked box, or the shared
+// text from the contracts package.
+export function FieldValue({ field, value }: { field: CustomField; value: StoredValue }) {
+  if (field.type === "select" || field.type === "multiselect")
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1">
+        {(Array.isArray(value) ? value : [String(value)]).map((optionId) => {
+          const option = field.options.find((choice) => choice.id === optionId),
+            name = option?.name ?? "Removed option";
+          return (
+            <TicketTag
+              key={optionId}
+              tag={name}
+              color={option?.color ?? "gray"}
+              className="max-w-40"
+            >
+              <span className="truncate">{name}</span>
+            </TicketTag>
+          );
+        })}
+      </span>
+    );
+  if (field.type === "checkbox")
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <SquareCheck className="size-3.5 text-primary" aria-hidden="true" />
+        Yes
+      </span>
+    );
+  // Wraps rather than truncates, so a trigger sized to its content keeps the text.
+  return <span className="break-words">{formatCustomFieldValue(field, value)}</span>;
+}
+// Calendar days are stored as YYYY-MM-DD and picked in the local calendar.
+const toDay = (value: StoredValue | null | undefined) =>
+  typeof value === "string" && value ? parseISO(value) : null;
+// A custom field as a composer pill, a sidebar row, or a list cell. Choices pick from a searchable
+// list (a multi-select applies when its popover closes), text and numbers edit in a popover, dates
+// reuse the date picker, and a checkbox toggles in place. `mixed` marks a selection's differing values.
+export function CustomFieldProperty({
+  field,
+  value,
+  onChange,
+  variant = "pill",
+  disabled = false,
+  mixed = false,
+  align = "start",
+}: {
+  field: CustomField;
+  value: StoredValue | null | undefined;
+  onChange: (value: StoredValue | null) => void;
+  variant?: "pill" | "row" | "cell";
+  disabled?: boolean;
+  mixed?: boolean;
+  align?: "start" | "end";
+}) {
+  const [open, setOpen] = useState(false),
+    [draft, setDraft] = useState<string[]>([]),
+    [text, setText] = useState("");
+  const Icon = customFieldIcons[field.type],
+    current = mixed ? null : (value ?? null);
+  // A pill names its field; a row has a label and a cell a column header. An empty list cell stays
+  // out of sight until its row is hovered or the editor is focused, and narrow lists leave it out.
+  const empty = current === null,
+    quiet =
+      variant === "cell" && empty && !mixed
+        ? "opacity-0 focus-visible:opacity-100 data-[popup-open]:opacity-100 [.ticket-row:hover_&]:opacity-100 @max-[850px]:hidden"
+        : "",
+    checked = field.type === "checkbox" && current === true,
+    ShownIcon = field.type === "checkbox" && !checked ? Square : Icon;
+  const shown = (
+    <span className={cn("inline-flex items-center gap-1.5", empty && "text-muted-foreground")}>
+      {(variant !== "row" || field.type === "checkbox") && (
+        <ShownIcon
+          className={cn("size-3.5 shrink-0", checked ? "text-primary" : "text-muted-foreground")}
+          aria-hidden="true"
+        />
+      )}
+      {variant === "pill" && <span className="truncate">{field.name}</span>}
+      {field.type === "checkbox" ? (
+        variant === "row" && (mixed ? "Mixed" : checked ? "Yes" : "No")
+      ) : empty ? (
+        variant === "row" && (mixed ? "Mixed" : "No value")
+      ) : (
+        <FieldValue field={field} value={current} />
+      )}
+    </span>
+  );
+  const row = (control: ReactNode) =>
+    variant === "row" ? <PropertyRow label={field.name}>{control}</PropertyRow> : control;
+  if (field.type === "date")
+    return (
+      <DatePicker
+        variant={variant === "row" ? "row" : "pill"}
+        label={field.name}
+        placeholder={
+          variant === "row" ? (mixed ? "Mixed" : "No value") : variant === "pill" ? field.name : ""
+        }
+        value={toDay(current)}
+        mixed={mixed}
+        disabled={disabled}
+        className={variant === "cell" ? cn(triggerClass.cell, quiet) : undefined}
+        onChange={(date) => onChange(date ? format(date, "yyyy-MM-dd") : null)}
+      />
+    );
+  if (field.type === "checkbox")
+    return row(
+      <Button
+        variant="ghost"
+        size={variant === "cell" ? "xs" : "sm"}
+        role="checkbox"
+        aria-checked={mixed ? "mixed" : checked}
+        aria-label={field.name}
+        disabled={disabled}
+        className={cn(triggerClass[variant], quiet)}
+        onClick={() => onChange(mixed || !checked ? true : null)}
+      >
+        {shown}
+      </Button>,
+    );
+  const choices = field.type === "select" || field.type === "multiselect";
+  const selected = Array.isArray(current) ? current : [];
+  function toggle(next: boolean) {
+    if (next) {
+      setDraft(mixed ? [] : selected);
+      setText(current === null ? "" : String(current));
+    } else if (
+      field.type === "multiselect" &&
+      (mixed ? draft.length > 0 : JSON.stringify(draft) !== JSON.stringify(selected))
+    )
+      onChange(draft.length ? draft : null);
+    setOpen(next);
+  }
+  function save() {
+    const trimmed = text.trim();
+    toggle(false);
+    if (!trimmed) return onChange(null);
+    onChange(field.type === "number" ? Number(trimmed) : trimmed);
+  }
+  return (
+    <Popover open={open} onOpenChange={toggle}>
+      {row(
+        <PopoverTrigger
+          disabled={disabled}
+          render={
+            <Button
+              variant="ghost"
+              size={variant === "cell" ? "xs" : "sm"}
+              {...(choices ? { role: "combobox", "aria-expanded": open } : {})}
+              aria-label={field.name}
+              className={cn(
+                triggerClass[variant],
+                variant === "row" && "h-auto min-h-7 py-1",
+                quiet,
+              )}
+            />
+          }
+        >
+          {shown}
+        </PopoverTrigger>,
+      )}
+      <PopoverContent
+        align={align}
+        className={choices ? "w-60 p-0" : "w-[min(18rem,calc(100vw-2rem))] p-3"}
+      >
+        {choices ? (
+          <ChoiceList
+            placeholder={`Set ${field.name.toLowerCase()}…`}
+            searchLabel={`Search ${field.name.toLowerCase()}`}
+            choices={[
+              {
+                value: "",
+                label: "No value",
+                node: <span className="text-muted-foreground">No value</span>,
+                checked: !mixed && current === null,
+              },
+              ...field.options.map((option) => ({
+                value: option.id,
+                label: option.name,
+                node: <FieldValue field={field} value={option.id} />,
+                checked:
+                  field.type === "multiselect" ? draft.includes(option.id) : current === option.id,
+              })),
+            ]}
+            onPick={(optionId) => {
+              if (field.type === "multiselect" && optionId) {
+                setDraft(
+                  draft.includes(optionId)
+                    ? draft.filter((item) => item !== optionId)
+                    : [...draft, optionId],
+                );
+                return;
+              }
+              setOpen(false);
+              if (mixed || (optionId || null) !== current) onChange(optionId || null);
+            }}
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Input
+              label={field.name}
+              labelHidden
+              autoFocus
+              type={field.type === "number" ? "number" : "text"}
+              step={field.type === "number" ? "any" : undefined}
+              maxLength={1000}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                // The popover renders outside the composer form, but React still bubbles to it.
+                event.preventDefault();
+                event.stopPropagation();
+                save();
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              {current !== null && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    toggle(false);
+                    onChange(null);
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+              <Button size="sm" onClick={save}>
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+// A ticket's custom fields as composer pills or sidebar rows. A new ticket shows each field's
+// default until the author sets or clears it; an existing ticket shows only stored values.
+export function CustomFieldProperties({
+  projectId,
+  values,
+  isNew = false,
+  onChange,
+  variant,
+  disabled = false,
+}: {
+  projectId: string;
+  values: Record<string, StoredValue | null>;
+  isNew?: boolean;
+  onChange: (fieldId: string, value: StoredValue | null) => void;
+  variant: "pill" | "row";
+  disabled?: boolean;
+}) {
+  const fields = useCustomFields(projectId);
+  return fields.data?.map((field) => (
+    <CustomFieldProperty
+      key={field.id}
+      field={field}
+      variant={variant}
+      disabled={disabled}
+      value={isNew && !Object.hasOwn(values, field.id) ? field.defaultValue : values[field.id]}
+      onChange={(value) => onChange(field.id, value)}
+    />
+  ));
 }
 
 // Target project of a new ticket, chosen from the active workspace's projects the user can write
