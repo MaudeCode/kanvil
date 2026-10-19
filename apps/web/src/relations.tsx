@@ -15,6 +15,8 @@ import {
   parseRelationChoice,
   type Ticket,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 import { api, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
@@ -86,11 +88,11 @@ export function Relations({ ticket }: { ticket: Ticket }) {
     <section>
       <SectionHeading
         compact
-        title="Relationships"
+        title={t("detail.relations.heading")}
         action={
           access.canWrite && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<IconButton label="Add relationship" />}>
+              <DropdownMenuTrigger render={<IconButton label={t("detail.relations.add")} />}>
                 <Plus />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
@@ -103,11 +105,11 @@ export function Relations({ ticket }: { ticket: Ticket }) {
                   }}
                 >
                   <Unlink />
-                  Link existing ticket
+                  {t("detail.relations.linkExisting")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setCreatingChild(true)}>
                   <GitBranchPlus />
-                  New child ticket
+                  {t("detail.relations.newChild")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -118,7 +120,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
         <Item size="xs" className="px-0">
           <CornerLeftUp className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <ItemContent className="min-w-0">
-            <span className="text-xs text-muted-foreground">Parent</span>
+            <span className="text-xs text-muted-foreground">{t("detail.field.parent")}</span>
             <TicketLink
               projectId={ticket.projectId}
               ticketId={ticket.parentId}
@@ -130,11 +132,14 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       {children.data && (children.data.total > 0 || offset > 0) && (
         <>
           <h3 className="mt-3 mb-1 text-xs text-muted-foreground">
-            Child tickets{" "}
-            <span className="tabular-nums">
-              {children.data.items.filter((child) => child.status === "done").length}/
-              {children.data.total}
-            </span>
+            <Trans
+              i18nKey="detail.relations.children"
+              values={{
+                done: children.data.items.filter((child) => child.status === "done").length,
+                total: children.data.total,
+              }}
+              components={{ count: <span className="tabular-nums" /> }}
+            />
           </h3>
           <ItemGroup className="gap-0">
             {children.data.items.map((child) => (
@@ -156,14 +161,14 @@ export function Relations({ ticket }: { ticket: Ticket }) {
                 disabled={!offset}
                 onClick={() => setOffset(Math.max(0, offset - 20))}
               >
-                Previous children
+                {t("detail.relations.previousChildren")}
               </Button>
               <Button
                 size="sm"
                 disabled={offset + 20 >= children.data.total}
                 onClick={() => setOffset(offset + 20)}
               >
-                Next children
+                {t("detail.relations.nextChildren")}
               </Button>
             </div>
           )}
@@ -183,7 +188,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
               action={
                 <IconButton
                   size="icon-sm"
-                  label={`Remove ${relation.type} relationship`}
+                  label={t(`detail.relations.remove.${relation.type}`)}
                   onClick={() =>
                     remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
                   }
@@ -200,9 +205,14 @@ export function Relations({ ticket }: { ticket: Ticket }) {
         })}
       </ItemGroup>
       {!ticket.parentId && !children.data?.total && relations.data?.length === 0 && (
-        <p className="mb-0 text-xs text-muted-foreground">No relationships</p>
+        <p className="mb-0 text-xs text-muted-foreground">{t("detail.relations.empty")}</p>
       )}
-      <Modal title="Add relationship" open={open} onOpenChange={setOpen} busy={add.isPending}>
+      <Modal
+        title={t("detail.relations.add")}
+        open={open}
+        onOpenChange={setOpen}
+        busy={add.isPending}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -220,7 +230,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
               .catch(setValidationError);
           }}
         >
-          <Select label="Relationship" name="type">
+          <Select label={t("detail.relations.type")} name="type">
             {relationChoices.map((choice) => (
               <SelectItem key={choice.value} value={choice.value}>
                 {choice.label}
@@ -229,7 +239,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           </Select>
           <TicketPicker
             projectId={ticket.projectId}
-            label="Ticket"
+            label={t("detail.relations.ticket")}
             value={target}
             onChange={setTarget}
             exclude={[ticket.id]}
@@ -239,7 +249,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           <FormActions
             error={validationError ?? add.error}
             pending={add.isPending}
-            submitLabel="Add relationship"
+            submitLabel={t("detail.relations.add")}
             submitDisabled={!target}
             onCancel={() => setOpen(false)}
           />
@@ -247,7 +257,7 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       </Modal>
       <Modal
         size="composer"
-        title={`New child of ${ticket.key}`}
+        title={t("detail.relations.newChildTitle", { key: ticket.key })}
         open={creatingChild}
         onOpenChange={setCreatingChild}
       >
@@ -309,7 +319,7 @@ function ReferenceRow({
           disabled={pending}
           variant="cell"
           iconOnly
-          ariaLabel={`Status of ${current.key}`}
+          ariaLabel={t("detail.relations.statusOf", { key: current.key })}
           className="mx-0"
         />
       ) : (
@@ -338,7 +348,7 @@ function ReferenceRow({
               variant="cell"
               iconOnly
               align="end"
-              ariaLabel={`Assignee of ${current.key}`}
+              ariaLabel={t("detail.relations.assigneeOf", { key: current.key })}
               className="mx-0"
             />
           ) : (

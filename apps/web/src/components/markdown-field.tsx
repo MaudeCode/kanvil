@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mentionLink, type Output } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import {
   Bold,
   Heading,
@@ -190,7 +191,7 @@ export function useFileInsert(
       type="file"
       multiple
       hidden
-      aria-label={`Insert file into ${label}`}
+      aria-label={t("detail.markdown.insertFileInto", { label })}
       onChange={(event) => {
         const files = [...(event.target.files ?? [])];
         event.target.value = "";
@@ -221,7 +222,7 @@ export function FormatToolbar({
     <InputGroupAddon
       align="block-start"
       role="toolbar"
-      aria-label={`${label} formatting`}
+      aria-label={t("detail.markdown.formatting", { label })}
       className={cn(
         "gap-0.5 overflow-x-auto border-b py-1 pl-1 text-foreground [scrollbar-width:none] max-md:gap-0 max-md:px-0",
         flush && "px-0",
@@ -263,7 +264,9 @@ export function FormatToolbar({
       {upload && (
         <>
           <IconButton
-            label={upload.uploading ? "Uploading…" : "Insert file"}
+            label={
+              upload.uploading ? t("detail.resource.uploading") : t("detail.markdown.insertFile")
+            }
             size="icon-sm"
             tabIndex={-1}
             disabled={upload.uploading}
@@ -393,7 +396,7 @@ export function MarkdownField({
           "border-t pt-5 has-[[data-slot=input-group-control]:focus]:border-t-primary has-[[data-slot=input-group-control]:focus]:[&_[data-slot=field-label]]:text-primary",
       )}
       data-variant={variant}
-      aria-label={`${label} editor`}
+      aria-label={t("detail.markdown.editor", { label })}
     >
       <Tabs
         value={mode}
@@ -407,16 +410,16 @@ export function MarkdownField({
       >
         <div className="flex items-center justify-between gap-3">
           <FieldLabel htmlFor={id}>{label}</FieldLabel>
-          <TabsList aria-label={`${label} editor`} variant="line">
-            <TabsTrigger value="write">Write</TabsTrigger>
-            <TabsTrigger value="visual">Visual</TabsTrigger>
-            <TabsTrigger value="preview">Preview</TabsTrigger>
+          <TabsList aria-label={t("detail.markdown.editor", { label })} variant="line">
+            <TabsTrigger value="write">{t("detail.markdown.write")}</TabsTrigger>
+            <TabsTrigger value="visual">{t("detail.markdown.visual")}</TabsTrigger>
+            <TabsTrigger value="preview">{t("detail.markdown.preview")}</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="write">
           {unsupported && preferred === "visual" && (
             <p role="status" className="mb-2 text-xs text-muted-foreground">
-              This text uses Markdown the visual editor can't keep, such as HTML or footnotes.
+              {t("detail.markdown.unsupported")}
             </p>
           )}
           <InputGroup className={groupClass}>
@@ -482,7 +485,7 @@ export function MarkdownField({
             {mentions && (
               <SuggestionList
                 id={listId}
-                label="Mention a member"
+                label={t("detail.markdown.mention")}
                 open={suggesting}
                 anchor={field}
                 options={matches.map(memberOption)}
@@ -527,7 +530,9 @@ export function MarkdownField({
             {value ? (
               <Markdown>{value}</Markdown>
             ) : (
-              <p className="m-0 text-sm text-muted-foreground">Nothing to preview</p>
+              <p className="m-0 text-sm text-muted-foreground">
+                {t("detail.markdown.nothingToPreview")}
+              </p>
             )}
           </div>
           {footer && <div className="mt-2 flex justify-end">{footer}</div>}
