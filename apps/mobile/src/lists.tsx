@@ -196,7 +196,7 @@ function ProjectAction() {
       <Sheet title="New project" open={open} onClose={() => setOpen(false)}>
         <Field label="Project name" value={name} onChangeText={setName} maxLength={120} />
         <Field
-          label="Permanent ticket prefix"
+          label="Ticket prefix"
           value={key}
           onChangeText={(value) => setKey(value.toUpperCase())}
           autoCapitalize="characters"

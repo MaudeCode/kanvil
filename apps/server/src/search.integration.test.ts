@@ -127,4 +127,36 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
       (await app.domain.execute("list_tickets", { projectId: a.id, q: "recoverr" }, reader)).total,
     ).toBe(0);
   });
+  it("reindexes every ticket of a project whose prefix changes", async () => {
+    const project = await app.domain.execute(
+      "create_project",
+      { key: "RENAMEFROM", name: "Search C" },
+      actor,
+    );
+    const ticket = await app.domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Renamed prefix" },
+      actor,
+    );
+    await app.search.sync();
+    await app.domain.execute(
+      "update_project",
+      {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: project.description,
+        key: "QWERTZ",
+      },
+      actor,
+    );
+    await app.search.sync();
+    const found = await app.domain.execute(
+      "search_workspace",
+      { q: "QWERTZ", workspaceId: project.workspaceId, type: "ticket" },
+      actor,
+    );
+    expect(found.engine).toBe("index");
+    expect(found.items.map((item) => item.id)).toEqual([ticket.id]);
+  });
 });

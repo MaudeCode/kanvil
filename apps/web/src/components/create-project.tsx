@@ -19,6 +19,36 @@ export function suggestKey(name: string) {
   const key = raw.replace(/^[^A-Z]+/, "").slice(0, 4);
   return key.length >= 2 ? key : raw.slice(0, 3).replace(/^[^A-Z]+/, "");
 }
+// The prefix field shared by project creation and prefix changes, previewing the keys it issues.
+export function PrefixInput({
+  value,
+  onChange,
+  autoFocus = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+      <Input
+        label="Ticket prefix"
+        value={value}
+        onChange={(event) => onChange(event.target.value.toUpperCase())}
+        required
+        minLength={2}
+        maxLength={10}
+        pattern="[A-Z][A-Z0-9]{1,9}"
+        placeholder="KAN"
+        className="font-mono uppercase"
+        autoFocus={autoFocus}
+      />
+      <p className="mb-4 h-8 min-w-24 content-center font-mono text-xs text-muted-foreground tabular-nums">
+        {value ? `${value}-1, ${value}-2…` : ""}
+      </p>
+    </div>
+  );
+}
 export function CreateProject({ sidebarAction = false }: { sidebarAction?: boolean }) {
   const { active: workspace } = useWorkspace();
   const canCreate = !!workspace && (workspace.role === "writer" || workspace.role === "admin");
@@ -98,25 +128,13 @@ export function CreateProject({ sidebarAction = false }: { sidebarAction?: boole
             autoFocus
             placeholder="Mobile app"
           />
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-            <Input
-              label="Permanent ticket prefix"
-              value={key}
-              onChange={(event) => {
-                setCustomKey(true);
-                setKey(event.target.value.toUpperCase());
-              }}
-              required
-              minLength={2}
-              maxLength={10}
-              pattern="[A-Z][A-Z0-9]{1,9}"
-              placeholder="KAN"
-              className="font-mono uppercase"
-            />
-            <p className="mb-4 h-8 min-w-24 content-center font-mono text-xs text-muted-foreground tabular-nums">
-              {key ? `${key}-1, ${key}-2…` : ""}
-            </p>
-          </div>
+          <PrefixInput
+            value={key}
+            onChange={(next) => {
+              setCustomKey(true);
+              setKey(next);
+            }}
+          />
           <Textarea label="Description" name="description" maxLength={5000} rows={3} />
           <Field className={fieldClass}>
             <FieldLabel>Project access</FieldLabel>

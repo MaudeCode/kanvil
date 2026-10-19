@@ -15,6 +15,7 @@ import {
   Copy,
   CopyPlus,
   ExternalLink,
+  FolderInput,
   FolderOpen,
   PanelRight,
   Link2,
@@ -42,6 +43,7 @@ import {
   type TicketChange,
 } from "./ticket-property.tsx";
 import { DateCalendar, endOfDay } from "./date-picker.tsx";
+import { TicketMoveForm } from "./ticket-move.tsx";
 const TicketEditor = lazy(() =>
   import("../ticket-editor.tsx").then((module) => ({ default: module.TicketEditor })),
 );
@@ -198,6 +200,7 @@ export function TicketContextMenu({
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState(false),
     [deleting, setDeleting] = useState(false),
+    [relocating, setRelocating] = useState(false),
     access = useProjectAccess(ticket.projectId, open),
     navigate = useNavigate();
   const read = useQuery({
@@ -298,6 +301,10 @@ export function TicketContextMenu({
               </ContextMenuSubContent>
             </ContextMenuSub>
           )}
+          <ContextMenuItem disabled={!access.canWrite} onClick={() => setRelocating(true)}>
+            <FolderInput />
+            Move to project…
+          </ContextMenuItem>
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={!access.canWrite || update.pending}>
               <CalendarDays />
@@ -365,6 +372,24 @@ export function TicketContextMenu({
               onSaved={() => setEditing(false)}
             />
           </Suspense>
+        )}
+      </Modal>
+      <Modal title={`Move ${ticket.key}`} open={relocating} onOpenChange={setRelocating}>
+        {relocating && (
+          <TicketMoveForm
+            ticket={current}
+            onCancel={() => setRelocating(false)}
+            onMoved={(moved) => {
+              setRelocating(false);
+              toast.success(`Moved to ${moved.key}`);
+              if (location.pathname === href)
+                void navigate({
+                  to: "/projects/$projectId/tickets/$ticketId",
+                  params: { projectId: moved.projectId, ticketId: moved.id },
+                  replace: true,
+                });
+            }}
+          />
         )}
       </Modal>
       <Confirm

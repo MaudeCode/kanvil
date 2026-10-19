@@ -30,7 +30,7 @@ export async function seedWorkflow(ctx: Context, projectId: string) {
     .insert(workflowStates)
     .values(defaultWorkflow.map((state) => ({ ...state, projectId, position: 0 })));
 }
-async function projectStates(ctx: Context) {
+export async function projectStates(ctx: Context) {
   return (
     await ctx.db
       .select()

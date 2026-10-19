@@ -932,11 +932,16 @@ export function ProjectProperty({
   onChange,
   variant = "pill",
   disabled = false,
+  exclude,
+  placeholder = "Create in project…",
 }: {
   value: string;
   onChange: (projectId: string) => void;
   variant?: "pill" | "row";
   disabled?: boolean;
+  // A project left out of the choices, such as the one a ticket is moving from.
+  exclude?: string;
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const projects = useProjects(),
@@ -964,19 +969,21 @@ export function ProjectProperty({
       {variant === "row" ? <PropertyRow label="Project">{trigger}</PropertyRow> : trigger}
       <PopoverContent align="start" className="w-64 p-0">
         <Command>
-          <CommandInput placeholder="Create in project…" aria-label="Search projects" autoFocus />
+          <CommandInput placeholder={placeholder} aria-label="Search projects" autoFocus />
           <CommandList>
-            {projects.data?.map((item) => (
-              <WritableProject
-                key={item.id}
-                project={item}
-                selected={item.id === value}
-                onSelect={() => {
-                  setOpen(false);
-                  if (item.id !== value) onChange(item.id);
-                }}
-              />
-            ))}
+            {projects.data
+              ?.filter((item) => item.id !== exclude)
+              .map((item) => (
+                <WritableProject
+                  key={item.id}
+                  project={item}
+                  selected={item.id === value}
+                  onSelect={() => {
+                    setOpen(false);
+                    if (item.id !== value) onChange(item.id);
+                  }}
+                />
+              ))}
             <CommandEmpty>No matches</CommandEmpty>
           </CommandList>
         </Command>

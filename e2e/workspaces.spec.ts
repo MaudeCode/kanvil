@@ -171,7 +171,7 @@ test("workspace switching, deep links, and offline project icons remain consiste
   ).toHaveCount(0);
   await page.locator("#main").getByRole("button", { name: "New project", exact: true }).click();
   await page.getByLabel("Project name", { exact: true }).fill("Readable project identity");
-  await page.getByLabel("Permanent ticket prefix", { exact: true }).fill("DESIGN");
+  await page.getByLabel("Ticket prefix", { exact: true }).fill("DESIGN");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Readable project identity", exact: true }),

@@ -89,8 +89,23 @@ export function createTicketSearch(
               .where(sql`${events.id}>${state.cursor}`)
               .orderBy(events.id)
               .limit(500);
+            // A prefix change re-keys its project's tickets under one project event.
+            const rekeyed = pending.flatMap((event) =>
+              event.type === "project.updated" && "previousKey" in event.data
+                ? [event.projectId]
+                : [],
+            );
             const ids = [
-              ...new Set(pending.flatMap((event) => (event.ticketId ? [event.ticketId] : []))),
+              ...new Set([
+                ...pending.flatMap((event) => (event.ticketId ? [event.ticketId] : [])),
+                ...(rekeyed.length
+                  ? await tx
+                      .select({ id: tickets.id })
+                      .from(tickets)
+                      .where(inArray(tickets.projectId, rekeyed))
+                  : []
+                ).map((row) => row.id),
+              ]),
             ];
             const rows = ids.length
               ? await tx.select().from(tickets).where(inArray(tickets.id, ids))

@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -157,9 +157,23 @@ export function TicketDetail({
     },
     { enabled: !!ticket && !editing, scope },
   );
-  if (result.isPending) return <Loading />;
   // A refetch that finds the ticket deleted or out of reach drops its cached content too.
   const gone = result.error instanceof ApiError && result.error.status === 404;
+  // A link from before a move follows the ticket when the reader can still reach it.
+  const moved = useQuery({
+    ...api.query("resolve_ticket", { ticketId }),
+    enabled: gone && !preview,
+    retry: false,
+  });
+  if (result.isPending || (gone && moved.isFetching)) return <Loading />;
+  if (gone && moved.data && moved.data.project.id !== projectId)
+    return (
+      <Navigate
+        to="/projects/$projectId/tickets/$ticketId"
+        params={{ projectId: moved.data.project.id, ticketId: moved.data.ticket.id }}
+        replace
+      />
+    );
   if (!result.data || !ticket || gone)
     return gone ? (
       <EmptyState title="Ticket unavailable">

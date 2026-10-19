@@ -195,7 +195,7 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await sheet.getByRole("button", { name: "New project", exact: true }).click();
   const create = page.getByRole("dialog", { name: "New project", exact: true });
   await create.getByLabel("Project name", { exact: true }).fill("Mobile project");
-  await create.getByLabel("Permanent ticket prefix", { exact: true }).fill("MOB");
+  await create.getByLabel("Ticket prefix", { exact: true }).fill("MOB");
   await create.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(sheet).toHaveCount(0);
   await expect(create).toHaveCount(0);

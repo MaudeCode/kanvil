@@ -10,7 +10,9 @@ import {
   Button,
   Confirm,
   CopyButton,
+  FormActions,
   IconButton,
+  Modal,
   RelativeTime,
   Select,
   SelectItem,
@@ -28,6 +30,7 @@ import { ArchiveProjectRow, DeleteProjectRow, MoveProject } from "./project-life
 import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
+import { PrefixInput } from "./create-project.tsx";
 export function ProjectSettings({
   project,
   section,
@@ -133,6 +136,7 @@ export function ProjectSettings({
                 <SelectItem value="private">Only project members</SelectItem>
               </Select>
             </SettingRow>
+            <TicketPrefix project={project} canAdmin={access.canManage} />
             <PublicLink project={project} canAdmin={access.canManage} />
             <ProjectBackground project={project} canAdmin={access.canManage} />
             <SettingRow title="Workspace" description={workspace.active?.name}>
@@ -199,6 +203,74 @@ export function ProjectSettings({
         </SettingsPanel>
       </SettingsLayout>
     </>
+  );
+}
+
+// Changing the prefix re-keys every ticket; the server keeps earlier prefixes and keys resolving.
+function TicketPrefix({ project, canAdmin }: { project: Project; canAdmin: boolean }) {
+  const update = useOperation("update_project"),
+    [open, setOpen] = useState(false),
+    [key, setKey] = useState(project.key);
+  return (
+    <SettingRow
+      title="Ticket prefix"
+      description="Earlier prefixes and ticket keys keep working after a change."
+    >
+      {canAdmin && (
+        <Button
+          onClick={() => {
+            setKey(project.key);
+            update.reset();
+            setOpen(true);
+          }}
+        >
+          Change prefix
+        </Button>
+      )}
+      <Modal
+        title="Change ticket prefix"
+        description={`Every ticket in ${project.name} takes the new prefix and keeps its number.`}
+        open={open}
+        onOpenChange={setOpen}
+        busy={update.isPending}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void update
+              .mutateAsync({
+                projectId: project.id,
+                expectedVersion: project.version,
+                name: project.name,
+                description: project.description,
+                key,
+              })
+              .then((saved) => {
+                setOpen(false);
+                toast.success(`Tickets now use ${saved.key}`);
+              })
+              .catch(() => {});
+          }}
+        >
+          <PrefixInput
+            value={key}
+            onChange={(next) => {
+              setKey(next);
+              update.reset();
+            }}
+            autoFocus
+          />
+          <FormActions
+            error={update.error}
+            pending={update.isPending}
+            submitLabel="Change prefix"
+            pendingLabel="Changing…"
+            submitDisabled={key === project.key}
+            onCancel={() => setOpen(false)}
+          />
+        </form>
+      </Modal>
+    </SettingRow>
   );
 }
 

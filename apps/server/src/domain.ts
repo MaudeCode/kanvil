@@ -17,6 +17,7 @@ import {
   scopes,
   snapshotSchema,
   projectSchema,
+  ticketSchema,
   hasAdminRole,
   type NotificationCategory,
   channelRouteAllows,
@@ -40,10 +41,12 @@ import {
   notifications,
   notificationPreferences,
   projectDestinations,
+  projectPrefixes,
   pushDevices,
   projects,
   receipts,
   subscriptions,
+  ticketAliases,
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
@@ -174,7 +177,32 @@ const publicActor: Actor = {
   scopes: [],
   projectIds: [],
 };
-async function context(
+// The one resolver for project and ticket identifiers: an ID, the current key, or any key issued
+// before a prefix change or a move. It only names rows; every caller still applies its own access
+// check, so an alias reaches nothing the ID would not.
+export const projectMatch = (identifier: string) =>
+  or(
+    sql`${projects.id}::text = ${identifier}`,
+    eq(projects.key, identifier.toUpperCase()),
+    sql`${projects.id} IN (SELECT pp.project_id FROM ${projectPrefixes} pp WHERE pp.prefix = ${identifier.toUpperCase()})`,
+  );
+const issuedKey = /^([A-Z][A-Z0-9]{1,9})-([1-9]\d{0,8})$/;
+export function ticketMatch(identifier: string) {
+  const key = identifier.toUpperCase(),
+    [, prefix, number] = issuedKey.exec(key) ?? [];
+  return or(
+    sql`${tickets.id}::text = ${identifier}`,
+    eq(tickets.key, key),
+    sql`${tickets.id} IN (SELECT ta.ticket_id FROM ${ticketAliases} ta WHERE ta.key = ${key})`,
+    prefix && number
+      ? and(
+          eq(tickets.number, Number(number)),
+          sql`${tickets.projectId} IN (SELECT pp.project_id FROM ${projectPrefixes} pp WHERE pp.prefix = ${prefix})`,
+        )
+      : undefined,
+  );
+}
+export async function context(
   db: Context["db"],
   actor: Actor,
   scope: (typeof scopes)[number],
@@ -194,12 +222,7 @@ async function context(
     await db
       .select()
       .from(projects)
-      .where(
-        and(
-          isNull(projects.deletedAt),
-          or(eq(projects.key, projectId.toUpperCase()), sql`${projects.id}::text = ${projectId}`),
-        ),
-      )
+      .where(and(isNull(projects.deletedAt), projectMatch(projectId)))
       .limit(1),
   );
   if (actor.projectIds && !actor.projectIds.includes(row.id))
@@ -219,12 +242,7 @@ export async function getTicket(ctx: Context, identifier: string) {
     await ctx.db
       .select()
       .from(tickets)
-      .where(
-        and(
-          eq(tickets.projectId, project(ctx).id),
-          or(eq(tickets.key, identifier.toUpperCase()), sql`${tickets.id}::text = ${identifier}`),
-        ),
-      )
+      .where(and(eq(tickets.projectId, project(ctx).id), ticketMatch(identifier)))
       .limit(1),
   );
 }
@@ -278,7 +296,8 @@ export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
 }
 // Queues each ticket event for the project's active destinations that carry its kind of activity.
 async function queueDestinations(db: Context["db"], rows: (typeof events.$inferSelect)[]) {
-  const ticketEvents = rows.filter((event) => event.ticketId);
+  // A move-away names no ticket, so the source keeps no link to it, yet it is ticket activity.
+  const ticketEvents = rows.filter((event) => event.ticketId || event.type === "ticket.moved_away");
   if (!ticketEvents.length) return;
   const targets = await db
     .select({
@@ -633,6 +652,9 @@ export function createDomain(
           await context(tx, actor, "read", projectSchema.parse(prior).id);
         if (name === "create_workspace")
           await requireWorkspace(ctx, workspaceSchema.parse(prior).id);
+        // A move answered from the destination; the caller must still be able to write there.
+        if (name === "relocate_ticket")
+          await context(tx, actor, "write", ticketSchema.parse(prior).projectId);
         return prior;
       }
       if (ctx.project?.archivedAt && !whileArchived.has(name))
@@ -675,9 +697,15 @@ export function createDomain(
   }
   async function readEvents(identity: Actor, cursor: bigint, projectId?: string) {
     if (!hasScope(identity, "read")) fail(403, "insufficient_scope", "Read permission is required");
-    const allowed = await accessibleProjects(identity);
+    const allowed = await accessibleProjects(identity),
+      named = projectId
+        ? await database.db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(projectMatch(projectId))
+        : [];
     const ids = allowed
-      .filter((row) => !projectId || row.id === projectId || row.key === projectId.toUpperCase())
+      .filter((row) => !projectId || named.some((match) => match.id === row.id))
       .map((row) => row.id);
     if (projectId && !ids.length) fail(404, "not_found", "Project was not found");
     const clock = one(await database.db.select().from(eventClock).where(eq(eventClock.id, 1)));
