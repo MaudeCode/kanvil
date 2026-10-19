@@ -428,9 +428,12 @@ const resourceProviders: Record<string, string> = {
   "bitbucket.org": "Bitbucket",
 };
 // A regex instead of URL: React Native's URL does not implement hostname, and older browsers
-// lack URL.parse.
+// lack URL.parse. Like a browser, it ends the authority at a backslash and takes the host after
+// the last @, so the badge names the host a click actually opens.
 export function resourceHost(url: string): string | null {
-  return /^https?:\/\/(?:[^@/?#]*@)?([^/:?#]+)/i.exec(url)?.[1]?.toLowerCase() ?? null;
+  return (
+    /^https?:\/\/(?:[^/\\?#]*@)?(\[[^\]]*\]|[^/\\:?#@]+)/i.exec(url)?.[1]?.toLowerCase() ?? null
+  );
 }
 export function resourceProvider(url: string): string | null {
   const host = resourceHost(url)?.replace(/^www\./, "");
@@ -1224,7 +1227,10 @@ export const operations = {
         url: httpUrl.optional(),
         title: resourceTitle.optional(),
       })
-      .strict(),
+      .strict()
+      .refine((input) => input.url !== undefined || input.title !== undefined, {
+        message: "Change the URL or the title",
+      }),
     resourceSchema,
     "PATCH",
     "/projects/{projectId}/resources/{resourceId}",
