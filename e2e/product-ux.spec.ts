@@ -144,6 +144,13 @@ test("readers see readable ticket content without mutation controls", async ({ p
         data: { title: "Readable child", parentId: ticket.id },
       })
     ).json();
+  expect(
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/resources`, {
+        data: { url: "https://example.test/runbook", title: "Reader runbook" },
+      })
+    ).ok(),
+  ).toBe(true);
   const email = `reader-${crypto.randomUUID()}@example.test`,
     password = "Isolated reader password 234!";
   expect(
@@ -184,6 +191,9 @@ test("readers see readable ticket content without mutation controls", async ({ p
       reader.getByRole("checkbox", { name: "Reviewed by a writer", exact: true }),
     ).toBeDisabled();
     await expect(reader.getByRole("button", { name: "Attach file", exact: true })).toHaveCount(0);
+    await expect(reader.getByRole("link", { name: "Reader runbook", exact: true })).toBeVisible();
+    for (const name of ["Add link", "Edit link", "Remove link"])
+      await expect(reader.getByRole("button", { name, exact: true })).toHaveCount(0);
     await expect(reader.getByRole("button", { name: "Add relationship", exact: true })).toHaveCount(
       0,
     );
@@ -880,4 +890,77 @@ test("My work moves a ticket into Overdue when its due time passes while the pag
   await expect(
     page.getByRole("rowgroup", { name: "Overdue tickets" }).getByText(soon.title),
   ).toBeVisible();
+});
+
+test("ticket links are added, edited, and removed beside attachments, with remote state unknown", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "LINKUX", name: "Links" } })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Track the work that lives elsewhere" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const links = page.getByRole("region", { name: "Links", exact: true });
+  await expect(links.getByText("No links", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add link", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add link", exact: true });
+  await expect(dialog.getByLabel("URL", { exact: true })).toBeFocused();
+  await dialog.getByLabel("URL", { exact: true }).fill("javascript:alert(1)");
+  await dialog.getByRole("button", { name: "Add link", exact: true }).click();
+  await expect(dialog.getByText(/Use an HTTP or HTTPS URL/)).toBeVisible();
+  await dialog
+    .getByLabel("URL", { exact: true })
+    .fill("https://github.com/MaudeCode/kanvil/pull/9");
+  await dialog.getByLabel("Title", { exact: true }).fill("Implementation PR");
+  await dialog.getByRole("button", { name: "Add link", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const link = links.getByRole("link", { name: "Implementation PR", exact: true });
+  await expect(link).toHaveAttribute("href", "https://github.com/MaudeCode/kanvil/pull/9");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(links.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(links.getByText("State unknown", { exact: true })).toBeVisible();
+
+  const [resource] = await (
+    await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}/resources`)
+  ).json();
+  // Another session edits the link first, so the open form holds a stale version.
+  await links.getByRole("button", { name: "Edit link", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Edit link", exact: true });
+  await expect(edit.getByLabel("Title", { exact: true })).toHaveValue("Implementation PR");
+  expect(
+    (
+      await page.request.patch(`/api/v1/projects/${project.id}/resources/${resource.id}`, {
+        data: { expectedVersion: 1, title: "Edited elsewhere" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await edit.getByLabel("URL", { exact: true }).fill("https://docs.example.test/runbook");
+  await edit.getByLabel("Title", { exact: true }).fill("Runbook");
+  await edit.getByRole("button", { name: "Save link", exact: true }).click();
+  await expect(edit.getByText(/The resource changed; reload before editing/)).toBeVisible();
+  await edit.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(links.getByRole("link", { name: "Edited elsewhere", exact: true })).toBeVisible();
+  await links.getByRole("button", { name: "Edit link", exact: true }).click();
+  await edit.getByLabel("URL", { exact: true }).fill("https://docs.example.test/runbook");
+  await edit.getByLabel("Title", { exact: true }).fill("Runbook");
+  await edit.getByRole("button", { name: "Save link", exact: true }).click();
+  await expect(edit).toHaveCount(0);
+  await expect(links.getByRole("link", { name: "Runbook", exact: true })).toBeVisible();
+  await expect(links.getByText("docs.example.test", { exact: true })).toBeVisible();
+  await expect(links.getByText("State unknown", { exact: true })).toHaveCount(0);
+
+  await links.getByRole("button", { name: "Remove link", exact: true }).click();
+  await page
+    .getByRole("alertdialog", { name: "Remove link", exact: true })
+    .getByRole("button", { name: "Remove link", exact: true })
+    .click();
+  await expect(links.getByText("No links", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });

@@ -23,11 +23,20 @@ import {
   CircleX,
   CircleDashed,
   Clock,
+  Link2,
+  Pencil,
 } from "lucide-react";
 import { formText } from "./forms.ts";
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { formatEvent, attachmentLimit, evidenceFields, type Ticket } from "@kanvil/contracts";
+import {
+  formatEvent,
+  attachmentLimit,
+  evidenceFields,
+  resourceHost,
+  type Output,
+  type Ticket,
+} from "@kanvil/contracts";
 import { api, ActorName, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Button,
@@ -46,6 +55,75 @@ import {
 } from "./ui.tsx";
 import { cn } from "@/lib/utils";
 
+// One row for every ticket resource, so files, evidence, and links share layout and link styling.
+// Downloads stay in the tab; everything else opens externally.
+function ResourceRow({
+  icon,
+  href,
+  label,
+  download = false,
+  compact = false,
+  badges,
+  details,
+  meta,
+  metaId,
+  actions,
+}: {
+  icon: ReactNode;
+  href: string;
+  label: string;
+  download?: boolean;
+  compact?: boolean;
+  badges?: ReactNode;
+  details?: ReactNode;
+  meta?: ReactNode;
+  metaId?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <Item
+      role="listitem"
+      size={compact ? "xs" : "default"}
+      className={cn(
+        "rounded-none border-x-0 border-t-0 border-b-border px-0 animate-in fade-in-0 duration-200 last:border-b-0",
+        !compact && "items-start py-4",
+      )}
+    >
+      <ItemMedia variant={compact ? "default" : "icon"}>{icon}</ItemMedia>
+      <ItemContent className={cn("min-w-0", compact ? "gap-0" : "gap-1.5")}>
+        <ItemTitle
+          className={cn(
+            "line-clamp-none max-w-full wrap-anywhere",
+            compact && "text-xs font-normal",
+          )}
+        >
+          <a
+            href={href}
+            aria-describedby={metaId}
+            {...(download
+              ? { download: true, className: "hover:text-primary" }
+              : {
+                  target: "_blank",
+                  rel: "noreferrer",
+                  className: "inline-flex items-center gap-1 text-primary hover:underline",
+                })}
+          >
+            {label}
+            {!download && <ExternalLink className="size-3 shrink-0" aria-hidden="true" />}
+          </a>
+          {badges}
+        </ItemTitle>
+        {details}
+        {meta && (
+          <ItemDescription id={metaId} className={cn("m-0", compact ? "text-[11px]" : "text-xs")}>
+            {meta}
+          </ItemDescription>
+        )}
+      </ItemContent>
+      {actions && <ItemActions>{actions}</ItemActions>}
+    </Item>
+  );
+}
 const sizeFormat = new Intl.NumberFormat(undefined, {
   style: "unit",
   unit: "kilobyte",
@@ -126,32 +204,17 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
       )}
       <ItemGroup className="gap-0">
         {items.data?.map((item) => (
-          <Item
-            size="xs"
+          <ResourceRow
+            compact
+            download
             key={item.id}
-            className="rounded-none border-x-0 border-t-0 border-b-border px-0 animate-in fade-in-0 duration-200"
-          >
-            <ItemMedia>
-              <FileText className="size-4 text-muted-foreground" />
-            </ItemMedia>
-            <ItemContent className="min-w-0 gap-0">
-              <ItemTitle className="line-clamp-none max-w-full text-xs font-normal wrap-anywhere">
-                <a
-                  className="hover:text-primary"
-                  href={`/api/v1/projects/${ticket.projectId}/attachments/${item.id}/content`}
-                  aria-label={item.name}
-                  aria-describedby={`attachment-size-${item.id}`}
-                  download
-                >
-                  {item.name}
-                </a>
-              </ItemTitle>
-              <ItemDescription id={`attachment-size-${item.id}`} className="m-0 text-[11px]">
-                {sizeFormat.format(item.size / 1000)}
-              </ItemDescription>
-            </ItemContent>
-            {access.canWrite && (
-              <ItemActions>
+            icon={<FileText className="size-4 text-muted-foreground" />}
+            href={`/api/v1/projects/${ticket.projectId}/attachments/${item.id}/content`}
+            label={item.name}
+            meta={sizeFormat.format(item.size / 1000)}
+            metaId={`attachment-size-${item.id}`}
+            actions={
+              access.canWrite && (
                 <Confirm
                   label="Remove attachment"
                   icon={<Trash2 />}
@@ -160,9 +223,9 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
                     remove.mutateAsync({ projectId: ticket.projectId, attachmentId: item.id })
                   }
                 />
-              </ItemActions>
-            )}
-          </Item>
+              )
+            }
+          />
         ))}
       </ItemGroup>
       <FileInput
@@ -219,30 +282,24 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
       {!items.isPending && !items.data?.length && (
         <p className="text-sm text-muted-foreground">No evidence attached</p>
       )}
-      <ItemGroup className="gap-0 divide-y">
+      <ItemGroup className="gap-0">
         {items.data?.map((item) => {
           const Icon = outcomeIcons[item.outcome] ?? CircleDashed;
           return (
-            <Item key={item.id} className="items-start rounded-none px-0 py-4">
-              <ItemMedia variant="icon">
+            <ResourceRow
+              key={item.id}
+              icon={
                 <Icon
                   className={cn(
                     item.outcome === "passed" && "text-[var(--success)]",
                     item.outcome === "failed" && "text-destructive",
                   )}
                 />
-              </ItemMedia>
-              <ItemContent className="min-w-0 gap-1.5">
-                <ItemTitle className="line-clamp-none max-w-full wrap-anywhere">
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-primary hover:underline"
-                  >
-                    {item.title}
-                    <ExternalLink className="size-3" aria-hidden="true" />
-                  </a>
+              }
+              href={item.url}
+              label={item.title}
+              badges={
+                <>
                   <Badge variant="outline" className="ml-2 capitalize">
                     {item.kind}
                   </Badge>
@@ -257,19 +314,25 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
                   >
                     {item.outcome}
                   </Badge>
-                </ItemTitle>
-                {item.commit && (
-                  <code className="w-fit rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] break-all">
-                    {item.commit}
-                  </code>
-                )}
-                {item.note && <Markdown>{item.note}</Markdown>}
-                <ItemDescription className="m-0 text-xs">
+                </>
+              }
+              details={
+                <>
+                  {item.commit && (
+                    <code className="w-fit rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] break-all">
+                      {item.commit}
+                    </code>
+                  )}
+                  {item.note && <Markdown>{item.note}</Markdown>}
+                </>
+              }
+              meta={
+                <>
                   <ActorName projectId={ticket.projectId} actorId={item.actorId} /> ·{" "}
                   <RelativeTime value={item.createdAt} />
-                </ItemDescription>
-              </ItemContent>
-            </Item>
+                </>
+              }
+            />
           );
         })}
       </ItemGroup>
@@ -320,6 +383,128 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
             error={validationError ?? add.error}
             pending={add.isPending}
             submitLabel="Add evidence"
+            onCancel={() => setOpen(false)}
+          />
+        </form>
+      </Modal>
+      <ErrorNotice error={items.error} />
+    </section>
+  );
+}
+type Resource = Output<"list_resources">[number];
+export function Links({ ticket }: { ticket: Ticket }) {
+  const access = useProjectAccess(ticket.projectId),
+    items = useQuery(
+      api.query("list_resources", { projectId: ticket.projectId, ticketId: ticket.id }),
+    ),
+    add = useOperation("add_resource"),
+    update = useOperation("update_resource"),
+    remove = useOperation("delete_resource");
+  // The target outlives `open` so the dialog keeps its title and values while it closes.
+  const [editing, setEditing] = useState<Resource>(),
+    [open, setOpen] = useState(false),
+    [error, setError] = useState<unknown>(),
+    pending = add.isPending || update.isPending;
+  const edit = (target?: Resource) => {
+    setError(undefined);
+    setEditing(target);
+    setOpen(true);
+  };
+  return (
+    <section aria-label="Links">
+      <SectionHeading
+        compact
+        title="Links"
+        action={
+          access.canWrite && (
+            <IconButton label="Add link" size="icon-sm" onClick={() => edit()}>
+              <Plus />
+            </IconButton>
+          )
+        }
+      />
+      {!items.isPending && !items.data?.length && (
+        <p className="mb-0 text-xs text-muted-foreground">No links</p>
+      )}
+      <ItemGroup className="gap-0">
+        {items.data?.map((item) => (
+          <ResourceRow
+            compact
+            key={item.id}
+            icon={<Link2 className="size-4 text-muted-foreground" />}
+            href={item.url}
+            label={item.title || item.url}
+            meta={
+              item.provider ? (
+                <span className="inline-flex flex-wrap gap-1">
+                  <Badge variant="outline">{item.provider}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={item.remoteState ? "capitalize" : "text-muted-foreground"}
+                  >
+                    {item.remoteState ?? "State unknown"}
+                  </Badge>
+                </span>
+              ) : (
+                item.title && resourceHost(item.url)
+              )
+            }
+            actions={
+              access.canWrite && (
+                <>
+                  <IconButton size="icon-sm" label="Edit link" onClick={() => edit(item)}>
+                    <Pencil />
+                  </IconButton>
+                  <Confirm
+                    label="Remove link"
+                    icon={<Trash2 />}
+                    description={`Remove ${item.title || item.url}?`}
+                    onConfirm={() =>
+                      remove.mutateAsync({
+                        projectId: ticket.projectId,
+                        resourceId: item.id,
+                        expectedVersion: item.version,
+                      })
+                    }
+                  />
+                </>
+              )
+            }
+          />
+        ))}
+      </ItemGroup>
+      <Modal
+        title={editing ? "Edit link" : "Add link"}
+        open={open}
+        onOpenChange={setOpen}
+        busy={pending}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget),
+              fields = { url: formText(form, "url"), title: formText(form, "title") };
+            setError(undefined);
+            void (
+              editing
+                ? update.mutateAsync({
+                    projectId: ticket.projectId,
+                    resourceId: editing.id,
+                    expectedVersion: editing.version,
+                    ...fields,
+                  })
+                : add.mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, ...fields })
+            )
+              .then(() => setOpen(false))
+              .catch(setError);
+          }}
+        >
+          <Input label="URL" name="url" type="url" required autoFocus defaultValue={editing?.url} />
+          <Input label="Title" name="title" maxLength={200} defaultValue={editing?.title} />
+          <FormActions
+            error={error}
+            pending={pending}
+            submitLabel={editing ? "Save link" : "Add link"}
             onCancel={() => setOpen(false)}
           />
         </form>

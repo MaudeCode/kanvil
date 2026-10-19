@@ -8,6 +8,8 @@ import {
   operations,
   parseRelationChoice,
   relationChoices,
+  resourceHost,
+  resourceProvider,
   ticketFilter,
   ticketPredicates,
 } from "./index.ts";
@@ -189,6 +191,35 @@ describe("ticket filter predicates", () => {
       operations.list_tickets.input.safeParse({ projectId: "p", kind: "bug", kindNot: ["bug"] })
         .success,
     ).toBe(false);
+  });
+  it("requires an edited field when updating a link", () => {
+    const base = {
+      projectId: "p",
+      resourceId: "10000000-0000-4000-8000-000000000001",
+      expectedVersion: 1,
+    };
+    expect(operations.update_resource.input.safeParse(base).success).toBe(false);
+    expect(operations.update_resource.input.safeParse({ ...base, title: "" }).success).toBe(true);
+  });
+  it("names a link's provider only for an exact recognized host", () => {
+    expect(resourceProvider("https://www.GitHub.com/org/repo/pull/1")).toBe("GitHub");
+    expect(resourceProvider("https://user@gitlab.com:8443/group/project")).toBe("GitLab");
+    expect(resourceHost("https://user@Docs.Example.test:8443/a?b#c")).toBe("docs.example.test");
+    // Browsers treat a backslash as a path delimiter and split credentials at the last @.
+    expect(resourceHost("https://evil.example.test\\@github.com/x")).toBe("evil.example.test");
+    expect(resourceProvider("https://a@b@github.com/org/repo")).toBe("GitHub");
+    expect(resourceHost("https://[::1]:8080/x")).toBe("[::1]");
+    const hostile = `http://[${"@[".repeat(20_000)}`,
+      started = Date.now();
+    expect(resourceHost(hostile)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(100);
+    for (const url of [
+      "https://github.com.example.test/org/repo",
+      "https://example.test/?next=https://github.com",
+      "https://constructor/",
+      "https://evil.example.test\\@github.com/org/repo",
+    ])
+      expect(resourceProvider(url)).toBeNull();
   });
 });
 const updated = (changedFields: string[]) => ({

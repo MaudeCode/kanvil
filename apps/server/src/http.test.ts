@@ -416,6 +416,71 @@ describe("HTTP, realtime, and MCP", () => {
     );
     expect(discovery.status).toBe(200);
   });
+  it("serves editable ticket links over HTTP and MCP with versions and URL validation", async () => {
+    const project = await newProject(),
+      ticket = await client().call("create_ticket", { projectId: project.id, title: "Linked" });
+    const base = `/api/v1/projects/${project.id}`;
+    const send = (method: string, path: string, body?: unknown) =>
+      request(`${base}${path}`, {
+        method,
+        headers: sessionHeaders(),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const created = await send("POST", `/tickets/${ticket.id}/resources`, {
+      url: "https://gitlab.com/group/project/-/merge_requests/7",
+      title: "Merge request",
+    });
+    expect(created.status).toBe(200);
+    const resource = z
+      .object({ id: z.uuid(), provider: z.string().nullable(), remoteState: z.null() })
+      .parse(await created.json());
+    expect(resource.provider).toBe("GitLab");
+    expect(
+      (await send("POST", `/tickets/${ticket.id}/resources`, { url: "javascript:alert(1)" }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await send("PATCH", `/resources/${resource.id}`, { expectedVersion: 1, title: "Renamed" }))
+        .status,
+    ).toBe(200);
+    const stale = await send("PATCH", `/resources/${resource.id}`, {
+      expectedVersion: 1,
+      title: "Stale",
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: { code: "version_conflict" } });
+
+    const token = await credential(project.id, ["read"]);
+    const sdk = new Client({ name: "kanvil-resource-test", version: "1.0.0" });
+    await sdk.connect(
+      new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+        fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+      }),
+    );
+    try {
+      const listed = await sdk.callTool({
+        name: "list_resources",
+        arguments: { projectId: project.id, ticketId: ticket.key },
+      });
+      expect(listed.structuredContent).toMatchObject({
+        result: [{ id: resource.id, title: "Renamed", version: 2 }],
+      });
+      const denied = await sdk.callTool({
+        name: "delete_resource",
+        arguments: { projectId: project.id, resourceId: resource.id, expectedVersion: 2 },
+      });
+      expect(denied.isError).toBe(true);
+    } finally {
+      await sdk.close();
+    }
+    expect((await send("DELETE", `/resources/${resource.id}`, { expectedVersion: 2 })).status).toBe(
+      200,
+    );
+    expect(
+      await client().call("list_resources", { projectId: project.id, ticketId: ticket.id }),
+    ).toEqual([]);
+  });
   it("keeps binary content transactional and protects downloads and deletion", async () => {
     const project = await newProject(),
       api = client();
