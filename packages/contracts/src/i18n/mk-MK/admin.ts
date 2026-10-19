@@ -458,7 +458,8 @@ export default {
     username: "Корисничко име или е-пошта",
     password: "Лозинка",
     checkConnection: "Проверете ги деталите за поврзување",
-    noProjects: "Овие акредитиви не можат да прочитаат ниту еден {{label, lowercase}}.",
+    noProjects:
+      "Овие акредитиви не можат да прочитаат ниту една ставка од типот {{label, lowercase}}.",
     includeComments: "Вклучи коментари",
     projectName: "Име на проектот",
     start: "Увези",

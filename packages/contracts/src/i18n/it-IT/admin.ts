@@ -468,7 +468,8 @@ export default {
     username: "Nome utente o email",
     password: "Password",
     checkConnection: "Controlla i dati di connessione",
-    noProjects: "Queste credenziali non possono leggere alcun {{label, lowercase}}.",
+    noProjects:
+      "Queste credenziali non possono leggere alcun elemento di tipo {{label, lowercase}}.",
     includeComments: "Includi commenti",
     projectName: "Nome del progetto",
     start: "Importa",
