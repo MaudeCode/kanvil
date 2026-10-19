@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { workspaceSchema } from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { members, projects, workspaces, workspaceMembers } from "./schema.ts";
@@ -50,7 +50,7 @@ export async function publishWorkspace(
   const rows = await ctx.db
     .select({ id: projects.id })
     .from(projects)
-    .where(eq(projects.workspaceId, workspaceId));
+    .where(and(eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt)));
   await publishMany(
     ctx,
     rows.map((row) => ({

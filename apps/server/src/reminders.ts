@@ -44,6 +44,7 @@ export async function sendDueReminders(database: Database, now = new Date()) {
         and(
           isNotNull(tickets.dueAt),
           eq(tickets.archived, false),
+          sql`not exists (select 1 from projects p where p.id = ${tickets.projectId} and p.archived_at is not null)`,
           notInArray(tickets.status, [...closedStates]),
           gt(tickets.dueAt, new Date(now.getTime() - overdueWindow)),
           sql`${tickets.dueAt} - ${lead} <= ${now}`,

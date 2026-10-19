@@ -94,6 +94,11 @@ export const projects = pgTable(
     // Place in the workspace's shared project order; see ordering.ts.
     position: bigint("position", { mode: "number" }).notNull().default(0),
     version: integer("version").notNull().default(1),
+    // Archived projects leave default lists, search, My work, feeds, and agent queues and are read
+    // only; restoring clears it.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // A deleted project keeps this row, its prefix, and its event history; no one can open it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: time("created_at"),
     updatedAt: time("updated_at"),
   },
