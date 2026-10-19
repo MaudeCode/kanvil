@@ -720,6 +720,69 @@ describe("ticket operations on PostgreSQL", () => {
       [],
     );
   });
+  it("lists open assigned work and recent activity only from accessible projects", async () => {
+    const hidden = await domain.execute(
+      "create_project",
+      { key: `M${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Private project" },
+      owner,
+    );
+    for (const target of [project, hidden])
+      await domain.execute(
+        "set_member",
+        { projectId: target.id, email: "writer@example.test", role: "writer" },
+        owner,
+      );
+    const assign = async (projectId: string, title: string, changes: Record<string, unknown>) =>
+      domain.execute(
+        "create_ticket",
+        { projectId, title, assigneeId: writer.id, ...changes },
+        owner,
+      );
+    const later = await assign(project.id, "Assigned later", {
+      dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    const sooner = await assign(project.id, "Assigned sooner", {
+      dueAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await assign(project.id, "Assigned and done", { status: "done" });
+    await assign(project.id, "Assigned and archived", { archived: true });
+    await ticket("Unassigned");
+    const elsewhere = await assign(hidden.id, "Assigned in the private project", {});
+    const work = (input: Record<string, unknown>, actor = writer) =>
+      domain.execute("list_my_work", input, actor);
+    const all = await work({ sort: "due", activity: 50 });
+    expect(all.items.map((row) => row.id)).toEqual([sooner.id, later.id, elsewhere.id]);
+    expect(all.total).toBe(3);
+    expect(all.activity.some((event) => event.projectId === hidden.id)).toBe(true);
+    // Batches report the full total so clients can fetch every page.
+    const batch = await work({ sort: "due", limit: 2, offset: 2 });
+    expect([batch.items.map((row) => row.id), batch.total]).toEqual([[elsewhere.id], 3]);
+    expect(batch.activity).toEqual([]);
+    expect((await work({ q: "sooner" })).items.map((row) => row.id)).toEqual([sooner.id]);
+    // The workspace filter narrows the listing; it does not grant access.
+    expect((await work({ workspaceId: crypto.randomUUID() })).total).toBe(0);
+    const bound = await domain.actor(writer.id, {
+      ownerId: "credential",
+      scopes: ["read"],
+      projectIds: [project.id],
+    });
+    expect((await work({ activity: 50 }, bound)).total).toBe(2);
+    expect(
+      (await work({ activity: 50 }, bound)).activity.every(
+        (event) => event.projectId === project.id,
+      ),
+    ).toBe(true);
+    expect(await work({ activity: 50 }, outsider)).toEqual({ items: [], total: 0, activity: [] });
+    // Revoking membership removes that project's tickets, counts, and activity at once.
+    await domain.execute(
+      "set_member",
+      { projectId: hidden.id, email: "writer@example.test", role: null },
+      owner,
+    );
+    const revoked = await work({ sort: "due", activity: 50 });
+    expect([revoked.items.map((row) => row.id), revoked.total]).toEqual([[sooner.id, later.id], 2]);
+    expect(revoked.activity.some((event) => event.projectId === hidden.id)).toBe(false);
+  });
   it("stores due dates and filters and sorts by them", async () => {
     const soon = new Date(Date.now() + 3_600_000).toISOString(),
       late = new Date(Date.now() - 86_400_000).toISOString();
@@ -762,12 +825,26 @@ describe("ticket operations on PostgreSQL", () => {
     ]);
     expect((await list({ assigneeId: "none" })).total).toBe(3);
     expect((await list({ assigneeId: owner.id })).total).toBe(0);
+    const finished = await ticket("Finished");
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: finished.id,
+        expectedVersion: finished.version,
+        changes: { status: "done", dueAt: new Date(Date.now() + 60_000).toISOString() },
+      },
+      owner,
+    );
     const listed = await domain.execute("list_projects", {}, owner);
+    // Rollups count unarchived tickets; the next due date is the soonest upcoming open one.
     expect(listed.find((entry) => entry.id === project.id)).toMatchObject({
       openTickets: 3,
       overdueTickets: 1,
+      closedTickets: 1,
+      nextDueAt: soon,
     });
-    expect(await list({ limit: 1, offset: 5 })).toEqual({ titles: [], total: 3 });
+    expect(await list({ limit: 1, offset: 5 })).toEqual({ titles: [], total: 4 });
   });
   it("rejects cycles across blockers and parent relationships and explains readiness", async () => {
     const first = await ticket(),

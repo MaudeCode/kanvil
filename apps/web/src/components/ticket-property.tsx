@@ -319,17 +319,20 @@ export function useTicketChange(ticket: Pick<Ticket, "id" | "projectId" | "versi
     change: (changes: Partial<PropertyValues> & Partial<Ticket>) => {
       const { assignee, ...rest } = changes;
       const patch = { ...rest, ...(assignee === undefined ? {} : { assigneeId: assignee }) };
-      // Show the edit at once; the success invalidation or the failure refetch settles it.
-      cache.setQueriesData<Output<"list_tickets">>(
-        {
-          queryKey: api.query("list_tickets", { projectId: ticket.projectId }).queryKey.slice(0, 3),
-        },
-        (page) =>
-          page && {
-            ...page,
-            items: page.items.map((row) => (row.id === ticket.id ? { ...row, ...patch } : row)),
-          },
-      );
+      // Show the edit at once in project lists and My work; the success invalidation or the
+      // failure refetch settles it.
+      for (const queryKey of [
+        api.query("list_tickets", { projectId: ticket.projectId }).queryKey.slice(0, 3),
+        api.query("list_my_work", {}).queryKey.slice(0, 3),
+      ])
+        cache.setQueriesData<Pick<Output<"list_tickets">, "items">>(
+          { queryKey },
+          (page) =>
+            page && {
+              ...page,
+              items: page.items.map((row) => (row.id === ticket.id ? { ...row, ...patch } : row)),
+            },
+        );
       cache.setQueriesData<Output<"get_ticket">>(
         {
           queryKey: api.query("get_ticket", { projectId: ticket.projectId, ticketId: ticket.id })

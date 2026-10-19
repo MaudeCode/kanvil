@@ -82,6 +82,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Web list with readable wrapping titles, adjustable columns, filters, selection, bulk actions, and keyboard navigation.
 - Ticket detail view containing requirements, relationships, discussion, attachments, activity, and supplied evidence.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
+- Home overview of your assigned work, recent activity, and project progress, with a complete My work list across the workspace's projects grouped by due date or project.
 - Project settings, account settings, and notification preferences.
 - Native mobile lists and navigation, ticket editing, comments, attachments, deep links, and notifications.
 - Live updates while connected, recovery after disconnection, cached reading, and locally saved drafts.

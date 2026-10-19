@@ -508,13 +508,16 @@ export const operations = {
       projectSchema.extend({
         openTickets: z.number().int().nonnegative(),
         overdueTickets: z.number().int().nonnegative(),
+        // Defaults keep clients compatible with servers that predate these rollups.
+        closedTickets: z.number().int().nonnegative().default(0),
+        nextDueAt: timestamp.nullable().default(null),
         role: z.enum(roles),
       }),
     ),
     "GET",
     "/projects",
     "read",
-    "List projects accessible to the current identity, each with its open and overdue ticket counts.",
+    "List projects accessible to the current identity, each with open, overdue, and closed ticket counts and the soonest upcoming open due date.",
   ),
   create_project: op(
     z
@@ -794,6 +797,24 @@ export const operations = {
     "/tickets/search",
     "read",
     "Search unarchived tickets by key or text across every accessible project, optionally within one workspace.",
+  ),
+  list_my_work: op(
+    z
+      .object({
+        workspaceId: z.uuid().optional(),
+        q: ticketFilter.shape.q,
+        sort: ticketFilter.shape.sort,
+        order: ticketFilter.shape.order,
+        // How many of the most recent accessible events to return alongside the tickets.
+        activity: z.coerce.number().int().min(0).max(50).default(0),
+        ...pagination,
+      })
+      .strict(),
+    page(ticketSchema).extend({ activity: z.array(eventSchema).default([]) }),
+    "GET",
+    "/my-work",
+    "read",
+    "List open, unarchived tickets assigned to the current identity across every accessible project, optionally within one workspace, with the most recent accessible activity when `activity` is set.",
   ),
   list_eligible_tickets: op(
     projectInput.extend(pagination),

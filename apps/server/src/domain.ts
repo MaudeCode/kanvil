@@ -358,7 +358,11 @@ export function createDomain(
     ...collaborationHandlers,
   };
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
-  const workspaceIsFilter: ReadonlySet<Operation> = new Set(["list_projects", "search_tickets"]);
+  const workspaceIsFilter: ReadonlySet<Operation> = new Set([
+    "list_projects",
+    "list_my_work",
+    "search_tickets",
+  ]);
   async function execute<K extends Operation>(
     name: K,
     value: unknown,

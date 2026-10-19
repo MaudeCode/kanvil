@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import {
   claims,
+  events,
   members,
   projects,
   projectLabels,
@@ -247,6 +248,26 @@ function dueWhere(due: ParsedInput<"list_tickets">["due"]) {
       return undefined;
   }
 }
+// Every ticket listing orders the same way: the chosen sort, then the ticket number.
+function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">) {
+  const direction = input.order ?? defaultOrder[input.sort];
+  const by = (column: SQL | AnyColumn) =>
+    direction === "asc" ? sql`${column} ASC NULLS LAST` : sql`${column} DESC NULLS LAST`;
+  const primary: Record<typeof input.sort, SQL> = {
+    priority: by(rank(tickets.priority, priorities)),
+    updated: by(tickets.updatedAt),
+    created: by(tickets.createdAt),
+    title: by(sql`lower(${tickets.title})`),
+    labels: by(sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label)`),
+    due: by(tickets.dueAt),
+    number: by(tickets.number),
+    status: by(rank(tickets.status, states)),
+    difficulty: by(rank(tickets.difficulty, difficulties)),
+    kind: by(tickets.kind),
+    assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
+  };
+  return [primary[input.sort], asc(tickets.number)];
+}
 // One round trip returns the page and its total; a second count runs only for an empty page past the start.
 async function pageOf(
   ctx: Context,
@@ -271,6 +292,7 @@ async function pageOf(
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
+  | "list_my_work"
   | "list_ticket_labels"
   | "get_ticket"
   | "create_ticket"
@@ -330,28 +352,28 @@ export const ticketHandlers: Pick<
       dueWhere(input.due),
       search,
     );
-    const direction = input.order ?? defaultOrder[input.sort];
-    const by = (column: SQL | AnyColumn, flip = false) =>
-      (direction === "asc") !== flip
-        ? sql`${column} ASC NULLS LAST`
-        : sql`${column} DESC NULLS LAST`;
-    const primary: Record<typeof input.sort, SQL> = {
-      priority: by(rank(tickets.priority, priorities)),
-      updated: by(tickets.updatedAt),
-      created: by(tickets.createdAt),
-      title: by(sql`lower(${tickets.title})`),
-      labels: by(
-        sql`(SELECT min(lower(label) COLLATE "C") FROM unnest(${tickets.labels}) AS label)`,
-      ),
-      due: by(tickets.dueAt),
-      number: by(tickets.number),
-      status: by(rank(tickets.status, states)),
-      difficulty: by(rank(tickets.difficulty, difficulties)),
-      kind: by(tickets.kind),
-      assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
-    };
-    const order = [primary[input.sort], asc(tickets.number)];
-    return pageOf(ctx, where, order, input);
+    return pageOf(ctx, where, ticketOrder(input), input);
+  },
+  async list_my_work(ctx, input) {
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    if (!allowed.length) return { items: [], total: 0, activity: [] };
+    const ids = allowed.map((row) => row.id);
+    const where = and(
+      inArray(tickets.projectId, ids),
+      eq(tickets.assigneeId, ctx.actor.id),
+      eq(tickets.archived, false),
+      openTicket,
+      input.q ? await ctx.search.where(ctx.db, ids, input.q) : undefined,
+    );
+    const activity = input.activity
+      ? await ctx.db
+          .select()
+          .from(events)
+          .where(inArray(events.projectId, ids))
+          .orderBy(desc(events.id))
+          .limit(input.activity)
+      : [];
+    return { ...(await pageOf(ctx, where, ticketOrder(input), input)), activity };
   },
   async get_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);

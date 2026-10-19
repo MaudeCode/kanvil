@@ -42,10 +42,12 @@ import {
   authSearchSchema,
   adminSearchSchema,
   searchSchema,
+  workSearchSchema,
 } from "./search.ts";
 
 import { Login, Consent } from "./auth.tsx";
 import {
+  ActorName,
   api,
   auth,
   Identity,
@@ -64,7 +66,11 @@ import {
   PageHeader,
   RelativeTime,
   SearchField,
+  SectionHeading,
+  DueDate,
+  TicketIndicator,
 } from "./ui.tsx";
+import { TicketLink } from "./components/ticket-link.tsx";
 import { WorkspaceProvider } from "./components/workspace-provider.tsx";
 import { AppSidebar, WorkspaceHeader } from "./components/app-sidebar.tsx";
 import { CreateWorkspace } from "./components/workspace-switcher.tsx";
@@ -285,7 +291,130 @@ function Shell() {
     </WorkspaceProvider>
   );
 }
+// Bounded previews; My work and the project directory below hold the complete lists.
+const homeTickets = 8,
+  homeActivity = 10;
 function Home() {
+  const workspace = useWorkspace();
+  return (
+    <>
+      <PageHeader title="Home" />
+      {workspace.active && <WorkOverview workspaceId={workspace.active.id} />}
+      <ProjectDirectory />
+    </>
+  );
+}
+function WorkOverview({ workspaceId }: { workspaceId: string }) {
+  const projects = useProjects(),
+    work = useQuery(
+      api.query("list_my_work", {
+        workspaceId,
+        sort: "due",
+        limit: homeTickets,
+        activity: homeActivity,
+      }),
+    );
+  const projectName = (id: string) => projects.data?.find((project) => project.id === id)?.name;
+  const total = work.data?.total ?? 0;
+  return (
+    <div className="mb-10 grid gap-x-10 gap-y-8 @min-[900px]:grid-cols-2">
+      <section aria-label="Assigned to you">
+        <SectionHeading
+          compact
+          title="Assigned to you"
+          action={
+            work.data && (
+              <span className="text-xs text-muted-foreground tabular-nums">{total} open</span>
+            )
+          }
+        />
+        <ErrorNotice error={work.error} />
+        {work.isPending ? (
+          <Loading />
+        ) : (
+          <>
+            <ul className="m-0 list-none border-t p-0">
+              {work.data?.items.map((ticket) => (
+                <li
+                  key={ticket.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b py-2.5 text-[13px] leading-5"
+                >
+                  <TicketIndicator property="status" value={ticket.status} />
+                  <TicketLink
+                    projectId={ticket.projectId}
+                    ticketId={ticket.id}
+                    ticket={ticket}
+                    className="min-w-0 flex-1 basis-48 wrap-anywhere"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {projectName(ticket.projectId)}
+                  </span>
+                  <DueDate value={ticket.dueAt} className="text-xs" />
+                </li>
+              ))}
+            </ul>
+            {total === 0 ? (
+              <p className="my-3 text-xs text-muted-foreground">No open tickets assigned to you</p>
+            ) : (
+              <Link
+                to="/my-work"
+                className="mt-3 inline-block text-xs text-muted-foreground hover:text-primary"
+              >
+                {total > homeTickets ? `All ${total} in My work` : "Open My work"}
+              </Link>
+            )}
+          </>
+        )}
+      </section>
+      <section aria-label="Recent activity">
+        <SectionHeading compact title="Recent activity" />
+        {!work.isPending && (
+          <ol className="m-0 list-none border-t p-0">
+            {work.data?.activity.map((event) => {
+              const key = typeof event.data.key === "string" ? event.data.key : null,
+                title = typeof event.data.title === "string" ? event.data.title : null,
+                linked = !!event.ticketId && event.type !== "ticket.deleted";
+              return (
+                <li
+                  key={event.id}
+                  className="flex items-start justify-between gap-3 border-b py-2.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    {linked && event.ticketId ? (
+                      <TicketLink
+                        projectId={event.projectId}
+                        ticketId={event.ticketId}
+                        ticket={key && title ? { key, title } : undefined}
+                        className="text-[13px] leading-5 wrap-anywhere"
+                      />
+                    ) : (
+                      <span className="text-[13px] leading-5 wrap-anywhere">
+                        {title ?? formatEvent(event)}
+                      </span>
+                    )}
+                    <p className="m-0 text-muted-foreground">
+                      {(linked || title) && `${formatEvent(event)} · `}
+                      <ActorName projectId={event.projectId} actorId={event.actorId} /> ·{" "}
+                      {projectName(event.projectId)}
+                    </p>
+                  </div>
+                  <RelativeTime
+                    value={event.createdAt}
+                    className="whitespace-nowrap text-muted-foreground"
+                  />
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {work.data?.activity.length === 0 && (
+          <p className="my-3 text-xs text-muted-foreground">No activity yet</p>
+        )}
+      </section>
+    </div>
+  );
+}
+function ProjectDirectory() {
   const projects = useProjects(),
     workspace = useWorkspace(),
     [query, setQuery] = useState("");
@@ -296,15 +425,19 @@ function Home() {
         .includes(query.toLowerCase()),
     ) ?? [];
   return (
-    <>
-      <PageHeader title="Projects">
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-          {!!projects.data?.length && (
-            <SearchField label="Search projects" value={query} onChange={setQuery} />
-          )}
-          {workspace.active ? <CreateProject /> : <CreateWorkspace />}
-        </div>
-      </PageHeader>
+    <section aria-label="Projects">
+      <SectionHeading
+        compact
+        title="Projects"
+        action={
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            {!!projects.data?.length && (
+              <SearchField label="Search projects" value={query} onChange={setQuery} />
+            )}
+            {workspace.active ? <CreateProject /> : <CreateWorkspace />}
+          </div>
+        }
+      />
       {query && (
         <p className="mb-3 text-xs text-muted-foreground">
           {matches.length} {matches.length === 1 ? "project" : "projects"}
@@ -351,6 +484,17 @@ function Home() {
                           · {project.overdueTickets} overdue
                         </span>
                       )}
+                      {project.closedTickets > 0 &&
+                        ` · ${Math.round(
+                          (100 * project.closedTickets) /
+                            (project.closedTickets + project.openTickets),
+                        )}% done`}
+                      {project.nextDueAt && (
+                        <>
+                          {" · next due "}
+                          <RelativeTime value={project.nextDueAt} />
+                        </>
+                      )}
                     </p>
                     {project.description && (
                       <ItemDescription className="m-0 line-clamp-2 text-xs leading-5">
@@ -385,7 +529,7 @@ function Home() {
           )}
         </ItemGroup>
       )}
-    </>
+    </section>
   );
 }
 function Inbox() {
@@ -533,7 +677,7 @@ function NotFoundPage() {
   return (
     <main className="mx-auto max-w-lg p-6">
       <EmptyState title="Page not found">
-        <Button render={<Link to="/" />}>Open projects</Button>
+        <Button render={<Link to="/" />}>Open home</Button>
       </EmptyState>
     </main>
   );
@@ -628,7 +772,7 @@ function ProjectPage() {
   return project ? (
     <TicketList
       key={project.id}
-      project={project}
+      scope={{ project }}
       search={search}
       onSearch={(next) => {
         void navigate({ search: next, replace: true });
@@ -638,6 +782,31 @@ function ProjectPage() {
     <Loading />
   ) : (
     <ErrorNotice error={projects.error ?? new Error("Project not found")} />
+  );
+}
+const myWork = createRoute({
+  getParentRoute: () => shell,
+  path: "/my-work",
+  validateSearch: workSearchSchema,
+  component: MyWorkPage,
+});
+function MyWorkPage() {
+  const search = myWork.useSearch(),
+    navigate = myWork.useNavigate(),
+    workspace = useWorkspace();
+  return workspace.active ? (
+    <TicketList
+      key={workspace.active.id}
+      scope={{ workspaceId: workspace.active.id }}
+      search={search}
+      onSearch={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  ) : workspace.pending ? (
+    <Loading />
+  ) : (
+    <ErrorNotice error={workspace.error ?? new Error("No workspace selected")} />
   );
 }
 const ticket = createRoute({
@@ -704,6 +873,7 @@ const router = createRouter({
   routeTree: root.addChildren([
     shell.addChildren([
       home,
+      myWork,
       projectRoute,
       ticket,
       projectSettings,

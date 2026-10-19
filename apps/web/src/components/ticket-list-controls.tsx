@@ -29,6 +29,7 @@ import {
   ticketDensitySchema,
   ticketLabelDisplaySchema,
   ticketGroupingSchema,
+  workGroupingSchema,
   type TicketSearch,
 } from "../search.ts";
 import { preferences, usePreference } from "../hooks/use-preference.ts";
@@ -55,7 +56,8 @@ export function TicketListControls({
   view,
   actions,
 }: {
-  projectId: string;
+  // Without a project (My work), the project-scoped filters are hidden.
+  projectId: string | undefined;
   search: TicketSearch;
   onSearch: (search: TicketSearch) => void;
   onReset: () => void;
@@ -65,10 +67,13 @@ export function TicketListControls({
   const [filtersOpen, setFiltersOpen] = useState(false),
     [labelsOpen, setLabelsOpen] = useState(false);
   const identity = useIdentity();
-  const members = useQuery(api.query("list_members", { projectId }));
+  const members = useQuery({
+    ...api.query("list_members", { projectId: projectId ?? "" }),
+    enabled: !!projectId,
+  });
   const labels = useQuery({
-    ...api.query("list_ticket_labels", { projectId, archived: search.archived }),
-    enabled: filtersOpen,
+    ...api.query("list_ticket_labels", { projectId: projectId ?? "", archived: search.archived }),
+    enabled: filtersOpen && !!projectId,
   });
   const activeFilters = [
     search.status,
@@ -91,170 +96,174 @@ export function TicketListControls({
           onChange={(value) => filter({ q: value })}
           className={cn("shrink-0", search.q && "[&_[data-slot=button]]:text-primary")}
         />
-        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <PopoverTrigger
-            render={
-              <IconButton
-                label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`}
-                className={cn("relative", activeFilters > 0 && "text-primary")}
-              />
-            }
-          >
-            <SlidersHorizontal />
-            {activeFilters > 0 && (
-              <span
-                aria-hidden="true"
-                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none text-primary-foreground tabular-nums"
-              >
-                {activeFilters}
-              </span>
-            )}
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
-            <PopoverTitle>Filters</PopoverTitle>
-            <div className="grid grid-cols-1">
-              <Select
-                label="Status"
-                value={search.status ?? ""}
-                onValueChange={(value) =>
-                  filter({ status: value ? z.enum(states).parse(value) : undefined })
-                }
-              >
-                <SelectItem value="">All statuses</SelectItem>
-                {states.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {stateLabels[status]}
-                  </SelectItem>
-                ))}
-              </Select>
-              <Select
-                label="Priority"
-                value={search.priority ?? ""}
-                onValueChange={(value) =>
-                  filter({ priority: value ? z.enum(priorities).parse(value) : undefined })
-                }
-              >
-                <SelectItem value="">All priorities</SelectItem>
-                {priorities.map((priority) => (
-                  <SelectItem key={priority} value={priority}>
-                    <TicketIndicator property="priority" value={priority} />
-                  </SelectItem>
-                ))}
-              </Select>
-              <Field className={fieldClass}>
-                <FieldLabel>Label</FieldLabel>
-                <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-label="Label"
-                        aria-expanded={labelsOpen}
-                        className="w-full justify-between"
-                      />
-                    }
-                  >
-                    <span className="truncate">{search.label ?? "All labels"}</span>
-                    <ChevronsUpDown className="shrink-0" />
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-[min(20rem,calc(100vw-3rem))] p-0">
-                    <Command>
-                      <CommandInput aria-label="Search labels" placeholder="Search labels…" />
-                      <CommandList>
-                        <CommandItem
-                          value="All labels"
-                          onSelect={() => {
-                            filter({ label: undefined });
-                            setLabelsOpen(false);
-                          }}
-                        >
-                          All labels{!search.label && <CheckIcon className="ml-auto" />}
-                        </CommandItem>
-                        {labels.data?.map((label) => (
+        {projectId && (
+          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <PopoverTrigger
+              render={
+                <IconButton
+                  label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`}
+                  className={cn("relative", activeFilters > 0 && "text-primary")}
+                />
+              }
+            >
+              <SlidersHorizontal />
+              {activeFilters > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none text-primary-foreground tabular-nums"
+                >
+                  {activeFilters}
+                </span>
+              )}
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] p-4">
+              <PopoverTitle>Filters</PopoverTitle>
+              <div className="grid grid-cols-1">
+                <Select
+                  label="Status"
+                  value={search.status ?? ""}
+                  onValueChange={(value) =>
+                    filter({ status: value ? z.enum(states).parse(value) : undefined })
+                  }
+                >
+                  <SelectItem value="">All statuses</SelectItem>
+                  {states.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {stateLabels[status]}
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Select
+                  label="Priority"
+                  value={search.priority ?? ""}
+                  onValueChange={(value) =>
+                    filter({ priority: value ? z.enum(priorities).parse(value) : undefined })
+                  }
+                >
+                  <SelectItem value="">All priorities</SelectItem>
+                  {priorities.map((priority) => (
+                    <SelectItem key={priority} value={priority}>
+                      <TicketIndicator property="priority" value={priority} />
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Field className={fieldClass}>
+                  <FieldLabel>Label</FieldLabel>
+                  <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-label="Label"
+                          aria-expanded={labelsOpen}
+                          className="w-full justify-between"
+                        />
+                      }
+                    >
+                      <span className="truncate">{search.label ?? "All labels"}</span>
+                      <ChevronsUpDown className="shrink-0" />
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-[min(20rem,calc(100vw-3rem))] p-0">
+                      <Command>
+                        <CommandInput aria-label="Search labels" placeholder="Search labels…" />
+                        <CommandList>
                           <CommandItem
-                            key={label.name}
-                            value={`label:${label.name}`}
-                            keywords={[label.name]}
+                            value="All labels"
                             onSelect={() => {
-                              filter({ label: label.name });
+                              filter({ label: undefined });
                               setLabelsOpen(false);
                             }}
                           >
-                            <TicketTag tag={label.name} className="h-auto max-w-full" />
-                            <span className="ml-auto text-xs text-muted-foreground">
-                              {label.count}
-                            </span>
-                            {search.label === label.name && <CheckIcon />}
+                            All labels{!search.label && <CheckIcon className="ml-auto" />}
                           </CommandItem>
-                        ))}
-                        <CommandEmpty>
-                          {labels.isPending ? "Loading labels…" : "No matching labels"}
-                        </CommandEmpty>
-                      </CommandList>
-                    </Command>
-                    <ErrorNotice error={labels.error} />
-                  </PopoverContent>
-                </Popover>
-              </Field>
-              <Select
-                label="Due"
-                value={search.due ?? ""}
-                onValueChange={(value) =>
-                  filter({ due: value ? ticketFilter.shape.due.unwrap().parse(value) : undefined })
-                }
-              >
-                <SelectItem value="">Any due date</SelectItem>
-                {Object.entries(dueFilterLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </Select>
-              <Select
-                label="Assignee"
-                value={search.assigneeId ?? "any"}
-                onValueChange={(value) =>
-                  filter({
-                    assigneeId:
-                      value === "any" ? undefined : ticketFilter.shape.assigneeId.parse(value),
-                  })
-                }
-              >
-                <SelectItem value="any">Anyone</SelectItem>
-                <SelectItem value={identity.id}>Me</SelectItem>
-                <SelectItem value="none">Unassigned</SelectItem>
-                {(members.data ?? [])
-                  .filter((member) => member.userId !== identity.id)
-                  .map((member) => (
-                    <SelectItem key={member.userId} value={member.userId}>
-                      {member.name}
+                          {labels.data?.map((label) => (
+                            <CommandItem
+                              key={label.name}
+                              value={`label:${label.name}`}
+                              keywords={[label.name]}
+                              onSelect={() => {
+                                filter({ label: label.name });
+                                setLabelsOpen(false);
+                              }}
+                            >
+                              <TicketTag tag={label.name} className="h-auto max-w-full" />
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                {label.count}
+                              </span>
+                              {search.label === label.name && <CheckIcon />}
+                            </CommandItem>
+                          ))}
+                          <CommandEmpty>
+                            {labels.isPending ? "Loading labels…" : "No matching labels"}
+                          </CommandEmpty>
+                        </CommandList>
+                      </Command>
+                      <ErrorNotice error={labels.error} />
+                    </PopoverContent>
+                  </Popover>
+                </Field>
+                <Select
+                  label="Due"
+                  value={search.due ?? ""}
+                  onValueChange={(value) =>
+                    filter({
+                      due: value ? ticketFilter.shape.due.unwrap().parse(value) : undefined,
+                    })
+                  }
+                >
+                  <SelectItem value="">Any due date</SelectItem>
+                  {Object.entries(dueFilterLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
                     </SelectItem>
                   ))}
-              </Select>
-              <Select
-                label="Archived"
-                value={search.archived}
-                onValueChange={(value) =>
-                  filter({ archived: ticketFilter.shape.archived.parse(value) })
-                }
+                </Select>
+                <Select
+                  label="Assignee"
+                  value={search.assigneeId ?? "any"}
+                  onValueChange={(value) =>
+                    filter({
+                      assigneeId:
+                        value === "any" ? undefined : ticketFilter.shape.assigneeId.parse(value),
+                    })
+                  }
+                >
+                  <SelectItem value="any">Anyone</SelectItem>
+                  <SelectItem value={identity.id}>Me</SelectItem>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {(members.data ?? [])
+                    .filter((member) => member.userId !== identity.id)
+                    .map((member) => (
+                      <SelectItem key={member.userId} value={member.userId}>
+                        {member.name}
+                      </SelectItem>
+                    ))}
+                </Select>
+                <Select
+                  label="Archived"
+                  value={search.archived}
+                  onValueChange={(value) =>
+                    filter({ archived: ticketFilter.shape.archived.parse(value) })
+                  }
+                >
+                  <SelectItem value="exclude">Hide archived</SelectItem>
+                  <SelectItem value="include">Include archived</SelectItem>
+                  <SelectItem value="only">Archived only</SelectItem>
+                </Select>
+              </div>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  onSearch(searchSchema.parse({ sort: search.sort }));
+                  setFiltersOpen(false);
+                }}
               >
-                <SelectItem value="exclude">Hide archived</SelectItem>
-                <SelectItem value="include">Include archived</SelectItem>
-                <SelectItem value="only">Archived only</SelectItem>
-              </Select>
-            </div>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                onSearch(searchSchema.parse({ sort: search.sort }));
-                setFiltersOpen(false);
-              }}
-            >
-              Reset filters
-            </Button>
-          </PopoverContent>
-        </Popover>
+                Reset filters
+              </Button>
+            </PopoverContent>
+          </Popover>
+        )}
         <Popover>
           <PopoverTrigger render={<IconButton label="Display" />}>
             <Columns3 />
@@ -283,7 +292,7 @@ export function TicketListControls({
                 ["desc", "Descending"],
               ]}
             />
-            <TicketDisplayPreferences />
+            <TicketDisplayPreferences work={!projectId} />
             <Separator />
             <Button variant="ghost" onClick={onReset}>
               Reset display
@@ -323,7 +332,7 @@ export function TicketListControls({
                 "Assigned to me"
               ) : (
                 <>
-                  Assignee: <ActorName projectId={projectId} actorId={search.assigneeId} />
+                  Assignee: <ActorName projectId={projectId ?? ""} actorId={search.assigneeId} />
                 </>
               )}
               <X className="size-3" />
@@ -360,23 +369,38 @@ export function TicketListControls({
   );
 }
 
-// The personal list preferences, shared by the Display popover and Settings.
-export function TicketDisplayPreferences() {
+// The personal list preferences, shared by the Display popover and Settings. My work (`work`)
+// has its own grouping choices.
+export function TicketDisplayPreferences({ work = false }: { work?: boolean }) {
   const [grouping, setGrouping] = usePreference(preferences.grouping),
+    [workGrouping, setWorkGrouping] = usePreference(preferences.workGrouping),
     [density, setDensity] = usePreference(preferences.density),
     [labelDisplay, setLabelDisplay] = usePreference(preferences.labelDisplay),
     [columns, setColumns] = usePreference(preferences.columns);
   return (
     <>
-      <DisplayToggle
-        label="Group by"
-        value={grouping}
-        onChange={(value) => setGrouping(ticketGroupingSchema.parse(value))}
-        options={[
-          ["status", "Status"],
-          ["none", "None"],
-        ]}
-      />
+      {work ? (
+        <DisplayToggle
+          label="Group by"
+          value={workGrouping}
+          onChange={(value) => setWorkGrouping(workGroupingSchema.parse(value))}
+          options={[
+            ["due", "Due date"],
+            ["project", "Project"],
+            ["none", "None"],
+          ]}
+        />
+      ) : (
+        <DisplayToggle
+          label="Group by"
+          value={grouping}
+          onChange={(value) => setGrouping(ticketGroupingSchema.parse(value))}
+          options={[
+            ["status", "Status"],
+            ["none", "None"],
+          ]}
+        />
+      )}
       <Separator />
       <DisplayToggle
         label="Row spacing"
