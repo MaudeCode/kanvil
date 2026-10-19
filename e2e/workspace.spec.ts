@@ -8,6 +8,7 @@ import {
   chooseTicketView,
   openSaveView,
   searchTickets,
+  settingsLink,
 } from "./controls.ts";
 import { test, expect } from "@playwright/test";
 
@@ -268,7 +269,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await expect(ticketRows(page)).toHaveCount(1);
   await accountMenu(page);
   await page.getByRole("menuitem", { name: "User settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Notifications", exact: true }).click();
+  await settingsLink(page, "Notifications").click();
   const inboxPreference = page.getByRole("switch", {
     name: "Subscribed ticket updates in Inbox",
     exact: true,
@@ -277,11 +278,11 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await inboxPreference.click();
   await expect(inboxPreference).not.toBeChecked();
   await page.reload();
-  await page.getByRole("tab", { name: "Notifications", exact: true }).click();
+  await settingsLink(page, "Notifications").click();
   await expect(inboxPreference).not.toBeChecked();
   await inboxPreference.click();
   await expect(inboxPreference).toBeChecked();
-  await page.getByRole("tab", { name: "API keys", exact: true }).click();
+  await settingsLink(page, "API keys").click();
   await page.getByRole("button", { name: "Create API key", exact: true }).click();
   await page.getByLabel("Key name").fill("Read-only agent");
   await page.getByRole("checkbox", { name: "Kanvil development", exact: true }).check();

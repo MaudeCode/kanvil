@@ -724,16 +724,7 @@ const settings = createRoute({
   component: SettingsPage,
 });
 function SettingsPage() {
-  const search = settings.useSearch(),
-    navigate = settings.useNavigate();
-  return (
-    <AccountSettings
-      section={search.section}
-      onSectionChange={(section) => {
-        void navigate({ search: settingsSearchSchema.parse({ section }), replace: true });
-      }}
-    />
-  );
+  return <AccountSettings section={settings.useSearch().section} />;
 }
 const admin = createRoute({
   getParentRoute: () => shell,
@@ -743,15 +734,9 @@ const admin = createRoute({
 });
 function AdminSettingsPage() {
   const identity = useIdentity(),
-    search = admin.useSearch(),
-    navigate = admin.useNavigate();
+    search = admin.useSearch();
   return identity.admin ? (
-    <AdminSettings
-      section={search.section}
-      onSectionChange={(section) => {
-        void navigate({ search: adminSearchSchema.parse({ section }), replace: true });
-      }}
-    />
+    <AdminSettings section={search.section} />
   ) : (
     <ErrorNotice error={new Error("Instance administrator access is required")} />
   );
@@ -831,17 +816,8 @@ const workspaceSettings = createRoute({
 });
 function WorkspaceSettingsPage() {
   const { workspaceId } = workspaceSettings.useParams(),
-    search = workspaceSettings.useSearch(),
-    navigate = workspaceSettings.useNavigate();
-  return (
-    <WorkspaceSettings
-      workspaceId={workspaceId}
-      section={search.section}
-      onSectionChange={(section) => {
-        void navigate({ search: groupSettingsSearchSchema.parse({ section }), replace: true });
-      }}
-    />
-  );
+    search = workspaceSettings.useSearch();
+  return <WorkspaceSettings workspaceId={workspaceId} section={search.section} />;
 }
 const projectSettings = createRoute({
   getParentRoute: () => shell,
@@ -852,17 +828,10 @@ const projectSettings = createRoute({
 function ProjectSettingsPage() {
   const { projectId } = projectSettings.useParams(),
     search = projectSettings.useSearch(),
-    navigate = projectSettings.useNavigate(),
     projects = useProjects(),
     project = projects.data?.find((item) => item.id === projectId);
   return project ? (
-    <ProjectSettings
-      project={project}
-      section={search.section}
-      onSectionChange={(section) => {
-        void navigate({ search: projectSettingsSearchSchema.parse({ section }), replace: true });
-      }}
-    />
+    <ProjectSettings project={project} section={search.section} />
   ) : projects.isPending ? (
     <Loading />
   ) : (

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./auth.ts";
-import { choose, signOut, toggleDisplay } from "./controls.ts";
+import { choose, settingsLink, signOut, toggleDisplay } from "./controls.ts";
 import { builtInThemes, encodeThemeFile } from "../apps/web/src/lib/themes.ts";
 
 test("profile avatar opens photo selection and supports replacement, errors, and retry", async ({
@@ -159,7 +159,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`/projects/${project.id}/settings`);
-  await page.getByRole("tab", { name: "Members", exact: true }).click();
+  await settingsLink(page, "Members", "Projects").click();
   await expect(page.locator(".member-row").filter({ hasText: "owner@example.test" })).toBeVisible();
   await page.goto("/settings?section=account");
   await page
@@ -168,7 +168,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await expect(page.getByText("Photo updated", { exact: true })).toBeVisible();
   await expect(page.locator('img[src^="/api/v1/users/"]')).toHaveCount(2);
   await page.goto(`/projects/${project.id}/settings`);
-  await page.getByRole("tab", { name: "Members", exact: true }).click();
+  await settingsLink(page, "Members", "Projects").click();
   const owner = page.locator(".member-row").filter({ hasText: "owner@example.test" });
   await expect(owner.locator('img[src^="/api/v1/users/"]')).toBeVisible();
   await page.goto("/settings?section=account");
@@ -177,7 +177,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("button", { name: "Remove photo", exact: true }).click();
   await expect(page.getByText("Photo removed", { exact: true })).toBeVisible();
   await expect(page.locator('img[src^="/api/v1/users/"]')).toHaveCount(0);
-  await page.getByRole("tab", { name: "API keys", exact: true }).click();
+  await settingsLink(page, "API keys").click();
   await page.getByRole("button", { name: "Create API key", exact: true }).click();
   await page.getByLabel("Key name", { exact: true }).fill("Calendar fixture");
   await page.getByRole("checkbox", { name: "Preferences fixture", exact: true }).check();
@@ -217,12 +217,12 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await page.getByRole("button", { name: "Save instance settings", exact: true }).click();
   await expect(page.getByText("Instance settings saved", { exact: true })).toBeVisible();
   await expect(page).toHaveTitle("Fixture Kanvil · Kanvil");
-  await page.getByRole("tab", { name: "File storage", exact: true }).click();
+  await settingsLink(page, "File storage").click();
   await page.getByRole("button", { name: "Configure storage", exact: true }).click();
   await choose(page, "Storage provider", "S3-compatible object storage");
   await expect(page.getByLabel("Bucket", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("tab", { name: "Event delivery", exact: true }).click();
+  await settingsLink(page, "Event delivery").click();
   await page.getByRole("button", { name: "Configure event delivery", exact: true }).click();
   await choose(page, "Event delivery provider", "RabbitMQ");
   await expect(page.getByLabel("RabbitMQ connection URL", { exact: true })).toHaveAttribute(
@@ -230,7 +230,7 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
     "password",
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("tab", { name: "Search", exact: true }).click();
+  await settingsLink(page, "Search").click();
   await page.getByRole("button", { name: "Configure search", exact: true }).click();
   await choose(page, "Search provider", "Elasticsearch-compatible search");
   await expect(page.getByLabel("Search endpoint", { exact: true })).toBeVisible();
@@ -240,14 +240,14 @@ test("settings support custom palettes, profile photos, calendar expiry, and ins
   await expect(page.getByLabel("Search password", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Search API key", { exact: true })).toHaveCount(0);
   await page.reload();
-  await page.getByRole("tab", { name: "General", exact: true }).click();
+  await settingsLink(page, "General", "Administration").click();
   await page.getByRole("button", { name: "Edit instance", exact: true }).click();
   await page.getByLabel("Instance name", { exact: true }).fill("Kanvil");
   await page.getByRole("button", { name: "Save instance settings", exact: true }).click();
   await expect(page.getByText("Instance settings saved", { exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Users", exact: true }).click();
+  await settingsLink(page, "Users").click();
   await expect(page.getByRole("row", { name: /owner@example.test/ })).toBeVisible();
-  await page.getByRole("tab", { name: "Authentication", exact: true }).click();
+  await settingsLink(page, "Authentication").click();
   await expect(page.getByRole("group", { name: "MCP endpoint", exact: true })).toContainText(
     new URL("/mcp", page.url()).href,
   );
@@ -298,7 +298,7 @@ test("personal preferences agree with Display, set the week start, and reset or 
     "aria-pressed",
     "true",
   );
-  await page.getByRole("tab", { name: "API keys", exact: true }).click();
+  await settingsLink(page, "API keys").click();
   await page.getByRole("button", { name: "Create API key", exact: true }).click();
   await page.getByLabel("Key name", { exact: true }).fill("Permanent fixture");
   await page.getByRole("checkbox", { name: "Personal preference fixture", exact: true }).check();
@@ -324,7 +324,7 @@ test("personal preferences agree with Display, set the week start, and reset or 
   } finally {
     expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
   }
-  await page.getByRole("tab", { name: "Preferences", exact: true }).click();
+  await settingsLink(page, "Preferences").click();
   await page.getByRole("button", { name: "Reset preferences", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Week starts on", exact: true })).toContainText(
     "Sunday",
@@ -341,5 +341,96 @@ test("personal preferences agree with Display, set the week start, and reset or 
       ),
     ),
   ).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("one settings navigation reaches every scope and keeps history, palette, and help in step", async ({
+  page,
+  context,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "NAVSET", name: "Settings navigation" },
+    })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Palette copy actions", status: "todo" },
+    })
+  ).json();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/settings?section=account");
+  const nav = page.getByRole("navigation", { name: "Settings", exact: true });
+  for (const group of ["Account", "Workspace", "Projects", "Administration"])
+    await expect(nav.getByRole("group", { name: group, exact: true })).toBeVisible();
+  await expect(settingsLink(page, "Profile & security")).toHaveAttribute("aria-current", "page");
+  await settingsLink(page, "Appearance").click();
+  await expect(page).toHaveURL(/\/settings\?section=appearance$/);
+  await expect(page.getByRole("radio", { name: "Dark", exact: true })).toBeVisible();
+  await settingsLink(page, "Settings navigation", "Projects").click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/settings\\?section=general$`));
+  await expect(settingsLink(page, "General", "Projects")).toHaveAttribute("aria-current", "page");
+  await settingsLink(page, "Labels", "Projects").click();
+  await expect(page.getByRole("button", { name: "New label", exact: true })).toBeVisible();
+  await settingsLink(page, "Users", "Administration").click();
+  await expect(page).toHaveURL(/\/admin\?section=users$/);
+  // The scope change remounts the page; focus returns to the chosen entry.
+  await expect(settingsLink(page, "Users", "Administration")).toBeFocused();
+  await expect(page.locator(".workspace-header")).toContainText("Administration");
+  await expect(page.locator(".workspace-header")).toContainText("Users");
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/settings\\?section=labels$`));
+  await expect(settingsLink(page, "Labels", "Projects")).toHaveAttribute("aria-current", "page");
+  await page.goBack();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/settings\?section=appearance$/);
+  await expect(settingsLink(page, "Appearance")).toHaveAttribute("aria-current", "page");
+  await page.goForward();
+  await expect(settingsLink(page, "General", "Projects")).toHaveAttribute("aria-current", "page");
+  await page.screenshot({ path: "test-results/settings-navigation-desktop.png", fullPage: true });
+
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByRole("dialog", { name: "Go to", exact: true });
+  await palette.getByRole("combobox").fill("event delivery");
+  await palette.getByRole("option", { name: /Event delivery/ }).click();
+  await expect(page).toHaveURL(/\/admin\?section=events$/);
+  await expect(palette).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Event delivery", exact: true })).toBeVisible();
+  await page.keyboard.press("?");
+  const help = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+  for (const category of ["General", "Ticket list", "Ticket", "Markdown"])
+    await expect(help.getByRole("heading", { name: category, exact: true })).toBeVisible();
+  await expect(help.getByText("Open the next or previous ticket", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // Away from the project, its settings are still one search away.
+  await page.keyboard.press("ControlOrMeta+k");
+  await palette.getByRole("combobox").fill("navigation labels");
+  await palette.getByRole("option", { name: "Labels Settings navigation", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/settings\\?section=labels$`));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  await expect(page.getByRole("heading", { name: "Palette copy actions" })).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+k");
+  await palette.getByRole("combobox").fill("branch");
+  await palette.getByRole("option", { name: "Copy branch name", exact: true }).click();
+  await expect(page.getByText("Branch name copied", { exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(`${ticket.key}-palette-copy-actions`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/projects/${project.id}/settings?section=members`);
+  const picker = page.getByRole("combobox", { name: "Settings section", exact: true });
+  await expect(picker).toContainText("Settings navigation · Members");
+  await page.screenshot({ path: "test-results/settings-navigation-mobile.png", fullPage: true });
+  await choose(page, "Settings section", "Authentication");
+  await expect(page).toHaveURL(/\/admin\?section=authentication$/);
+  await expect(picker).toBeFocused();
+  await page.goBack();
+  await expect(picker).toContainText("Settings navigation · Members");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   expect(errors).toEqual([]);
 });

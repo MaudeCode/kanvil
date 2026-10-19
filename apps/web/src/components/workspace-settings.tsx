@@ -1,25 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Settings2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api, useAllProjects, useOperation, useWorkspaces } from "../data.tsx";
 import { Button, CopyButton, EmptyState, ErrorNotice, Loading } from "../ui.tsx";
 import { Badge } from "@/components/ui/badge";
-import { TabsContent } from "@/components/ui/tabs";
-import { EditableHeading, SettingsLayout, SettingRow } from "./settings-layout.tsx";
+import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
-const sections = [
-  { id: "general", label: "General", icon: Settings2 },
-  { id: "members", label: "Members", icon: Users },
-];
+import type { workspaceSections } from "../search.ts";
 export function WorkspaceSettings({
   workspaceId,
   section,
-  onSectionChange,
 }: {
   workspaceId: string;
-  section: "general" | "members";
-  onSectionChange: (value: string) => void;
+  section: (typeof workspaceSections)[number];
 }) {
   const spaces = useWorkspaces(),
     projects = useAllProjects(),
@@ -42,13 +35,8 @@ export function WorkspaceSettings({
     count = projects.data?.filter((project) => project.workspaceId === workspace.id).length ?? 0;
   return (
     <>
-      <SettingsLayout
-        title="Workspace settings"
-        value={section}
-        onChange={onSectionChange}
-        sections={sections}
-      >
-        <TabsContent value="general">
+      <SettingsLayout title="Workspace settings" section={section}>
+        <SettingsPanel value="general">
           <section>
             <EditableHeading
               name={workspace.name}
@@ -90,11 +78,21 @@ export function WorkspaceSettings({
               title="Members"
               description="Workspace roles apply to projects that use workspace access."
             >
-              <Button onClick={() => onSectionChange("members")}>Manage members</Button>
+              <Button
+                render={
+                  <Link
+                    to="/workspaces/$workspaceId/settings"
+                    params={{ workspaceId }}
+                    search={{ section: "members" }}
+                  />
+                }
+              >
+                Manage members
+              </Button>
             </SettingRow>
           </section>
-        </TabsContent>
-        <TabsContent value="members">
+        </SettingsPanel>
+        <SettingsPanel value="members">
           <MemberDirectory
             people={people.data ?? []}
             pending={member.isPending}
@@ -104,7 +102,7 @@ export function WorkspaceSettings({
             scope="workspace"
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
-        </TabsContent>
+        </SettingsPanel>
       </SettingsLayout>
     </>
   );

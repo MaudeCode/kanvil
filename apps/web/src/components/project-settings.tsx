@@ -1,29 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Settings2, Users, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Output } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import { Button, CopyButton, RelativeTime, Select, SelectItem, reportError } from "../ui.tsx";
-import { TabsContent } from "@/components/ui/tabs";
-import { EditableHeading, SettingsLayout, SettingRow } from "./settings-layout.tsx";
+import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { ProjectLabelSettings } from "./project-label-settings.tsx";
-const sections = [
-  { id: "general", label: "General", icon: Settings2 },
-  { id: "members", label: "Members", icon: Users },
-  { id: "labels", label: "Labels", icon: Tags },
-];
+import type { projectSections } from "../search.ts";
 export function ProjectSettings({
   project,
   section,
-  onSectionChange,
 }: {
   project: Output<"list_projects">[number];
-  section: "general" | "members" | "labels";
-  onSectionChange: (section: string) => void;
+  section: (typeof projectSections)[number];
 }) {
   const update = useOperation("update_project"),
     member = useOperation("set_member"),
@@ -36,13 +28,8 @@ export function ProjectSettings({
   });
   return (
     <>
-      <SettingsLayout
-        title="Project settings"
-        value={section}
-        onChange={onSectionChange}
-        sections={sections}
-      >
-        <TabsContent value="general">
+      <SettingsLayout title="Project settings" section={section}>
+        <SettingsPanel value="general">
           <section>
             <EditableHeading
               name={project.name}
@@ -139,8 +126,8 @@ export function ProjectSettings({
               )}
             </SettingRow>
           </section>
-        </TabsContent>
-        <TabsContent value="members">
+        </SettingsPanel>
+        <SettingsPanel value="members">
           <MemberDirectory
             people={members.data ?? []}
             candidates={candidates.data ?? members.data ?? []}
@@ -151,10 +138,10 @@ export function ProjectSettings({
             scope="project"
             onChange={(email, role) => member.mutateAsync({ projectId: project.id, email, role })}
           />
-        </TabsContent>
-        <TabsContent value="labels">
+        </SettingsPanel>
+        <SettingsPanel value="labels">
           <ProjectLabelSettings projectId={project.id} canAdmin={access.canAdmin} />
-        </TabsContent>
+        </SettingsPanel>
       </SettingsLayout>
     </>
   );

@@ -1,15 +1,7 @@
 import { toast } from "sonner";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  HardDrive,
-  Search,
-  Settings2,
-  ShieldCheck,
-  Users,
-  ExternalLink,
-  Network,
-} from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import {
   adminInstanceSchema,
   instanceUpdateSchema,
@@ -34,44 +26,27 @@ import {
   SectionHeading,
   FormActions,
 } from "../ui.tsx";
-import { TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { FieldSet } from "@/components/ui/field";
 import { InstanceOverview } from "./instance-overview.tsx";
-import { SettingRow, SettingsLayout } from "./settings-layout.tsx";
+import { SettingRow, SettingsLayout, SettingsPanel } from "./settings-layout.tsx";
 import { UsersSettings } from "./users-settings.tsx";
 import type { adminSections } from "../search.ts";
-const sections = [
-  { id: "general", label: "General", icon: Settings2 },
-  { id: "storage", label: "File storage", icon: HardDrive },
-  { id: "search", label: "Search", icon: Search },
-  { id: "events", label: "Event delivery", icon: Network },
-  { id: "users", label: "Users", icon: Users },
-  { id: "authentication", label: "Authentication", icon: ShieldCheck },
-];
 const query = {
   queryKey: ["kanvil", "instance"],
   queryFn: () => api.request("/api/v1/admin/instance", adminInstanceSchema),
 };
-export function AdminSettings({
-  section,
-  onSectionChange,
-}: {
-  section: (typeof adminSections)[number];
-  onSectionChange: (value: string) => void;
-}) {
+export function AdminSettings({ section }: { section: (typeof adminSections)[number] }) {
+  // Rendering waits for a read made after mount, so a cached copy still counts as fresh only once
+  // it has been refetched; without "always", returning within the stale time stayed on Loading.
   const result = useQuery({
     ...query,
+    refetchOnMount: "always",
     refetchInterval: ["search", "storage", "events"].includes(section) ? 5000 : false,
   });
   return result.data && result.isFetchedAfterMount ? (
-    <InstanceSettings
-      key={section}
-      data={result.data}
-      section={section}
-      onSectionChange={onSectionChange}
-    />
+    <InstanceSettings key={section} data={result.data} section={section} />
   ) : result.isPending || result.isFetching ? (
     <Loading />
   ) : (
@@ -109,15 +84,7 @@ function initial(data: AdminInstance) {
     },
   };
 }
-function InstanceSettings({
-  data,
-  section,
-  onSectionChange,
-}: {
-  data: AdminInstance;
-  section: string;
-  onSectionChange: (value: string) => void;
-}) {
+function InstanceSettings({ data, section }: { data: AdminInstance; section: string }) {
   const cache = useQueryClient(),
     [draft, setDraft] = useState(() => initial(data)),
     [pending, setPending] = useState(false),
@@ -187,18 +154,9 @@ function InstanceSettings({
     setEditing(false);
   }
   return (
-    <SettingsLayout
-      title="Administration"
-      value={section}
-      onChange={(next) => {
-        setMessage("");
-        setError(undefined);
-        onSectionChange(next);
-      }}
-      sections={sections}
-    >
+    <SettingsLayout title="Administration" section={section}>
       {(["general", "storage", "search", "events"] as const).map((value) => (
-        <TabsContent value={value} key={value}>
+        <SettingsPanel value={value} key={value}>
           <InstanceOverview
             data={data}
             section={value}
@@ -209,7 +167,7 @@ function InstanceSettings({
               setEditing(true);
             }}
           />
-        </TabsContent>
+        </SettingsPanel>
       ))}
       {!editing && section !== "authentication" && <ErrorNotice error={error} />}
       <Modal
@@ -652,10 +610,10 @@ function InstanceSettings({
           )}
         </form>
       </Modal>
-      <TabsContent value="users">
+      <SettingsPanel value="users">
         <UsersSettings />
-      </TabsContent>
-      <TabsContent value="authentication">
+      </SettingsPanel>
+      <SettingsPanel value="authentication">
         <section>
           <SectionHeading title="Authentication" />
           <form
@@ -735,7 +693,7 @@ function InstanceSettings({
             <ExternalLink className="size-4" />
           </a>
         </section>
-      </TabsContent>
+      </SettingsPanel>
     </SettingsLayout>
   );
 }

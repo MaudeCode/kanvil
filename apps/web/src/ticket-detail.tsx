@@ -1,4 +1,4 @@
-import { TicketContextMenu } from "./components/object-context-menu.tsx";
+import { TicketContextMenu, copyTicket } from "./components/object-context-menu.tsx";
 import {
   Bell,
   BellOff,
@@ -8,7 +8,6 @@ import {
   Check as CheckIcon,
   ChevronUp,
   ChevronDown,
-  Link2,
   Archive,
   ArchiveRestore,
 } from "lucide-react";
@@ -46,6 +45,7 @@ import { useShortcut } from "./hooks/use-shortcut.ts";
 import { DatePicker, endOfDay } from "./components/date-picker.tsx";
 import { copyText } from "./lib/browser.ts";
 import { readListOrder } from "./lib/list-order.ts";
+import { copyLink } from "./lib/actions.ts";
 
 export function TicketDetail({ projectId, ticketId }: { projectId: string; ticketId: string }) {
   const access = useProjectAccess(projectId);
@@ -153,16 +153,12 @@ export function TicketDetail({ projectId, ticketId }: { projectId: string; ticke
                 {following ? <BellOff /> : <Bell />}
               </IconButton>
               <IconButton
-                label="Copy link"
+                label={copyLink.label}
                 onClick={() => {
-                  void copyText(
-                    new URL(`/projects/${projectId}/tickets/${ticket.id}`, location.origin).href,
-                  )
-                    .then(() => toast.success("Link copied"))
-                    .catch(reportError);
+                  void copyTicket(copyLink, ticket);
                 }}
               >
-                <Link2 />
+                <copyLink.icon />
               </IconButton>
               <IconButton
                 label={ticket.archived ? "Unarchive ticket" : "Archive ticket"}

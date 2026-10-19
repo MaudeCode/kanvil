@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { signIn, ownerPassword, useEmailLogin } from "./auth.ts";
-import { addAcceptanceCriteria, choose, openSearch, toggleDisplay } from "./controls.ts";
+import {
+  addAcceptanceCriteria,
+  choose,
+  openSearch,
+  settingsLink,
+  toggleDisplay,
+} from "./controls.ts";
 
 test("ticket writing, parent selection, inline properties, and contextual actions work without raw IDs", async ({
   page,
@@ -109,7 +115,7 @@ test("overview pages expose actions instead of permanent forms and preserve fail
   await choose(page, "Storage provider", "S3-compatible object storage");
   await page.getByLabel("Bucket", { exact: true }).fill("not-saved");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("tab", { name: "General", exact: true }).click();
+  await settingsLink(page, "General", "Administration").click();
   await page.getByRole("button", { name: "Edit instance", exact: true }).click();
   const current = await page.getByLabel("Instance name", { exact: true }).inputValue();
   await page.getByLabel("Instance name", { exact: true }).fill(current);

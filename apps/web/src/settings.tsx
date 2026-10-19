@@ -1,5 +1,4 @@
 import { useAuthError } from "./hooks/use-auth-error.ts";
-import { UserRound, Palette, KeyRound, Bell, Settings2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,10 +15,9 @@ import {
   Select,
   SelectItem,
 } from "./ui.tsx";
-import { TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { SettingsLayout, SettingRow } from "./components/settings-layout.tsx";
+import { SettingsLayout, SettingsPanel, SettingRow } from "./components/settings-layout.tsx";
 import { Credentials } from "./components/credentials-settings.tsx";
 import { ProfileSettings } from "./components/profile-settings.tsx";
 import { AppearanceSettings } from "./components/appearance.tsx";
@@ -29,22 +27,9 @@ import {
   resetPreferences,
   usePreference,
 } from "./hooks/use-preference.ts";
-import { accountSections } from "./search.ts";
+import type { accountSections } from "./search.ts";
 import { formText } from "./forms.ts";
-const personalSections = [
-  { id: "account", label: "Profile & security", icon: UserRound },
-  { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "preferences", label: "Preferences", icon: Settings2 },
-  { id: "credentials", label: "API keys", icon: KeyRound },
-  { id: "notifications", label: "Notifications", icon: Bell },
-];
-export function AccountSettings({
-  section,
-  onSectionChange,
-}: {
-  section: (typeof accountSections)[number];
-  onSectionChange: (value: string) => void;
-}) {
+export function AccountSettings({ section }: { section: (typeof accountSections)[number] }) {
   const [error, setError] = useAuthError();
   const info = useQuery({
       queryKey: ["info"],
@@ -86,13 +71,8 @@ export function AccountSettings({
     }
   }
   return (
-    <SettingsLayout
-      title="Settings"
-      value={section}
-      onChange={onSectionChange}
-      sections={personalSections}
-    >
-      <TabsContent value="account">
+    <SettingsLayout title="Settings" section={section}>
+      <SettingsPanel value="account">
         <ProfileSettings />
         <section>
           <SectionHeading title="Sign-in & security" />
@@ -191,19 +171,19 @@ export function AccountSettings({
             />
           </form>
         </Modal>
-      </TabsContent>
-      <TabsContent value="appearance">
+      </SettingsPanel>
+      <SettingsPanel value="appearance">
         <AppearanceSettings />
-      </TabsContent>
-      <TabsContent value="preferences">
+      </SettingsPanel>
+      <SettingsPanel value="preferences">
         <PreferenceSettings />
-      </TabsContent>
-      <TabsContent value="credentials">
+      </SettingsPanel>
+      <SettingsPanel value="credentials">
         <Credentials />
-      </TabsContent>
-      <TabsContent value="notifications">
+      </SettingsPanel>
+      <SettingsPanel value="notifications">
         <NotificationPreferences pushAvailable={info.data?.push ?? false} />
-      </TabsContent>
+      </SettingsPanel>
     </SettingsLayout>
   );
 }

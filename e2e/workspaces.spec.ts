@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { signIn, useEmailLogin } from "./auth.ts";
-import { choose, openSearch } from "./controls.ts";
+import { choose, openSearch, settingsLink } from "./controls.ts";
 
 async function expectCenteredWatermark(state: Locator) {
   const title = state.locator('[data-slot="empty-title"]');
@@ -297,6 +297,15 @@ test("workspace member roles control project actions and removal revokes access"
     await expect(reader.getByRole("button", { name: "New ticket", exact: true })).toBeDisabled();
     await reader.goto(`/projects/${shared.id}/settings`);
     await expect(reader.getByRole("button", { name: "Change icon", exact: true })).toBeDisabled();
+    // Settings navigation lists only what the server granted this reader.
+    await expect(settingsLink(reader, "Workspace-visible project", "Projects")).toBeVisible();
+    await expect(settingsLink(reader, "Private project")).toHaveCount(0);
+    await expect(settingsLink(reader, "Members", "Workspace")).toBeVisible();
+    await expect(
+      reader.getByRole("navigation", { name: "Settings" }).getByRole("group", {
+        name: "Administration",
+      }),
+    ).toHaveCount(0);
     await reader.goto(`/projects/${shared.id}`);
     await choose(page, "Role for Workspace reviewer", "Can edit");
     await reader.reload();

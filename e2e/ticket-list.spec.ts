@@ -93,9 +93,9 @@ test("project settings manage reusable colored labels across live ticket views",
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/projects/${project.id}/settings?section=labels`);
-  await expect(
-    page.getByRole("combobox", { name: "Project settings section", exact: true }),
-  ).toContainText("Labels");
+  await expect(page.getByRole("combobox", { name: "Settings section", exact: true })).toContainText(
+    "Labels",
+  );
   const labelRow = page
     .locator('[data-slot="item"]')
     .filter({ has: page.getByRole("button", { name: "Edit label release, ready", exact: true }) });

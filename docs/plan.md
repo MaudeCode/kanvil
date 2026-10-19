@@ -83,7 +83,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Ticket detail view containing requirements, relationships, discussion, attachments, activity, and supplied evidence.
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
 - Home overview of your assigned work, recent activity, and project progress, with a complete My work list across the workspace's projects grouped by due date or project.
-- Project settings, account settings, and notification preferences.
+- One settings navigation for account, current workspace, projects, and instance administration (shown only where the server grants access), including personal and notification preferences. The `?` help and the `⌘K` palette read one action catalog, so labels and keys match.
 - Native mobile lists and navigation, ticket editing, comments, attachments, deep links, and notifications.
 - Live updates while connected, recovery after disconnection, cached reading, and locally saved drafts.
 - Shared client operations, validation, formatting, design tokens, and status presentation rules.
