@@ -11,6 +11,7 @@ import {
   Tags,
   UserRound,
   Users,
+  Webhook,
   type LucideIcon,
 } from "lucide-react";
 import { accountSections, adminSections, projectSections, workspaceSections } from "../search.ts";
@@ -36,6 +37,7 @@ const workspace: Sections<typeof workspaceSections> = {
 const project: Sections<typeof projectSections> = {
   ...workspace,
   labels: { label: "Labels", icon: Tags },
+  integrations: { label: "Integrations", icon: Webhook },
 };
 const admin: Sections<typeof adminSections> = {
   general: { label: "General", icon: Settings2 },

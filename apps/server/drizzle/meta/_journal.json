@@ -127,6 +127,20 @@
       "when": 1792388339720,
       "tag": "0017_project_backgrounds",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792389835063,
+      "tag": "0018_delivery_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792389835378,
+      "tag": "0019_retire_push_deliveries",
+      "breakpoints": true
     }
   ]
 }

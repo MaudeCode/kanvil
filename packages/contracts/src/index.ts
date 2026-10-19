@@ -500,6 +500,8 @@ export const infoSchema = z.object({
   setupRequired: z.boolean(),
   oidc: z.object({ id: z.string(), name: z.string() }).nullable(),
   push: z.boolean().default(false),
+  // Whether the instance has SMTP configured for email notification channels.
+  email: z.boolean().default(false),
 });
 // Every category starts enabled, so accounts saved before categories keep receiving every update.
 export const notificationCategoriesSchema = z.object({
@@ -579,6 +581,156 @@ export const notificationPreferencesInput = z
 export type NotificationPreferences = z.output<typeof notificationPreferencesSchema>;
 export type NotificationPreferencesInput = z.input<typeof notificationPreferencesInput>;
 export const pushDeviceInput = z.object({ token: z.string().min(1).max(250) }).strict();
+// Outbound delivery. Account channels carry one person's notifications; project destinations carry
+// a project's ticket activity. Both start off and share one outbox, transport, and health record.
+export const channelKinds = ["email", "ntfy", "gotify", "webhook"] as const;
+export const destinationKinds = ["webhook", "slack", "discord", "mattermost", "telegram"] as const;
+export const deliveryKinds = [...new Set([...channelKinds, ...destinationKinds])];
+export type DeliveryKind = (typeof channelKinds)[number] | (typeof destinationKinds)[number];
+export const deliveryKindLabels: Record<DeliveryKind, string> = {
+  email: "Email",
+  ntfy: "ntfy",
+  gotify: "Gotify",
+  webhook: "Webhook",
+  slack: "Slack",
+  discord: "Discord",
+  mattermost: "Mattermost",
+  telegram: "Telegram",
+};
+// Saved values that are never returned. On edit an omitted secret keeps its saved value and an
+// empty string clears an optional one.
+export const deliverySecretFields: Record<DeliveryKind, readonly string[]> = {
+  email: [],
+  ntfy: ["token"],
+  gotify: ["token"],
+  webhook: ["secret"],
+  slack: ["url"],
+  discord: ["url"],
+  mattermost: ["url"],
+  telegram: ["token"],
+};
+const endpoint = z
+  .url({ protocol: /^https?$/ })
+  .max(2000)
+  .refine(
+    (value) => !/^[a-z]+:\/\/[^/?#]*@/i.test(value),
+    "Put credentials in their own field, not in the URL",
+  );
+const deliverySecret = z.string().trim().min(1).max(500);
+export const deliverySettingsSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("email"), address: z.email().max(254) }),
+  z.object({
+    kind: z.literal("ntfy"),
+    server: endpoint.default("https://ntfy.sh"),
+    topic: z.string().regex(/^[\w-]{1,64}$/, "Use letters, digits, - or _"),
+    token: deliverySecret.optional(),
+  }),
+  z.object({ kind: z.literal("gotify"), server: endpoint, token: deliverySecret }),
+  z.object({ kind: z.literal("webhook"), url: endpoint, secret: deliverySecret.optional() }),
+  z.object({ kind: z.literal("slack"), url: endpoint }),
+  z.object({ kind: z.literal("discord"), url: endpoint }),
+  z.object({
+    kind: z.literal("mattermost"),
+    url: endpoint,
+    channel: z.string().trim().max(64).optional(),
+  }),
+  z.object({
+    kind: z.literal("telegram"),
+    token: z.string().regex(/^\d+:[\w-]{20,}$/, "Use the bot token from BotFather"),
+    chatId: z.string().regex(/^(-?\d{1,20}|@\w{5,32})$/, "Use a numeric chat ID or @channel"),
+    topicId: z.coerce.number().int().positive().optional(),
+  }),
+]);
+export type DeliverySettings = z.output<typeof deliverySettingsSchema>;
+// Field values by kind; the server merges them with saved secrets and validates the result.
+export const deliverySettingsInput = z
+  .object({ kind: z.enum(deliveryKinds) })
+  .catchall(z.union([z.string().max(2000), z.number(), z.null()]));
+export const channelRouteModes = ["off", "all", "selected"] as const;
+// A workspace sends everything, chosen projects, or nothing. `off` keeps the chosen projects.
+export const channelRouteSchema = z.object({
+  workspaceId: z.uuid(),
+  mode: z.enum(channelRouteModes),
+  projectIds: z.array(z.uuid()).max(500).default([]),
+});
+export type ChannelRoute = z.output<typeof channelRouteSchema>;
+export function channelRouteAllows(
+  routes: readonly { workspaceId: string; mode: string; projectIds: readonly string[] }[],
+  workspaceId: string | undefined,
+  projectId: string,
+) {
+  const route = routes.find((item) => item.workspaceId === workspaceId);
+  return (
+    route?.mode === "all" || (route?.mode === "selected" && route.projectIds.includes(projectId))
+  );
+}
+const channelRoutes = z
+  .array(channelRouteSchema)
+  .max(100)
+  .refine(
+    (routes) => new Set(routes.map((route) => route.workspaceId)).size === routes.length,
+    "List each workspace once",
+  );
+// Project activity a destination can carry: ticket creation plus the event categories. Mentions are
+// personal, so a project feed carries the comment instead.
+const projectCategory = (
+  category: NotificationCategory,
+): category is Exclude<NotificationCategory, "mention"> => category !== "mention";
+export const destinationEvents = [
+  "created",
+  ...notificationCategories.filter(projectCategory),
+] as const;
+export type DestinationEvent = (typeof destinationEvents)[number];
+export const destinationEventLabels: Record<DestinationEvent, string> = {
+  created: "New tickets",
+  assignment: notificationCategoryLabels.assignment,
+  status: notificationCategoryLabels.status,
+  comment: notificationCategoryLabels.comment,
+  update: notificationCategoryLabels.update,
+  due_soon: notificationCategoryLabels.due_soon,
+  overdue: notificationCategoryLabels.overdue,
+};
+export function destinationEventKeys(event: {
+  type: string;
+  data: Record<string, unknown>;
+}): DestinationEvent[] {
+  return event.type === "ticket.created"
+    ? ["created"]
+    : eventCategories(event).filter(projectCategory);
+}
+export const deliveryHealthSchema = z.object({
+  // `idle` until the first attempt; `failing` while the latest attempt failed.
+  status: z.enum(["idle", "ok", "failing"]),
+  error: z.string().nullable(),
+  lastAttemptAt: timestamp.nullable(),
+  lastSuccessAt: timestamp.nullable(),
+  pending: z.number().int().nonnegative(),
+});
+const deliveryTarget = {
+  id: z.uuid(),
+  name: z.string(),
+  paused: z.boolean(),
+  // Saved settings without secrets; `secrets` names the secret fields that hold a value.
+  settings: z.record(z.string(), z.union([z.string(), z.number()])),
+  secrets: z.array(z.string()),
+  endpoint: z.string(),
+  health: deliveryHealthSchema,
+  version,
+  createdAt: timestamp,
+};
+export const notificationChannelSchema = z.object({
+  ...deliveryTarget,
+  kind: z.enum(channelKinds),
+  routes: z.array(channelRouteSchema),
+});
+export type NotificationChannel = z.output<typeof notificationChannelSchema>;
+export const projectDestinationSchema = z.object({
+  ...deliveryTarget,
+  kind: z.enum(destinationKinds),
+  projectId: z.uuid(),
+  events: z.array(z.enum(destinationEvents)),
+});
+export type ProjectDestination = z.output<typeof projectDestinationSchema>;
 export const credentialsSchema = z.array(
   z.object({
     id: z.string(),
@@ -635,6 +787,9 @@ export const eventLabels: Record<string, string> = {
   "project.created": "Project created",
   "project.updated": "Project updated",
   "membership.updated": "Project access changed",
+  "destination.created": "Destination added",
+  "destination.updated": "Destination changed",
+  "destination.deleted": "Destination removed",
 };
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),
@@ -1372,6 +1527,124 @@ export const operations = {
     "/projects/{projectId}/views/{viewId}",
     "read",
     "Delete your own saved view.",
+  ),
+  list_notification_channels: op(
+    z.object({}),
+    z.array(notificationChannelSchema),
+    "GET",
+    "/notification-channels",
+    "read",
+    "List your notification channels with masked settings, routing, and delivery health.",
+  ),
+  create_notification_channel: op(
+    z
+      .object({
+        ...mutation,
+        name: text.max(80),
+        settings: deliverySettingsInput,
+        routes: channelRoutes.default([]),
+        paused: z.boolean().default(false),
+      })
+      .strict(),
+    notificationChannelSchema,
+    "POST",
+    "/notification-channels",
+    "read",
+    "Add an email, ntfy, Gotify, or signed webhook channel for your notifications. Signed-in sessions only. A channel sends nothing until a workspace route selects it.",
+  ),
+  update_notification_channel: op(
+    z
+      .object({
+        ...mutation,
+        channelId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(80).optional(),
+        settings: deliverySettingsInput.optional(),
+        routes: channelRoutes.optional(),
+        paused: z.boolean().optional(),
+      })
+      .strict(),
+    notificationChannelSchema,
+    "PATCH",
+    "/notification-channels/{channelId}",
+    "read",
+    "Edit, pause, or reroute your notification channel. Omitted secrets keep their saved value; pausing and routing changes keep the saved configuration.",
+  ),
+  delete_notification_channel: op(
+    z.object({ ...mutation, channelId: z.uuid(), expectedVersion: version }).strict(),
+    okSchema,
+    "DELETE",
+    "/notification-channels/{channelId}",
+    "read",
+    "Disconnect your notification channel and discard its queued deliveries.",
+  ),
+  test_notification_channel: op(
+    z.object({ ...mutation, channelId: z.uuid() }).strict(),
+    okSchema,
+    "POST",
+    "/notification-channels/{channelId}/test",
+    "read",
+    "Queue a test message to your notification channel; its health shows the result.",
+  ),
+  list_project_destinations: op(
+    projectInput,
+    z.array(projectDestinationSchema),
+    "GET",
+    "/projects/{projectId}/destinations",
+    "admin",
+    "List the project's outgoing webhook and chat destinations with masked settings and delivery health.",
+  ),
+  create_project_destination: op(
+    projectInput
+      .extend({
+        ...mutation,
+        name: text.max(80),
+        settings: deliverySettingsInput,
+        events: z.array(z.enum(destinationEvents)).max(destinationEvents.length),
+        paused: z.boolean().default(false),
+      })
+      .strict(),
+    projectDestinationSchema,
+    "POST",
+    "/projects/{projectId}/destinations",
+    "admin",
+    "Send the project's ticket activity to a signed webhook, Slack, Discord, Mattermost, or Telegram.",
+  ),
+  update_project_destination: op(
+    projectInput
+      .extend({
+        ...mutation,
+        destinationId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(80).optional(),
+        settings: deliverySettingsInput.optional(),
+        events: z.array(z.enum(destinationEvents)).max(destinationEvents.length).optional(),
+        paused: z.boolean().optional(),
+      })
+      .strict(),
+    projectDestinationSchema,
+    "PATCH",
+    "/projects/{projectId}/destinations/{destinationId}",
+    "admin",
+    "Edit, pause, or change the events of a project destination. Omitted secrets keep their saved value.",
+  ),
+  delete_project_destination: op(
+    projectInput
+      .extend({ ...mutation, destinationId: z.uuid(), expectedVersion: version })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/destinations/{destinationId}",
+    "admin",
+    "Remove a project destination and discard its queued deliveries.",
+  ),
+  test_project_destination: op(
+    projectInput.extend({ ...mutation, destinationId: z.uuid() }).strict(),
+    okSchema,
+    "POST",
+    "/projects/{projectId}/destinations/{destinationId}/test",
+    "admin",
+    "Queue a test message to a project destination; its health shows the result.",
   ),
 } as const;
 

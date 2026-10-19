@@ -1,5 +1,6 @@
 import { matchesOIDCBinding } from "./adapters/oidc.ts";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { createSealer } from "./sealing.ts";
 import { and, eq, sql } from "drizzle-orm";
 import {
   instanceUpdateSchema,
@@ -34,32 +35,7 @@ function storageIdentity(settings: S3Settings) {
 }
 
 export function createInstance(database: Database, config: Config) {
-  const key = createHash("sha256")
-    .update("kanvil:instance-config:v1:")
-    .update(config.BETTER_AUTH_SECRET)
-    .digest();
-  function seal(value: unknown) {
-    const iv = randomBytes(12),
-      cipher = createCipheriv("aes-256-gcm", key, iv);
-    const bytes = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
-    return Buffer.concat([iv, cipher.getAuthTag(), bytes]).toString("base64");
-  }
-  function unseal(value: string): unknown {
-    try {
-      const bytes = Buffer.from(value, "base64"),
-        decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
-      decipher.setAuthTag(bytes.subarray(12, 28));
-      return JSON.parse(
-        Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString(),
-      );
-    } catch {
-      return fail(
-        503,
-        "configuration_key_changed",
-        "Saved integration credentials cannot be decrypted. Restore the instance secret from your backup.",
-      );
-    }
-  }
+  const { seal, unseal } = createSealer(config.BETTER_AUTH_SECRET, "kanvil:instance-config:v1:");
   async function read(db: Connection | Transaction = database.db) {
     await db.insert(instanceSettings).values({ id: 1 }).onConflictDoNothing();
     return one(await db.select().from(instanceSettings).where(eq(instanceSettings.id, 1)));

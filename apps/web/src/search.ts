@@ -110,7 +110,7 @@ export const adminSearchSchema = z.object({
 });
 
 export const workspaceSections = ["general", "members"] as const;
-export const projectSections = ["general", "members", "labels"] as const;
+export const projectSections = ["general", "members", "labels", "integrations"] as const;
 export const groupSettingsSearchSchema = z.object({
   section: z.enum(workspaceSections).catch("general").default("general"),
 });

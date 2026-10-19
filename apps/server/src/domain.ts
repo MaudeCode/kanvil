@@ -19,17 +19,22 @@ import {
   projectSchema,
   hasAdminRole,
   type NotificationCategory,
+  channelRouteAllows,
+  destinationEventKeys,
 } from "@kanvil/contracts";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
+import type { Sealer } from "./sealing.ts";
 import {
   claims,
+  deliveries,
   eventClock,
   events,
+  notificationChannels,
   notifications,
   notificationPreferences,
+  projectDestinations,
   pushDevices,
-  pushDeliveries,
   projects,
   receipts,
   subscriptions,
@@ -41,6 +46,7 @@ import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
+import { deliveryHandlers } from "./delivery-operations.ts";
 
 export interface Actor {
   id: string;
@@ -53,6 +59,8 @@ export interface Actor {
 export interface Context {
   blobs: BlobWriter;
   search: TicketSearchProvider;
+  // Seals delivery settings; the application supplies a key derived from the instance secret.
+  secrets: Sealer;
   db: Connection | Transaction;
   actor: Actor;
   project: Project | null;
@@ -124,6 +132,10 @@ export const hasScope = (actor: Actor, scope: (typeof scopes)[number]) =>
   actor.scopes.includes(scope) ||
   (scope === "read" && actor.scopes.length > 0);
 
+const noSecrets: Sealer = {
+  seal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
+  unseal: () => fail(503, "delivery_unavailable", "Outbound delivery is not configured"),
+};
 async function context(
   db: Context["db"],
   actor: Actor,
@@ -141,6 +153,7 @@ async function context(
     role: "reader",
     blobs: { put: writeLocalBlob },
     search: builtinSearch,
+    secrets: noSecrets,
   };
   if (workspaceId) {
     ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
@@ -228,7 +241,36 @@ export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
     (batch) => db.insert(events).values(batch).returning(),
   );
   await db.execute(sql`SELECT pg_notify('kanvil_events', ${clock.value.toString()})`);
+  await queueDestinations(db, rows);
   return rows;
+}
+// Queues each ticket event for the project's active destinations that carry its kind of activity.
+async function queueDestinations(db: Context["db"], rows: (typeof events.$inferSelect)[]) {
+  const ticketEvents = rows.filter((event) => event.ticketId);
+  if (!ticketEvents.length) return;
+  const targets = await db
+    .select({
+      id: projectDestinations.id,
+      projectId: projectDestinations.projectId,
+      events: projectDestinations.events,
+    })
+    .from(projectDestinations)
+    .where(
+      and(
+        inArray(projectDestinations.projectId, [...new Set(ticketEvents.map((e) => e.projectId))]),
+        eq(projectDestinations.paused, false),
+      ),
+    );
+  const queued = ticketEvents.flatMap((event) => {
+    const keys = destinationEventKeys(event);
+    return targets
+      .filter((target) => target.projectId === event.projectId)
+      .filter((target) => keys.some((key) => target.events.includes(key)))
+      .map((target) => ({ eventId: event.id, destinationId: target.id }));
+  });
+  await insertAll(queued, (batch) =>
+    db.insert(deliveries).values(batch).onConflictDoNothing().returning(),
+  );
 }
 // The preference columns `notify` needs, selected alongside a user joined as a recipient.
 export const recipientColumns = {
@@ -254,9 +296,11 @@ export const reachable = (projectId: SQLWrapper) =>
     or(
       sql`coalesce(${notificationPreferences.inApp}, true)`,
       eq(notificationPreferences.push, true),
+      sql`exists (select 1 from ${notificationChannels} where ${notificationChannels.userId} = ${user.id} and not ${notificationChannels.paused})`,
     ),
   );
-// Records each (event, recipient) once under its first enabled category and queues push delivery.
+// Records each (event, recipient) once under its first enabled category and queues delivery to the
+// recipient's push devices and to their active channels whose routes include the project.
 // `categories` replaces the event's own categories for one recipient, as a mention does.
 export async function notify(
   db: Context["db"],
@@ -285,29 +329,59 @@ export async function notify(
     })),
     (batch) => db.insert(notifications).values(batch).onConflictDoNothing().returning(),
   );
+  if (!created.length) return;
+  const userIds = [...new Set(created.map((row) => row.userId))];
   // Push is decided per (event, user), matched by key rather than by insert order.
   const pushing = new Set(
     entries
       .filter(({ recipient }) => recipient.push)
       .map(({ event, recipient }) => `${event.id}:${recipient.userId}`),
   );
-  if (!pushing.size) return;
-  const devices = await db
-    .select({ id: pushDevices.id, userId: pushDevices.userId })
-    .from(pushDevices)
+  const devices = pushing.size
+    ? await db
+        .select({ id: pushDevices.id, userId: pushDevices.userId })
+        .from(pushDevices)
+        .where(inArray(pushDevices.userId, userIds))
+    : [];
+  const channels = await db
+    .select({
+      id: notificationChannels.id,
+      userId: notificationChannels.userId,
+      routes: notificationChannels.routes,
+    })
+    .from(notificationChannels)
     .where(
-      inArray(pushDevices.userId, [
-        ...new Set(entries.filter((e) => e.recipient.push).map((e) => e.recipient.userId)),
-      ]),
+      and(inArray(notificationChannels.userId, userIds), eq(notificationChannels.paused, false)),
     );
-  const deliveries = created.flatMap((notification) =>
-    pushing.has(`${notification.eventId}:${notification.userId}`)
+  const workspaceOf = new Map(
+    channels.length
+      ? (
+          await db
+            .select({ id: projects.id, workspaceId: projects.workspaceId })
+            .from(projects)
+            .where(inArray(projects.id, [...new Set(created.map((row) => row.projectId))]))
+        ).map((row) => [row.id, row.workspaceId])
+      : [],
+  );
+  const queued = created.flatMap((notification) => [
+    ...(pushing.has(`${notification.eventId}:${notification.userId}`)
       ? devices
           .filter((device) => device.userId === notification.userId)
           .map((device) => ({ notificationId: notification.id, deviceId: device.id }))
-      : [],
-  );
-  await insertAll(deliveries, (batch) => db.insert(pushDeliveries).values(batch).returning());
+      : []),
+    ...channels
+      .filter(
+        (channel) =>
+          channel.userId === notification.userId &&
+          channelRouteAllows(
+            channel.routes,
+            workspaceOf.get(notification.projectId),
+            notification.projectId,
+          ),
+      )
+      .map((channel) => ({ notificationId: notification.id, channelId: channel.id })),
+  ]);
+  await insertAll(queued, (batch) => db.insert(deliveries).values(batch).returning());
 }
 // Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
 export async function publishMany(ctx: Context, pending: PendingEvent[]) {
@@ -428,13 +502,14 @@ export async function assertWorkerClaim(
 
 export function createDomain(
   database: Database,
-  services: { blobs?: BlobWriter; search?: TicketSearchProvider } = {},
+  services: { blobs?: BlobWriter; search?: TicketSearchProvider; secrets?: Sealer } = {},
 ) {
   const handlers: Handlers = {
     ...workspaceHandlers,
     ...projectHandlers,
     ...ticketHandlers,
     ...collaborationHandlers,
+    ...deliveryHandlers,
   };
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([
@@ -462,6 +537,7 @@ export function createDomain(
     const invoke = async (ctx: Context) => {
       if (services.blobs) ctx.blobs = services.blobs;
       if (services.search) ctx.search = services.search;
+      if (services.secrets) ctx.secrets = services.secrets;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));
