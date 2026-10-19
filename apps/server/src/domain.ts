@@ -57,6 +57,7 @@ import { calendarHandlers } from "./calendar-operations.ts";
 import { invitationHandlers } from "./invitation-operations.ts";
 import { workflowHandlers } from "./workflow-operations.ts";
 import { publicHandlers } from "./public-operations.ts";
+import { customFieldHandlers } from "./custom-field-operations.ts";
 
 export interface Actor {
   id: string;
@@ -541,6 +542,7 @@ export function createDomain(
     ...calendarHandlers,
     ...invitationHandlers,
     ...workflowHandlers,
+    ...customFieldHandlers,
   };
   // Operations that act for the person signed in, never for a credential.
   const sessionOnly: ReadonlySet<Operation> = new Set(["get_invitation", "accept_invitation"]);

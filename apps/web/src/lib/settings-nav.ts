@@ -6,6 +6,7 @@ import {
   KeyRound,
   Network,
   Palette,
+  Rows3,
   Search,
   Settings2,
   ShieldCheck,
@@ -40,6 +41,7 @@ const workspace: Sections<typeof workspaceSections> = {
 const project: Sections<typeof projectSections> = {
   ...workspace,
   workflow: { label: "Workflow", icon: Workflow },
+  fields: { label: "Fields", icon: Rows3 },
   integrations: { label: "Integrations", icon: Webhook },
   calendar: { label: "Calendar feeds", icon: CalendarSync },
 };

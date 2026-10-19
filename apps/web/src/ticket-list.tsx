@@ -37,6 +37,7 @@ import {
   dueFilterLabels,
   states,
   stateLabels,
+  type CustomField,
   type Ticket,
   type Project,
   type Output,
@@ -71,6 +72,8 @@ import { TicketTags } from "./components/ticket-tags.tsx";
 import { TicketListControls } from "./components/ticket-list-controls.tsx";
 import { TicketSelectionToolbar } from "./components/ticket-selection-toolbar.tsx";
 import {
+  CustomFieldProperty,
+  FieldValue,
   PropertyValue,
   TicketProperty,
   pair,
@@ -78,6 +81,7 @@ import {
   propertyChange,
   stateValue,
   statusValue,
+  useCustomFields,
   useTicketChange,
   useWorkflow,
   type PropertyName,
@@ -108,6 +112,7 @@ import {
   filterIdentity,
   matchesFilter,
   ticketColumnLabels,
+  customFieldColumn,
   type TicketGrouping,
   type TicketSearch,
 } from "./search.ts";
@@ -334,18 +339,46 @@ const columns: ColumnDef<typeof features, Ticket>[] = [
       />
     ),
   },
-  ...(["createdAt", "updatedAt"] as const).map(
-    (key) =>
-      ({
-        accessorKey: key,
-        header: ticketColumnLabels[key],
-        size: 130,
-        cell: ({ row }) => (
-          <RelativeTime value={row.original[key]} className="text-muted-foreground" />
-        ),
-      }) satisfies ColumnDef<typeof features, Ticket>,
-  ),
 ];
+const timeColumns = (["createdAt", "updatedAt"] as const).map(
+  (key) =>
+    ({
+      accessorKey: key,
+      header: ticketColumnLabels[key],
+      size: 130,
+      cell: ({ row }) => (
+        <RelativeTime value={row.original[key]} className="text-muted-foreground" />
+      ),
+    }) satisfies ColumnDef<typeof features, Ticket>,
+);
+// A project's custom field as a column; writers edit it inline like the built-in properties.
+function CustomFieldCell({ ticket, field }: { ticket: Ticket; field: CustomField }) {
+  const access = useProjectAccess(ticket.projectId),
+    { change, pending } = useTicketChange(ticket),
+    value = ticket.customFields[field.id];
+  if (!access.canWrite)
+    return value === undefined ? null : <FieldValue field={field} value={value} />;
+  return (
+    <CustomFieldProperty
+      variant="cell"
+      field={field}
+      value={value}
+      disabled={pending}
+      onChange={(next) => void change({ customFields: { [field.id]: next } })}
+    />
+  );
+}
+const fieldColumn = (field: CustomField): ColumnDef<typeof features, Ticket> => ({
+  id: customFieldColumn(field.id),
+  header: () => (
+    <span className="block truncate px-3 text-[10.5px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+      {field.name}
+    </span>
+  ),
+  size: 140,
+  minSize: 90,
+  cell: ({ row }) => <CustomFieldCell ticket={row.original} field={field} />,
+});
 // Columns whose header sorts the list; the sort key is the server's, not the column's.
 const sortBy: Partial<Record<string, TicketSearch["sort"]>> = {
   key: "number",
@@ -675,14 +708,25 @@ export function TicketList({
     isDefault = currentFilters === filterIdentity({});
   const activeView = views.data?.find((view) => filterIdentity(view.filters) === currentFilters);
   const viewLabel = activeView?.name ?? (isDefault ? "All tickets" : "Custom view");
+  const fields = useCustomFields(project?.id);
   const table = useTable({
     features,
-    columns,
+    columns: [...columns, ...(fields.data ?? []).map(fieldColumn), ...timeColumns],
     data: tickets.data?.items ?? [],
     getRowId: (row) => row.id,
     columnResizeMode: "onChange",
     enableRowSelection: canWrite,
-    state: { columnVisibility: { ...visibility, title: true, select: canWrite } },
+    // Field columns start hidden, like the less common built-in ones.
+    state: {
+      columnVisibility: {
+        ...Object.fromEntries(
+          (fields.data ?? []).map((field) => [customFieldColumn(field.id), false]),
+        ),
+        ...visibility,
+        title: true,
+        select: canWrite,
+      },
+    },
     onColumnVisibilityChange: (change) =>
       setVisibility(typeof change === "function" ? change(visibility) : change),
   });
@@ -1438,7 +1482,7 @@ export function TicketList({
                               <Button
                                 variant="ghost"
                                 className="resizer absolute top-2 right-0 bottom-2 h-auto w-2 min-w-0 cursor-col-resize touch-none rounded-none border-r bg-transparent p-0 hover:border-primary hover:bg-transparent"
-                                aria-label={`Resize ${header.id} column`}
+                                aria-label={`Resize ${fields.data?.find((field) => customFieldColumn(field.id) === header.id)?.name ?? header.id} column`}
                                 onMouseDown={header.getResizeHandler()}
                                 onTouchStart={header.getResizeHandler()}
                                 onKeyDown={(event) => {

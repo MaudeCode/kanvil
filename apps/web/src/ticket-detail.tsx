@@ -44,6 +44,7 @@ import { Relations } from "./relations.tsx";
 import { Discussion } from "./discussion.tsx";
 import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import {
+  CustomFieldProperties,
   PropertyValue,
   TagsProperty,
   TicketProperty,
@@ -440,6 +441,13 @@ export function TicketDetail({
                 onChange={(scopes) => void change({ scopes })}
               />
             )}
+            <CustomFieldProperties
+              variant="row"
+              projectId={projectId}
+              values={ticket.customFields}
+              disabled={!editable}
+              onChange={(fieldId, value) => void change({ customFields: { [fieldId]: value } })}
+            />
             <dl className="mt-4 grid grid-cols-[80px_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-t pt-4 text-xs [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:wrap-anywhere [&_dt]:text-muted-foreground">
               <dt>Created</dt>
               <dd>

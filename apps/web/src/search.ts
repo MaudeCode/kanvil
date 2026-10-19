@@ -95,6 +95,9 @@ export const ticketColumnLabels = {
   updatedAt: "Updated",
 };
 
+// A custom field's list column; its visibility is kept with the built-in columns.
+export const customFieldColumn = (fieldId: string) => `field:${fieldId}`;
+
 export const accountSections = [
   "account",
   "appearance",
@@ -127,6 +130,7 @@ export const projectSections = [
   "members",
   "workflow",
   "labels",
+  "fields",
   "integrations",
   "calendar",
 ] as const;

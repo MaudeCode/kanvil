@@ -1,4 +1,4 @@
-import { formatTimestamp, priorityLabels } from "@kanvil/contracts";
+import { formatCustomFieldValue, formatTimestamp, priorityLabels } from "@kanvil/contracts";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useLayoutEffect, useState } from "react";
 import { Alert, Share, Text, View } from "react-native";
@@ -46,6 +46,7 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
     { projectId, ticketId } = route.params,
     color = usePalette();
   const result = useQuery(api.query("get_ticket", { projectId, ticketId }));
+  const fields = useQuery(api.query("list_custom_fields", { projectId }));
   const update = useOperation("update_ticket"),
     subscribe = useOperation("set_subscription"),
     release = useOperation("release_claim"),
@@ -63,6 +64,8 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
   if (result.isPending) return <Loading />;
   if (!result.data) return <ErrorNotice error={result.error} />;
   const { ticket, readiness, claim, canReleaseClaim, subscribed } = result.data;
+  // Custom field values read on the phone; editing them stays on the web for now.
+  const valued = (fields.data ?? []).filter((field) => ticket.customFields[field.id] !== undefined);
   return (
     <Screen>
       <View style={styles.actions}>
@@ -126,6 +129,15 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       <Section title="Acceptance criteria">
         <Markdown>{ticket.acceptanceCriteria || "_No acceptance criteria_"}</Markdown>
       </Section>
+      {valued.length > 0 && (
+        <Section title="Fields">
+          {valued.map((field) => (
+            <Body key={field.id} small>
+              {field.name}: {formatCustomFieldValue(field, ticket.customFields[field.id])}
+            </Body>
+          ))}
+        </Section>
+      )}
       <Section title="Agent readiness">
         <Body>{readiness.ready ? "Ready to claim" : "Not ready to claim"}</Body>
         {readiness.reasons.map((item, index) => (

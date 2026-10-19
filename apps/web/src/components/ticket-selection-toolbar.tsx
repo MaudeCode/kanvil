@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Archive, ArchiveRestore, Ellipsis, ListTodo, Trash2, X } from "lucide-react";
+import { Archive, ArchiveRestore, Ellipsis, ListTodo, Rows3, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { type Ticket } from "@kanvil/contracts";
 import { useOperation, useProjectAccess } from "../data.tsx";
 import { IconButton, Confirm, reportError } from "../ui.tsx";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import {
   DropdownMenu,
@@ -14,8 +16,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  CustomFieldProperty,
   TagsProperty,
   TicketProperty,
+  useCustomFields,
   propertyChange,
   propertyIcons,
   propertyLabels,
@@ -60,6 +64,7 @@ export function TicketSelectionToolbar({
     [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const projectId = selected[0]?.projectId;
   const access = useProjectAccess(projectId ?? "", !!projectId);
+  const fields = useCustomFields(projectId);
   if (!projectId) return null;
   const tickets = selected.map((ticket) => ({
     ticketId: ticket.id,
@@ -164,6 +169,37 @@ export function TicketSelectionToolbar({
           textClassName={wideText}
           onChange={(date) => apply({ dueAt: date ? endOfDay(date) : null }, "Due date")}
         />
+        {!!fields.data?.length && (
+          <Popover>
+            <PopoverTrigger
+              disabled={busy}
+              render={<Button variant="ghost" size="sm" className="h-7 px-2" aria-label="Fields" />}
+            >
+              <Rows3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              <span className={wideText}>Fields</span>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] gap-1 p-2">
+              {fields.data.map((field) => {
+                const { value, mixed } = shared(
+                  selected,
+                  (ticket) => ticket.customFields[field.id] ?? null,
+                );
+                return (
+                  <CustomFieldProperty
+                    key={field.id}
+                    variant="row"
+                    field={field}
+                    value={value}
+                    mixed={mixed}
+                    disabled={busy}
+                    align="end"
+                    onChange={(next) => apply({ customFields: { [field.id]: next } }, field.name)}
+                  />
+                );
+              })}
+            </PopoverContent>
+          </Popover>
+        )}
         <Separator orientation="vertical" className="hidden h-5! sm:block" />
         {/* One slot for collection actions keeps the dock at two rows on a phone. */}
         <DropdownMenu>

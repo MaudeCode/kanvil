@@ -20,6 +20,7 @@ export function DatePicker({
   placeholder = "Choose a date",
   mixed = false,
   disabled = false,
+  className,
   textClassName,
 }: {
   label: string;
@@ -31,6 +32,8 @@ export function DatePicker({
   // The selection's dates differ (pass a null value): clearing stays available.
   mixed?: boolean;
   disabled?: boolean;
+  // Styles the trigger, e.g. to fit a list cell.
+  className?: string | undefined;
   // Styles the trigger's text, e.g. to leave only the icon on narrow toolbars.
   textClassName?: string;
 }) {
@@ -52,13 +55,16 @@ export function DatePicker({
                 "h-7 max-w-64 min-w-0 border border-transparent px-2 hover:border-border",
               variant === "row" && "h-7 w-full px-2",
               !value && variant !== "field" && "text-muted-foreground",
+              className,
             )}
           />
         }
         aria-label={label}
       >
         <CalendarDays className={cn(variant !== "field" && "size-3.5 text-muted-foreground")} />
-        <span className={textClassName}>{value ? dayFormat.format(value) : placeholder}</span>
+        {(value || placeholder) && (
+          <span className={textClassName}>{value ? dayFormat.format(value) : placeholder}</span>
+        )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0">
         <DateCalendar

@@ -209,6 +209,55 @@ describe("HTTP, realtime, and MCP", () => {
         .items.map((item) => item.key),
     ).toEqual([third.key, first.key, second.key]);
   });
+  it("defines typed custom fields and validates, stores, and filters ticket values over HTTP", async () => {
+    const project = await newProject();
+    const post = (path: string, body: unknown) =>
+      request(`/api/v1/projects/${project.id}${path}`, {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify(body),
+      });
+    const defined = await post("/custom-fields", {
+      name: "Severity",
+      type: "select",
+      options: [{ name: "High" }, { name: "Low" }],
+      required: true,
+    });
+    expect(defined.status).toBe(200);
+    const field = z
+      .object({ id: z.string(), options: z.array(z.object({ id: z.string() })) })
+      .parse(await defined.json());
+    const [high, low] = field.options;
+    const missing = await post("/tickets", { title: "No severity" });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toMatchObject({
+      error: { code: "validation_error", details: [{ path: `customFields.${field.id}` }] },
+    });
+    expect(
+      (await post("/tickets", { title: "Wrong type", customFields: { [field.id]: 3 } })).status,
+    ).toBe(400);
+    const created = await post("/tickets", {
+      title: "Severe",
+      customFields: { [field.id]: high?.id },
+    });
+    expect(created.status).toBe(200);
+    const ticket = ticketSchema.parse(await created.json());
+    expect(ticket.customFields).toEqual({ [field.id]: high?.id });
+    const matching = async (option: string | undefined) =>
+      z
+        .object({ items: z.array(ticketSchema) })
+        .parse(
+          await (
+            await request(
+              `/api/v1/projects/${project.id}/tickets?customField=${field.id}:${option}`,
+              { headers: sessionHeaders() },
+            )
+          ).json(),
+        )
+        .items.map((item) => item.id);
+    expect(await matching(high?.id)).toEqual([ticket.id]);
+    expect(await matching(low?.id)).toEqual([]);
+  });
   it("evaluates repeated filter parameters over HTTP", async () => {
     const project = await newProject(),
       api = client(),
