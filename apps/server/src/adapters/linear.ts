@@ -7,12 +7,12 @@ import {
   byStatus,
   category,
   dueAt,
-  hexOrGray,
   isoTime,
   kindOf,
   readSource,
   readable,
   sourceTicket,
+  toneOf,
   type Outcome,
   type SourceHttp,
 } from "./source-bundle.ts";
@@ -199,7 +199,7 @@ export function createLinearReader(http: SourceHttp, url: string) {
       const found = await pages(
         async (after) => (await query(token, teams, teamsQuery, { after })).teams,
       );
-      return found.map((item) => ({ ref: item.id, key: item.key, name: item.name }));
+      return found.map((item) => ({ ref: item.id, key: item.key, name: item.name, group: "" }));
     },
     async bundle(token: string, teamId: string, includeComments: boolean) {
       const source = (await query(token, team, teamQuery, { team: teamId })).team;
@@ -208,7 +208,7 @@ export function createLinearReader(http: SourceHttp, url: string) {
         ref: state.id,
         name: out.clip(state.name.trim(), 40),
         category: category(state.name, linearCategory[state.type] ?? "todo"),
-        color: hexOrGray(state.color),
+        color: toneOf(state.color),
       }));
       const read = await pages(
         async (after) =>

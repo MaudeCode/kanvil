@@ -1602,36 +1602,41 @@ const importInput = z.object({ workspaceId: z.uuid(), importId: z.uuid() });
 // Trackers an import reads directly. The server reads the source with the credentials of one
 // request, only ever reading, and stages what it read like a `kanvil.tickets` bundle. Credentials
 // are never stored or returned.
-export const importProviders = ["linear", "jira"] as const;
+export const importProviders = ["linear", "jira", "trello", "plane", "planka", "kaneo"] as const;
 export type ImportProvider = (typeof importProviders)[number];
+// The product names stay as they are; what a provider calls a project and how to set it up read in
+// the interface language.
+const importProvider = (provider: ImportProvider, label: string) => ({
+  label,
+  get project() {
+    return t(`common.importProvider.${provider}.project`);
+  },
+  get setup() {
+    return t(`common.importProvider.${provider}.setup`);
+  },
+});
 export const importProviderDefinitions: Record<
   ImportProvider,
   { label: string; readonly project: string; readonly setup: string }
 > = {
-  linear: {
-    label: "Linear",
-    get project() {
-      return t("common.importProvider.linear.project");
-    },
-    get setup() {
-      return t("common.importProvider.linear.setup");
-    },
-  },
-  jira: {
-    label: "Jira",
-    get project() {
-      return t("common.importProvider.jira.project");
-    },
-    get setup() {
-      return t("common.importProvider.jira.setup");
-    },
-  },
+  linear: importProvider("linear", "Linear"),
+  jira: importProvider("jira", "Jira"),
+  trello: importProvider("trello", "Trello"),
+  plane: importProvider("plane", "Plane"),
+  planka: importProvider("planka", "PLANKA"),
+  kaneo: importProvider("kaneo", "Kaneo"),
 };
 export const jiraEditions = ["cloud", "data_center"] as const;
 export const jiraEditionLabels = labelTable(jiraEditions, (edition) =>
   t(`common.jiraEdition.${edition}`),
 );
+export const plankaSignIns = ["password", "api_key"] as const;
+export const plankaSignInLabels = labelTable(plankaSignIns, (signIn) =>
+  t(`common.plankaSignIn.${signIn}`),
+);
 const sourceToken = z.string().trim().min(1).max(2000);
+// Fields that hold a credential; receipts and logs never see them.
+export const importSecretFields = ["token", "apiKey", "password"] as const;
 export const importSourceSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("linear"), token: sourceToken }).strict(),
   z
@@ -1648,13 +1653,52 @@ export const importSourceSchema = z.discriminatedUnion("provider", [
       message: "Jira Cloud needs the account email",
       path: ["email"],
     }),
+  z.object({ provider: z.literal("trello"), apiKey: sourceToken, token: sourceToken }).strict(),
+  z
+    .object({
+      provider: z.literal("plane"),
+      baseUrl: repositoryBaseUrl,
+      workspace: z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .regex(/^[\w-]+$/, "Use the workspace slug from its web address"),
+      token: sourceToken,
+    })
+    .strict(),
+  z
+    .object({
+      provider: z.literal("planka"),
+      baseUrl: repositoryBaseUrl,
+      signIn: z.enum(plankaSignIns),
+      // Password sign-in: the account's username or email and its password.
+      username: z.string().trim().max(256).default(""),
+      password: z.string().max(2000).default(""),
+      // API key sign-in.
+      token: z.string().trim().max(2000).default(""),
+    })
+    .strict()
+    .refine(
+      (source) =>
+        source.signIn === "api_key"
+          ? source.token !== ""
+          : source.username !== "" && source.password !== "",
+      { message: "PLANKA needs a username and password, or an API key" },
+    ),
+  z
+    .object({ provider: z.literal("kaneo"), baseUrl: repositoryBaseUrl, token: sourceToken })
+    .strict(),
 ]);
 export type ImportSource = z.output<typeof importSourceSchema>;
-// A Linear team or a Jira project the credentials can read.
+// A Linear team, a Jira or Plane project, a Trello or PLANKA board, or a Kaneo project the
+// credentials can read. `group` names what holds it when the source nests them, such as a PLANKA
+// project or a Kaneo workspace.
 export const importSourceProjectSchema = z.object({
   ref: z.string(),
   key: z.string(),
   name: z.string(),
+  group: z.string().default(""),
 });
 export type ImportSourceProject = z.output<typeof importSourceProjectSchema>;
 export const page = <T extends z.ZodType>(item: T) =>
@@ -2200,7 +2244,7 @@ export const operations = {
     "POST",
     "/workspaces/{workspaceId}/import-sources/projects",
     "write",
-    "Connect to Linear or a Jira site with the given credentials and list the teams or projects they can read, for `preview_source_import`. Only reads the source and writes nothing; the credentials serve this request alone. Signed-in accounts only.",
+    "Connect to Linear, Jira, Trello, Plane, PLANKA, or Kaneo with the given credentials and list the teams, projects, or boards they can read, for `preview_source_import`. Only reads the source and writes nothing; the credentials serve this request alone. Signed-in accounts only.",
   ),
   preview_source_import: op(
     z
@@ -2220,7 +2264,7 @@ export const operations = {
     "POST",
     "/workspaces/{workspaceId}/imports/source",
     "write",
-    "Read a Linear team or Jira project with the given credentials, translate it into a `kanvil.tickets` bundle, and stage it like `preview_import`: workflow, issues with parents, priorities, labels, assignees, relationships, and optionally comments. What the source holds that Kanvil cannot, such as cycles, estimates, and milestones, is listed among the warnings. Only reads the source, before the write; the credentials serve this request alone and are never stored, and a retry with the same `requestId` returns the staged run without reading the source again. Start the run with `start_import`. Signed-in accounts only.",
+    "Read a Linear team, a Jira, Plane, or Kaneo project, or a Trello or PLANKA board with the given credentials, translate it into a `kanvil.tickets` bundle, and stage it like `preview_import`: workflow, issues with parents, priorities, labels, assignees, dates, checklists, relationships, and optionally comments. What the source holds that Kanvil cannot, such as cycles, estimates, and attachments, is listed among the warnings. Only reads the source, before the write; the credentials serve this request alone and are never stored, and a retry with the same `requestId` returns the staged run without reading the source again. Start the run with `start_import`. Signed-in accounts only.",
   ),
   list_imports: op(
     z.object({ workspaceId: z.uuid() }),

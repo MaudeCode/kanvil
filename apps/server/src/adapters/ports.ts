@@ -64,7 +64,7 @@ export type WakeupBusFactory = (
 // Outbound delivery transports. The outbox owns retries, authorization, and health.
 export interface OutboundRequest {
   // POST unless set.
-  method?: "GET" | "POST" | "PATCH" | "PUT";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   url: string;
   headers?: Record<string, string> | undefined;
   body: string;

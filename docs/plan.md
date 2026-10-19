@@ -53,7 +53,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 - Parent/child relationships, blockers, related tickets, and duplicate references.
 - Comments, activity history, subscriptions, duplication, archiving, and deletion behavior.
 - Versioned JSON export of a project's tickets and a previewed import into a new project that resumes after interruption without duplicates and notifies no one.
-- Read-only Linear and Jira (Cloud and Data Center) import sources that translate a team or project into the same bundle and disclose what Kanvil cannot hold.
+- Read-only Linear, Jira (Cloud and Data Center), Trello, Plane, PLANKA, and Kaneo import sources that translate a team, project, or board into the same bundle and disclose what Kanvil cannot hold.
 - Workspace search across projects, tickets, comments, and activity with a results page; any-of and none-of property filters shared by lists, search, and saved views; sorting, pagination, and bulk edits.
 - Optimistic concurrency checks that prevent silent overwrites.
 - Idempotent writes that remain safe when a client retries a request.

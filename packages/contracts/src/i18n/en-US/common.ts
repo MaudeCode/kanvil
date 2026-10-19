@@ -176,6 +176,29 @@ export default {
       setup:
         "Jira Cloud signs in with your account email and an API token from id.atlassian.com; Data Center and Server use a personal access token. Browse access to the project is enough.",
     },
+    trello: {
+      project: "Board",
+      setup:
+        "Use the API key of a Power-Up you administer at trello.com/power-ups/admin and a token generated for it; read access is enough.",
+    },
+    plane: {
+      project: "Project",
+      setup:
+        "Create a personal access token under Profile settings › Personal access tokens in Plane. Plane Cloud's API address is https://api.plane.so; the workspace slug is the first part of its web address.",
+    },
+    planka: {
+      project: "Board",
+      setup:
+        "Sign in with a PLANKA account that can open the board; the session Kanvil opens ends when the read does. PLANKA 2 administrators can issue API keys instead.",
+    },
+    kaneo: {
+      project: "Project",
+      setup: "Create an API key under Settings › Account › Developer in Kaneo.",
+    },
+  },
+  plankaSignIn: {
+    password: "Username and password",
+    api_key: "API key",
   },
   jiraEdition: {
     cloud: "Cloud",

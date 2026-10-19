@@ -40,7 +40,7 @@ export const defaultAdapters: RuntimeAdapters = {
     gitea: createGiteaDriver(),
     gitlab: createGitLabDriver(),
   }),
-  // A Jira site is the importer's own address, so private networks stay closed unless the operator
+  // A Jira, Plane, PLANKA, or Kaneo site is the importer's own address, so private networks stay closed unless the operator
   // opens them for deliveries too. Source pages are larger than delivery answers.
   importSources: (config) =>
     createImportSources(
@@ -49,6 +49,6 @@ export const defaultAdapters: RuntimeAdapters = {
         timeout: 30_000,
         responseLimit: 16_777_216,
       }),
-      config.KANVIL_LINEAR_API_URL,
+      { linear: config.KANVIL_LINEAR_API_URL, trello: config.KANVIL_TRELLO_API_URL },
     ),
 };

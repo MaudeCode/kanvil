@@ -40,6 +40,7 @@
     "mdast-util-from-markdown": "2.1.0",
     "nodemailer": "10.1.2",
     "pg": "8.23.1",
+    "turndown": "7.2.4",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -48,6 +49,7 @@
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/s3rver": "3.7.4",
+    "@types/turndown": "5.0.6",
     "auth": "1.7.8",
     "drizzle-kit": "0.31.11",
     "s3rver": "3.7.1"

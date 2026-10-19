@@ -7,14 +7,23 @@ import { processImports } from "./import-operations.ts";
 import { createImportSources } from "./adapters/import-sources.ts";
 import { createHttpSender } from "./adapters/outbound.ts";
 import { comments, importRecords, importRuns, receipts, relations, tickets } from "./schema.ts";
-import { sourceOwnerEmail, startImportSources } from "./import-source-fixture.ts";
+import { fakeCredentials, sourceOwnerEmail, startImportSources } from "./import-source-fixture.ts";
 
 const prefix = (letter: string) =>
   `${letter}${crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
 const linearToken = "lin_api_fixture_secret_0123456789";
 const jiraToken = "jira-fixture-secret-0123456789";
 
-describe("imports from Linear and Jira", () => {
+// The preview's warnings, by their start.
+const warns = (staged: Output<"preview_source_import">, ...starts: string[]) => {
+  const messages = staged.issues.map((issue) => issue.message);
+  for (const start of starts)
+    expect(
+      messages.some((message) => message.startsWith(start)),
+      start,
+    ).toBe(true);
+};
+describe("imports from other trackers", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
     source: Awaited<ReturnType<typeof startImportSources>>,
     domain: Domain,
@@ -29,11 +38,33 @@ describe("imports from Linear and Jira", () => {
     email: edition === "cloud" ? "owner@example.test" : "",
     token: jiraToken,
   });
+  const trello: ImportSource = { provider: "trello", ...fakeCredentials.trello };
+  const plane = (): ImportSource => ({
+    provider: "plane",
+    baseUrl: source.planeUrl,
+    workspace: "acme",
+    token: fakeCredentials.plane,
+  });
+  const planka = (signIn: "password" | "api_key" = "password"): ImportSource => ({
+    provider: "planka",
+    baseUrl: source.plankaUrl,
+    signIn,
+    username: signIn === "password" ? fakeCredentials.planka.username : "",
+    password: signIn === "password" ? fakeCredentials.planka.password : "",
+    token: signIn === "api_key" ? fakeCredentials.planka.apiKey : "",
+  });
+  const kaneo = (): ImportSource => ({
+    provider: "kaneo",
+    baseUrl: source.kaneoUrl,
+    token: fakeCredentials.kaneo,
+  });
+  const list = (from: ImportSource) =>
+    domain.execute("list_import_source_projects", { workspaceId, source: from }, owner);
   beforeAll(async () => {
     fixture = await createFixture();
     source = await startImportSources();
     domain = createDomain(fixture.database, {
-      sources: createImportSources(createHttpSender({ allowPrivate: true }), source.linearUrl),
+      sources: createImportSources(createHttpSender({ allowPrivate: true }), source.urls),
     });
     const people = await Promise.all(
       [
@@ -120,7 +151,7 @@ describe("imports from Linear and Jira", () => {
       states: await domain.execute("list_workflow_states", { projectId }, owner),
     };
   };
-  // Every source request was a read.
+  // Every source request was a read; a PLANKA password signs in and out around them.
   const readOnly = () => {
     expect(source.requests.length).toBeGreaterThan(0);
     for (const request of source.requests)
@@ -128,7 +159,10 @@ describe("imports from Linear and Jira", () => {
         expect(request.method).toBe("POST");
         expect(request.body).toMatch(/^\{"query":"query /);
         expect(request.body).not.toMatch(/mutation/i);
-      } else expect(request.method).toBe("GET");
+      } else if (request.path === "/planka/api/access-tokens") expect(request.method).toBe("POST");
+      else if (request.path === "/planka/api/access-tokens/me")
+        expect(request.method).toBe("DELETE");
+      else expect(request.method).toBe("GET");
   };
   // The credentials reach the source and nothing Kanvil stores or answers.
   const leaves = async (secret: string, answer: unknown) => {
@@ -148,9 +182,9 @@ describe("imports from Linear and Jira", () => {
     expect(
       await domain.execute("list_import_source_projects", { workspaceId, source: linear }, owner),
     ).toEqual([
-      { ref: "lin-team", key: "ENG", name: "Engineering" },
-      { ref: "lin-team-2", key: "DES", name: "Design" },
-      { ref: "lin-team-3", key: "OPS", name: "Operations" },
+      { ref: "lin-team", key: "ENG", name: "Engineering", group: "" },
+      { ref: "lin-team-2", key: "DES", name: "Design", group: "" },
+      { ref: "lin-team-3", key: "OPS", name: "Operations", group: "" },
     ]);
     expect(source.requests.every((request) => request.authorization === linearToken)).toBe(true);
     for (const edition of ["cloud", "data_center"] as const) {
@@ -422,7 +456,7 @@ describe("imports from Linear and Jira", () => {
 
   it("keeps private addresses closed unless the operator opens them", async () => {
     const closed = createDomain(fixture.database, {
-      sources: createImportSources(createHttpSender({ allowPrivate: false }), source.linearUrl),
+      sources: createImportSources(createHttpSender({ allowPrivate: false }), source.urls),
     });
     await expect(
       closed.execute("list_import_source_projects", { workspaceId, source: jira("cloud") }, owner),
@@ -466,6 +500,487 @@ describe("imports from Linear and Jira", () => {
     expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
     expect((await imported(finished.projectId!)).rows).toHaveLength(3);
     // The run writes from its staged records; the source is never read again.
+    expect(source.requests).toHaveLength(requests);
+  });
+  it("lists Trello boards, Plane and Kaneo projects, and PLANKA boards by their project", async () => {
+    expect(await list(trello)).toEqual([
+      { ref: "tb-roadmap", key: "", name: "Roadmap", group: "" },
+      { ref: "tb-ideas", key: "", name: "Ideas", group: "" },
+    ]);
+    expect((await list(plane())).map((item) => item.key)).toEqual(["WEB", "APP", "OPS"]);
+    expect(source.requests.some((request) => request.path.includes("cursor=2%3A2%3A0"))).toBe(true);
+    expect(await list(planka())).toEqual([
+      { ref: "2002", key: "", name: "Classic", group: "Marketing" },
+      { ref: "2001", key: "", name: "Campaigns", group: "Marketing" },
+    ]);
+    expect(await list(kaneo())).toEqual([
+      { ref: "kp-platform", key: "PLAT", name: "Platform", group: "Acme" },
+      { ref: "kp-docs", key: "DOCS", name: "Docs", group: "Acme" },
+    ]);
+    readOnly();
+    // Each source got its own credentials, in a header.
+    const sent = (start: string) =>
+      source.requests.filter((request) => request.path.startsWith(start));
+    expect(sent("/trello/").every((request) => request.authorization.includes(trello.token))).toBe(
+      true,
+    );
+    expect(sent("/plane/").every((request) => request.apiKey === fakeCredentials.plane)).toBe(true);
+    expect(
+      sent("/kaneo/").every((request) => request.authorization.endsWith(fakeCredentials.kaneo)),
+    ).toBe(true);
+    expect(sent("/planka/").map((request) => `${request.method} ${request.path}`)).toEqual([
+      "POST /planka/api/access-tokens",
+      "GET /planka/api/projects",
+      "DELETE /planka/api/access-tokens/me",
+    ]);
+    // None in an address, where proxies and logs keep it.
+    const addresses = JSON.stringify(source.requests.map((request) => request.path));
+    for (const secret of [
+      trello.token,
+      trello.apiKey,
+      fakeCredentials.plane,
+      fakeCredentials.kaneo,
+    ])
+      expect(addresses).not.toContain(secret);
+  });
+
+  it("imports a Trello board with its lists, checklists, members, and comments", async () => {
+    const staged = await preview(trello, "tb-roadmap");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({ tickets: 3, workflow: 4, labels: 3, comments: 2 });
+    warns(
+      staged,
+      "Not imported: completed due dates (1)",
+      "Not imported: attachments (2)",
+      "Not imported: custom fields (1)",
+      "Not imported: additional assignees (1)",
+    );
+    readOnly();
+    await leaves(fakeCredentials.trello.token, staged);
+    await leaves(fakeCredentials.trello.apiKey, staged);
+    const finished = await run(staged);
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const result = await imported(finished.projectId!);
+    const launch = result.byTitle("Plan the launch"),
+      copy = result.byTitle("Write the copy");
+    expect(launch).toMatchObject({
+      kind: "bug",
+      labels: ["Bug", "green_dark"],
+      priority: "none",
+      assigneeId: null,
+      description: "Launch **plan**\n\n### Steps\n\n- [x] Draft\n- [ ] Review",
+    });
+    expect(launch.startAt?.toISOString()).toBe("2026-04-01T09:00:00.000Z");
+    expect(launch.dueAt?.toISOString()).toBe("2026-05-01T17:00:00.000Z");
+    // The archived card keeps its archived list, renamed apart from the open one.
+    expect(copy).toMatchObject({ archived: true, labels: ["marketing"] });
+    expect(result.states.find((state) => state.id === copy.stateId)).toMatchObject({
+      name: "Done 2",
+      category: "done",
+    });
+    expect(result.states.map((state) => state.name)).not.toContain("Someday");
+    const labels = await domain.execute(
+      "list_project_labels",
+      { projectId: finished.projectId! },
+      owner,
+    );
+    expect(labels.find((label) => label.name === "green_dark")?.color).toBe("green");
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by Ann Trello on 2026-04-01.\n\nDrafting now",
+      "Originally by Bob Trello on 2026-04-01.\n\nCopy is ready",
+    ]);
+  });
+
+  it("pages past Trello's thousand-item cap without repeating an item", async () => {
+    const card = source.data.trello.cards[2]!.id;
+    for (let n = 0; n < 1000; n++)
+      source.data.trello.comments.push({
+        id: `6a${n.toString(16).padStart(22, "0")}`,
+        date: "2026-04-02T00:00:00.000Z",
+        data: { text: `Note ${n}`, card: { id: card } },
+        memberCreator: source.data.trello.members[0]!,
+      });
+    const staged = await preview(trello, "tb-roadmap");
+    expect(staged.counts.comments).toBe(1002);
+    expect(
+      source.requests
+        .filter((request) => request.path.includes("/actions?"))
+        .map((request) => new URLSearchParams(request.path.split("?")[1]).has("before")),
+    ).toEqual([false, true]);
+  });
+
+  it("imports a Plane project with Markdown text, relations, and cursor pages", async () => {
+    const staged = await preview(plane(), "pp-web");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({
+      tickets: 3,
+      workflow: 5,
+      labels: 2,
+      relations: 2,
+      comments: 2,
+    });
+    warns(
+      staged,
+      "Not imported: estimates (1)",
+      "Not imported: cycles (1)",
+      "Not imported: attachments (1)",
+      "Not imported: date dependencies (1)",
+      "Not imported: modules (2)",
+      "Not imported: additional assignees (1)",
+      "Not imported: archived, draft, and intake work items.",
+    );
+    readOnly();
+    expect(
+      source.requests.some((request) => request.path.includes("/work-items/?per_page=100&cursor=")),
+    ).toBe(true);
+    await leaves(fakeCredentials.plane, staged);
+    const finished = await run(staged);
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const result = await imported(finished.projectId!);
+    const home = result.byTitle("Redesign the homepage"),
+      footer = result.byTitle("Fix the footer"),
+      copy = result.byTitle("Remove the old copy");
+    expect(home).toMatchObject({
+      priority: "high",
+      labels: ["ui"],
+      assigneeId: owner.id,
+      createdBy: owner.id,
+    });
+    expect(home.description).toContain("New **hero** and a [brief](https://example.test/brief).");
+    expect(home.description).toMatch(/^-\s+Desktop$/m);
+    expect(home.startAt?.toISOString()).toBe("2026-05-01T00:00:00.000Z");
+    expect(home.dueAt?.toISOString()).toBe("2026-05-31T23:59:59.999Z");
+    expect(footer).toMatchObject({ parentId: home.id, priority: "urgent", kind: "bug" });
+    expect(result.states.find((state) => state.id === home.stateId)?.category).toBe("in_progress");
+    expect(result.states.find((state) => state.id === copy.stateId)?.category).toBe("done");
+    // Relations listed on both work items are imported once; related ones have no direction.
+    expect(
+      result.relations.map((link) => [link.type, ...[link.sourceId, link.targetId].toSorted()]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["blocks", ...[home.id, copy.id].toSorted()],
+        ["related", ...[home.id, footer.id].toSorted()],
+      ]),
+    );
+    expect(result.relations).toHaveLength(2);
+    expect(result.relations).toContainEqual(
+      expect.objectContaining({ sourceId: home.id, targetId: copy.id, type: "blocks" }),
+    );
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by owner on 2026-04-23.\n\nFirst _pass_",
+      "Originally by dev on 2026-04-24.\n\nShipped to staging",
+    ]);
+  });
+
+  it("reads Plane work items that embed their state, people, and labels", async () => {
+    source.data.plane.embedded = true;
+    const staged = await preview(plane(), "pp-web");
+    expect(staged.counts).toMatchObject({ tickets: 3, labels: 2, relations: 2, comments: 2 });
+    const result = await imported((await run(staged)).projectId!);
+    const home = result.byTitle("Redesign the homepage"),
+      footer = result.byTitle("Fix the footer");
+    expect(home).toMatchObject({ labels: ["ui"], assigneeId: owner.id, createdBy: owner.id });
+    expect(footer).toMatchObject({ parentId: home.id, labels: ["bug"] });
+    expect(result.states.find((state) => state.id === home.stateId)?.category).toBe("in_progress");
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by owner on 2026-04-23.\n\nFirst _pass_",
+      "Originally by dev on 2026-04-24.\n\nShipped to staging",
+    ]);
+  });
+
+  it("reads Plane releases before work items through their issue routes", async () => {
+    source.data.plane.legacy = true;
+    const staged = await preview(plane(), "pp-web");
+    expect(staged.counts).toMatchObject({ tickets: 3, relations: 0, comments: 2 });
+    warns(staged, "Not imported: relations.");
+    expect(source.requests.some((request) => request.path.includes("/issues/pw-1/comments/"))).toBe(
+      true,
+    );
+  });
+
+  it("imports a PLANKA 2 board and signs out again", async () => {
+    const staged = await preview(planka(), "2001");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({ tickets: 3, workflow: 2, labels: 2, comments: 2 });
+    warns(
+      staged,
+      "Not imported: deleted cards.",
+      "Not imported: attachments (1)",
+      "Not imported: stopwatches (1)",
+    );
+    readOnly();
+    expect(source.requests.at(0)?.method).toBe("POST");
+    expect(source.requests.at(-1)?.method).toBe("DELETE");
+    // Archived cards page by the time they left their list.
+    expect(
+      source.requests.some((request) => request.path.startsWith("/planka/api/lists/3003/cards")),
+    ).toBe(true);
+    await leaves(fakeCredentials.planka.password, staged);
+    await leaves(fakeCredentials.planka.session, staged);
+    const finished = await run(staged);
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const result = await imported(finished.projectId!);
+    const launch = result.byTitle("Spring launch"),
+      flyer = result.byTitle("Old flyer"),
+      retro = result.byTitle("Retro");
+    expect(launch).toMatchObject({
+      labels: ["Urgent", "lagoon-blue"],
+      assigneeId: owner.id,
+      createdBy: owner.id,
+      description: "Launch **it**\n\n### Prep\n\n- [x] Book a venue\n- [ ] Send invites",
+    });
+    expect(launch.dueAt?.toISOString()).toBe("2026-03-20T10:00:00.000Z");
+    // An archived card returns to the list it left.
+    expect(flyer).toMatchObject({ archived: true, stateId: launch.stateId });
+    expect(result.states.find((state) => state.id === retro.stateId)).toMatchObject({
+      name: "Live",
+      category: "done",
+    });
+    const labels = await domain.execute(
+      "list_project_labels",
+      { projectId: finished.projectId! },
+      owner,
+    );
+    expect(Object.fromEntries(labels.map((label) => [label.name, label.color]))).toMatchObject({
+      Urgent: "red",
+      "lagoon-blue": "blue",
+    });
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by Ann Planka on 2026-02-03.\n\nStarting",
+      "Originally by Bob Planka on 2026-02-04.\n\nVenue booked",
+    ]);
+  });
+
+  it("reads a PLANKA 1 board with an API key and keeps only comments among card actions", async () => {
+    const staged = await preview(planka("api_key"), "2002");
+    expect(staged.counts).toMatchObject({ tickets: 1, workflow: 1, comments: 1 });
+    expect(
+      source.requests.every((request) => request.apiKey === fakeCredentials.planka.apiKey),
+    ).toBe(true);
+    expect(source.requests.some((request) => request.path.includes("access-tokens"))).toBe(false);
+    readOnly();
+    const result = await imported((await run(staged)).projectId!);
+    expect(result.byTitle("Old way").description).toBe("Plain\n\n### Tasks\n\n- [ ] Check");
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by Ann Planka on 2025-01-03.\n\nClassic comment",
+    ]);
+  });
+
+  it("signs out of PLANKA when a read fails, and refuses a wrong password", async () => {
+    // The sign-in succeeds, the board read fails.
+    source.data.planka.boards = [];
+    await expect(preview(planka(), "2999")).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+    expect(source.requests.at(-1)).toMatchObject({
+      method: "DELETE",
+      path: "/planka/api/access-tokens/me",
+    });
+    source.reset();
+    const wrong: ImportSource = {
+      provider: "planka",
+      baseUrl: source.plankaUrl,
+      signIn: "password",
+      username: fakeCredentials.planka.username,
+      password: "not the password",
+      token: "",
+    };
+    await expect(preview(wrong, "2001")).rejects.toMatchObject({
+      status: 422,
+      code: "source_rejected",
+    });
+    expect(source.requests).toHaveLength(1);
+  });
+
+  it("pages archived PLANKA cards, and stops when PLANKA ignores the cursor", async () => {
+    const archived = (count: number) =>
+      Array.from({ length: count }, (_, n) => ({
+        ...source.data.planka.archived[0]!,
+        id: String(9000 + n),
+        name: `Archived ${n}`,
+        listChangedAt: new Date(Date.UTC(2026, 0, 5, 0, n)).toISOString(),
+      }));
+    source.data.planka.archived = archived(60);
+    expect((await preview(planka(), "2001")).counts.tickets).toBe(62);
+    const pages = source.requests.filter((request) =>
+      request.path.startsWith("/planka/api/lists/3003/cards"),
+    );
+    expect(pages).toHaveLength(2);
+    source.reset();
+    source.data.planka.archived = archived(60);
+    source.data.planka.ignoresCursor = true;
+    const staged = await preview(planka(), "2001");
+    expect(staged.counts.tickets).toBe(52);
+    warns(staged, "Not imported: archived cards past the first page.");
+    expect(
+      source.requests.filter((request) => request.path.startsWith("/planka/api/lists/3003/cards")),
+    ).toHaveLength(2);
+  });
+
+  it("signs in to PLANKA once, since a repeated sign-in can leave a session behind", async () => {
+    source.fail(1, 503);
+    await expect(preview(planka(), "2001")).rejects.toMatchObject({
+      status: 502,
+      code: "source_unavailable",
+    });
+    expect(source.requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      "POST /planka/api/access-tokens",
+    ]);
+  });
+
+  it("imports a Kaneo project with every task and related page, subtasks, and comments", async () => {
+    const staged = await preview(kaneo(), "kp-platform");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({
+      tickets: 4,
+      workflow: 4,
+      labels: 2,
+      relations: 1,
+      comments: 1,
+    });
+    warns(
+      staged,
+      "Not imported: external links (1)",
+      "Not imported: custom fields (1)",
+      "Not imported: time entries.",
+    );
+    readOnly();
+    const pages = source.requests
+      .filter((request) => request.path.startsWith("/kaneo/api/task/tasks/"))
+      .map((request) => {
+        const query = new URLSearchParams(request.path.split("?")[1]);
+        return `${query.get("page")}/${query.get("relatedPage")}`;
+      });
+    expect(pages).toEqual(["1/1", "1/2", "2/1", "2/2"]);
+    await leaves(fakeCredentials.kaneo, staged);
+    const finished = await run(staged);
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const result = await imported(finished.projectId!);
+    const ci = result.byTitle("Set up CI"),
+      caching = result.byTitle("Add caching"),
+      vm = result.byTitle("Retire the VM"),
+      search = result.byTitle("Explore search");
+    expect(ci).toMatchObject({
+      priority: "high",
+      kind: "bug",
+      labels: ["bug", "backend"],
+      assigneeId: owner.id,
+      description: "Run **checks**",
+    });
+    expect(ci.startAt?.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+    expect(caching).toMatchObject({ parentId: ci.id, priority: "none", assigneeId: null });
+    expect(vm).toMatchObject({ archived: true, priority: "low" });
+    expect(result.states.find((state) => state.id === vm.stateId)?.category).toBe("done");
+    // A description too long for Kaneo's list is read on its own.
+    expect(search.description).toBe("A long **description**");
+    expect(result.states.find((state) => state.id === search.stateId)).toMatchObject({
+      name: "Planned",
+      category: "backlog",
+    });
+    expect(result.relations).toEqual([
+      expect.objectContaining({ sourceId: ci.id, targetId: vm.id, type: "blocks" }),
+    ]);
+    expect(result.comments.map((comment) => comment.body)).toEqual([
+      "Originally by Dev Kaneo on 2026-05-05.\n\nPipeline is green",
+    ]);
+  });
+
+  it("reads a long Kaneo project description that its task list defers", async () => {
+    source.data.kaneo.longDescription = `Charter ${"x".repeat(70_000)}`;
+    const finished = await run(await preview(kaneo(), "kp-platform", { includeComments: false }));
+    const project = await domain.execute("get_project", { projectId: finished.projectId! }, owner);
+    expect(project.description).toBe(source.data.kaneo.longDescription.slice(0, 5000));
+  });
+
+  it("imports an empty Trello board whose lists are all archived", async () => {
+    source.data.trello.lists = source.data.trello.lists.map((entry) => ({
+      ...entry,
+      closed: true,
+    }));
+    source.data.trello.cards = [];
+    source.data.trello.checklists = [];
+    source.data.trello.comments = [];
+    const staged = await preview(trello, "tb-roadmap");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({ tickets: 0 });
+    expect((await run(staged)).status).toBe("completed");
+  });
+
+  it("keeps every source's credentials out of a retried preview's receipt", async () => {
+    const refs: Record<string, string> = {
+      trello: "tb-roadmap",
+      plane: "pp-web",
+      planka: "2001",
+      kaneo: "kp-platform",
+    };
+    for (const from of [trello, plane(), planka(), kaneo()]) {
+      const input = {
+        workspaceId,
+        key: prefix("S"),
+        name: "Retried",
+        visibility: "workspace" as const,
+        source: from,
+        sourceProject: refs[from.provider]!,
+        includeComments: false,
+        requestId: crypto.randomUUID(),
+      };
+      const first = await domain.execute("preview_source_import", input, owner);
+      const reads = source.requests.length;
+      expect((await domain.execute("preview_source_import", input, owner)).id).toBe(first.id);
+      expect(source.requests).toHaveLength(reads);
+    }
+    const stored = JSON.stringify(await fixture.database.db.select().from(receipts));
+    for (const secret of [
+      fakeCredentials.trello.token,
+      fakeCredentials.trello.apiKey,
+      fakeCredentials.plane,
+      fakeCredentials.planka.password,
+      fakeCredentials.kaneo,
+    ])
+      expect(stored).not.toContain(secret);
+  });
+
+  it("writes the staged board after the source changes, and resumes without duplicates", async () => {
+    let interrupted = false;
+    async function execute<K extends Operation>(
+      name: K,
+      value: unknown,
+      actor: Actor,
+      provenance?: { importRun: string },
+    ) {
+      const result = await domain.execute(name, value, actor, provenance);
+      if (name === "create_ticket" && !interrupted) {
+        interrupted = true;
+        throw new Error("Simulated restart");
+      }
+      return result;
+    }
+    const staged = await preview(trello, "tb-roadmap");
+    // The board changes in Trello after the preview.
+    source.data.trello.cards[0]!.name = "Renamed in Trello";
+    source.data.trello.cards.pop();
+    await domain.execute(
+      "start_import",
+      { workspaceId, importId: staged.id, expectedVersion: staged.version },
+      owner,
+    );
+    const requests = source.requests.length;
+    await expect(processImports({ ...domain, execute })).rejects.toThrow("Simulated restart");
+    while (await processImports(domain));
+    const finished = await domain.execute(
+      "get_import",
+      { workspaceId, importId: staged.id },
+      owner,
+    );
+    expect(finished).toMatchObject({ status: "completed", progress: { failed: 0 } });
+    const result = await imported(finished.projectId!);
+    expect(result.rows.map((row) => row.title).toSorted()).toEqual([
+      "Plan the launch",
+      "Ship it",
+      "Write the copy",
+    ]);
+    expect(result.comments).toHaveLength(2);
     expect(source.requests).toHaveLength(requests);
   });
 });
