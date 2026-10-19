@@ -18,19 +18,24 @@ import {
 import {
   attachments,
   claims,
+  comments,
   events,
+  evidence,
   projects,
   projectLabels,
   workspaceLabels,
   relations,
+  resources,
   stagedUploads,
   subscriptions,
+  ticketAliases,
   tickets,
 } from "./schema.ts";
 import { stagedUploadCutoff } from "./blob-storage.ts";
 import {
   assertVersion,
   assertWorkerClaim,
+  context,
   ownsLiveClaim,
   complete,
   fail,
@@ -45,10 +50,11 @@ import {
   type Handlers,
   type PendingEvent,
   one,
+  ticketMatch,
 } from "./domain.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
-import { resolveState } from "./workflow-operations.ts";
+import { projectStates, resolveState } from "./workflow-operations.ts";
 import { likePattern } from "./search.ts";
 import {
   applyCustomFieldValues,
@@ -183,33 +189,35 @@ async function projectMember(ctx: Context, userId: string) {
       .where(eq(projects.id, id)),
   ).role;
 }
+// New names register as project labels unless the workspace already defines them.
+async function registerLabels(ctx: Context, labels: readonly string[] | undefined) {
+  if (!labels?.length) return;
+  const shared = new Set(
+    (
+      await ctx.db
+        .select({ name: workspaceLabels.name })
+        .from(workspaceLabels)
+        .where(
+          and(
+            eq(workspaceLabels.workspaceId, project(ctx).workspaceId),
+            inArray(workspaceLabels.name, [...labels]),
+          ),
+        )
+    ).map((row) => row.name),
+  );
+  const own = labels.filter((name) => !shared.has(name));
+  if (own.length)
+    await ctx.db
+      .insert(projectLabels)
+      .values(own.map((name) => ({ projectId: project(ctx).id, name })))
+      .onConflictDoNothing();
+}
 async function validateReferences(
   ctx: Context,
   ticketId: string,
   changes: Pick<ParsedInput<"update_ticket">["changes"], "assigneeId" | "parentId" | "labels">,
 ) {
-  if (changes.labels?.length) {
-    // New names register as project labels unless the workspace already defines them.
-    const shared = new Set(
-      (
-        await ctx.db
-          .select({ name: workspaceLabels.name })
-          .from(workspaceLabels)
-          .where(
-            and(
-              eq(workspaceLabels.workspaceId, project(ctx).workspaceId),
-              inArray(workspaceLabels.name, changes.labels),
-            ),
-          )
-      ).map((row) => row.name),
-    );
-    const own = changes.labels.filter((name) => !shared.has(name));
-    if (own.length)
-      await ctx.db
-        .insert(projectLabels)
-        .values(own.map((name) => ({ projectId: project(ctx).id, name })))
-        .onConflictDoNothing();
-  }
+  await registerLabels(ctx, changes.labels);
   if (changes.assigneeId && !(await projectMember(ctx, changes.assigneeId)))
     fail(400, "invalid_assignee", "Assign a project member");
   if (changes.parentId) {
@@ -408,10 +416,9 @@ async function pageOf(
   return { items: rows.map(({ total: _total, ...row }) => row), total };
 }
 const copySuffix = " (copy)";
-// Inserts one ticket with the next project number and returns its event for the caller to publish.
-async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">) {
-  const id = crypto.randomUUID();
-  await validateReferences(ctx, id, input);
+// Takes the context project's next number, its key under the current prefix, and a place at the
+// end of its order. Numbers only grow, so with reserved prefixes no key is ever issued twice.
+async function allocateTicket(ctx: Context) {
   const counter = one(
     await ctx.db
       .update(projects)
@@ -419,6 +426,18 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
       .where(eq(projects.id, project(ctx).id))
       .returning(),
   );
+  const number = counter.nextNumber - 1;
+  return {
+    projectId: counter.id,
+    number,
+    key: `${counter.key}-${number}`,
+    position: endPosition(ticketPositions, eq(tickets.projectId, counter.id)),
+  };
+}
+// Inserts one ticket with the next project number and returns its event for the caller to publish.
+async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">) {
+  const id = crypto.randomUUID();
+  await validateReferences(ctx, id, input);
   const {
       projectId: _projectId,
       requestId: _requestId,
@@ -444,11 +463,8 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
         ...state,
         ...dates,
         customFields: applyCustomFieldValues(await projectCustomFields(ctx), null, customFields),
+        ...(await allocateTicket(ctx)),
         id,
-        projectId: counter.id,
-        number: counter.nextNumber - 1,
-        key: `${counter.key}-${counter.nextNumber - 1}`,
-        position: endPosition(ticketPositions, eq(tickets.projectId, counter.id)),
         createdBy: ctx.actor.id,
       })
       .returning(),
@@ -556,6 +572,94 @@ async function deleteTicketRows(
   ]);
   await ctx.db.delete(tickets).where(inArray(tickets.id, ids));
 }
+// The destination of a move, entered with its own write check, and what keeps the ticket where it
+// is. A destination the caller cannot write to reads as not found, like any unreachable project.
+async function relocation(
+  ctx: Context,
+  ticket: typeof tickets.$inferSelect,
+  destinationProjectId: string,
+) {
+  const entered = await context(ctx.db, ctx.actor, "write", destinationProjectId),
+    target: Context = { ...ctx, project: entered.project, role: entered.role },
+    destination = project(target);
+  if (destination.id === ticket.projectId)
+    fail(400, "validation_error", "Choose a different project");
+  if (destination.workspaceId !== project(ctx).workspaceId)
+    fail(400, "validation_error", "Tickets move only between projects of one workspace");
+  if (destination.archivedAt)
+    fail(409, "project_archived", "Restore the destination project before moving tickets into it");
+  // Claims, hierarchy, and relationships live within one project; the move never severs them.
+  const blockers: { code: string; message: string; ticketId?: string }[] = [];
+  const [claim] = await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id));
+  if (claim)
+    blockers.push({
+      code: "claimed",
+      message: `Claimed by ${claim.workerId}; release or recover the claim first`,
+    });
+  const [parent] = ticket.parentId
+    ? await ctx.db
+        .select({ id: tickets.id, key: tickets.key })
+        .from(tickets)
+        .where(eq(tickets.id, ticket.parentId))
+    : [];
+  if (parent)
+    blockers.push({
+      code: "parent",
+      message: `Remove it from its parent ${parent.key} first`,
+      ticketId: parent.id,
+    });
+  const [child] = await ctx.db
+    .select({ id: tickets.id, key: tickets.key })
+    .from(tickets)
+    .where(eq(tickets.parentId, ticket.id))
+    .orderBy(asc(tickets.number))
+    .limit(1);
+  if (child)
+    blockers.push({
+      code: "children",
+      message: `Move or detach its sub-tickets, such as ${child.key}, first`,
+      ticketId: child.id,
+    });
+  const [related] = await ctx.db
+    .select({ id: tickets.id, key: tickets.key })
+    .from(relations)
+    .innerJoin(
+      tickets,
+      sql`${tickets.id} = CASE WHEN ${relations.sourceId} = ${ticket.id} THEN ${relations.targetId} ELSE ${relations.sourceId} END`,
+    )
+    .where(or(eq(relations.sourceId, ticket.id), eq(relations.targetId, ticket.id)))
+    .orderBy(asc(tickets.number))
+    .limit(1);
+  if (related)
+    blockers.push({
+      code: "relations",
+      message: `Remove its relationships, such as with ${related.key}, first`,
+      ticketId: related.id,
+    });
+  if (ticket.assigneeId && !(await projectMember(target, ticket.assigneeId)))
+    blockers.push({
+      code: "assignee",
+      message: "The assignee cannot access the destination; reassign the ticket first",
+    });
+  // Custom fields belong to one project: values never carry over, and the destination's defaults
+  // must satisfy its required fields.
+  const filled = (await projectCustomFields(ctx)).filter((field) =>
+    Object.hasOwn(ticket.customFields, field.id),
+  );
+  if (filled.length)
+    blockers.push({
+      code: "custom_fields",
+      message: `Clear its custom field values first: ${filled.map((field) => field.name).join(", ")}`,
+    });
+  const fields = await projectCustomFields(target),
+    unmet = fields.filter((field) => field.required && field.defaultValue === null);
+  if (unmet.length)
+    blockers.push({
+      code: "required_fields",
+      message: `The destination requires fields without a default: ${unmet.map((field) => field.name).join(", ")}`,
+    });
+  return { target, blockers, fields };
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -566,6 +670,9 @@ export const ticketHandlers: Pick<
   | "duplicate_ticket"
   | "update_ticket"
   | "move_ticket"
+  | "check_ticket_relocation"
+  | "relocate_ticket"
+  | "resolve_ticket"
   | "bulk_update_tickets"
   | "delete_ticket"
   | "bulk_delete_tickets"
@@ -754,6 +861,87 @@ export const ticketHandlers: Pick<
     await publish(ctx, "ticket.updated", row.id, { version: row.version, changedFields });
     return row;
   },
+  async check_ticket_relocation(ctx, input) {
+    const ticket = await getTicket(ctx, input.ticketId);
+    const { target, blockers } = await relocation(ctx, ticket, input.destinationProjectId),
+      destination = project(target);
+    return {
+      destination: { id: destination.id, key: destination.key, name: destination.name },
+      states: await projectStates(target),
+      stateId: requireRow(
+        await resolveState(target, { status: z.enum(states).parse(ticket.status) }),
+      ).stateId,
+      blockers,
+    };
+  },
+  async relocate_ticket(ctx, input) {
+    const current = await getTicket(ctx, input.ticketId);
+    assertVersion(current, input.expectedVersion, "ticket", "moving");
+    await assertWorkerClaim(ctx, current);
+    const { target, blockers, fields } = await relocation(ctx, current, input.destinationProjectId);
+    if (blockers.length)
+      fail(409, "relocation_blocked", blockers.map((item) => item.message).join(". "), {
+        blockers,
+      });
+    const state = requireRow(
+      await resolveState(target, {
+        status: input.status ?? (input.stateId ? undefined : z.enum(states).parse(current.status)),
+        stateId: input.stateId,
+      }),
+    );
+    await registerLabels(target, current.labels);
+    // The source hears only that a ticket left, never where it went.
+    await publishMany(ctx, [
+      {
+        type: "ticket.moved_away",
+        ticketId: null,
+        data: { ticketId: current.id, key: current.key },
+      },
+    ]);
+    await ctx.db.insert(ticketAliases).values({ key: current.key, ticketId: current.id });
+    const row = one(
+      await ctx.db
+        .update(tickets)
+        .set({
+          ...(await allocateTicket(target)),
+          ...state,
+          customFields: applyCustomFieldValues(fields, null, {}),
+          version: current.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.id, current.id))
+        .returning(),
+    );
+    // Everything that belongs to the ticket follows it; its earlier activity stays as recorded.
+    for (const table of [comments, attachments, evidence, resources, subscriptions])
+      await ctx.db
+        .update(table)
+        .set({ projectId: row.projectId })
+        .where(eq(table.ticketId, row.id));
+    await publish(target, "ticket.moved", row.id, { from: current.key, version: row.version });
+    return row;
+  },
+  async resolve_ticket(ctx, input) {
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor);
+    const [ticket] = allowed.length
+      ? await ctx.db
+          .select()
+          .from(tickets)
+          .where(
+            and(
+              inArray(
+                tickets.projectId,
+                allowed.map((row) => row.id),
+              ),
+              ticketMatch(input.ticketId),
+            ),
+          )
+          .limit(1)
+      : [];
+    const owner = allowed.find((row) => row.id === ticket?.projectId);
+    if (!ticket || !owner) fail(404, "not_found", "Ticket was not found");
+    return { ticket, project: { id: owner.id, key: owner.key, name: owner.name } };
+  },
   async bulk_update_tickets(ctx, input) {
     const result = [],
       pending: PendingEvent[] = [];
@@ -805,16 +993,10 @@ export const ticketHandlers: Pick<
         and(
           inArray(tickets.projectId, ids),
           eq(tickets.archived, false),
-          or(
-            eq(tickets.key, input.q.toUpperCase()),
-            (await ctx.search.where(ctx.db, ids, input.q)).where,
-          ),
+          or(ticketMatch(input.q), (await ctx.search.where(ctx.db, ids, input.q)).where),
         ),
       )
-      .orderBy(
-        sql`CASE WHEN ${tickets.key} = ${input.q.toUpperCase()} THEN 0 ELSE 1 END`,
-        desc(tickets.updatedAt),
-      )
+      .orderBy(sql`CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END`, desc(tickets.updatedAt))
       .limit(input.limit);
     return {
       items: rows.flatMap((ticket) => {
@@ -858,8 +1040,8 @@ export const ticketHandlers: Pick<
               tickets.id AS ticket_id, NULL::text AS actor_id,
               concat_ws(' ', tickets.description, tickets.acceptance_criteria) AS body,
               NULL::text AS event_type, NULL::jsonb AS data, tickets.updated_at AS at,
-              CASE WHEN tickets.key = ${key} THEN 0 ELSE 1 END AS rank, 1 AS family
-            FROM tickets WHERE ${and(ticketScope, or(eq(tickets.key, key), match.where))}`,
+              CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END AS rank, 1 AS family
+            FROM tickets WHERE ${and(ticketScope, or(ticketMatch(input.q), match.where))}`,
         sql`SELECT 'comment' AS type, comments.id::text AS id, comments.project_id,
               comments.ticket_id, comments.actor_id, comments.body, NULL::text AS event_type,
               NULL::jsonb AS data, comments.created_at AS at, 1 AS rank, 2 AS family

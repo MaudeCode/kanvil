@@ -104,6 +104,18 @@ export const projects = pgTable(
   },
   (table) => [index("project_workspace").on(table.workspaceId)],
 );
+// Every prefix a project has had, its current one included. A prefix never passes to another
+// project, so every key issued under it keeps naming the same ticket (see `ticketMatch`).
+export const projectPrefixes = pgTable(
+  "project_prefixes",
+  {
+    prefix: text("prefix").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("project_prefix_project").on(table.projectId)],
+);
 export const members = pgTable(
   "project_members",
   {
@@ -260,6 +272,18 @@ export const tickets = pgTable(
       foreignColumns: [workflowStates.projectId, workflowStates.id, workflowStates.category],
     }).onUpdate("cascade"),
   ],
+);
+// Keys a ticket held in projects it moved out of. Keys under its own project's earlier prefixes
+// resolve through `project_prefixes` and the ticket number instead.
+export const ticketAliases = pgTable(
+  "ticket_aliases",
+  {
+    key: text("key").primaryKey(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("ticket_alias_ticket").on(table.ticketId)],
 );
 export const relations = pgTable(
   "ticket_relations",

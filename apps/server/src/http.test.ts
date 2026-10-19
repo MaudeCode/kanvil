@@ -265,6 +265,64 @@ describe("HTTP, realtime, and MCP", () => {
     expect(await matching(high?.id)).toEqual([ticket.id]);
     expect(await matching(low?.id)).toEqual([]);
   });
+  it("moves a ticket to another project over HTTP while old keys, prefixes, and files resolve", async () => {
+    const [source, destination] = [await newProject(), await newProject()],
+      api = client(),
+      ticket = await api.call("create_ticket", { projectId: source.id, title: "Relocated" }),
+      uploaded = await api.call("upload_attachment", {
+        projectId: source.id,
+        ticketId: ticket.id,
+        name: "diagram.bin",
+        data: Buffer.from([1, 2, 3]).toString("base64"),
+      }),
+      embedded = `/api/v1/projects/${source.id}/attachments/${uploaded.id}/content`,
+      bound = await credential(source.id);
+    const moved = await request(`/api/v1/projects/${source.key}/tickets/${ticket.key}/relocate`, {
+      method: "POST",
+      headers: sessionHeaders(),
+      body: JSON.stringify({
+        expectedVersion: ticket.version,
+        destinationProjectId: destination.id,
+      }),
+    });
+    expect(moved.status).toBe(200);
+    const relocated = ticketSchema.parse(await moved.json());
+    expect(relocated).toMatchObject({ id: ticket.id, key: `${destination.key}-1` });
+    // A file embedded in the description before the move still loads from its old address.
+    const content = await request(embedded, { headers: sessionHeaders() });
+    expect(content.status).toBe(200);
+    expect(Buffer.from(await content.arrayBuffer())).toEqual(Buffer.from([1, 2, 3]));
+    const resolved = await request(`/api/v1/tickets/resolve?ticketId=${ticket.key}`, {
+      headers: sessionHeaders(),
+    });
+    expect(resolved.status).toBe(200);
+    expect(await resolved.json()).toMatchObject({
+      ticket: { id: ticket.id, key: relocated.key },
+      project: { id: destination.id },
+    });
+    // A key bound to the source neither follows the ticket nor its file.
+    const asBound = { Authorization: `Bearer ${bound.key}` };
+    expect(
+      (await request(`/api/v1/tickets/resolve?ticketId=${ticket.key}`, { headers: asBound }))
+        .status,
+    ).toBe(404);
+    expect((await request(embedded, { headers: asBound })).status).toBe(404);
+    const renamed = await api.call("update_project", {
+      projectId: destination.id,
+      expectedVersion: destination.version,
+      name: destination.name,
+      description: destination.description,
+      key: `R${destination.key.slice(1)}`,
+    });
+    const byOldPrefix = await request(
+      `/api/v1/projects/${destination.key}/tickets/${relocated.key}`,
+      { headers: sessionHeaders() },
+    );
+    expect(byOldPrefix.status).toBe(200);
+    expect(await byOldPrefix.json()).toMatchObject({
+      ticket: { id: ticket.id, key: `${renamed.key}-1` },
+    });
+  });
   it("evaluates repeated filter parameters over HTTP", async () => {
     const project = await newProject(),
       api = client(),

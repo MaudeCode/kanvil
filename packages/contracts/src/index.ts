@@ -284,6 +284,14 @@ const oneNeighbor = (input: { before?: string | undefined; after?: string | unde
   input.before === undefined || input.after === undefined;
 const projectInput = z.object({ projectId: id });
 const ticketInput = projectInput.extend({ ticketId: id });
+// A ticket prefix. Each one a project ever had stays reserved for it, so issued keys keep resolving.
+const projectKey = z
+  .string()
+  .trim()
+  .regex(/^[A-Z][A-Z0-9]{1,9}$/);
+// Why a ticket is not ready, or cannot move; `ticketId` names the related ticket involved.
+const reason = z.object({ code: z.string(), message: z.string(), ticketId: z.uuid().optional() });
+const projectRef = z.object({ id: z.uuid(), key: z.string(), name: z.string() });
 // Filterable ticket fields. Each takes one value or a list (any of them), and its `Not` twin
 // excludes values; the filters combine with AND. A legacy single value parses to a one-item list,
 // so saved views and links keep their meaning. A new filterable field joins this catalog and gets
@@ -496,7 +504,7 @@ export const memberSchema = z.object({
 });
 // A pending invitation grants its role on the whole workspace, or only on the listed projects.
 // The token itself is never readable; create and resend return its link once.
-const invitedProject = z.object({ id: z.uuid(), key: z.string(), name: z.string() });
+const invitedProject = projectRef;
 export const invitationStatuses = ["pending", "expired", "accepted", "revoked"] as const;
 export const invitationSchema = z.object({
   id: z.uuid(),
@@ -592,9 +600,7 @@ export const snapshotSchema = z.object({
 export const checkpointSchema = z.object({ cursor: z.string().regex(/^\d+$/) });
 export const readinessSchema = z.object({
   ready: z.boolean(),
-  reasons: z.array(
-    z.object({ code: z.string(), message: z.string(), ticketId: z.uuid().optional() }),
-  ),
+  reasons: z.array(reason),
 });
 export const claimSchema = z.object({
   id: z.uuid(),
@@ -773,7 +779,7 @@ export const searchResultSchema = z.object({
   type: z.enum(searchResultTypes),
   // The stable reference: a project, ticket, or comment ID, or an event ID for activity.
   id: z.string(),
-  project: z.object({ id: z.uuid(), key: z.string(), name: z.string() }),
+  project: projectRef,
   // The ticket a result belongs to; null for projects and activity without a live ticket.
   ticket: z
     .object({ id: z.uuid(), key: z.string(), title: z.string(), status: z.enum(states) })
@@ -1068,6 +1074,8 @@ export const eventLabels: Record<string, string> = {
   "ticket.created": "Ticket created",
   "ticket.updated": "Ticket updated",
   "ticket.deleted": "Ticket deleted",
+  "ticket.moved": "Moved from another project",
+  "ticket.moved_away": "Moved to another project",
   "ticket.due_soon": "Due soon",
   "ticket.overdue": "Overdue",
   "ticket.claimed": "Work claimed",
@@ -1355,10 +1363,7 @@ export const operations = {
         ...mutation,
         workspaceId: z.uuid().optional(),
         visibility: z.enum(["workspace", "private"]).default("private"),
-        key: z
-          .string()
-          .trim()
-          .regex(/^[A-Z][A-Z0-9]{1,9}$/),
+        key: projectKey,
         name: text.max(120),
         description: z.string().max(5000).default(""),
       })
@@ -1367,7 +1372,7 @@ export const operations = {
     "POST",
     "/projects",
     "write",
-    "Create a project with a permanent ticket prefix.",
+    "Create a project with a ticket prefix that no project has used before.",
   ),
   get_project: op(
     projectInput,
@@ -1438,13 +1443,14 @@ export const operations = {
         publicReadEnabled: z.boolean().optional(),
         name: text.max(120),
         description: z.string().max(5000),
+        key: projectKey.optional(),
       })
       .strict(),
     projectSchema,
     "PATCH",
     "/projects/{projectId}",
     "admin",
-    "Update project details without changing its prefix. `publicReadEnabled` shares or stops sharing the project's read-only public view (see the public operations).",
+    "Update project details. A new `key` re-keys every ticket of the project; the previous prefix stays reserved for the project, and the project and every key issued under it keep resolving. `publicReadEnabled` shares or stops sharing the project's read-only public view (see the public operations).",
   ),
   move_project: op(
     projectInput
@@ -1825,6 +1831,47 @@ export const operations = {
     "write",
     "Place a ticket directly before or after another ticket of the project in the manual order (`sort: manual`), optionally changing its status or workflow state in the same versioned write. Only the moved ticket changes place; reorders alone notify no one.",
   ),
+  check_ticket_relocation: op(
+    ticketInput.extend({ destinationProjectId: id }).strict(),
+    z.object({
+      destination: projectRef,
+      // The destination's workflow; `stateId` is the first state of the ticket's current status.
+      states: z.array(workflowStateSchema),
+      stateId: z.uuid(),
+      // Empty when the move can proceed. Codes: claimed, parent, children, relations, assignee,
+      // custom_fields, required_fields.
+      blockers: z.array(reason),
+    }),
+    "GET",
+    "/projects/{projectId}/tickets/{ticketId}/relocation",
+    "write",
+    "Check a move to another project of the same workspace before making it: the destination's workflow states and anything that keeps the ticket where it is. Both projects require write access; a destination you cannot write to reads as not found.",
+  ),
+  relocate_ticket: op(
+    ticketInput
+      .extend({
+        ...mutation,
+        expectedVersion: version,
+        destinationProjectId: id,
+        // Without either, the ticket keeps its status in the destination's first state of it.
+        status: z.enum(states).optional(),
+        stateId: z.uuid().optional(),
+      })
+      .strict(),
+    ticketSchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/relocate",
+    "write",
+    "Move a ticket to another project of the same workspace. It keeps its ID, comments, attachments, evidence, links, and followers, takes the destination's next number as its new key, and its previous key keeps resolving. A claim, a parent or children, relationships, an assignee without destination access, custom field values, or a destination field that is required without a default block the move with `relocation_blocked`; the ticket takes the destination's custom field defaults. Activity before the move stays with the original project. Reuse requestId when retrying this write.",
+  ),
+  resolve_ticket: op(
+    z.object({ ticketId: id }).strict(),
+    z.object({ ticket: ticketSchema, project: projectRef }),
+    "GET",
+    "/tickets/resolve",
+    "read",
+    "Find a ticket by ID, current key, or any earlier key from a prefix change or a move, across every accessible project. An unknown or inaccessible ticket reads as not found.",
+  ),
   bulk_update_tickets: op(
     projectInput
       .extend({
@@ -1867,7 +1914,7 @@ export const operations = {
       items: z.array(
         z.object({
           ticket: ticketSchema,
-          project: z.object({ id: z.uuid(), key: z.string(), name: z.string() }),
+          project: projectRef,
         }),
       ),
     }),

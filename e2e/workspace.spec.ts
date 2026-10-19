@@ -121,7 +121,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await signIn(page);
   await page.getByRole("button", { name: "New project", exact: true }).last().click();
   await page.getByLabel("Project name").fill("Kanvil development");
-  await page.getByLabel("Permanent ticket prefix").fill("KAN");
+  await page.getByLabel("Ticket prefix").fill("KAN");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Kanvil development", exact: true }),

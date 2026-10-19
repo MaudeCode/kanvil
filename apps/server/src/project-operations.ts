@@ -7,13 +7,22 @@ import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, projectPositions } from "./ordering.ts";
 import { seedWorkflow } from "./workflow-operations.ts";
-import { members, projects, tickets, views, workspaces, workspaceMembers } from "./schema.ts";
+import {
+  members,
+  projectPrefixes,
+  projects,
+  tickets,
+  views,
+  workspaces,
+  workspaceMembers,
+} from "./schema.ts";
 import { openTicket, overdueTicket } from "./ticket-operations.ts";
 import {
   accountByEmail,
   assertVersion,
   fail,
   project,
+  projectMatch,
   publish,
   toProject,
   workspace,
@@ -22,6 +31,18 @@ import {
   one,
 } from "./domain.ts";
 
+// A prefix any other project has had, current or earlier, stays taken: its keys still name that
+// project's tickets. Taking one reserves it for the project for good.
+async function takePrefix(ctx: Context, prefix: string, projectId?: string) {
+  const holders = await ctx.db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(projectMatch(prefix));
+  if (holders.some((row) => row.id !== projectId))
+    fail(409, "duplicate_prefix", "This prefix is in use or reserved by another project");
+  return (owner: string) =>
+    ctx.db.insert(projectPrefixes).values({ prefix, projectId: owner }).onConflictDoNothing();
+}
 // Stores an uploaded project image; the previous one becomes an orphan for blob cleanup.
 async function storeImage(ctx: Context, image: { data: string; contentType: string }) {
   const objectId = crypto.randomUUID();
@@ -182,11 +203,7 @@ export const projectHandlers: Pick<
           .values({ workspaceId, userId: ctx.actor.id, role: "admin" });
       }
     }
-    if (
-      (await ctx.db.select({ id: projects.id }).from(projects).where(eq(projects.key, input.key)))
-        .length
-    )
-      fail(409, "duplicate_prefix", "This project prefix is already in use");
+    const reserve = await takePrefix(ctx, input.key);
     const row = one(
       await ctx.db
         .insert(projects)
@@ -200,6 +217,7 @@ export const projectHandlers: Pick<
         })
         .returning(),
     );
+    await reserve(row.id);
     await ctx.db.insert(members).values({ projectId: row.id, userId: ctx.actor.id, role: "admin" });
     await seedWorkflow(ctx, row.id);
     await publish({ ...ctx, project: toProject(row) }, "project.created", null, {
@@ -210,10 +228,21 @@ export const projectHandlers: Pick<
   async update_project(ctx, input) {
     const current = project(ctx);
     assertVersion(current, input.expectedVersion, "project");
+    const key = input.key ?? current.key;
+    if (key !== current.key) {
+      const reserve = await takePrefix(ctx, key, current.id);
+      await reserve(current.id);
+      // Tickets take the new prefix; their earlier keys resolve through the reserved one.
+      await ctx.db
+        .update(tickets)
+        .set({ key: sql`${key}::text || '-' || ${tickets.number}` })
+        .where(eq(tickets.projectId, current.id));
+    }
     const row = one(
       await ctx.db
         .update(projects)
         .set({
+          key,
           name: input.name,
           ...(input.visibility ? { visibility: input.visibility } : {}),
           ...(input.publicReadEnabled === undefined
@@ -231,6 +260,7 @@ export const projectHandlers: Pick<
       ...(row.publicReadEnabled === current.publicReadEnabled
         ? {}
         : { publicReadEnabled: row.publicReadEnabled }),
+      ...(row.key === current.key ? {} : { key: row.key, previousKey: current.key }),
     });
     return row;
   },
@@ -238,9 +268,12 @@ export const projectHandlers: Pick<
     const current = project(ctx);
     assertVersion(current, input.expectedVersion, "project", "moving");
     // The neighbor must be a project of the same workspace that the caller can already see.
-    const neighbor = input.before ?? input.after ?? "",
+    const [named] = await ctx.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(projectMatch(input.before ?? input.after ?? "")),
       anchor = (await accessibleProjectRows(ctx.db, ctx.actor, current.workspaceId)).find(
-        (row) => row.id === neighbor || row.key === neighbor.toUpperCase(),
+        (row) => row.id === named?.id,
       );
     if (!anchor) fail(404, "not_found", "Project was not found");
     if (anchor.id === current.id)

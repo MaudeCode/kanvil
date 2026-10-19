@@ -423,9 +423,10 @@ export async function createApplication(
     )[0];
     let row: { name: string; contentType: string; size: number }, objectId: string | null;
     if (attached) {
+      // Authorized in the ticket's current project, so files embedded before a move keep working.
       const authorized = await domain.execute(
         "list_attachments",
-        { projectId, ticketId: attached.ticketId },
+        { projectId: attached.projectId, ticketId: attached.ticketId },
         actor,
       );
       requireRow(authorized.find((item) => item.id === id));
