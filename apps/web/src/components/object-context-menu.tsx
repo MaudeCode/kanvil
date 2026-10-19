@@ -8,13 +8,16 @@ import {
   CircleDot,
   Copy,
   ExternalLink,
+  FileText,
   Flag,
   FolderOpen,
+  GitBranch,
   Link2,
   Pencil,
   Plus,
   Settings,
   Trash2,
+  Type,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +34,7 @@ import {
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "../lib/browser.ts";
+import { ticketBranch, ticketMarkdown } from "../lib/ticket-copy.ts";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -127,11 +131,35 @@ export function TicketContextMenu({
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => {
-                void copy(`${ticket.key} ${ticket.title}`, "Ticket");
+                void copy(`${current.key} ${current.title}`, "Ticket");
               }}
             >
               <Copy />
               Copy key and title
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                void copy(current.title, "Title");
+              }}
+            >
+              <Type />
+              Copy title
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                void copy(ticketMarkdown(current), "Markdown");
+              }}
+            >
+              <FileText />
+              Copy as Markdown
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                void copy(ticketBranch(current), "Branch name");
+              }}
+            >
+              <GitBranch />
+              Copy branch name
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
