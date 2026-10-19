@@ -124,6 +124,7 @@ export function PreviewActions({
     </>
   );
 }
+const previewEntry = "kanvilPreview";
 // The one ticket sheet of a layout. The previewed ticket rides in the URL (`peek`, plus
 // `peekProject` when it is not the route's project, and the anchor as the hash), so refresh,
 // history, and a copied link agree, and the page below stays mounted with its own state.
@@ -150,21 +151,14 @@ export function TicketPreviewController({
   const [shown, setShown] = useState(target);
   if (target && (target.id !== shown?.id || target.projectId !== shown.projectId)) setShown(target);
   const [collection, setCollection] = useState<PreviewCollection | null>(null);
-  // The control that opened the sheet, and the history entry the opening pushed: closing steps
-  // back over that entry, so Back and Escape agree.
-  const [origin, setOrigin] = useState<HTMLElement | null>(null),
-    pushed = useRef<number | null>(null);
-  const index = () => {
-    const { __TSR_index: position } = router.history.location.state;
-    return position;
-  };
-  // A sheet already open changes its ticket in place; opening one adds a history entry.
+  // The control that opened the sheet.
+  const [origin, setOrigin] = useState<HTMLElement | null>(null);
+  // A sheet already open changes its ticket in place; opening one adds a history entry marked in
+  // its state, which survives a reload. Closing steps back over a marked entry, so Back and
+  // Escape agree; a copied link has no entry below it to return to.
   function open(next: PreviewTarget, from?: HTMLElement | null) {
     const replace = !!search.peek;
-    if (!replace) {
-      setOrigin(from ?? null);
-      pushed.current = index() + 1;
-    }
+    if (!replace) setOrigin(from ?? null);
     void navigate({
       to: ".",
       search: (current) => ({
@@ -173,14 +167,13 @@ export function TicketPreviewController({
         peekProject: next.projectId === routeProject ? undefined : next.projectId,
       }),
       hash: next.hash ?? "",
+      state: (current) => (replace ? current : { ...current, [previewEntry]: true }),
       replace,
     });
   }
   function close() {
-    if (pushed.current === index()) {
-      pushed.current = null;
-      router.history.back();
-    } else
+    if (previewEntry in router.history.location.state) router.history.back();
+    else
       void navigate({
         to: ".",
         search: (current) => ({ ...current, peek: undefined, peekProject: undefined }),

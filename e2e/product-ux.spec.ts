@@ -1125,9 +1125,14 @@ test("ticket references anywhere open one preview sheet over the page they were 
   await page.reload();
   await expect(sheet).toBeVisible();
   await expect(page.locator("#main h1", { hasText: "Home" })).toHaveCount(1);
+  // Closing after the refresh still steps back over the preview's entry, so Forward returns to it.
   await sheet.getByRole("button", { name: "Close preview", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
+  await page.goForward();
+  await expect(sheet).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // A modified click keeps the full-page link and opens it in a new tab.
   const opened = context.waitForEvent("page");
