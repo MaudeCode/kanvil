@@ -755,6 +755,62 @@ export const deliveries = pgTable(
     ),
   ],
 );
+// A staged import into a new project; see import-operations.ts. The preview fields hold what the
+// person reviewed before starting it.
+export const importRuns = pgTable(
+  "import_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    // The person the run writes as; every record re-checks their access.
+    actorId: actor(),
+    projectId: uuid("project_id").references(() => projects.id),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    visibility: text("visibility").notNull(),
+    status: text("status").notNull(),
+    counts: jsonb("counts").$type<Record<string, number>>().notNull(),
+    members: jsonb("members")
+      .$type<{ ref: string; name: string; email: string; userId: string | null }[]>()
+      .notNull(),
+    issues: jsonb("issues")
+      .$type<{ severity: "error" | "warning"; code: string; message: string }[]>()
+      .notNull(),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [
+    index("import_run_actor").on(table.workspaceId, table.actorId),
+    index("import_run_status").on(table.status),
+  ],
+);
+// One source record of an import run in write order, and its receipt: the record it became, or
+// why it failed. The payload is dropped once the record is settled.
+export const importRecords = pgTable(
+  "import_records",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => importRuns.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    kind: text("kind").notNull(),
+    ref: text("ref").notNull(),
+    // The source key or name, for progress and error reports.
+    label: text("label").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    status: text("status").notNull().default("pending"),
+    targetId: text("target_id"),
+    error: jsonb("error").$type<{ code: string; message: string }>(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.seq] }),
+    unique("import_record_ref").on(table.runId, table.kind, table.ref),
+    index("import_record_pending").on(table.runId, table.status, table.seq),
+  ],
+);
 export const views = pgTable("saved_views", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")

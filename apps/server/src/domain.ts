@@ -64,6 +64,7 @@ import { workflowHandlers } from "./workflow-operations.ts";
 import { publicHandlers } from "./public-operations.ts";
 import { customFieldHandlers } from "./custom-field-operations.ts";
 import { repositoryHandlers } from "./repository-operations.ts";
+import { importHandlers } from "./import-operations.ts";
 
 export interface Actor {
   id: string;
@@ -90,6 +91,8 @@ export interface Context {
   publicUrl: string;
   // Queues an email to send after the write commits; absent without an SMTP relay.
   mail?: (message: MailMessage) => void;
+  // The import run this write belongs to. Its events carry the provenance and notify no one.
+  importRun?: string;
 }
 export type Handler<K extends Operation> = (
   ctx: Context,
@@ -259,7 +262,10 @@ export type PendingEvent = {
 };
 // PostgreSQL binds at most 65535 parameters per statement; keep multi-row inserts well under it.
 const insertBatch = 1000;
-async function insertAll<T, R>(rows: T[], insert: (batch: T[]) => Promise<R[]>): Promise<R[]> {
+export async function insertAll<T, R>(
+  rows: T[],
+  insert: (batch: T[]) => Promise<R[]>,
+): Promise<R[]> {
   const out: R[] = [];
   for (let at = 0; at < rows.length; at += insertBatch)
     out.push(...(await insert(rows.slice(at, at + insertBatch))));
@@ -299,9 +305,12 @@ export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
   return rows;
 }
 // Queues each ticket event for the project's active destinations that carry its kind of activity.
+// Imported records are history arriving, not activity, so they reach no destination.
 async function queueDestinations(db: Context["db"], rows: (typeof events.$inferSelect)[]) {
   // A move-away names no ticket, so the source keeps no link to it, yet it is ticket activity.
-  const ticketEvents = rows.filter((event) => event.ticketId || event.type === "ticket.moved_away");
+  const ticketEvents = rows.filter(
+    (event) => (event.ticketId || event.type === "ticket.moved_away") && !event.data.import,
+  );
   if (!ticketEvents.length) return;
   const targets = await db
     .select({
@@ -435,7 +444,8 @@ export async function notify(
   await insertAll(queued, (batch) => db.insert(deliveries).values(batch).returning());
 }
 // Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
-// `notifyFollowers: false` records the events without notifying anyone, as deleting a project does.
+// `notifyFollowers: false` records the events without notifying anyone, as deleting a project does,
+// and so does every write of an import run, whose events name the run.
 export async function publishMany(ctx: Context, pending: PendingEvent[], notifyFollowers = true) {
   if (!pending.length) return [];
   const ticketIds = [...new Set(pending.flatMap((item) => (item.ticketId ? [item.ticketId] : [])))];
@@ -457,10 +467,15 @@ export async function publishMany(ctx: Context, pending: PendingEvent[], notifyF
       ticketId: item.ticketId,
       actorId: ctx.actor.id,
       type: item.type,
-      data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
+      data: {
+        ...item.data,
+        ...(item.ticketId ? titles.get(item.ticketId) : {}),
+        source,
+        ...(ctx.importRun ? { import: { runId: ctx.importRun } } : {}),
+      },
     })),
   );
-  if (ticketIds.length && notifyFollowers) {
+  if (ticketIds.length && notifyFollowers && !ctx.importRun) {
     // A person never notifies themselves; an agent's actions still reach its owner.
     const others = ctx.actor.machine ? undefined : ne(user.id, ctx.actor.id);
     const followers = await ctx.db
@@ -575,6 +590,7 @@ export function createDomain(
     ...workflowHandlers,
     ...customFieldHandlers,
     ...repositoryHandlers,
+    ...importHandlers,
   };
   // The writes an archived project still accepts: its lifecycle, details, order, and access, and
   // removing what reaches outside it. Everything else waits for a restore.
@@ -591,11 +607,17 @@ export function createDomain(
     "delete_project_destination",
     "delete_repository_connection",
   ]);
-  // Operations that act for the person signed in, never for a credential.
+  // Operations that act for the person signed in, never for a credential. An import run writes as
+  // the person who started it, long after the request.
   const sessionOnly: ReadonlySet<Operation> = new Set([
     "get_invitation",
     "accept_invitation",
     "delete_workspace",
+    "preview_import",
+    "list_imports",
+    "get_import",
+    "start_import",
+    "cancel_import",
   ]);
   // Operations where `workspaceId` narrows a listing instead of naming a membership context.
   const workspaceIsFilter: ReadonlySet<Operation> = new Set([
@@ -630,10 +652,12 @@ export function createDomain(
         return withServices(ctx);
       }),
     );
+  // `provenance` marks the writes of an import run; see import-operations.ts.
   async function execute<K extends Operation>(
     name: K,
     value: unknown,
     actor: Actor,
+    provenance?: { importRun: string },
   ): Promise<Output<K>> {
     const spec = operations[name];
     const input = spec.input.parse(value);
@@ -653,6 +677,7 @@ export function createDomain(
     const invoke = async (ctx: Context) => {
       withServices(ctx);
       if (services.mail) ctx.mail = (message) => outgoing.push(message);
+      if (provenance) ctx.importRun = provenance.importRun;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
       return parseOutput(name, json(await handler(ctx, input)));

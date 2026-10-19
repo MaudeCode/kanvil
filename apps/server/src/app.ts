@@ -41,6 +41,7 @@ import { createMcp } from "./mcp.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
 import { deliverBatch } from "./outbox.ts";
+import { processImports } from "./import-operations.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import { receiveRepositoryWebhook } from "./repository-operations.ts";
 import { apikey } from "./auth-schema.ts";
@@ -122,6 +123,11 @@ export async function createApplication(
     deliverBatch(database, config, senders, secrets, repositories),
   );
   const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
+  // Import runs resume from their records after a restart; each pass asks for the next while work
+  // remains, and closing stops between passes.
+  const imports = adapters.jobs("imports", 2000, async () => {
+    if (await processImports(domain)) void imports.trigger().catch(() => {});
+  });
   const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
@@ -869,6 +875,7 @@ export async function createApplication(
     search,
     realtime,
     close: async () => {
+      await imports.close();
       unsubscribeJobs();
       await realtime.close();
       await search.close();
