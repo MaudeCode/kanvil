@@ -135,6 +135,7 @@ export default {
     title: "Xác thực",
     saved: "Đã lưu cài đặt xác thực",
     emailPassword: "Đăng nhập bằng email và mật khẩu",
+    emailPasswordDescription: "Bao gồm mã đăng nhập qua email và đặt lại mật khẩu.",
     ssoProvision: "Tự động tạo người dùng từ SSO",
     ssoProvisionDescription:
       "Người dùng SSO mới không có quyền truy cập không gian làm việc hay dự án cho đến khi được mời.",
@@ -142,11 +143,14 @@ export default {
     registrationClosed: "Đã đóng",
     identityProvider: "Nhà cung cấp danh tính",
     notConfigured: "Chưa cấu hình",
+    linkedProviders: "Nhà cung cấp tài khoản liên kết",
+    linkedProvidersDescription:
+      "Chỉ đăng nhập các tài khoản đã liên kết với chúng; không bao giờ tạo tài khoản.",
     save: "Lưu cài đặt xác thực",
     discoveryUrl: "URL khám phá OIDC",
     clientId: "ID ứng dụng khách OIDC",
     oidcSetup:
-      "Cấu hình OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET và OIDC_NAME trong triển khai, rồi khởi động lại Kanvil. Bí mật của nhà cung cấp không bao giờ được gửi về trình duyệt.",
+      "Cấu hình OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET và OIDC_NAME, hoặc một cặp CLIENT_ID và CLIENT_SECRET cho GITHUB_, GOOGLE_ hay DISCORD_, trong triển khai, rồi khởi động lại Kanvil. Bí mật của nhà cung cấp không bao giờ được gửi về trình duyệt.",
     consumers: "Giao diện cho bên tiêu thụ",
     mcpEndpoint: "Điểm cuối MCP",
     eventFeed: "Luồng sự kiện thời gian thực",

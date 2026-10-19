@@ -132,6 +132,7 @@ export default {
     title: "인증",
     saved: "인증 설정이 저장되었습니다",
     emailPassword: "이메일 및 비밀번호 로그인",
+    emailPasswordDescription: "이메일 로그인 코드와 비밀번호 재설정을 포함합니다.",
     ssoProvision: "SSO에서 사용자 자동 생성",
     ssoProvisionDescription:
       "새 SSO 사용자는 초대될 때까지 워크스페이스나 프로젝트에 액세스할 수 없습니다.",
@@ -139,11 +140,13 @@ export default {
     registrationClosed: "닫힘",
     identityProvider: "ID 공급자",
     notConfigured: "구성되지 않음",
+    linkedProviders: "연결된 계정 공급자",
+    linkedProvidersDescription: "연결한 계정만 로그인할 수 있으며 계정을 만들지 않습니다.",
     save: "인증 설정 저장",
     discoveryUrl: "OIDC 검색 URL",
     clientId: "OIDC 클라이언트 ID",
     oidcSetup:
-      "배포에서 OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_NAME을 구성한 후 Kanvil을 다시 시작하세요. 공급자 비밀은 브라우저로 반환되지 않습니다.",
+      "배포에서 OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_NAME 또는 GITHUB_, GOOGLE_, DISCORD_ 중 하나의 CLIENT_ID와 CLIENT_SECRET 쌍을 구성한 후 Kanvil을 다시 시작하세요. 공급자 비밀은 브라우저로 반환되지 않습니다.",
     consumers: "소비자 인터페이스",
     mcpEndpoint: "MCP 엔드포인트",
     eventFeed: "실시간 이벤트 피드",

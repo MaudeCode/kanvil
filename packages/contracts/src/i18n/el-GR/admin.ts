@@ -142,6 +142,8 @@ export default {
     title: "Έλεγχος ταυτότητας",
     saved: "Ο έλεγχος ταυτότητας αποθηκεύτηκε",
     emailPassword: "Σύνδεση με email και κωδικό πρόσβασης",
+    emailPasswordDescription:
+      "Περιλαμβάνει κωδικούς σύνδεσης μέσω email και επαναφορά κωδικού πρόσβασης.",
     ssoProvision: "Αυτόματη δημιουργία χρηστών από SSO",
     ssoProvisionDescription:
       "Οι νέοι χρήστες SSO δεν έχουν πρόσβαση σε χώρους εργασίας ή έργα μέχρι να προσκληθούν.",
@@ -149,11 +151,14 @@ export default {
     registrationClosed: "Κλειστή",
     identityProvider: "Πάροχος ταυτότητας",
     notConfigured: "Δεν έχει ρυθμιστεί",
+    linkedProviders: "Πάροχοι συνδεδεμένων λογαριασμών",
+    linkedProvidersDescription:
+      "Συνδέουν μόνο λογαριασμούς που τους έχουν συνδέσει. Δεν δημιουργούν ποτέ λογαριασμούς.",
     save: "Αποθήκευση ελέγχου ταυτότητας",
     discoveryUrl: "URL ανακάλυψης OIDC",
     clientId: "Αναγνωριστικό πελάτη OIDC",
     oidcSetup:
-      "Ορίστε τα OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET και OIDC_NAME στην ανάπτυξή σας και επανεκκινήστε το Kanvil. Τα μυστικά του παρόχου δεν επιστρέφονται ποτέ στο πρόγραμμα περιήγησης.",
+      "Ορίστε τα OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET και OIDC_NAME ή ένα ζεύγος CLIENT_ID και CLIENT_SECRET για GITHUB_, GOOGLE_ ή DISCORD_ στην ανάπτυξή σας και επανεκκινήστε το Kanvil. Τα μυστικά του παρόχου δεν επιστρέφονται ποτέ στο πρόγραμμα περιήγησης.",
     consumers: "Διεπαφές καταναλωτών",
     mcpEndpoint: "Τελικό σημείο MCP",
     eventFeed: "Ροή συμβάντων σε πραγματικό χρόνο",

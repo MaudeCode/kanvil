@@ -144,6 +144,7 @@ export default {
     title: "Автентифікація",
     saved: "Налаштування автентифікації збережено",
     emailPassword: "Вхід за електронною поштою та паролем",
+    emailPasswordDescription: "Містить коди для входу електронною поштою та скидання пароля.",
     ssoProvision: "Автоматично створювати користувачів із SSO",
     ssoProvisionDescription:
       "Нові користувачі SSO не мають доступу до робочих просторів і проєктів до запрошення.",
@@ -151,11 +152,14 @@ export default {
     registrationClosed: "Закрита",
     identityProvider: "Постачальник ідентифікації",
     notConfigured: "Не налаштовано",
+    linkedProviders: "Постачальники прив’язаних облікових записів",
+    linkedProvidersDescription:
+      "Виконують вхід лише в облікові записи, які їх прив’язали; ніколи не створюють облікових записів.",
     save: "Зберегти автентифікацію",
     discoveryUrl: "URL виявлення OIDC",
     clientId: "ID клієнта OIDC",
     oidcSetup:
-      "Задайте OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET і OIDC_NAME у розгортанні та перезапустіть Kanvil. Секрети постачальника ніколи не передаються в браузер.",
+      "Задайте OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET і OIDC_NAME або пару CLIENT_ID і CLIENT_SECRET для GITHUB_, GOOGLE_ чи DISCORD_ у розгортанні та перезапустіть Kanvil. Секрети постачальника ніколи не передаються в браузер.",
     consumers: "Інтерфейси для споживачів",
     mcpEndpoint: "Адреса MCP",
     eventFeed: "Стрічка подій у реальному часі",

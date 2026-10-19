@@ -199,7 +199,7 @@ export default {
     },
     oidc: {
       linked: "Đã liên kết tài khoản",
-      explanation: "Liên kết tài khoản này trước khi đăng nhập bằng nhà cung cấp danh tính.",
+      explanation: "Liên kết tài khoản này trước khi đăng nhập bằng nhà cung cấp này.",
       link: "Liên kết {{provider}}",
     },
     signOut: {

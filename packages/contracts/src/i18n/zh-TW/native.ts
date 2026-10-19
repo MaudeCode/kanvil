@@ -197,7 +197,7 @@ export default {
     },
     oidc: {
       linked: "帳號已連結",
-      explanation: "使用身分識別提供者登入前，請先連結此帳號。",
+      explanation: "使用此提供者登入前，請先連結此帳號。",
       link: "連結 {{provider}}",
     },
     signOut: {

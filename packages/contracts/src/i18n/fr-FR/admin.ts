@@ -143,6 +143,8 @@ export default {
     title: "Authentification",
     saved: "Authentification enregistrée",
     emailPassword: "Connexion par e-mail et mot de passe",
+    emailPasswordDescription:
+      "Inclut les codes de connexion par e-mail et la réinitialisation du mot de passe.",
     ssoProvision: "Créer automatiquement les utilisateurs depuis le SSO",
     ssoProvisionDescription:
       "Les nouveaux utilisateurs SSO n’ont accès à aucun espace de travail ni projet tant qu’ils ne sont pas invités.",
@@ -150,11 +152,14 @@ export default {
     registrationClosed: "Fermée",
     identityProvider: "Fournisseur d’identité",
     notConfigured: "Non configuré",
+    linkedProviders: "Fournisseurs de comptes liés",
+    linkedProvidersDescription:
+      "Connectent uniquement les comptes qui les ont liés ; ils ne créent jamais de compte.",
     save: "Enregistrer l’authentification",
     discoveryUrl: "URL de découverte OIDC",
     clientId: "ID client OIDC",
     oidcSetup:
-      "Configurez OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET et OIDC_NAME dans votre déploiement, puis redémarrez Kanvil. Les secrets du fournisseur ne sont jamais renvoyés au navigateur.",
+      "Configurez OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET et OIDC_NAME, ou une paire CLIENT_ID et CLIENT_SECRET pour GITHUB_, GOOGLE_ ou DISCORD_, dans votre déploiement, puis redémarrez Kanvil. Les secrets du fournisseur ne sont jamais renvoyés au navigateur.",
     consumers: "Interfaces des consommateurs",
     mcpEndpoint: "Point de terminaison MCP",
     eventFeed: "Flux d’événements en temps réel",

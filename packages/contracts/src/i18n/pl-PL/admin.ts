@@ -152,6 +152,7 @@ export default {
     title: "Uwierzytelnianie",
     saved: "Uwierzytelnianie zapisane",
     emailPassword: "Logowanie adresem e-mail i hasłem",
+    emailPasswordDescription: "Obejmuje kody logowania wysyłane e-mailem i resetowanie hasła.",
     ssoProvision: "Automatycznie twórz użytkowników z SSO",
     ssoProvisionDescription:
       "Nowi użytkownicy SSO nie mają dostępu do przestrzeni roboczych ani projektów, dopóki nie zostaną zaproszeni.",
@@ -159,11 +160,13 @@ export default {
     registrationClosed: "Zamknięta",
     identityProvider: "Dostawca tożsamości",
     notConfigured: "Nie skonfigurowano",
+    linkedProviders: "Dostawcy połączonych kont",
+    linkedProvidersDescription: "Logują tylko konta, które je połączyły; nigdy nie tworzą kont.",
     save: "Zapisz uwierzytelnianie",
     discoveryUrl: "URL wykrywania OIDC",
     clientId: "Identyfikator klienta OIDC",
     oidcSetup:
-      "Skonfiguruj OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET i OIDC_NAME we wdrożeniu, a następnie uruchom ponownie Kanvil. Sekrety dostawcy nigdy nie są zwracane do przeglądarki.",
+      "Skonfiguruj OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET i OIDC_NAME albo parę CLIENT_ID i CLIENT_SECRET dla GITHUB_, GOOGLE_ lub DISCORD_ we wdrożeniu, a następnie uruchom ponownie Kanvil. Sekrety dostawcy nigdy nie są zwracane do przeglądarki.",
     consumers: "Interfejsy dla klientów",
     mcpEndpoint: "Punkt końcowy MCP",
     eventFeed: "Kanał zdarzeń w czasie rzeczywistym",

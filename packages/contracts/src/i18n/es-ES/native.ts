@@ -201,7 +201,7 @@ export default {
     },
     oidc: {
       linked: "Cuenta vinculada",
-      explanation: "Vincule esta cuenta antes de iniciar sesión con su proveedor de identidad.",
+      explanation: "Vincule esta cuenta antes de iniciar sesión con este proveedor.",
       link: "Vincular {{provider}}",
     },
     signOut: {

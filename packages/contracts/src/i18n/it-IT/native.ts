@@ -200,7 +200,7 @@ export default {
     },
     oidc: {
       linked: "Account collegato",
-      explanation: "Collega questo account prima di accedere con il provider di identità.",
+      explanation: "Collega questo account prima di accedere con questo provider.",
       link: "Collega {{provider}}",
     },
     signOut: {

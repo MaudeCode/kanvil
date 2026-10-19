@@ -136,6 +136,7 @@ export default {
     title: "認証",
     saved: "認証設定を保存しました",
     emailPassword: "メールアドレスとパスワードによるサインイン",
+    emailPasswordDescription: "メールで届くサインインコードとパスワードのリセットを含みます。",
     ssoProvision: "SSOからユーザーを自動作成",
     ssoProvisionDescription:
       "新しいSSOユーザーは、招待されるまでワークスペースやプロジェクトへのアクセス権を持ちません。",
@@ -143,11 +144,14 @@ export default {
     registrationClosed: "受付停止",
     identityProvider: "IDプロバイダー",
     notConfigured: "未設定",
+    linkedProviders: "リンク済みアカウント用プロバイダー",
+    linkedProvidersDescription:
+      "リンク済みのアカウントのみサインインでき、アカウントは作成されません。",
     save: "認証設定を保存",
     discoveryUrl: "OIDCディスカバリーURL",
     clientId: "OIDCクライアントID",
     oidcSetup:
-      "デプロイでOIDC_DISCOVERY_URL、OIDC_CLIENT_ID、OIDC_CLIENT_SECRET、OIDC_NAMEを設定し、Kanvilを再起動してください。プロバイダーのシークレットがブラウザーに返されることはありません。",
+      "デプロイでOIDC_DISCOVERY_URL、OIDC_CLIENT_ID、OIDC_CLIENT_SECRET、OIDC_NAME、またはGITHUB_、GOOGLE_、DISCORD_のいずれかのCLIENT_IDとCLIENT_SECRETのペアを設定し、Kanvilを再起動してください。プロバイダーのシークレットがブラウザーに返されることはありません。",
     consumers: "コンシューマー向けインターフェース",
     mcpEndpoint: "MCPエンドポイント",
     eventFeed: "リアルタイムイベントフィード",

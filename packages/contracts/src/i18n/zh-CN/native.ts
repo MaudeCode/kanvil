@@ -197,7 +197,7 @@ export default {
     },
     oidc: {
       linked: "账户已关联",
-      explanation: "使用身份提供方登录前，请先关联此账户。",
+      explanation: "使用此提供方登录前，请先关联此账户。",
       link: "关联 {{provider}}",
     },
     signOut: {
