@@ -36,6 +36,8 @@ export const adminWorkspacesSchema = z.object({
       id: z.uuid(),
       name: z.string(),
       slug: z.string(),
+      // Null for a workspace without an owner; servers that predate ownership omit it.
+      ownerId: z.string().nullable().default(null),
       createdAt: z.iso.datetime(),
       memberCount: z.number().int().nonnegative(),
       projectCount: z.number().int().nonnegative(),

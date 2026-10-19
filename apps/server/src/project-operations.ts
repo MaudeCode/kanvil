@@ -1,6 +1,6 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import { and, count, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
@@ -176,6 +176,7 @@ export const projectHandlers: Pick<
         ? await ctx.db
             .select({ workspaceId: workspaces.id })
             .from(workspaces)
+            .where(isNull(workspaces.deletedAt))
             .orderBy(workspaces.createdAt)
             .limit(1)
         : await ctx.db
@@ -194,7 +195,11 @@ export const projectHandlers: Pick<
         const personal = one(
           await ctx.db
             .insert(workspaces)
-            .values({ name: "Personal workspace", slug: `personal-${crypto.randomUUID()}` })
+            .values({
+              name: "Personal workspace",
+              slug: `personal-${crypto.randomUUID()}`,
+              ownerId: ctx.actor.id,
+            })
             .returning(),
         );
         workspaceId = personal.id;

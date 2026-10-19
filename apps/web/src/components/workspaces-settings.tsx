@@ -190,6 +190,7 @@ function WorkspaceDetails({
             loading={people.isPending}
             error={people.error}
             canAdmin
+            ownerId={workspace?.ownerId}
             scope="workspace"
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />

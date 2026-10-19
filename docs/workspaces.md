@@ -8,6 +8,10 @@ Workspace administrators can also invite an email address that has no access yet
 
 A project moves to another workspace only when the caller administers both. Direct project members keep their roles; access inherited from the old workspace ends and the destination's applies, which the move preview lists person by person. See [the API reference](api.md#project-lifecycle).
 
+Every workspace has one owner, an active administrator. The owner, or an instance administrator, transfers ownership to another active administrator and deletes the workspace; the previous owner stays an administrator. The owner cannot be removed, demoted, disabled, or have their account deleted until ownership moves, so a workspace never loses its owner silently. Deleting a workspace needs a sign-in within the last 15 minutes and the typed URL key, lists every project and what goes with it first, and refuses while any ticket is claimed. Its projects are deleted as project deletion does, its memberships, invitations, and shared labels go, and accounts stay. See [the API reference](api.md#workspace-ownership-and-deletion).
+
+When ownership was introduced, each existing workspace went to its earliest-created active administrator member, ties broken by account ID. A workspace without one has no owner until an instance administrator transfers it to an active administrator.
+
 Removing workspace membership also removes that person's explicit memberships in the workspace's projects. Keep at least one workspace administrator. Project-scoped API keys remain bounded to their configured projects and cannot administer an entire workspace. Ticket and project prefixes remain unique across the instance. A project administrator can change a prefix and move tickets between writable projects of one workspace; earlier prefixes stay reserved and earlier keys keep resolving, so existing links and key-based API lookups keep working without reaching past current access.
 
 Existing projects are assigned to a default workspace and remain private. Existing project membership is retained; only instance administrators gain workspace administration automatically. Existing API calls that omit a workspace choose an accessible writable workspace; when none exists, project creation creates a personal workspace for the caller. New web-created projects select their workspace explicitly and offer workspace or private access.
@@ -24,6 +28,7 @@ Project icons can use a bundled, searchable open-source icon collection or a nor
 - Test workspace and private-project isolation, inherited versus explicit roles, scoped API keys, removal, last-admin guards, and idempotent writes through the shared domain.
 - Exercise workspace discovery through HTTP and MCP and access revocation through realtime replay and image routes.
 - Test shared label catalogs, access-filtered counts, cross-project renames and deletions, claims, and same-name adoption.
+- Test ownership transfer, owner removal, demotion, and account-disable guards, concurrent transfer and removal, and workspace deletion previews, blockers, recent sign-in, and tombstones.
 - Test invitation creation, resend, revocation, expiry, email mismatch, sender demotion, concurrent acceptance, and the acceptance page.
 - Test workspace switching, deep links, settings navigation, member search and role changes, icon selection/upload/removal, and account administration in browser workflows.
 - Review light/dark desktop and phone layouts with real content. Keep publication separate from local verification.

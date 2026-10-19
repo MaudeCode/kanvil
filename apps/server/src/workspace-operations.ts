@@ -16,7 +16,12 @@ import {
 export async function requireWorkspace(ctx: Context, workspaceId: string, admin = false) {
   if (ctx.actor.projectIds)
     fail(403, "workspace_scope_required", "Use an account with workspace access for this action");
-  const row = one(await ctx.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)));
+  const row = one(
+    await ctx.db
+      .select()
+      .from(workspaces)
+      .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt))),
+  );
   const membership = (
     await ctx.db
       .select()
@@ -40,6 +45,14 @@ export async function requireWorkspace(ctx: Context, workspaceId: string, admin 
     updatedAt: row.updatedAt.toISOString(),
     role: ctx.actor.admin ? "admin" : membership!.role,
   });
+}
+// Transferring and deleting a workspace belong to its owner; instance administrators can act for
+// any workspace, which is also how an unowned one gets an owner.
+export function requireOwner(ctx: Context) {
+  const current = workspace(ctx);
+  if (!ctx.actor.admin && current.ownerId !== ctx.actor.id)
+    fail(403, "forbidden", "Only the workspace owner can do this");
+  return current;
 }
 export async function publishWorkspace(
   ctx: Context,
@@ -68,6 +81,7 @@ export const workspaceHandlers: Pick<
   | "update_workspace"
   | "list_workspace_members"
   | "set_workspace_member"
+  | "transfer_workspace"
 > = {
   async list_workspaces(ctx) {
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor);
@@ -85,11 +99,14 @@ export const workspaceHandlers: Pick<
       .select()
       .from(workspaces)
       .where(
-        ctx.actor.admin && !ctx.actor.projectIds
-          ? undefined
-          : ids.length
-            ? inArray(workspaces.id, ids)
-            : sql`false`,
+        and(
+          isNull(workspaces.deletedAt),
+          ctx.actor.admin && !ctx.actor.projectIds
+            ? undefined
+            : ids.length
+              ? inArray(workspaces.id, ids)
+              : sql`false`,
+        ),
       )
       .orderBy(workspaces.name);
     return rows.map((row) => ({
@@ -109,7 +126,12 @@ export const workspaceHandlers: Pick<
     const row = one(
       await ctx.db
         .insert(workspaces)
-        .values({ name: input.name, slug: input.slug, description: input.description })
+        .values({
+          name: input.name,
+          slug: input.slug,
+          description: input.description,
+          ownerId: ctx.actor.id,
+        })
         .returning(),
     );
     await ctx.db
@@ -144,6 +166,7 @@ export const workspaceHandlers: Pick<
         email: user.email,
         image: user.image,
         role: workspaceMembers.role,
+        disabled: sql<boolean>`coalesce(${user.banned}, false)`,
       })
       .from(workspaceMembers)
       .innerJoin(user, eq(user.id, workspaceMembers.userId))
@@ -151,8 +174,14 @@ export const workspaceHandlers: Pick<
       .orderBy(user.name);
   },
   async set_workspace_member(ctx, input) {
-    workspace(ctx);
+    const current = workspace(ctx);
     const person = await accountByEmail(ctx.db, input.email);
+    if (person.id === current.ownerId && input.role !== "admin")
+      fail(
+        409,
+        "workspace_owner",
+        "Transfer ownership before removing or demoting the workspace owner",
+      );
     const existing = (
       await ctx.db
         .select()
@@ -214,5 +243,45 @@ export const workspaceHandlers: Pick<
       role: input.role,
     });
     return { ok: true };
+  },
+  // Writes run one at a time under the domain lock, and removal, demotion, and account disabling
+  // all refuse the owner, so the destination checked here is still an active administrator when
+  // the transfer commits.
+  async transfer_workspace(ctx, input) {
+    const current = requireOwner(ctx);
+    assertVersion(current, input.expectedVersion, "workspace", "transferring it");
+    if (input.userId === current.ownerId)
+      fail(400, "validation_error", "This person already owns the workspace");
+    const [eligible] = await ctx.db
+      .select({ id: user.id })
+      .from(workspaceMembers)
+      .innerJoin(user, eq(user.id, workspaceMembers.userId))
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, current.id),
+          eq(workspaceMembers.userId, input.userId),
+          eq(workspaceMembers.role, "admin"),
+          sql`not coalesce(${user.banned}, false)`,
+        ),
+      );
+    if (!eligible)
+      fail(
+        409,
+        "owner_ineligible",
+        "Ownership can pass only to an active administrator of this workspace",
+      );
+    const row = one(
+      await ctx.db
+        .update(workspaces)
+        .set({ ownerId: eligible.id, version: current.version + 1, updatedAt: new Date() })
+        .where(eq(workspaces.id, current.id))
+        .returning(),
+    );
+    await publishWorkspace(ctx, row.id, "workspace.owner_changed", {
+      version: row.version,
+      ownerId: row.ownerId,
+      previousOwnerId: current.ownerId,
+    });
+    return { ...row, role: current.role };
   },
 };

@@ -1,12 +1,17 @@
-import { and, asc, count, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
-import { hasAdminRole, type Project, type ProjectImpact } from "@kanvil/contracts";
+import {
+  hasAdminRole,
+  type Project,
+  type ProjectImpact,
+  type WorkspaceImpact,
+} from "@kanvil/contracts";
 import { user } from "./auth-schema.ts";
 import { dropProjectFromInvitations } from "./invitation-operations.ts";
 import { projectRoleSQL } from "./project-access.ts";
 import { endPosition, projectPositions } from "./ordering.ts";
 import { labelUsage } from "./ticket-operations.ts";
-import { requireWorkspace } from "./workspace-operations.ts";
+import { requireOwner, requireWorkspace } from "./workspace-operations.ts";
 import {
   attachments,
   calendarFeeds,
@@ -25,6 +30,7 @@ import {
   tickets,
   workspaceLabels,
   workspaceMembers,
+  workspaces,
 } from "./schema.ts";
 import {
   assertVersion,
@@ -35,6 +41,7 @@ import {
   publishMany,
   requireRow,
   toProject,
+  workspace,
   type Context,
   type Handlers,
 } from "./domain.ts";
@@ -229,6 +236,104 @@ async function projectImpact(ctx: Context, workspaceId?: string): Promise<Projec
     transfer: workspaceId ? await transferImpact(ctx, workspaceId) : null,
   };
 }
+// The project row stays as a tombstone: its prefix is never reused, and its activity and the
+// deletion events remain in the log. Content goes; unreferenced files are collected by blob cleanup.
+async function removeProject(ctx: Context) {
+  const current = project(ctx);
+  const readers = (await projectPeople(ctx)).filter((person) => person.before);
+  // Destinations go first, so the deletion events queue no outbound deliveries. Repository
+  // connections go with their secrets, queued GitHub calls, and webhook.
+  await ctx.db.delete(projectDestinations).where(eq(projectDestinations.projectId, current.id));
+  await ctx.db.delete(repositoryConnections).where(eq(repositoryConnections.projectId, current.id));
+  await ctx.db.delete(calendarFeeds).where(eq(calendarFeeds.projectId, current.id));
+  const removed = await ctx.db
+    .select({ id: tickets.id, key: tickets.key, version: tickets.version })
+    .from(tickets)
+    .where(eq(tickets.projectId, current.id))
+    .orderBy(asc(tickets.number));
+  const published = await publishMany(
+    ctx,
+    [
+      ...removed.map((ticket) => ({
+        type: "ticket.deleted",
+        ticketId: ticket.id,
+        data: { key: ticket.key, version: ticket.version },
+      })),
+      {
+        type: "project.deleted",
+        ticketId: null,
+        data: { key: current.key, name: current.name, tickets: removed.length },
+      },
+    ],
+    false,
+  );
+  await recordAudience(
+    ctx,
+    requireRow(published.at(-1)),
+    readers.map((person) => person.userId),
+  );
+  // Comments, attachments, relationships, follows, evidence, and links cascade with the tickets.
+  await ctx.db.delete(tickets).where(eq(tickets.projectId, current.id));
+  await ctx.db.delete(stagedUploads).where(eq(stagedUploads.projectId, current.id));
+  await ctx.db.delete(projectLabels).where(eq(projectLabels.projectId, current.id));
+  // Direct grants go too; the recorded audience is what still reaches former readers.
+  await ctx.db.delete(members).where(eq(members.projectId, current.id));
+  await dropProjectFromInvitations(ctx, current);
+  await changed(ctx, {
+    deletedAt: new Date(),
+    publicReadEnabled: false,
+    image: null,
+    iconObjectId: null,
+    background: null,
+    backgroundObjectId: null,
+  });
+}
+// A workspace's projects, archived ones included, each as the context its lifecycle checks expect.
+async function workspaceProjects(ctx: Context) {
+  const rows = await ctx.db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.workspaceId, workspace(ctx).id), isNull(projects.deletedAt)))
+    .orderBy(asc(projects.key));
+  return rows.map((row): Context => ({ ...ctx, project: toProject(row), role: "admin" }));
+}
+// Every project's deletion preview, summed; a blocker lists the tickets of every project it holds.
+async function workspaceImpact(ctx: Context, scoped: Context[]): Promise<WorkspaceImpact> {
+  const workspaceId = workspace(ctx).id;
+  const totals: WorkspaceImpact = {
+    projects: [],
+    tickets: 0,
+    comments: 0,
+    attachments: 0,
+    attachmentBytes: 0,
+    events: 0,
+    blockers: [],
+    members: await ctx.db.$count(workspaceMembers, eq(workspaceMembers.workspaceId, workspaceId)),
+    invitations: await ctx.db.$count(
+      invitations,
+      and(eq(invitations.workspaceId, workspaceId), eq(invitations.status, "pending")),
+    ),
+    labels: await ctx.db.$count(workspaceLabels, eq(workspaceLabels.workspaceId, workspaceId)),
+  };
+  for (const inner of scoped) {
+    const { id, key, name, archivedAt } = project(inner),
+      impact = await projectImpact(inner);
+    totals.projects.push({ id, key, name, archived: !!archivedAt, tickets: impact.tickets });
+    totals.tickets += impact.tickets;
+    totals.comments += impact.comments;
+    totals.attachments += impact.attachments;
+    totals.attachmentBytes += impact.attachmentBytes;
+    totals.events += impact.events;
+    for (const blocker of impact.blockers) {
+      const same = totals.blockers.find((item) => item.code === blocker.code);
+      if (same) same.tickets.push(...blocker.tickets);
+      else totals.blockers.push({ ...blocker, tickets: [...blocker.tickets] });
+    }
+  }
+  return totals;
+}
+// Deleting a workspace asks for a sign-in this recent, so an unattended session cannot do it.
+const recentSignIn = 15 * 60_000;
 const changed = async (ctx: Context, values: PgUpdateSetSource<typeof projects>) =>
   one(
     await ctx.db
@@ -240,7 +345,12 @@ const changed = async (ctx: Context, values: PgUpdateSetSource<typeof projects>)
 
 export const lifecycleHandlers: Pick<
   Handlers,
-  "archive_project" | "get_project_impact" | "transfer_project" | "delete_project"
+  | "archive_project"
+  | "get_project_impact"
+  | "transfer_project"
+  | "delete_project"
+  | "get_workspace_impact"
+  | "delete_workspace"
 > = {
   async archive_project(ctx, input) {
     const current: Project = project(ctx);
@@ -323,63 +433,38 @@ export const lifecycleHandlers: Pick<
     );
     return row;
   },
-  // The project row stays as a tombstone: its prefix is never reused, and its activity and the
-  // deletion events remain in the log. Content goes; unreferenced files are collected by blob cleanup.
   async delete_project(ctx, input) {
     const current = project(ctx);
     assertVersion(current, input.expectedVersion, "project", "deleting");
     if (input.confirmKey.trim().toUpperCase() !== current.key)
       fail(400, "validation_error", "Type the project prefix to confirm deletion");
     assertNoBlockers(await claimBlockers(ctx));
-    const readers = (await projectPeople(ctx)).filter((person) => person.before);
-    // Destinations go first, so the deletion events queue no outbound deliveries. Repository
-    // connections go with their secrets, queued GitHub calls, and webhook.
-    await ctx.db.delete(projectDestinations).where(eq(projectDestinations.projectId, current.id));
+    await removeProject(ctx);
+    return { ok: true };
+  },
+  async get_workspace_impact(ctx) {
+    requireOwner(ctx);
+    return workspaceImpact(ctx, await workspaceProjects(ctx));
+  },
+  // Each project goes as `delete_project` takes it, with its own events and audience. The
+  // workspace row stays as a tombstone that keeps its URL key; accounts are never touched.
+  async delete_workspace(ctx, input) {
+    const current = requireOwner(ctx);
+    if (!ctx.actor.signedInAt || Date.now() - ctx.actor.signedInAt.getTime() > recentSignIn)
+      fail(403, "reauthentication_required", "Sign in again to delete this workspace");
+    assertVersion(current, input.expectedVersion, "workspace", "deleting it");
+    if (input.confirmSlug.trim().toLowerCase() !== current.slug)
+      fail(400, "validation_error", "Type the workspace URL key to confirm deletion");
+    const scoped = await workspaceProjects(ctx);
+    assertNoBlockers((await workspaceImpact(ctx, scoped)).blockers);
+    for (const inner of scoped) await removeProject(inner);
+    await ctx.db.delete(invitations).where(eq(invitations.workspaceId, current.id));
+    await ctx.db.delete(workspaceLabels).where(eq(workspaceLabels.workspaceId, current.id));
+    await ctx.db.delete(workspaceMembers).where(eq(workspaceMembers.workspaceId, current.id));
     await ctx.db
-      .delete(repositoryConnections)
-      .where(eq(repositoryConnections.projectId, current.id));
-    await ctx.db.delete(calendarFeeds).where(eq(calendarFeeds.projectId, current.id));
-    const removed = await ctx.db
-      .select({ id: tickets.id, key: tickets.key, version: tickets.version })
-      .from(tickets)
-      .where(eq(tickets.projectId, current.id))
-      .orderBy(asc(tickets.number));
-    const published = await publishMany(
-      ctx,
-      [
-        ...removed.map((ticket) => ({
-          type: "ticket.deleted",
-          ticketId: ticket.id,
-          data: { key: ticket.key, version: ticket.version },
-        })),
-        {
-          type: "project.deleted",
-          ticketId: null,
-          data: { key: current.key, name: current.name, tickets: removed.length },
-        },
-      ],
-      false,
-    );
-    await recordAudience(
-      ctx,
-      requireRow(published.at(-1)),
-      readers.map((person) => person.userId),
-    );
-    // Comments, attachments, relationships, follows, evidence, and links cascade with the tickets.
-    await ctx.db.delete(tickets).where(eq(tickets.projectId, current.id));
-    await ctx.db.delete(stagedUploads).where(eq(stagedUploads.projectId, current.id));
-    await ctx.db.delete(projectLabels).where(eq(projectLabels.projectId, current.id));
-    // Direct grants go too; the recorded audience is what still reaches former readers.
-    await ctx.db.delete(members).where(eq(members.projectId, current.id));
-    await dropProjectFromInvitations(ctx, current);
-    await changed(ctx, {
-      deletedAt: new Date(),
-      publicReadEnabled: false,
-      image: null,
-      iconObjectId: null,
-      background: null,
-      backgroundObjectId: null,
-    });
+      .update(workspaces)
+      .set({ deletedAt: new Date(), version: current.version + 1, updatedAt: new Date() })
+      .where(eq(workspaces.id, current.id));
     return { ok: true };
   },
 };

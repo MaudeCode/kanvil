@@ -1,7 +1,7 @@
 import type { Config } from "./config.ts";
 import { matchesOIDCBinding } from "./adapters/oidc.ts";
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, count, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hasAdminRole, okSchema } from "@kanvil/contracts";
 import {
@@ -66,6 +66,9 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
     try {
       await lock.query("SELECT pg_advisory_lock(7361083)");
       locked = true;
+      // Domain writes hold this one for their transaction, so an account change never interleaves
+      // with a workspace ownership transfer. Domain writes never wait on 7361083.
+      await lock.query("SELECT pg_advisory_lock(7361080)");
       const path = authPath(request);
       if (path === "/api/auth/unlink-account") {
         const policy = one(
@@ -133,6 +136,20 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
             path.endsWith("/ban-user") ||
             body.data?.banned === true ||
             (body.data?.banned === undefined && current.banned);
+          // Ownership never passes silently: the owner hands each workspace on first.
+          if ((banned && !current.banned) || path.endsWith("/remove-user")) {
+            const owned = await lock.query<{ name: string }>(
+              `SELECT name FROM workspaces WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY name`,
+              [current.id],
+            );
+            if (owned.rowCount)
+              fail(
+                409,
+                "workspace_owner",
+                `Transfer ownership of ${owned.rows.map((row) => row.name).join(", ")} before disabling or deleting this account`,
+                { workspaces: owned.rows.map((row) => row.name) },
+              );
+          }
           if (
             hasAdminRole(current.role) &&
             !current.banned &&
@@ -153,7 +170,7 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
       return response;
     } finally {
       try {
-        if (locked) await lock.query("SELECT pg_advisory_unlock(7361083)");
+        if (locked) await lock.query("SELECT pg_advisory_unlock_all()");
       } finally {
         lock.release();
       }
@@ -297,15 +314,17 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
       app.get("/api/v1/admin/workspaces", async (c) => {
         const input = adminWorkspaceQuerySchema.parse(c.req.query()),
           needle = pattern(input.q);
-        const filter = input.q
-          ? or(ilike(workspaces.name, needle), ilike(workspaces.slug, needle))
-          : undefined;
+        const filter = and(
+          isNull(workspaces.deletedAt),
+          input.q ? or(ilike(workspaces.name, needle), ilike(workspaces.slug, needle)) : undefined,
+        );
         const [rows, total] = await Promise.all([
           database.db
             .select({
               id: workspaces.id,
               name: workspaces.name,
               slug: workspaces.slug,
+              ownerId: workspaces.ownerId,
               createdAt: workspaces.createdAt,
               // Drizzle leaves columns unqualified in single-table selects; qualify the correlation.
               memberCount: sql<number>`(SELECT count(*)::int FROM workspace_members m WHERE m.workspace_id = workspaces.id)`,
