@@ -59,6 +59,11 @@ Kanvil is an MIT-licensed, self-hosted ticketing system for agents and people: w
 - Filters and ordering live in the URL and saved views. Column visibility, row spacing, and label display are per-user browser preferences cleared on sign-out.
 - Ticket lists fetch every matching ticket in bounded batches and show every status section in full. No per-section limits or Load more. `.ticket-row` marks ticket records; section headings are separate rows.
 
+### Language
+
+- Every visible string, accessible name, toast, and date or number on web and native goes through `t` and the formatters in `@kanvil/contracts/i18n`. English lives in `packages/contracts/src/i18n/en-US/<section>.ts`; every locale carries the same keys and plural categories, which `i18n.test.ts` enforces. Write whole sentences with placeholders, never joined fragments.
+- Contract label tables (`stateLabels`, `kindLabels`, `roleLabels`, `eventLabels`, ...) read the active language; use them, not local copies. Ticket content, names, keys, and API values are never translated. See [docs/localization.md](docs/localization.md).
+
 ### Data
 
 - Read through `api.query(name, input)` and write through `useOperation(name)`, which invalidates the `kanvil` query namespace on success. The realtime watcher invalidates only the queries an event can have changed (`affectedBy` in `data.tsx`: same project, same ticket when the event names one, membership and label lists only on their own event families), so lists stay current without polling or refetching unrelated screens. Rows that arrive this way get the `row-in` highlight.
