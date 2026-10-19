@@ -20,8 +20,9 @@ import {
 } from "lucide-react";
 import { notificationsSchema } from "@kanvil/contracts";
 import { api, auth, useIdentity, useProjects, useProjectAccess, useWorkspace } from "../data.tsx";
-import { Brand, ErrorNotice, IconButton, Loading, Modal, TicketIndicator } from "../ui.tsx";
+import { Brand, ErrorNotice, IconButton, Loading, Modal } from "../ui.tsx";
 import { CreateProject } from "./create-project.tsx";
+import { SearchResultContent, searchResultLink } from "./search-result.tsx";
 import { useTheme } from "./theme-provider.tsx";
 import { useShortcut } from "../hooks/use-shortcut.ts";
 import {
@@ -290,8 +291,8 @@ function CommandPalette() {
     ),
   );
   const workspace = useWorkspace();
-  const tickets = useQuery({
-    ...api.query("search_tickets", {
+  const results = useQuery({
+    ...api.query("search_workspace", {
       q: trimmed,
       ...(workspace.active ? { workspaceId: workspace.active.id } : {}),
       limit: 8,
@@ -354,7 +355,7 @@ function CommandPalette() {
             onValueChange={setQuery}
           />
           <CommandList>
-            <CommandEmpty>{tickets.isFetching ? "Searching…" : "No results"}</CommandEmpty>
+            <CommandEmpty>{results.isFetching ? "Searching…" : "No results"}</CommandEmpty>
             {keyProject && keyMatch && (
               <CommandGroup heading="Jump to">
                 <CommandItem
@@ -368,21 +369,34 @@ function CommandPalette() {
             )}
             {trimmed.length > 1 && (
               <CommandGroup
-                heading={workspace.active ? `Tickets in ${workspace.active.name}` : "Tickets"}
+                heading={workspace.active ? `Results in ${workspace.active.name}` : "Results"}
               >
-                {tickets.data?.items.map(({ ticket, project: owner }) => (
+                {/* Projects already have their own group below. */}
+                {results.data?.items
+                  .filter((result) => result.type !== "project")
+                  .map((result) => (
+                    <CommandItem
+                      key={`${result.type}:${result.id}`}
+                      value={`${result.type}:${result.id}`}
+                      // The server already matched these; keep them through the palette's own filter.
+                      keywords={[trimmed]}
+                      onSelect={() => run(() => void navigate(searchResultLink(result)))}
+                    >
+                      <SearchResultContent result={result} compact />
+                    </CommandItem>
+                  ))}
+                {results.data && results.data.total > 0 && (
                   <CommandItem
-                    key={ticket.id}
-                    value={`${ticket.key} ${ticket.title} ${owner.name}`}
-                    onSelect={() => go(`/projects/${ticket.projectId}/tickets/${ticket.id}`)}
+                    value={`all results ${trimmed}`}
+                    keywords={[trimmed]}
+                    onSelect={() =>
+                      run(() => void navigate({ to: "/search", search: { q: trimmed } }))
+                    }
                   >
-                    <TicketIndicator property="status" value={ticket.status} iconOnly />
-                    <span className="min-w-0 truncate">{ticket.title}</span>
-                    <CommandShortcut className="shrink-0 font-mono whitespace-nowrap">
-                      {ticket.key}
-                    </CommandShortcut>
+                    <Search />
+                    See all {results.data.total} results
                   </CommandItem>
-                ))}
+                )}
               </CommandGroup>
             )}
             <CommandGroup heading="Actions">
@@ -458,6 +472,15 @@ function CommandPalette() {
                 <CommandItem value="my work assigned tickets" onSelect={() => go("/my-work")}>
                   <UserCheck />
                   My work
+                </CommandItem>
+              }
+              {
+                <CommandItem
+                  value="search comments activity projects tickets"
+                  onSelect={() => go("/search")}
+                >
+                  <Search />
+                  Search
                 </CommandItem>
               }
               {
@@ -556,11 +579,13 @@ export function WorkspaceHeader() {
       ? "Inbox"
       : pathname === "/my-work"
         ? "My work"
-        : pathname === "/admin" || pathname.endsWith("/settings")
-          ? "Settings"
-          : ticketId
-            ? (ticket.data?.ticket.key ?? "Ticket")
-            : "Tickets";
+        : pathname === "/search"
+          ? "Search"
+          : pathname === "/admin" || pathname.endsWith("/settings")
+            ? "Settings"
+            : ticketId
+              ? (ticket.data?.ticket.key ?? "Ticket")
+              : "Tickets";
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />

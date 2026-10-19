@@ -79,6 +79,8 @@ import { cn } from "@/lib/utils";
 
 import {
   searchSchema,
+  filterIdentity,
+  matchesFilter,
   ticketColumnLabels,
   type TicketGrouping,
   type TicketSearch,
@@ -367,7 +369,7 @@ export function TicketList({
   // Status sections fetch one series of pages each; other lists fetch one series and group it here.
   const fetches: (Ticket["status"] | undefined)[] =
     grouping === "status"
-      ? states.filter((status) => !search.status || status === search.status)
+      ? states.filter((status) => matchesFilter(search, "status", status))
       : [undefined];
   const pageQueries = fetches.flatMap((status) =>
     Array.from({ length: pages[pageKey(status)] ?? 1 }, (_, page) => ({
@@ -381,7 +383,7 @@ export function TicketList({
         ? api.query("list_tickets", {
             projectId: project.id,
             ...search,
-            status: status ?? search.status,
+            ...(status ? { status, statusNot: undefined } : {}),
             offset,
             limit: pageSize,
           })
@@ -522,13 +524,9 @@ export function TicketList({
   const [viewName, setViewName] = useState(""),
     [savingView, setSavingView] = useState(false);
   const [deletingView, setDeletingView] = useState<Output<"list_views">[number] | null>(null);
-  const currentFilters = ticketFilter.parse(
-      Object.fromEntries(Object.entries(search).filter(([key]) => key !== "offset")),
-    ),
-    isDefault = JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse({}));
-  const activeView = views.data?.find(
-    (view) => JSON.stringify(currentFilters) === JSON.stringify(ticketFilter.parse(view.filters)),
-  );
+  const currentFilters = filterIdentity(search),
+    isDefault = currentFilters === filterIdentity({});
+  const activeView = views.data?.find((view) => filterIdentity(view.filters) === currentFilters);
   const viewLabel = activeView?.name ?? (isDefault ? "All tickets" : "Custom view");
   const table = useTable({
     features,

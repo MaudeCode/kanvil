@@ -3,6 +3,7 @@ import { createFixture } from "./test-fixture.ts";
 import { createDomain, type Actor, type Domain } from "./domain.ts";
 import { relationReference, relationChoices, type Project } from "@kanvil/contracts";
 
+const sorted = (...rows: { id: string }[]) => rows.map((row) => row.id).toSorted();
 describe("ticket operations on PostgreSQL", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
     domain: Domain,
@@ -204,7 +205,7 @@ describe("ticket operations on PostgreSQL", () => {
     ).toMatchObject({ labels: ["defect, server"], archived: true, version: 3 });
     expect(
       (await domain.execute("list_views", { projectId: project.id }, owner))[0]?.filters,
-    ).toMatchObject({ label: "defect, server", priority: "high" });
+    ).toMatchObject({ label: ["defect, server"], priority: "high" });
     expect(
       (
         await domain.execute(
@@ -276,6 +277,36 @@ describe("ticket operations on PostgreSQL", () => {
     expect(
       events.filter((event) => event.type.startsWith("label.")).map((event) => event.type),
     ).toEqual(["label.updated", "label.updated", "label.deleted"]);
+  });
+  it("renames labels inside saved list, exclusion, and legacy single-value filters", async () => {
+    const alpha = await domain.execute(
+      "create_project_label",
+      { projectId: project.id, name: "alpha" },
+      owner,
+    );
+    await domain.execute(
+      "save_view",
+      { projectId: project.id, name: "Lists", filters: { label: ["alpha"], labelNot: ["beta"] } },
+      owner,
+    );
+    await fixture.database.pool.query(
+      `INSERT INTO saved_views (project_id, user_id, name, filters) VALUES ($1, $2, 'Legacy', $3)`,
+      [project.id, owner.id, JSON.stringify({ label: "alpha", status: "todo" })],
+    );
+    await domain.execute(
+      "update_project_label",
+      { projectId: project.id, labelId: alpha.id, expectedVersion: 1, name: "beta", color: "gray" },
+      owner,
+    );
+    const saved = await domain.execute("list_views", { projectId: project.id }, owner);
+    expect(saved.find((view) => view.name === "Legacy")?.filters).toMatchObject({
+      label: ["beta"],
+      status: "todo",
+    });
+    // The included label wins when a rename lands on a name the view excluded.
+    const lists = saved.find((view) => view.name === "Lists")?.filters;
+    expect(lists).toMatchObject({ label: ["beta"] });
+    expect(lists).not.toHaveProperty("labelNot");
   });
   it("keeps custom label colors in a site-wide palette until removed", async () => {
     const label = await domain.execute(
@@ -869,6 +900,185 @@ describe("ticket operations on PostgreSQL", () => {
     expect((await domain.execute("search_tickets", { q: "signing key" }, outsider)).items).toEqual(
       [],
     );
+  });
+  it("filters tickets by any-of and none-of values through one predicate catalog", async () => {
+    const create = (title: string, fields: Record<string, unknown>) =>
+      domain.execute("create_ticket", { projectId: project.id, title, ...fields }, owner);
+    const alpha = await create("Alpha", {
+        status: "todo",
+        priority: "high",
+        labels: ["x"],
+        difficulty: "med",
+        assigneeId: owner.id,
+      }),
+      beta = await create("Beta", { status: "in_progress", priority: "low", labels: ["y"] }),
+      gamma = await create("Gamma", { status: "done", labels: ["x", "y, z"], difficulty: "high" });
+    const ids = async (filter: Record<string, unknown>) =>
+      (await domain.execute("list_tickets", { projectId: project.id, ...filter }, owner)).items
+        .map((row) => row.id)
+        .toSorted();
+    expect(await ids({ status: ["todo", "in_progress"] })).toEqual(sorted(alpha, beta));
+    expect(await ids({ status: "todo" })).toEqual(sorted(alpha));
+    expect(await ids({ statusNot: ["done"] })).toEqual(sorted(alpha, beta));
+    expect(await ids({ label: ["x", "y, z"] })).toEqual(sorted(alpha, gamma));
+    expect(await ids({ labelNot: ["x"] })).toEqual(sorted(beta));
+    expect(await ids({ assigneeId: ["none"] })).toEqual(sorted(beta, gamma));
+    expect(await ids({ assigneeIdNot: ["none"] })).toEqual(sorted(alpha));
+    expect(await ids({ assigneeId: [owner.id, "none"] })).toEqual(sorted(alpha, beta, gamma));
+    // Excluding a value keeps tickets where the field is unset.
+    expect(await ids({ difficultyNot: ["med"] })).toEqual(sorted(beta, gamma));
+    expect(await ids({ priority: ["high", "low"], labelNot: ["y"] })).toEqual(sorted(alpha));
+    await expect(
+      domain.execute(
+        "list_tickets",
+        { projectId: project.id, status: ["todo"], statusNot: ["todo"] },
+        owner,
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await expect(
+      domain.execute(
+        "list_tickets",
+        { projectId: project.id, label: Array.from({ length: 26 }, (_, index) => `l${index}`) },
+        owner,
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await expect(
+      domain.execute(
+        "save_view",
+        { projectId: project.id, name: "Conflict", filters: { label: "x", labelNot: "x" } },
+        owner,
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+  });
+  it("searches tickets, projects, comments, and activity within access", async () => {
+    const token = `q${crypto.randomUUID().slice(0, 8)}`;
+    const board = await domain.execute(
+      "create_project",
+      {
+        key: `B${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        name: `${token} board`,
+        description: "Planning board",
+      },
+      owner,
+    );
+    const hidden = await domain.execute(
+      "create_project",
+      { key: `H${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: "Hidden project" },
+      owner,
+    );
+    const open = await domain.execute(
+      "create_ticket",
+      {
+        projectId: project.id,
+        title: `Rotate ${token} keys`,
+        description: `Before rotation, read the ${token} runbook carefully.`,
+      },
+      owner,
+    );
+    const done = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Closed work", status: "done" },
+      owner,
+    );
+    const comment = await domain.execute(
+      "add_comment",
+      { projectId: project.id, ticketId: done.id, body: `The ${token} fix shipped.` },
+      owner,
+    );
+    const secret = await domain.execute(
+      "create_ticket",
+      { projectId: hidden.id, title: `Secret ${token} payroll` },
+      owner,
+    );
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    const search = (actor: Actor, input: Record<string, unknown> = {}) =>
+      domain.execute("search_workspace", { q: token, ...input }, actor);
+    const all = await search(owner);
+    expect(all.counts).toEqual({ project: 1, ticket: 2, comment: 1, activity: 0 });
+    expect(all.items.map((item) => [item.type, item.id])).toEqual([
+      ["project", board.id],
+      ["ticket", secret.id],
+      ["ticket", open.id],
+      ["comment", comment.id],
+    ]);
+    expect(all).toMatchObject({ total: 4, engine: "postgres", indexing: false });
+    const ticketHit = all.items.find((item) => item.id === open.id);
+    expect(ticketHit).toMatchObject({
+      title: `Rotate ${token} keys`,
+      ticket: { id: open.id, key: open.key, status: open.status },
+      project: { id: project.id, key: project.key },
+    });
+    expect(ticketHit?.excerpt).toContain(`read the ${token} runbook`);
+    expect(all.items.find((item) => item.type === "comment")).toMatchObject({
+      ticket: { id: done.id, key: done.key },
+      excerpt: `The ${token} fix shipped.`,
+      actorId: owner.id,
+    });
+    // A reader sees only accessible projects; counts exclude what they cannot open.
+    const reader = await search(writer);
+    expect(reader.counts).toEqual({ project: 0, ticket: 1, comment: 1, activity: 0 });
+    expect(reader.items.map((item) => item.id)).toEqual([open.id, comment.id]);
+    expect((await search(outsider)).total).toBe(0);
+    // Pages walk one stable order, and a type narrows the page without changing counts.
+    const first = await search(owner, { limit: 2 }),
+      second = await search(owner, { limit: 2, offset: 2 });
+    expect([...first.items, ...second.items].map((item) => item.id)).toEqual(
+      all.items.map((item) => item.id),
+    );
+    const comments = await search(owner, { type: "comment" });
+    expect(comments).toMatchObject({ total: 1, counts: all.counts });
+    expect(comments.items.map((item) => item.id)).toEqual([comment.id]);
+    // Property filters restrict results to matching tickets and their comments.
+    const closed = await search(owner, { status: ["done"] });
+    expect(closed.counts).toEqual({ project: 0, ticket: 0, comment: 1, activity: 0 });
+    // A ticket key ranks its ticket first, then its activity follows the other results.
+    const byKey = await search(owner, { q: done.key.toLowerCase() });
+    expect(byKey.items[0]).toMatchObject({ type: "ticket", id: done.id });
+    expect(
+      byKey.items.filter((item) => item.type === "activity").map((item) => item.title),
+    ).toEqual([
+      `Comment added · ${done.key} · Closed work`,
+      `Ticket created · ${done.key} · Closed work`,
+    ]);
+    // Activity matches an active actor's name; disabled identities are not matched.
+    const editor = await fixture.auth.api.createUser({
+      body: {
+        name: `Editor ${token}`,
+        email: `${token}@example.test`,
+        password: "Isolated fixture password 42!",
+        role: "user",
+      },
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: `${token}@example.test`, role: "writer" },
+      owner,
+    );
+    const editorActor = await domain.actor(editor.user.id);
+    await domain.execute(
+      "add_comment",
+      { projectId: project.id, ticketId: open.id, body: "Reviewed." },
+      editorActor,
+    );
+    expect((await search(owner, { type: "activity" })).items.map((item) => item.actorId)).toEqual([
+      editor.user.id,
+    ]);
+    await fixture.database.pool.query(`UPDATE "user" SET banned = true WHERE id = $1`, [
+      editor.user.id,
+    ]);
+    expect((await search(owner)).counts.activity).toBe(0);
+    await expect(domain.actor(editor.user.id)).rejects.toMatchObject({ code: "account_disabled" });
+  });
+  it("reports when PostgreSQL answers while an external index is behind", async () => {
+    const lagging = createDomain(fixture.database, {
+      search: { where: async () => ({ where: undefined, engine: "postgres", indexing: true }) },
+    });
+    const result = await lagging.execute("search_workspace", { q: "anything" }, owner);
+    expect(result).toMatchObject({ engine: "postgres", indexing: true });
   });
   it("lists open assigned work and recent activity only from accessible projects", async () => {
     const hidden = await domain.execute(

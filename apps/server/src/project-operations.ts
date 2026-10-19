@@ -2,7 +2,7 @@ import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
 import { and, asc, count, desc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { isHexColor, roles } from "@kanvil/contracts";
+import { filterList, isHexColor, roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
@@ -93,14 +93,32 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
       ).event,
     );
   await publishMany(ctx, pending);
-  await ctx.db
-    .update(views)
-    .set({
-      filters: replacement
-        ? sql`jsonb_set(${views.filters}, '{label}', to_jsonb(${replacement}::text))`
-        : sql`${views.filters} - 'label'`,
-    })
-    .where(and(eq(views.projectId, project(ctx).id), sql`${views.filters}->>'label' = ${name}`));
+  // Saved label filters hold a list, or a single name from before lists existed.
+  const saved = await ctx.db
+    .select()
+    .from(views)
+    .where(
+      and(
+        eq(views.projectId, project(ctx).id),
+        sql`(${views.filters}->'label' ? ${name} OR ${views.filters}->'labelNot' ? ${name})`,
+      ),
+    );
+  const rename = (values: string | string[] | undefined) => {
+    const next = filterList(values).flatMap((tag) =>
+      tag !== name ? [tag] : replacement ? [replacement] : [],
+    );
+    return next.length ? [...new Set(next)] : undefined;
+  };
+  for (const view of saved) {
+    const filters = ticketFilter.parse(view.filters),
+      label = rename(filters.label);
+    // A rename can land on a name the view excludes; the included label wins.
+    const labelNot = rename(filters.labelNot)?.filter((tag) => !label?.includes(tag));
+    await ctx.db
+      .update(views)
+      .set({ filters: { ...filters, label, labelNot: labelNot?.length ? labelNot : undefined } })
+      .where(eq(views.id, view.id));
+  }
 }
 
 export const projectHandlers: Pick<
@@ -469,11 +487,12 @@ export const projectHandlers: Pick<
     return { ok: true };
   },
   async list_views(ctx) {
-    return ctx.db
+    const rows = await ctx.db
       .select()
       .from(views)
       .where(and(eq(views.projectId, project(ctx).id), eq(views.userId, ctx.actor.id)))
       .orderBy(views.name);
+    return rows.map((row) => ({ ...row, filters: ticketFilter.parse(row.filters) }));
   },
   async save_view(ctx, input) {
     return one(

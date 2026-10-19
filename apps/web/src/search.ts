@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { ticketFilter } from "@kanvil/contracts";
+import {
+  filterKey,
+  filterList,
+  searchResultTypes,
+  ticketFilter,
+  ticketPredicates,
+  type FilterField,
+} from "@kanvil/contracts";
 export const searchSchema = ticketFilter.extend({
   offset: z.coerce.number().int().min(0).catch(0).default(0),
   // The ticket open in the list's preview sheet, and its project on lists that span projects.
@@ -7,6 +14,34 @@ export const searchSchema = ticketFilter.extend({
   peekProject: z.string().min(1).max(80).optional().catch(undefined),
 });
 export type TicketSearch = z.output<typeof searchSchema>;
+// Two filters mean the same thing when their normalized predicates and options match, so a view
+// saved with a single value still matches the same filter chosen as a one-item list.
+export function filterIdentity(input: unknown) {
+  const { q, parentId, archived, due, sort, order, ...values } = ticketFilter.parse(
+    Object.fromEntries(
+      Object.entries(z.record(z.string(), z.unknown()).parse(input)).filter(
+        ([key]) => key !== "offset",
+      ),
+    ),
+  );
+  // Values within a predicate are a set: order of selection does not change the filter.
+  const predicates = ticketPredicates(values).map((predicate) => ({
+    ...predicate,
+    values: predicate.values.toSorted(),
+  }));
+  return JSON.stringify([predicates, q, parentId, archived, due, sort, order]);
+}
+// Whether a value passes one field's include and exclude lists.
+export function matchesFilter(search: TicketSearch, field: FilterField, value: string) {
+  const included: string[] = filterList(search[field]),
+    excluded: string[] = filterList(search[filterKey(field, "none")]);
+  return (!included.length || included.includes(value)) && !excluded.includes(value);
+}
+export const resultsSearchSchema = z.object({
+  q: z.string().trim().max(200).optional().catch(undefined),
+  type: z.enum(searchResultTypes).optional().catch(undefined),
+  offset: z.coerce.number().int().min(0).max(1000).catch(0).default(0),
+});
 // My work spans projects, so only search and ordering apply; project filters are dropped.
 export const workSearchSchema = searchSchema.transform(
   ({ q, sort, order, peek, peekProject }): TicketSearch =>

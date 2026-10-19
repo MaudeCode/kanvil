@@ -42,13 +42,20 @@ import {
   one,
 } from "./domain.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
+import { likePattern } from "./search.ts";
+import { z } from "zod";
 import {
   closedStates,
   defaultOrder,
   difficulties,
   operations,
+  eventLabels,
+  formatEvent,
+  searchResultTypes,
   priorities,
   states,
+  ticketPredicates,
+  type TicketPredicate,
   type ParsedInput,
   type Output,
 } from "@kanvil/contracts";
@@ -250,6 +257,34 @@ function dueWhere(due: ParsedInput<"list_tickets">["due"]) {
       return undefined;
   }
 }
+// One predicate per normalized filter; lists and search share it. Excluding a value keeps tickets
+// where the field is unset, and the assignee value "none" stands for unassigned.
+const filterColumns = {
+  status: tickets.status,
+  priority: tickets.priority,
+  kind: tickets.kind,
+  difficulty: tickets.difficulty,
+};
+function predicateSQL({ field, operator, values }: TicketPredicate) {
+  if (field === "label") {
+    const overlap = sql`${tickets.labels} && ${sql.param(values)}::text[]`;
+    return operator === "any" ? overlap : sql`NOT (${overlap})`;
+  }
+  const column = field === "assigneeId" ? tickets.assigneeId : filterColumns[field];
+  const named = field === "assigneeId" ? values.filter((value) => value !== "none") : values,
+    unset = field === "assigneeId" && values.includes("none");
+  if (operator === "any")
+    return or(
+      named.length ? inArray(column, named) : undefined,
+      unset ? isNull(column) : undefined,
+    );
+  return and(
+    named.length ? or(isNull(column), notInArray(column, named)) : undefined,
+    unset ? isNotNull(column) : undefined,
+  );
+}
+export const predicateWhere = (filter: Parameters<typeof ticketPredicates>[0]) =>
+  and(...ticketPredicates(filter).map(predicateSQL));
 // Every ticket listing orders the same way: the chosen sort, then the ticket number.
 function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">) {
   const direction = input.order ?? defaultOrder[input.sort];
@@ -326,6 +361,30 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
   };
   return { row, event };
 }
+const countRow = z.object({ type: z.enum(searchResultTypes), count: z.number().int() });
+const hitRow = z.object({
+  type: z.enum(searchResultTypes),
+  id: z.string(),
+  project_id: z.string(),
+  ticket_id: z.string().nullable(),
+  actor_id: z.string().nullable(),
+  body: z.string().nullable(),
+  event_type: z.string().nullable(),
+  data: z.record(z.string(), z.unknown()).nullable(),
+  at: z.coerce.date(),
+  key: z.string().nullable(),
+  title: z.string().nullable(),
+  status: z.enum(states).nullable(),
+});
+// The text around the first literal match, or nothing when only the title or index matched.
+function excerpt(body: string | null, query: string, radius = 80) {
+  const text = body?.replace(/\s+/gu, " ").trim() ?? "",
+    at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (at < 0) return "";
+  const start = Math.max(0, at - radius),
+    end = Math.min(text.length, at + query.length + radius);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
+}
 export const ticketHandlers: Pick<
   Handlers,
   | "list_tickets"
@@ -338,6 +397,7 @@ export const ticketHandlers: Pick<
   | "bulk_update_tickets"
   | "delete_ticket"
   | "search_tickets"
+  | "search_workspace"
   | "list_eligible_tickets"
   | "claim_ticket"
   | "renew_claim"
@@ -376,19 +436,10 @@ export const ticketHandlers: Pick<
             ),
           )
         : undefined,
-      input.status ? eq(tickets.status, input.status) : undefined,
-      input.priority ? eq(tickets.priority, input.priority) : undefined,
-      input.kind ? eq(tickets.kind, input.kind) : undefined,
-      input.difficulty ? eq(tickets.difficulty, input.difficulty) : undefined,
-      input.assigneeId === "none"
-        ? isNull(tickets.assigneeId)
-        : input.assigneeId
-          ? eq(tickets.assigneeId, input.assigneeId)
-          : undefined,
-      input.label ? sql`${input.label} = ANY(${tickets.labels})` : undefined,
+      predicateWhere(input),
       input.archived === "include" ? undefined : eq(tickets.archived, input.archived === "only"),
       dueWhere(input.due),
-      search,
+      search?.where,
     );
     return pageOf(ctx, where, ticketOrder(input), input);
   },
@@ -401,7 +452,7 @@ export const ticketHandlers: Pick<
       eq(tickets.assigneeId, ctx.actor.id),
       eq(tickets.archived, false),
       openTicket,
-      input.q ? await ctx.search.where(ctx.db, ids, input.q) : undefined,
+      input.q ? (await ctx.search.where(ctx.db, ids, input.q)).where : undefined,
     );
     const activity = input.activity
       ? await ctx.db
@@ -546,7 +597,10 @@ export const ticketHandlers: Pick<
         and(
           inArray(tickets.projectId, ids),
           eq(tickets.archived, false),
-          or(eq(tickets.key, input.q.toUpperCase()), await ctx.search.where(ctx.db, ids, input.q)),
+          or(
+            eq(tickets.key, input.q.toUpperCase()),
+            (await ctx.search.where(ctx.db, ids, input.q)).where,
+          ),
         ),
       )
       .orderBy(
@@ -561,6 +615,128 @@ export const ticketHandlers: Pick<
           ? [{ ticket, project: { id: owner.id, key: owner.key, name: owner.name } }]
           : [];
       }),
+    };
+  },
+  async search_workspace(ctx, input) {
+    const counts = { project: 0, ticket: 0, comment: 0, activity: 0 };
+    const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
+    if (!allowed.length)
+      return { items: [], total: 0, counts, engine: "postgres" as const, indexing: false };
+    const ids = allowed.map((row) => row.id),
+      key = input.q.toUpperCase(),
+      like = likePattern(input.q),
+      match = await ctx.search.where(ctx.db, ids, input.q),
+      filtered = ticketPredicates(input).length > 0,
+      // Results that belong to a ticket also honor its filters; archived tickets stay out.
+      ticketScope = and(
+        inArray(tickets.projectId, ids),
+        eq(tickets.archived, false),
+        predicateWhere(input),
+      );
+    // ponytail: every family is matched with ILIKE scans per request; add trigram indexes or index
+    // comments and activity externally if large workspaces make this slow.
+    const hits = sql.join(
+      [
+        filtered
+          ? undefined
+          : sql`SELECT 'project' AS type, projects.id::text AS id, projects.id AS project_id,
+              NULL::uuid AS ticket_id, NULL::text AS actor_id, projects.description AS body,
+              NULL::text AS event_type, NULL::jsonb AS data, projects.updated_at AS at,
+              CASE WHEN projects.key = ${key} THEN 0 ELSE 1 END AS rank, 0 AS family
+            FROM projects WHERE ${inArray(projects.id, ids)}
+              AND (projects.name ILIKE ${like} OR projects.key ILIKE ${like} OR projects.description ILIKE ${like})`,
+        sql`SELECT 'ticket' AS type, tickets.id::text AS id, tickets.project_id,
+              tickets.id AS ticket_id, NULL::text AS actor_id,
+              concat_ws(' ', tickets.description, tickets.acceptance_criteria) AS body,
+              NULL::text AS event_type, NULL::jsonb AS data, tickets.updated_at AS at,
+              CASE WHEN tickets.key = ${key} THEN 0 ELSE 1 END AS rank, 1 AS family
+            FROM tickets WHERE ${and(ticketScope, or(eq(tickets.key, key), match.where))}`,
+        sql`SELECT 'comment' AS type, comments.id::text AS id, comments.project_id,
+              comments.ticket_id, comments.actor_id, comments.body, NULL::text AS event_type,
+              NULL::jsonb AS data, comments.created_at AS at, 1 AS rank, 2 AS family
+            FROM comments JOIN tickets ON tickets.id = comments.ticket_id
+            WHERE ${and(ticketScope, sql`comments.body ILIKE ${like}`)}`,
+        // Activity matches its label, its ticket key, or an active actor's name.
+        sql`SELECT 'activity' AS type, events.id::text AS id, events.project_id,
+              events.ticket_id, events.actor_id, NULL::text AS body, events.type AS event_type,
+              events.data, events.created_at AS at, 1 AS rank, 3 AS family
+            FROM events
+            LEFT JOIN tickets ON tickets.id = events.ticket_id
+            LEFT JOIN "user" ON "user".id = events.actor_id
+            LEFT JOIN (VALUES ${sql.join(
+              Object.entries(eventLabels).map(([type, label]) => sql`(${type}, ${label})`),
+              sql`, `,
+            )}) AS labels(type, label) ON labels.type = events.type
+            WHERE ${and(
+              inArray(events.projectId, ids),
+              filtered ? ticketScope : undefined,
+              sql`(coalesce(labels.label, replace(replace(events.type, '.', ' '), '_', ' ')) ILIKE ${like}
+                OR events.data->>'key' = ${key}
+                OR ("user".name ILIKE ${like} AND NOT coalesce("user".banned, false)))`,
+            )}`,
+      ].filter((part) => part !== undefined),
+      sql` UNION ALL `,
+    );
+    for (const row of (
+      await ctx.db.execute(
+        sql`SELECT hits.type, count(*)::int AS count FROM (${hits}) AS hits GROUP BY hits.type`,
+      )
+    ).rows) {
+      const parsed = countRow.parse(row);
+      counts[parsed.type] = parsed.count;
+    }
+    const rows = (
+      await ctx.db.execute(sql`SELECT hits.*, tickets.key, tickets.title, tickets.status
+        FROM (${hits}) AS hits LEFT JOIN tickets ON tickets.id = hits.ticket_id
+        WHERE ${input.type ? sql`hits.type = ${input.type}` : sql`true`}
+        ORDER BY hits.rank, hits.family, hits.at DESC, hits.id DESC
+        LIMIT ${input.limit} OFFSET ${input.offset}`)
+    ).rows.map((row) => hitRow.parse(row));
+    const projectsById = new Map(allowed.map((row) => [row.id, row]));
+    return {
+      items: rows.flatMap((row) => {
+        const owner = projectsById.get(row.project_id);
+        if (!owner) return [];
+        const ticket =
+          row.ticket_id && row.key && row.title && row.status
+            ? { id: row.ticket_id, key: row.key, title: row.title, status: row.status }
+            : null;
+        const at = row.at.toISOString();
+        return [
+          {
+            type: row.type,
+            id: row.id,
+            project: { id: owner.id, key: owner.key, name: owner.name },
+            ticket,
+            title:
+              row.type === "project"
+                ? owner.name
+                : row.type === "activity"
+                  ? formatEvent(
+                      {
+                        id: row.id,
+                        projectId: owner.id,
+                        ticketId: row.ticket_id,
+                        actorId: row.actor_id ?? "",
+                        type: row.event_type ?? "",
+                        data: row.data ?? {},
+                        createdAt: at,
+                      },
+                      true,
+                    )
+                  : (ticket?.title ?? ""),
+            excerpt: excerpt(row.body, input.q),
+            actorId: row.actor_id,
+            at,
+          },
+        ];
+      }),
+      total: input.type
+        ? counts[input.type]
+        : counts.project + counts.ticket + counts.comment + counts.activity,
+      counts,
+      engine: match.engine,
+      indexing: match.indexing,
     };
   },
   async claim_ticket(ctx, input) {

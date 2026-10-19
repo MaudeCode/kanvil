@@ -1,5 +1,5 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
-import { postgresSearch, type TicketSearchProvider } from "./search.ts";
+import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
 import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
@@ -138,7 +138,7 @@ async function context(
     workspace: null,
     role: "reader",
     blobs: { put: writeLocalBlob },
-    search: { where: async (_db, _ids, query) => postgresSearch(query) },
+    search: builtinSearch,
   };
   if (workspaceId) {
     ctx.workspace = await requireWorkspace(ctx, workspaceId, scope === "admin");
@@ -372,6 +372,7 @@ export function createDomain(
     "list_projects",
     "list_my_work",
     "search_tickets",
+    "search_workspace",
   ]);
   async function execute<K extends Operation>(
     name: K,

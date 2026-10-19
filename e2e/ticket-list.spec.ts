@@ -164,7 +164,7 @@ test("priority icons distinguish every level and keep names in pickers", async (
   for (const priority of priorities) {
     const option = page.getByRole("option", { name: priorityLabels[priority], exact: true });
     await expect(option).toBeVisible();
-    await expect(option.locator(`svg`)).toHaveCount(1);
+    await expect(option.locator('[data-slot="badge"] svg')).toHaveCount(1);
   }
   await page.getByRole("option", { name: "Urgent", exact: true }).click();
   await page.keyboard.press("Escape");
@@ -247,7 +247,8 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.getByRole("combobox", { name: "Label", exact: true }).click();
   await page.getByRole("combobox", { name: "Search labels", exact: true }).fill("rare");
   await page.getByRole("option", { name: /rare, quoted 'label'/ }).click();
-  await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
   await expect(ticketRows(page)).toHaveCount(1);
   await expect(ticketRows(page).first()).toContainText("LABELUX-51");
   await expect(
@@ -634,10 +635,23 @@ test("keyboard highlight walks the list, opens tickets, and the detail steps thr
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await choose(page, "Assignee", "Me");
   await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
   await expect(ticketRows(page)).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Assigned to me", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Assignee: Me", exact: true })).toBeVisible();
+  // Several values match any of them; "Is not" excludes them instead.
   await page.getByRole("button", { name: "Filters (1)", exact: true }).click();
   await choose(page, "Assignee", "Unassigned");
-  await page.keyboard.press("Escape");
+  await expect(ticketRows(page)).toHaveCount(3);
+  await page.getByRole("button", { name: "Is not", exact: true }).click();
+  await expect(ticketRows(page)).toHaveCount(0);
+  await page.getByRole("option", { name: "Unassigned", exact: true }).click();
   await expect(ticketRows(page)).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const chip = page.getByRole("button", { name: "Assignee is not: Me", exact: true });
+  await expect(chip).toBeVisible();
+  await page.reload();
+  await expect(ticketRows(page)).toHaveCount(2);
+  await chip.click();
+  await expect(ticketRows(page)).toHaveCount(3);
 });

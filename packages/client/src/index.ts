@@ -104,12 +104,12 @@ export function createClient(options: {
         credentials: options.credentials ?? "include",
         headers,
       };
-      if (spec.method === "GET")
-        for (const [key, value] of Object.entries(values)) {
-          if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-            url.searchParams.set(key, String(value));
-        }
-      else {
+      if (spec.method === "GET") {
+        for (const [key, value] of Object.entries(values))
+          for (const item of Array.isArray(value) ? value : [value])
+            if (typeof item === "string" || typeof item === "number" || typeof item === "boolean")
+              url.searchParams.append(key, String(item));
+      } else {
         headers.set("Content-Type", "application/json");
         values.requestId ??= (options.requestId ?? randomRequestId)();
         init.body = JSON.stringify(values);

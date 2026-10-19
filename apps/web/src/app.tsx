@@ -43,7 +43,9 @@ import {
   adminSearchSchema,
   searchSchema,
   workSearchSchema,
+  resultsSearchSchema,
 } from "./search.ts";
+import { SearchResults } from "./search-results.tsx";
 
 import { Login, Consent } from "./auth.tsx";
 import {
@@ -794,6 +796,24 @@ function MyWorkPage() {
     <ErrorNotice error={workspace.error ?? new Error("No workspace selected")} />
   );
 }
+const searchRoute = createRoute({
+  getParentRoute: () => shell,
+  path: "/search",
+  validateSearch: resultsSearchSchema,
+  component: SearchPage,
+});
+function SearchPage() {
+  const search = searchRoute.useSearch(),
+    navigate = searchRoute.useNavigate();
+  return (
+    <SearchResults
+      search={search}
+      onSearch={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
 const ticket = createRoute({
   getParentRoute: () => shell,
   path: "/projects/$projectId/tickets/$ticketId",
@@ -843,6 +863,7 @@ const router = createRouter({
     shell.addChildren([
       home,
       myWork,
+      searchRoute,
       projectRoute,
       ticket,
       projectSettings,

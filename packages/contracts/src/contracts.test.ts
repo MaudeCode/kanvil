@@ -5,6 +5,8 @@ import {
   operations,
   parseRelationChoice,
   relationChoices,
+  ticketFilter,
+  ticketPredicates,
 } from "./index.ts";
 
 describe("agent write contracts", () => {
@@ -150,4 +152,39 @@ it("defaults legacy public authentication capabilities for web and native client
       authentication: { emailPasswordEnabled: false, ssoAutoProvision: true },
     }).authentication,
   ).toEqual({ emailPasswordEnabled: false, ssoAutoProvision: true });
+});
+
+describe("ticket filter predicates", () => {
+  it("normalizes single and repeated values into one predicate catalog", () => {
+    const filter = ticketFilter.parse({
+      status: "todo",
+      statusNot: ["done", "cancelled", "done"],
+      label: ["red,blue", "O'Reilly"],
+      assigneeId: "none",
+    });
+    expect(ticketPredicates(filter)).toEqual([
+      { field: "status", operator: "any", values: ["todo"] },
+      { field: "status", operator: "none", values: ["done", "cancelled"] },
+      { field: "label", operator: "any", values: ["red,blue", "O'Reilly"] },
+      { field: "assigneeId", operator: "any", values: ["none"] },
+    ]);
+    expect(ticketPredicates(ticketFilter.parse({}))).toEqual([]);
+  });
+  it("rejects conflicting, empty, unknown, and oversized filters", () => {
+    expect(
+      ticketFilter.safeParse({ priority: ["high"], priorityNot: "high" }).error?.issues,
+    ).toEqual([
+      expect.objectContaining({ message: "Priority cannot both include and exclude high" }),
+    ]);
+    expect(ticketFilter.safeParse({ status: [] }).success).toBe(false);
+    expect(ticketFilter.safeParse({ status: ["todo", "shipped"] }).success).toBe(false);
+    expect(
+      ticketFilter.safeParse({ label: Array.from({ length: 26 }, (_, index) => `l${index}`) })
+        .success,
+    ).toBe(false);
+    expect(
+      operations.list_tickets.input.safeParse({ projectId: "p", kind: "bug", kindNot: ["bug"] })
+        .success,
+    ).toBe(false);
+  });
 });
