@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import {
   hasAdminRole,
   invitationStatuses,
@@ -105,6 +105,23 @@ async function pendingRow(ctx: Context, invitationId: string, expectedVersion: n
   assertVersion(row, expectedVersion, "invitation");
   return row;
 }
+// One live link per address: creating or reviving another would leave two working invitations.
+async function assertNoLiveInvitation(ctx: Context, email: string, except?: string) {
+  const live = await ctx.db
+    .select({ id: invitations.id })
+    .from(invitations)
+    .where(
+      and(
+        eq(invitations.workspaceId, workspace(ctx).id),
+        eq(invitations.email, email),
+        eq(invitations.status, "pending"),
+        gt(invitations.expiresAt, new Date()),
+        except ? ne(invitations.id, except) : undefined,
+      ),
+    );
+  if (live.length)
+    fail(409, "invitation_pending", "This email already has a pending invitation; resend it");
+}
 async function byToken(ctx: Context, token: string) {
   requireSession(ctx);
   const row = (
@@ -167,19 +184,7 @@ export const invitationHandlers: Pick<
       if (found.length !== wanted.length)
         fail(404, "not_found", "A selected project is not in this workspace");
     }
-    const live = await ctx.db
-      .select({ id: invitations.id })
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.workspaceId, space.id),
-          eq(invitations.email, input.email),
-          eq(invitations.status, "pending"),
-          gt(invitations.expiresAt, new Date()),
-        ),
-      );
-    if (live.length)
-      fail(409, "invitation_pending", "This email already has a pending invitation; resend it");
+    await assertNoLiveInvitation(ctx, input.email);
     return send(ctx, (tokenHash) =>
       ctx.db
         .insert(invitations)
@@ -197,6 +202,7 @@ export const invitationHandlers: Pick<
   },
   async resend_invitation(ctx, input) {
     const row = await pendingRow(ctx, input.invitationId, input.expectedVersion);
+    await assertNoLiveInvitation(ctx, row.email, row.id);
     // The new link replaces the old one, and the resending administrator becomes its sender.
     return send(ctx, (tokenHash) =>
       ctx.db

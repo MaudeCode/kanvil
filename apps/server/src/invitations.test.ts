@@ -200,6 +200,29 @@ describe("workspace invitations", () => {
     expect(await workspaceRole(guest)).toBeUndefined();
   });
 
+  it("keeps one live link per address when an expired invitation is resent", async () => {
+    const expired = await invite();
+    await fixture.database.db
+      .update(invitations)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(invitations.id, expired.invitation.id));
+    const replacement = await invite();
+    await expect(
+      domain.execute(
+        "resend_invitation",
+        { workspaceId: workspace.id, invitationId: expired.invitation.id, expectedVersion: 1 },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: "invitation_pending" });
+    // The live invitation can still be resent; it is not its own duplicate.
+    const resent = await domain.execute(
+      "resend_invitation",
+      { workspaceId: workspace.id, invitationId: replacement.invitation.id, expectedVersion: 1 },
+      owner,
+    );
+    expect(resent.invitation.status).toBe("pending");
+  });
+
   it("grants only the selected projects that still exist", async () => {
     const [kept, removed, hidden] = await Promise.all([project(), project(), project()]);
     const created = await invite({ role: "reader", projectIds: [kept.id, removed.id] });

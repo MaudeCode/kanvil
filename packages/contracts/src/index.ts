@@ -951,10 +951,9 @@ export const operations = {
     "List members of a workspace you belong to.",
   ),
   set_workspace_member: op(
-    // No requestId: the response carries the only copy of the link, so it is never stored in a
-    // replay receipt. The same holds for resend.
     z
       .object({
+        ...mutation,
         workspaceId: z.uuid(),
         email: z.email(),
         role: z.enum(roles).nullable(),
@@ -975,9 +974,10 @@ export const operations = {
     "List the workspace's pending and expired invitations.",
   ),
   create_invitation: op(
+    // No requestId: the response carries the only copy of the link, so it is never stored in a
+    // replay receipt. The same holds for resend.
     z
       .object({
-        ...mutation,
         workspaceId: z.uuid(),
         email: z.email().overwrite((value) => value.toLowerCase()),
         role: z.enum(roles),

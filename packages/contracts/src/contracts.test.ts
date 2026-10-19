@@ -196,6 +196,15 @@ it("reads tickets and drafts from before start dates and keeps edits partial", (
     }),
   ).toThrow();
 });
+it("takes a requestId on every write except those returning a one-time secret", () => {
+  // A replay receipt would store the secret, so these writes are the only ones without one.
+  const unreplayable = Object.entries(operations)
+    .filter(([, spec]) => spec.method !== "GET" && !("requestId" in spec.input.shape))
+    .map(([name]) => name);
+  expect(new Set(unreplayable)).toEqual(
+    new Set(["create_calendar_feed", "create_invitation", "resend_invitation"]),
+  );
+});
 it("defaults legacy public authentication capabilities for web and native clients", () => {
   const legacy = {
     name: "Kanvil",
