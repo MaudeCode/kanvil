@@ -196,6 +196,7 @@ export function ProjectSettings({
         <SettingsPanel value="integrations">
           <RepositoryConnections
             projectId={project.id}
+            workspaceId={project.workspaceId}
             canAdmin={access.canManage}
             canChange={access.canAdmin}
           />

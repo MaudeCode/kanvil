@@ -1123,6 +1123,70 @@ const repositoryBaseUrl = endpoint
 const repositorySecret = z.string().trim().min(1).max(500);
 // A trigger left out moves nothing.
 const repositoryTransitions = z.partialRecord(z.enum(repositoryTriggers), z.uuid());
+// Issue sync between tickets and a connected repository's issues. A rule names workspace labels by
+// ID and matches tickets or issues carrying any or all of them; no labels matches every one.
+export const syncRuleSchema = z
+  .object({
+    enabled: z.boolean(),
+    labels: z.array(z.uuid()).max(50),
+    match: z.enum(["any", "all"]),
+  })
+  .strict();
+export type SyncRule = z.output<typeof syncRuleSchema>;
+// `creating` waits for the host to confirm a new issue; `unknown` means that confirmation never
+// arrived, so the issue may or may not exist. `paused` and `review` sync nothing until reconciled.
+export const issueLinkStates = ["active", "paused", "review", "creating", "unknown"] as const;
+export type IssueLinkState = (typeof issueLinkStates)[number];
+export const issueLinkStateLabels: Record<IssueLinkState, string> = {
+  active: "Syncing",
+  paused: "Paused",
+  review: "Needs review",
+  creating: "Creating issue",
+  unknown: "Creation unconfirmed",
+};
+export const issueLinkSchema = z.object({
+  id: z.uuid(),
+  connectionId: z.uuid(),
+  ticketId: z.uuid(),
+  ticketKey: z.string(),
+  ticketTitle: z.string(),
+  // Whether the ticket exported to the issue or the issue imported as the ticket; that side's rule
+  // keeps the link syncing.
+  origin: z.enum(["inbound", "outbound"]),
+  state: z.enum(issueLinkStates),
+  // Why the link stopped: `labels`, `conflict`, `changed_while_paused`, or a host or ticket error code.
+  reason: z.string().nullable(),
+  number: z.number().int().nullable(),
+  url: z.string().nullable(),
+  version,
+  updatedAt: timestamp,
+});
+export type IssueLink = z.output<typeof issueLinkSchema>;
+export const issueContentSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  open: z.boolean(),
+});
+export type IssueContent = z.output<typeof issueContentSchema>;
+// Both sides of a link now; `remote` is null until the host has reported the issue.
+export const issueComparisonSchema = z.object({
+  link: issueLinkSchema,
+  ticketVersion: version,
+  local: issueContentSchema,
+  remote: issueContentSchema.nullable(),
+  base: issueContentSchema.nullable(),
+});
+// What applying rules would do: links that keep syncing, tickets that export as new issues, links
+// that pause, and paused links that qualify again and wait for review. Apply passes `fingerprint`
+// back and is refused once any of these sets changed.
+export const syncPreviewSchema = z.object({
+  matching: z.number().int().nonnegative(),
+  export: z.number().int().nonnegative(),
+  pause: z.number().int().nonnegative(),
+  review: z.number().int().nonnegative(),
+  fingerprint: z.string(),
+});
+export type SyncPreview = z.output<typeof syncPreviewSchema>;
 export const repositoryConnectionSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -1136,7 +1200,11 @@ export const repositoryConnectionSchema = z.object({
   paused: z.boolean(),
   commentOnLink: z.boolean(),
   transitions: repositoryTransitions,
-  // The latest access check or link comment.
+  outbound: syncRuleSchema,
+  inbound: syncRuleSchema,
+  // Issue links by state; states without links are left out.
+  issueLinks: z.partialRecord(z.enum(issueLinkStates), z.number().int()),
+  // The latest access check, link comment, or issue sync.
   health: deliveryHealthSchema,
   lastEventAt: timestamp.nullable(),
   lastEventError: z.string().nullable(),
@@ -1223,6 +1291,7 @@ export const eventLabels: Record<string, string> = {
   "repository.updated": "Repository connection changed",
   "repository.disconnected": "Repository disconnected",
   "repository.received": "Repository webhook received",
+  "issue_link.updated": "Issue sync changed",
 };
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),
@@ -2850,6 +2919,70 @@ export const operations = {
     "/projects/{projectId}/repositories/{connectionId}/verify",
     "admin",
     "Queue an access check of the saved token against the repository; `health` shows the result.",
+  ),
+  preview_repository_sync: op(
+    projectInput
+      .extend({
+        ...mutation,
+        connectionId: z.uuid(),
+        outbound: syncRuleSchema,
+        inbound: syncRuleSchema,
+      })
+      .strict(),
+    syncPreviewSchema,
+    "POST",
+    "/projects/{projectId}/repositories/{connectionId}/sync/preview",
+    "admin",
+    "Count what applying these issue sync rules would do without changing anything. Issues import when the host next reports them, so imports are not counted.",
+  ),
+  apply_repository_sync: op(
+    projectInput
+      .extend({
+        ...mutation,
+        connectionId: z.uuid(),
+        expectedVersion: version,
+        outbound: syncRuleSchema,
+        inbound: syncRuleSchema,
+        fingerprint: z.string().max(100),
+      })
+      .strict(),
+    repositoryConnectionSchema,
+    "POST",
+    "/projects/{projectId}/repositories/{connectionId}/sync",
+    "admin",
+    "Save issue sync rules and apply the previewed effects: queue new issues for exported tickets, pause links that no longer qualify, and hold requalifying links for review. Refused with `version_conflict` when the preview's `fingerprint` is stale.",
+  ),
+  list_issue_links: op(
+    projectInput.extend({ connectionId: z.uuid() }),
+    z.array(issueLinkSchema),
+    "GET",
+    "/projects/{projectId}/repositories/{connectionId}/issue-links",
+    "admin",
+    "List the tickets this connection synchronizes with issues, with each link's state.",
+  ),
+  compare_issue_link: op(
+    projectInput.extend({ linkId: z.uuid() }),
+    issueComparisonSchema,
+    "GET",
+    "/projects/{projectId}/issue-links/{linkId}",
+    "admin",
+    "Compare a linked ticket's title, description, and open state with its issue as the host last reported it.",
+  ),
+  reconcile_issue_link: op(
+    projectInput
+      .extend({
+        ...mutation,
+        linkId: z.uuid(),
+        expectedVersion: version,
+        ticketVersion: version,
+        resolution: z.enum(["kanvil", "remote", "unlink"]),
+      })
+      .strict(),
+    okSchema,
+    "POST",
+    "/projects/{projectId}/issue-links/{linkId}/reconcile",
+    "admin",
+    "Resume a paused, conflicting, or unconfirmed link from the side chosen as authoritative, or unlink it. `kanvil` writes the ticket to the issue (or creates the issue again); `remote` writes the issue to the ticket. Both versions come from `compare_issue_link`; a change on either side since then is refused with `version_conflict`. Unlinking keeps the ticket and the issue.",
   ),
 } as const;
 

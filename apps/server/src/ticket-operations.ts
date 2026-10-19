@@ -436,7 +436,7 @@ async function allocateTicket(ctx: Context) {
   };
 }
 // Inserts one ticket with the next project number and returns its event for the caller to publish.
-async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">) {
+export async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">) {
   const id = crypto.randomUUID();
   await validateReferences(ctx, id, input);
   const {

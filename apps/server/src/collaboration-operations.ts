@@ -1,5 +1,10 @@
 import { decodeBlobData, stagedUploadCutoff } from "./blob-storage.ts";
-import { attachmentLimit, resourceProvider, stagedUploadLifetime } from "@kanvil/contracts";
+import {
+  attachmentLimit,
+  resourceProvider,
+  stagedUploadLifetime,
+  type ParsedInput,
+} from "@kanvil/contracts";
 import {
   and,
   asc,
@@ -72,6 +77,26 @@ async function editableResource(
   );
   await assertWorkerClaim(ctx, await getTicket(ctx, row.ticketId), input.claimId);
   assertVersion(row, input.expectedVersion, "resource");
+  return row;
+}
+export async function addComment(ctx: Context, input: ParsedInput<"add_comment">) {
+  const ticket = await getTicket(ctx, input.ticketId);
+  const row = one(
+    await ctx.db
+      .insert(comments)
+      .values({
+        projectId: project(ctx).id,
+        ticketId: ticket.id,
+        actorId: ctx.actor.id,
+        body: input.body,
+      })
+      .returning(),
+  );
+  await subscribe(ctx, row.projectId, row.ticketId, [ctx.actor.id]);
+  await publish(ctx, "comment.created", ticket.id, {
+    commentId: row.id,
+    mentions: mentionedUserIds(row.body),
+  });
   return row;
 }
 export const collaborationHandlers: Pick<
@@ -167,26 +192,7 @@ export const collaborationHandlers: Pick<
       total: one(await ctx.db.select({ count: count() }).from(comments).where(where)).count,
     };
   },
-  async add_comment(ctx, input) {
-    const ticket = await getTicket(ctx, input.ticketId);
-    const row = one(
-      await ctx.db
-        .insert(comments)
-        .values({
-          projectId: project(ctx).id,
-          ticketId: ticket.id,
-          actorId: ctx.actor.id,
-          body: input.body,
-        })
-        .returning(),
-    );
-    await subscribe(ctx, row.projectId, row.ticketId, [ctx.actor.id]);
-    await publish(ctx, "comment.created", ticket.id, {
-      commentId: row.id,
-      mentions: mentionedUserIds(row.body),
-    });
-    return row;
-  },
+  add_comment: addComment,
   async update_comment(ctx, input) {
     const current = await editableComment(ctx, input.commentId, input.expectedVersion);
     const row = one(

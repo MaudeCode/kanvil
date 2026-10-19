@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeftRight,
   GitBranch,
   Pause,
   Pencil,
@@ -21,6 +22,7 @@ import {
   destinationEventLabels,
   destinationEvents,
   destinationKinds,
+  issueLinkStateLabels,
   repositoryProviderDefinitions,
   repositoryProviders,
   repositoryTriggerLabel,
@@ -28,13 +30,26 @@ import {
   type ChannelRoute,
   type DeliveryKind,
   type DestinationEvent,
+  type IssueLink,
   type NotificationChannel,
   type ProjectDestination,
   type RepositoryConnection,
   type RepositoryProvider,
   type RepositoryTrigger,
+  type SyncPreview,
+  type SyncRule,
 } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { api, useAllProjects, useOperation, useWorkspace, useWorkspaces } from "../data.tsx";
 import { formText, submitOnModEnter } from "../forms.ts";
@@ -49,6 +64,7 @@ import {
   Input,
   Loading,
   Modal,
+  ModalActions,
   RelativeTime,
   SectionHeading,
   Select,
@@ -57,6 +73,9 @@ import {
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
 import { useWorkflow } from "./ticket-property.tsx";
+import { ProjectLabelProvider } from "./project-label-provider.tsx";
+import { TagInput } from "./tag-input.tsx";
+import { TicketLink } from "./ticket-link.tsx";
 
 type Target = NotificationChannel | ProjectDestination;
 type Health = Target["health"];
@@ -712,11 +731,11 @@ const accessWords = {
 // What each host's token and webhook need; the form reads its other wording from the definitions.
 const repositorySetup: Record<RepositoryProvider, string> = {
   github:
-    "The token needs repository read access, and issue and pull request write access to comment. Add a GitHub webhook with the URL copied from this repository's row, content type application/json, this secret, and the Branch or tag creation, Branch or tag deletion, Issues, and Pull requests events.",
+    "The token needs repository read access, and issue and pull request write access to comment or sync issues. Add a GitHub webhook with the URL copied from this repository's row, content type application/json, this secret, and the Branch or tag creation, Branch or tag deletion, Issues, Issue comments, and Pull requests events.",
   gitea:
-    "The token needs the read:repository scope, and write:issue to comment. Add a Gitea webhook with the URL copied from this repository's row, content type application/json, this secret, and the Create, Delete, Issues, and Pull Request events.",
+    "The token needs the read:repository scope, and write:issue to comment or sync issues. Add a Gitea webhook with the URL copied from this repository's row, content type application/json, this secret, and the Create, Delete, Issues, Issue Label, Issue Comment, and Pull Request events.",
   gitlab:
-    "The token needs the read_api scope, and api to comment. Add a GitLab webhook with the URL copied from this repository's row, this secret token, and the Push, Issues, and Merge request events.",
+    "The token needs the read_api scope, and api to comment or sync issues. Add a GitLab webhook with the URL copied from this repository's row, this secret token, and the Push, Issues, Comments, and Merge request events.",
 };
 const providerName = ({ provider, baseUrl }: RepositoryConnection) => {
   const { label } = repositoryProviderDefinitions[provider];
@@ -737,10 +756,12 @@ function WebhookText({ connection }: { connection: RepositoryConnection }) {
 // archived (`canChange` false) they can only disconnect.
 export function RepositoryConnections({
   projectId,
+  workspaceId,
   canAdmin,
   canChange = canAdmin,
 }: {
   projectId: string;
+  workspaceId: string;
   canAdmin: boolean;
   canChange?: boolean;
 }) {
@@ -760,6 +781,7 @@ export function RepositoryConnections({
     transitions: Partial<Record<RepositoryTrigger, string>>;
     commentOnLink: boolean;
   } | null>(null);
+  const [syncing, setSyncing] = useState<RepositoryConnection | null>(null);
   const busy = create.isPending || update.isPending;
   function edit(connection: RepositoryConnection | null) {
     create.reset();
@@ -839,6 +861,7 @@ export function RepositoryConnections({
               <>
                 <WebhookText connection={connection} /> ·{" "}
                 <HealthText health={connection.health} words={accessWords} />
+                <SyncText connection={connection} />
               </>
             }
             check={{
@@ -847,10 +870,20 @@ export function RepositoryConnections({
               queued: "Access check queued",
             }}
             actions={
-              <CopyButton
-                label={`Copy webhook URL for ${connection.repository}`}
-                value={connection.webhookUrl}
-              />
+              <>
+                <CopyButton
+                  label={`Copy webhook URL for ${connection.repository}`}
+                  value={connection.webhookUrl}
+                />
+                {canChange && (
+                  <IconButton
+                    label={`Issue sync for ${connection.repository}`}
+                    onClick={() => setSyncing(connection)}
+                  >
+                    <ArrowLeftRight />
+                  </IconButton>
+                )}
+              </>
             }
             onEdit={() => edit(connection)}
             onTest={() => verify.mutateAsync({ projectId, connectionId: connection.id })}
@@ -873,6 +906,22 @@ export function RepositoryConnections({
           />
         ))}
       </DeliveryList>
+      {connections.data?.map((connection) => (
+        <IssueLinkReview
+          key={connection.id}
+          projectId={projectId}
+          connection={connection}
+          canChange={canChange}
+        />
+      ))}
+      {syncing && (
+        <IssueSyncRules
+          projectId={projectId}
+          workspaceId={workspaceId}
+          connection={syncing}
+          onClose={() => setSyncing(null)}
+        />
+      )}
       <Modal
         title={editing ? "Edit repository" : "Connect repository"}
         open={!!draft}
@@ -978,5 +1027,422 @@ export function RepositoryConnections({
         )}
       </Modal>
     </>
+  );
+}
+
+// Why a link stopped syncing; host failures read like delivery failures.
+const syncReasons: Record<string, string> = {
+  labels: "Its sync labels changed",
+  conflict: "Changed on both sides",
+  changed_while_paused: "The issue changed while the repository was paused",
+  unverified: "The host's answer did not confirm the change",
+  claim_conflict: "The ticket is claimed",
+  invalid_content: "The issue is longer than a ticket allows",
+};
+const syncReason = (reason: string | null) =>
+  reason ? (syncReasons[reason] ?? failureText(reason)) : null;
+const stoppedStates = ["paused", "review", "unknown"] as const;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+function SyncText({ connection }: { connection: RepositoryConnection }) {
+  const links = connection.issueLinks,
+    syncing = (links.active ?? 0) + (links.creating ?? 0),
+    stopped = stoppedStates.reduce((total, state) => total + (links[state] ?? 0), 0);
+  return (
+    <>
+      {syncing > 0 && ` · ${plural(syncing, "issue")} syncing`}
+      {stopped > 0 && (
+        <span className="text-[var(--warning)]"> · {plural(stopped, "link")} stopped</span>
+      )}
+    </>
+  );
+}
+
+// One direction's rule: on or off, and the workspace labels it requires.
+function SyncRuleFields({
+  legend,
+  enableLabel,
+  description,
+  labelsLabel,
+  emptyText,
+  rule,
+  labels,
+  onChange,
+}: {
+  legend: string;
+  enableLabel: string;
+  description: string;
+  labelsLabel: string;
+  emptyText: string;
+  rule: SyncRule;
+  labels: { id: string; name: string }[];
+  onChange: (rule: SyncRule) => void;
+}) {
+  return (
+    <FieldSet className="gap-0">
+      <FieldLegend variant="label">{legend}</FieldLegend>
+      <Check
+        label={enableLabel}
+        description={description}
+        checked={rule.enabled}
+        onCheckedChange={(enabled) => onChange({ ...rule, enabled })}
+      />
+      {rule.enabled && (
+        <>
+          <TagInput
+            choicesOnly
+            label={labelsLabel}
+            emptyText={emptyText}
+            value={rule.labels.flatMap((id) => labels.find((item) => item.id === id)?.name ?? [])}
+            onChange={(names) =>
+              onChange({
+                ...rule,
+                labels: names.flatMap(
+                  (name) => labels.find((item) => item.name === name)?.id ?? [],
+                ),
+              })
+            }
+          />
+          {rule.labels.length > 1 && (
+            <Select
+              label="Match"
+              value={rule.match}
+              onValueChange={(value) =>
+                onChange({ ...rule, match: value === "all" ? "all" : "any" })
+              }
+            >
+              <SelectItem value="any">Any of these labels</SelectItem>
+              <SelectItem value="all">All of these labels</SelectItem>
+            </Select>
+          )}
+        </>
+      )}
+    </FieldSet>
+  );
+}
+const previewRows: [keyof Omit<SyncPreview, "fingerprint">, string][] = [
+  ["matching", "Keep syncing"],
+  ["export", "New issues to create"],
+  ["pause", "Links to pause"],
+  ["review", "Links to review"],
+];
+// Which tickets export as issues and which issues import as tickets. Saving previews the effect
+// first; applying sends that preview's fingerprint, so a changed project is previewed again.
+function IssueSyncRules({
+  projectId,
+  workspaceId,
+  connection,
+  onClose,
+}: {
+  projectId: string;
+  workspaceId: string;
+  connection: RepositoryConnection;
+  onClose: () => void;
+}) {
+  const host = repositoryProviderDefinitions[connection.provider].label;
+  const labels = useQuery(api.query("list_workspace_labels", { workspaceId }));
+  const preview = useOperation("preview_repository_sync"),
+    apply = useOperation("apply_repository_sync");
+  const [rules, setRules] = useState<{ outbound: SyncRule; inbound: SyncRule } | null>(null);
+  const catalog = labels.data ?? [];
+  // Labels deleted since the rules were saved, or left behind by a workspace move, are dropped.
+  const known = (rule: SyncRule) => ({
+    ...rule,
+    labels: rule.labels.filter((id) => catalog.some((item) => item.id === id)),
+  });
+  const current = rules ?? {
+    outbound: known(connection.outbound),
+    inbound: known(connection.inbound),
+  };
+  const [previewed, setPreviewed] = useState<SyncPreview | null>(null);
+  const busy = preview.isPending || apply.isPending;
+  const change = (next: Partial<typeof current>) => {
+    setRules({ ...current, ...next });
+    setPreviewed(null);
+    apply.reset();
+  };
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!previewed) {
+      void preview
+        .mutateAsync({ projectId, connectionId: connection.id, ...current })
+        .then(setPreviewed)
+        .catch(() => {});
+      return;
+    }
+    void apply
+      .mutateAsync({
+        projectId,
+        connectionId: connection.id,
+        expectedVersion: connection.version,
+        ...current,
+        fingerprint: previewed.fingerprint,
+      })
+      .then(() => {
+        onClose();
+        toast.success("Issue sync applied");
+      })
+      .catch(() => setPreviewed(null));
+  }
+  return (
+    <Modal
+      title={`Issue sync · ${connection.repository}`}
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      busy={busy}
+    >
+      {labels.isPending ? (
+        <Loading />
+      ) : (
+        <form onSubmit={save} onKeyDown={submitOnModEnter}>
+          <ProjectLabelProvider projectId={undefined} labels={catalog}>
+            <FieldSet disabled={busy}>
+              <SyncRuleFields
+                legend={`Kanvil to ${host}`}
+                enableLabel="Export tickets as issues"
+                description="Open tickets get a new issue; title, description, state, and new comments stay in step."
+                labelsLabel="Only tickets with these labels"
+                emptyText="Every open ticket"
+                rule={current.outbound}
+                labels={catalog}
+                onChange={(outbound) => change({ outbound })}
+              />
+              <SyncRuleFields
+                legend={`${host} to Kanvil`}
+                enableLabel="Import issues as tickets"
+                description={`Open issues import when ${host} next reports them.`}
+                labelsLabel="Only issues with these labels"
+                emptyText="Every open issue"
+                rule={current.inbound}
+                labels={catalog}
+                onChange={(inbound) => change({ inbound })}
+              />
+              {previewed && (
+                <dl
+                  aria-label="Preview"
+                  className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 border-t pt-3 text-sm animate-in fade-in-0"
+                >
+                  {previewRows.map(([key, label]) => (
+                    <div key={key} className="contents">
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="text-right tabular-nums">{previewed[key]}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              <FormActions
+                error={preview.error ?? apply.error}
+                pending={busy}
+                submitLabel={previewed ? "Apply" : "Preview"}
+                onCancel={onClose}
+              />
+            </FieldSet>
+          </ProjectLabelProvider>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+// Links that stopped syncing, each opening a side-by-side comparison to resume from one side.
+function IssueLinkReview({
+  projectId,
+  connection,
+  canChange,
+}: {
+  projectId: string;
+  connection: RepositoryConnection;
+  canChange: boolean;
+}) {
+  const stopped = stoppedStates.some((state) => (connection.issueLinks[state] ?? 0) > 0);
+  const links = useQuery({
+    ...api.query("list_issue_links", { projectId, connectionId: connection.id }),
+    enabled: stopped,
+  });
+  const [reviewing, setReviewing] = useState<IssueLink | null>(null);
+  if (!stopped) return null;
+  const rows = links.data?.filter((link) => link.state !== "active" && link.state !== "creating");
+  const host = repositoryProviderDefinitions[connection.provider].label;
+  return (
+    <section className="[&>.setting-row:last-child]:border-b-0">
+      <SectionHeading title={`Stopped links · ${connection.repository}`} />
+      <ErrorNotice error={links.error} />
+      {links.isPending ? (
+        <Loading />
+      ) : (
+        rows?.map((link) => (
+          <SettingRow
+            key={link.id}
+            title={
+              <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
+                <TicketLink
+                  projectId={projectId}
+                  ticketId={link.ticketId}
+                  ticket={{ key: link.ticketKey, title: link.ticketTitle }}
+                />
+                <Badge variant={link.state === "review" ? "destructive" : "secondary"}>
+                  {issueLinkStateLabels[link.state]}
+                </Badge>
+              </span>
+            }
+            description={
+              <>
+                {syncReason(link.reason)}
+                {link.url && (
+                  <>
+                    {" · "}
+                    <a href={link.url} target="_blank" rel="noreferrer" className="underline">
+                      {host} #{link.number}
+                    </a>
+                  </>
+                )}
+              </>
+            }
+          >
+            {canChange && (
+              <Button variant="outline" size="sm" onClick={() => setReviewing(link)}>
+                Review
+              </Button>
+            )}
+          </SettingRow>
+        ))
+      )}
+      {reviewing && (
+        <IssueLinkComparison
+          projectId={projectId}
+          link={reviewing}
+          host={host}
+          onClose={() => setReviewing(null)}
+        />
+      )}
+    </section>
+  );
+}
+function IssueLinkComparison({
+  projectId,
+  link,
+  host,
+  onClose,
+}: {
+  projectId: string;
+  link: IssueLink;
+  host: string;
+  onClose: () => void;
+}) {
+  const comparison = useQuery(api.query("compare_issue_link", { projectId, linkId: link.id }));
+  const reconcile = useOperation("reconcile_issue_link");
+  const [unlinking, setUnlinking] = useState(false);
+  const resolve = (resolution: "kanvil" | "remote" | "unlink") => {
+    const current = comparison.data;
+    if (!current) return Promise.resolve();
+    return reconcile
+      .mutateAsync({
+        projectId,
+        linkId: link.id,
+        expectedVersion: current.link.version,
+        ticketVersion: current.ticketVersion,
+        resolution,
+      })
+      .then(() => {
+        onClose();
+        toast.success(resolution === "unlink" ? "Link removed" : "Sync resumed");
+      });
+  };
+  const data = comparison.data,
+    created = data?.link.number !== null;
+  const values = (side: "local" | "remote") => {
+    const content = data?.[side];
+    return content
+      ? {
+          title: content.title,
+          description: content.description,
+          state: content.open ? "Open" : "Closed",
+        }
+      : null;
+  };
+  const local = values("local"),
+    remote = values("remote");
+  return (
+    <Modal
+      title={`Review ${link.ticketKey}`}
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      busy={reconcile.isPending}
+    >
+      {comparison.isPending ? (
+        <Loading />
+      ) : (
+        <>
+          <ErrorNotice error={comparison.error ?? reconcile.error} />
+          {data && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {syncReason(data.link.reason)}
+                {!created &&
+                  ` · ${host} may already have this issue; check before creating it again.`}
+              </p>
+              <Table aria-label="Comparison">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-24" />
+                    <TableHead>Kanvil</TableHead>
+                    <TableHead>{host}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(["title", "description", "state"] as const).map((field) => (
+                    <TableRow key={field}>
+                      <TableHead className="align-top capitalize">{field}</TableHead>
+                      {[local, remote].map((side, index) => (
+                        <TableCell
+                          key={index}
+                          className={cn(
+                            "max-w-0 align-top whitespace-pre-wrap break-words",
+                            local?.[field] === remote?.[field] && "text-muted-foreground",
+                          )}
+                        >
+                          <div className="max-h-40 overflow-auto">
+                            {side ? side[field] || "—" : "Not reported"}
+                          </div>
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <ModalActions>
+                <Button disabled={reconcile.isPending} onClick={() => setUnlinking(true)}>
+                  Unlink
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={reconcile.isPending || !remote}
+                  onClick={() => void resolve("remote").catch(() => {})}
+                >
+                  Keep {host}
+                </Button>
+                <Button
+                  disabled={reconcile.isPending}
+                  onClick={() => void resolve("kanvil").catch(() => {})}
+                >
+                  {created ? "Keep Kanvil" : "Create issue again"}
+                </Button>
+              </ModalActions>
+              <Confirm
+                trigger={false}
+                open={unlinking}
+                onOpenChange={setUnlinking}
+                label={`Unlink ${link.ticketKey}`}
+                description={`Stop syncing ${link.ticketKey}? The ticket and the issue both stay.`}
+                onConfirm={() => resolve("unlink")}
+              />
+            </>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }

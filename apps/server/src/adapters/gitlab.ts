@@ -2,7 +2,13 @@ import { z } from "zod";
 import type { RepositoryTrigger } from "@kanvil/contracts";
 import { instanceApi } from "./gitea.ts";
 import { sameSecret } from "./github.ts";
-import type { RepositoryChange, RepositoryDriver, RepositoryTarget } from "./ports.ts";
+import type {
+  RemoteComment,
+  RemoteIssue,
+  RepositoryChange,
+  RepositoryDriver,
+  RepositoryTarget,
+} from "./ports.ts";
 
 // The parts of GitLab webhook payloads Kanvil reads; everything else is ignored.
 const project = z.object({
@@ -29,7 +35,34 @@ const mergeRequest = z.object({
   changes: z.object({ draft: z.object({ current: z.boolean() }).optional() }).optional(),
   project,
 });
-const issue = z.object({ object_attributes: z.object(item), project });
+const issue = z.object({
+  object_attributes: z.object({ ...item, description: z.string().nullish() }),
+  labels: z.array(z.object({ title: z.string() })).nullish(),
+  project,
+});
+const note = z.object({
+  object_attributes: z.object({
+    id: z.union([z.number(), z.string()]),
+    note: z.string(),
+    noteable_type: z.string(),
+    created_at: z.string().nullish(),
+    // Notes GitLab writes itself, such as label or assignee changes.
+    system: z.boolean().nullish(),
+  }),
+  issue: z.object({ iid: z.number().int().positive() }).optional(),
+  user: z.object({ username: z.string() }).nullish(),
+  project,
+});
+// An issue in a REST API response.
+const apiIssue = z.object({
+  iid: z.number().int().positive(),
+  web_url: z.url({ protocol: /^https?$/ }),
+  title: z.string(),
+  description: z.string().nullish(),
+  state: z.string(),
+  labels: z.array(z.string()).nullish(),
+  updated_at: z.string(),
+});
 const absent = /^0+$/;
 // GitLab sends ISO 8601 times, and `YYYY-MM-DD HH:MM:SS UTC` on older versions. An unreadable time
 // counts as receipt time.
@@ -44,6 +77,35 @@ const mergeRequestTriggers: Record<string, (draft: boolean) => RepositoryTrigger
   close: () => "pull_request_closed",
 };
 
+// The issue an issue event reports, for sync.
+function issueOf(payload: unknown): RemoteIssue | null {
+  if (z.object({ object_kind: z.string() }).parse(payload).object_kind !== "issue") return null;
+  const { object_attributes: found, labels } = issue.parse(payload);
+  if (!["open", "update", "close", "reopen"].includes(found.action)) return null;
+  return {
+    number: found.iid,
+    url: found.url,
+    title: found.title,
+    description: found.description ?? "",
+    open: found.state === "opened",
+    labels: (labels ?? []).map((label) => label.title),
+    updatedAt: hostTime(found.updated_at),
+  };
+}
+// A person's new comment on an issue.
+function commentOf(payload: unknown): RemoteComment | null {
+  if (z.object({ object_kind: z.string() }).parse(payload).object_kind !== "note") return null;
+  const parsed = note.parse(payload),
+    found = parsed.object_attributes;
+  if (found.noteable_type !== "Issue" || found.system || !parsed.issue) return null;
+  return {
+    id: String(found.id),
+    issue: parsed.issue.iid,
+    body: found.note,
+    author: parsed.user?.username ?? "",
+    createdAt: found.created_at ? hostTime(found.created_at) : null,
+  };
+}
 // Reads push (branch creation and deletion), merge request, and issue events by `object_kind`.
 function change(payload: unknown): RepositoryChange | null {
   const kind = z.object({ object_kind: z.string() }).parse(payload).object_kind;
@@ -129,6 +191,8 @@ export function createGitLabDriver(): RepositoryDriver {
         event,
         repository: named.project?.path_with_namespace ?? null,
         change: change(payload),
+        issue: issueOf(payload),
+        comment: commentOf(payload),
       };
     },
     access: (target, token) => ({
@@ -144,6 +208,36 @@ export function createGitLabDriver(): RepositoryDriver {
       ),
       headers: headers(token),
       body: JSON.stringify({ body: text }),
+      read: true,
     }),
+    createIssue: (target, token, content) => ({
+      url: projectApi(target, "/issues"),
+      headers: headers(token),
+      body: JSON.stringify({ title: content.title, description: content.description }),
+      read: true,
+    }),
+    updateIssue: (target, token, number, changes) => ({
+      method: "PUT",
+      url: projectApi(target, `/issues/${number}`),
+      headers: headers(token),
+      body: JSON.stringify({
+        ...(changes.title !== undefined && { title: changes.title }),
+        ...(changes.description !== undefined && { description: changes.description }),
+        ...(changes.open !== undefined && { state_event: changes.open ? "reopen" : "close" }),
+      }),
+      read: true,
+    }),
+    issue(body) {
+      const found = apiIssue.parse(JSON.parse(body));
+      return {
+        number: found.iid,
+        url: found.web_url,
+        title: found.title,
+        description: found.description ?? "",
+        open: found.state === "opened",
+        labels: found.labels ?? [],
+        updatedAt: hostTime(found.updated_at),
+      };
+    },
   };
 }

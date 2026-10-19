@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -669,6 +670,10 @@ export const projectDestinations = pgTable(
   },
   (table) => [index("project_destination_project").on(table.projectId)],
 );
+export type SyncRule = { enabled: boolean; labels: string[]; match: "any" | "all" };
+const syncRule = (name: string) =>
+  jsonb(name).$type<SyncRule>().notNull().default({ enabled: false, labels: [], match: "any" });
+export type IssueContent = { title: string; description: string; open: boolean };
 // A project's code-host repository. `settings` is sealed: it holds the access token and the webhook
 // signing secret. Webhook transitions act as `createdBy`, so they stop if that account loses access.
 export const repositoryConnections = pgTable(
@@ -686,6 +691,9 @@ export const repositoryConnections = pgTable(
     paused: boolean("paused").notNull().default(false),
     commentOnLink: boolean("comment_on_link").notNull().default(false),
     transitions: jsonb("transitions").$type<Record<string, string>>().notNull().default({}),
+    // Which tickets export as issues and which issues import as tickets; see issue-sync.ts.
+    outbound: syncRule("outbound"),
+    inbound: syncRule("inbound"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     version: integer("version").notNull().default(1),
     createdAt: time("created_at"),
@@ -698,6 +706,54 @@ export const repositoryConnections = pgTable(
     unique("repository_connection_name")
       .on(table.projectId, table.provider, table.baseUrl, table.repository)
       .nullsNotDistinct(),
+  ],
+);
+// A ticket synchronized with one issue of a connected repository. `base` is the content both sides
+// last agreed on, the checkpoint each change is compared with; `remote` is the issue as the host last
+// reported it, never inferred. `number` is null until the host confirms a created issue.
+export const issueLinks = pgTable(
+  "issue_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => repositoryConnections.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    origin: text("origin").notNull(),
+    state: text("state").notNull(),
+    reason: text("reason"),
+    number: integer("number"),
+    url: text("url"),
+    base: jsonb("base").$type<IssueContent>(),
+    remote: jsonb("remote").$type<IssueContent & { labels: string[] }>(),
+    remoteAt: timestamp("remote_at", { withTimezone: true }),
+    // Comments older than this are history and never copied.
+    syncedFrom: time("synced_from"),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [
+    unique("issue_link_ticket").on(table.connectionId, table.ticketId),
+    unique("issue_link_number").on(table.connectionId, table.number),
+    index("issue_link_ticket_id").on(table.ticketId),
+  ],
+);
+// Comments copied between a ticket and its issue, so neither side copies one back or twice.
+export const syncedComments = pgTable(
+  "synced_comments",
+  {
+    linkId: uuid("link_id")
+      .notNull()
+      .references(() => issueLinks.id, { onDelete: "cascade" }),
+    commentId: uuid("comment_id").references(() => comments.id, { onDelete: "set null" }),
+    remoteId: text("remote_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.linkId, table.remoteId] }),
+    unique("synced_comment_local").on(table.linkId, table.commentId),
   ],
 );
 // Webhook deliveries already handled, so a redelivery or replay applies nothing twice.
@@ -736,6 +792,8 @@ export const deliveries = pgTable(
     connectionId: uuid("connection_id").references(() => repositoryConnections.id, {
       onDelete: "cascade",
     }),
+    // With a connection: an issue sync, or with an event, a comment copied to the issue.
+    issueLinkId: uuid("issue_link_id").references(() => issueLinks.id, { onDelete: "cascade" }),
     attempts: integer("attempts").notNull().default(0),
     availableAt: time("available_at"),
     receiptId: text("receipt_id"),
@@ -749,6 +807,10 @@ export const deliveries = pgTable(
     unique("delivery_channel").on(table.notificationId, table.channelId),
     unique("delivery_destination").on(table.eventId, table.destinationId),
     unique("delivery_connection").on(table.eventId, table.connectionId),
+    // One queued content sync per link; it reads the latest content when it runs.
+    uniqueIndex("delivery_issue_sync")
+      .on(table.issueLinkId)
+      .where(sql`${table.eventId} IS NULL AND ${table.finishedAt} IS NULL`),
     check(
       "delivery_one_target",
       sql`num_nonnulls(${table.deviceId}, ${table.channelId}, ${table.destinationId}, ${table.connectionId}) = 1`,

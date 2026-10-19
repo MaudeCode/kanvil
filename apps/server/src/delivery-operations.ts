@@ -100,7 +100,8 @@ export async function pendingFor(
   const rows = await ctx.db
     .select({ id: column, total: count() })
     .from(deliveries)
-    .where(and(inArray(column, ids), isNull(deliveries.finishedAt)))
+    // Issue sync jobs are not sends the health line waits for; their links report their own state.
+    .where(and(inArray(column, ids), isNull(deliveries.finishedAt), isNull(deliveries.issueLinkId)))
     .groupBy(column);
   return new Map(rows.map((row) => [String(row.id), row.total]));
 }

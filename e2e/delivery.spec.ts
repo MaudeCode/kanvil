@@ -223,3 +223,89 @@ test("self-managed GitLab connections validate their server and link merge reque
     "https://gitlab.kanvil.invalid",
   );
 });
+
+test("issue sync previews rules and resumes a conflicting link from the chosen side", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "SYNC", name: "Issue sync" } })
+  ).json();
+  const label = await (
+    await page.request.post(`/api/v1/workspaces/${project.workspaceId}/labels`, {
+      data: { name: "synced" },
+    })
+  ).json();
+  const connection = await (
+    await page.request.post(`/api/v1/projects/${project.id}/repositories`, {
+      data: {
+        repository: "acme/sync",
+        token: "ghp_browserSyncToken",
+        webhookSecret: "sync-secret",
+      },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/settings?section=integrations`);
+  await page.getByRole("button", { name: "Issue sync for acme/sync" }).click();
+  const dialog = page.getByRole("dialog", { name: "Issue sync · acme/sync" });
+  await dialog.getByRole("checkbox", { name: "Import issues as tickets" }).click();
+  await dialog.getByRole("button", { name: "Choose only issues with these labels" }).click();
+  await page.getByRole("option", { name: "synced" }).click();
+  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+  const preview = dialog.getByRole("definition");
+  await expect(preview).toHaveText(["0", "0", "0", "0"]);
+  await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("Issue sync applied")).toBeVisible();
+
+  const issue = (title: string, at: string) => ({
+    number: 7,
+    html_url: "https://github.com/acme/sync/issues/7",
+    title,
+    body: "Reported on GitHub",
+    state: "open",
+    labels: [{ name: label.name }],
+    updated_at: at,
+  });
+  const deliver = async (payload: Record<string, unknown>) => {
+    const body = JSON.stringify({
+      ...payload,
+      repository: { full_name: "acme/sync", html_url: "https://github.com/acme/sync" },
+    });
+    const response = await page.request.post(connection.webhookUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": crypto.randomUUID(),
+        "X-Hub-Signature-256": `sha256=${createHmac("sha256", "sync-secret").update(body).digest("hex")}`,
+      },
+      data: body,
+    });
+    expect(response.status()).toBe(202);
+  };
+  await deliver({ action: "opened", issue: issue("Imported from GitHub", "2030-01-01T10:00:00Z") });
+  const { items } = await (await page.request.get(`/api/v1/projects/${project.id}/tickets`)).json();
+  expect(items).toMatchObject([{ title: "Imported from GitHub", labels: ["synced"] }]);
+  const [ticket] = items;
+  await page.request.patch(`/api/v1/projects/${project.id}/tickets/${ticket.id}`, {
+    data: { expectedVersion: ticket.version, changes: { title: "Renamed in Kanvil" } },
+  });
+  await deliver({ action: "edited", issue: issue("Renamed on GitHub", "2030-01-01T11:00:00Z") });
+
+  await expect(page.getByText("Changed on both sides")).toBeVisible();
+  await expect(page.getByText("Needs review", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  const review = page.getByRole("dialog", { name: `Review ${ticket.key}` });
+  const comparison = review.getByRole("table", { name: "Comparison" });
+  await expect(comparison.getByRole("cell", { name: "Renamed in Kanvil" })).toBeVisible();
+  await expect(comparison.getByRole("cell", { name: "Renamed on GitHub" })).toBeVisible();
+  await review.getByRole("button", { name: "Keep GitHub" }).click();
+  await expect(review).toBeHidden();
+  await expect(page.getByText("Sync resumed")).toBeVisible();
+  await expect(page.getByText("Changed on both sides")).toBeHidden();
+  await expect(page.getByText("1 issue syncing")).toBeVisible();
+  const current = await (
+    await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)
+  ).json();
+  expect(current.ticket.title).toBe("Renamed on GitHub");
+});
