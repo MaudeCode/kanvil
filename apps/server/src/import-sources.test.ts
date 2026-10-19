@@ -886,6 +886,27 @@ describe("imports from other trackers", () => {
     ]);
   });
 
+  it("reads a long Kaneo project description that its task list defers", async () => {
+    source.data.kaneo.longDescription = `Charter ${"x".repeat(70_000)}`;
+    const finished = await run(await preview(kaneo(), "kp-platform", { includeComments: false }));
+    const project = await domain.execute("get_project", { projectId: finished.projectId! }, owner);
+    expect(project.description).toBe(source.data.kaneo.longDescription.slice(0, 5000));
+  });
+
+  it("imports an empty Trello board whose lists are all archived", async () => {
+    source.data.trello.lists = source.data.trello.lists.map((entry) => ({
+      ...entry,
+      closed: true,
+    }));
+    source.data.trello.cards = [];
+    source.data.trello.checklists = [];
+    source.data.trello.comments = [];
+    const staged = await preview(trello, "tb-roadmap");
+    expect(staged.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(staged.counts).toMatchObject({ tickets: 0 });
+    expect((await run(staged)).status).toBe("completed");
+  });
+
   it("keeps every source's credentials out of a retried preview's receipt", async () => {
     const refs: Record<string, string> = {
       trello: "tb-roadmap",

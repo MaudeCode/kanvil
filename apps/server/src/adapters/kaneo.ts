@@ -54,6 +54,8 @@ const board = z.object({
     name: z.string(),
     slug: z.string(),
     description: z.string().nullish(),
+    // Kaneo leaves out project descriptions over 64 KiB too.
+    descriptionDeferred: z.boolean().optional(),
     workspaceId: z.string(),
     columns: z.array(column).default([]),
     archivedTasks: z.array(task).default([]),
@@ -299,7 +301,15 @@ export function createKaneoReader(http: SourceHttp) {
           ref: project.id,
           key: project.slug.toUpperCase(),
           name: project.name,
-          description: project.description ?? "",
+          description: project.descriptionDeferred
+            ? ((
+                await get(
+                  source,
+                  z.object({ description: z.string().nullish() }),
+                  `project/${encodeURIComponent(project.id)}`,
+                )
+              ).description ?? "")
+            : (project.description ?? ""),
         },
         workflow,
       );

@@ -476,6 +476,7 @@ export function seed() {
       ],
     }),
     customFields: [{ id: "kf-1" }],
+    longDescription: null as string | null,
   };
   return { trello, plane, planka, kaneo };
 }
@@ -657,6 +658,8 @@ const kaneo: Serve = (data, method, url, headers) => {
       data.kaneo.projects.filter((found) => found.workspaceId === query.get("workspaceId")),
     );
   if (path === "workspace/kw-acme/members") return ok(data.kaneo.members);
+  if (path === "project/kp-platform")
+    return ok({ ...data.kaneo.projects[0], description: data.kaneo.longDescription ?? "" });
   if (path === "task/tasks/kp-platform") {
     const pageNumber = Number(query.get("page") ?? 1),
       related = Number(query.get("relatedPage") ?? 1);
@@ -671,7 +674,10 @@ const kaneo: Serve = (data, method, url, headers) => {
         id: project.id,
         name: project.name,
         slug: project.slug,
-        description: "Platform work",
+        // Kaneo defers a project description over 64 KiB to the project itself.
+        ...(data.kaneo.longDescription
+          ? { description: null, descriptionDeferred: true }
+          : { description: "Platform work" }),
         workspaceId: project.workspaceId,
         columns: data.kaneo.columns.map((column) => ({
           ...column,

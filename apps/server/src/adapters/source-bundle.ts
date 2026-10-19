@@ -6,6 +6,7 @@ import {
   importLimits,
   importProviderDefinitions,
   isPresetColor,
+  stateLabels,
   ticketExportFormat,
   type ImportProvider,
   type TicketExport,
@@ -286,6 +287,14 @@ export function bundleBuilder(provider: ImportProvider) {
       source: { ref: string; key: string; name: string; description: string },
       workflow: TicketExport["workflow"],
     ): TicketExport {
+      // A source with no states, such as a board of archived empty lists, still needs one.
+      if (!workflow.length)
+        workflow.push({
+          ref: "kanvil:todo",
+          name: stateLabels.todo,
+          category: "todo",
+          color: "default",
+        });
       const taken = new Set<string>();
       for (const state of workflow) {
         const base = state.name || "Untitled";
