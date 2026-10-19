@@ -5,9 +5,12 @@ import {
   choose,
   chooseTicketView,
   holdRequests,
+  expectMotion,
   openSaveView,
   openSearch,
+  recordMotion,
   setProperty,
+  sheetMotion,
   ticketRows,
   toggleDisplay,
 } from "./controls.ts";
@@ -695,12 +698,14 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
     );
   await page.goto(`/projects/${project.id}?sort=number&order=asc`);
   await expect(ticketRows(page)).toHaveCount(3);
+  await recordMotion(page);
   await page.keyboard.press("j");
   await page.keyboard.press("x");
   await page.keyboard.press("j");
   await page.keyboard.press(" ");
   const bravo = page.getByRole("dialog", { name: "Bravo", exact: true });
   await expect(bravo).toBeVisible();
+  await expectMotion(page, sheetMotion("enter"));
   await expect(page).toHaveURL(/sort=number/);
   await expect(page).toHaveURL(new RegExp(`peek=${created[1]!.id}`));
   // The list behind keeps its rows, highlight, and selection; the modal sheet hides it from
@@ -716,6 +721,7 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
   await expect(page.getByRole("dialog", { name: "Charlie", exact: true })).toBeVisible();
   await expect(page.locator("tr[data-active=true]")).toContainText("Charlie");
   await page.keyboard.press("Escape");
+  await expectMotion(page, sheetMotion("exit"));
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).not.toHaveURL(/peek=/);
   await expect(page.locator("tr[data-active=true] .ticket-title")).toBeFocused();

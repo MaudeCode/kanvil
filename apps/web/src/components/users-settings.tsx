@@ -298,12 +298,7 @@ export function UsersSettings() {
           }}
         />
       </Modal>
-      <AccountDetails
-        key={selected ?? "closed"}
-        userId={selected}
-        onClose={() => setSelected(null)}
-        onChanged={refresh}
-      />
+      <AccountDetails userId={selected} onClose={() => setSelected(null)} onChanged={refresh} />
     </section>
   );
 }

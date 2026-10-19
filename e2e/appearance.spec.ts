@@ -1,5 +1,13 @@
 import { expect, test } from "./test.ts";
-import { choose, appearance, ticketRows, settingsLink } from "./controls.ts";
+import {
+  choose,
+  appearance,
+  expectMotion,
+  recordMotion,
+  sheetMotion,
+  ticketRows,
+  settingsLink,
+} from "./controls.ts";
 import { signIn } from "./auth.ts";
 
 test("themes and responsive ticket rows preserve complete titles and actions", async ({ page }) => {
@@ -207,4 +215,27 @@ test("inset sidebar, project search, icon actions, and color themes work across 
   await dark.press("ArrowLeft");
   await expect(page.getByRole("radio", { name: "Light", exact: true })).toBeFocused();
   await expect(page.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
+});
+
+test("the sidebar glides between widths on desktop and slides in and out on a phone", async ({
+  page,
+}) => {
+  await signIn(page);
+  await recordMotion(page);
+  const sidebar = page.locator('[data-slot="sidebar"][data-variant="inset"]');
+  for (const state of ["collapsed", "expanded"]) {
+    await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).last().click();
+    await expect(sidebar).toHaveAttribute("data-state", state);
+    await expectMotion(page, ["sidebar-gap width enter", "sidebar-container width enter"]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (let round = 0; round < 2; round++) {
+    await page.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Sidebar", exact: true });
+    await expect(sheet).toBeVisible();
+    await expectMotion(page, sheetMotion("enter", "sidebar"));
+    await page.keyboard.press("Escape");
+    await expectMotion(page, sheetMotion("exit", "sidebar"));
+    await expect(sheet).toHaveCount(0);
+  }
 });

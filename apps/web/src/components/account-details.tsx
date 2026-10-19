@@ -31,6 +31,7 @@ import { SettingRow } from "./settings-layout.tsx";
 import { DeleteAccountRow, signInMethods } from "./project-lifecycle.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { formText } from "../forms.ts";
+import { useSheetRecord } from "../hooks/use-sheet-record.ts";
 // One workspace or project grant: a link to its member settings and the role or access it carries.
 export function AccessRow({ children, badge }: { children: ReactNode; badge: ReactNode }) {
   return (
@@ -49,17 +50,54 @@ export function AccountDetails({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const { shown, settled } = useSheetRecord(userId, (id) => id),
+    [pending, setPending] = useState(false);
+  return (
+    <Sheet
+      open={!!userId}
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+      onOpenChangeComplete={settled}
+    >
+      <SheetContent className="w-full! sm:max-w-lg!">
+        {shown && (
+          <Account
+            key={shown}
+            userId={shown}
+            pending={pending}
+            setPending={setPending}
+            onClose={onClose}
+            onChanged={onChanged}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+// One account's details and edit forms; each account starts without another's drafts and errors.
+function Account({
+  userId,
+  pending,
+  setPending,
+  onClose,
+  onChanged,
+}: {
+  userId: string;
+  pending: boolean;
+  setPending: (pending: boolean) => void;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+}) {
   const identity = useIdentity(),
     [editing, setEditing] = useState<"profile" | "role" | "password" | "workspace" | null>(null),
-    [pending, setPending] = useState(false),
     [error, setError] = useState<unknown>();
   const spaces = useWorkspaces(),
     membership = useOperation("set_workspace_member");
   const detail = useQuery({
     queryKey: ["kanvil", "user", userId],
     queryFn: () =>
-      api.request(`/api/v1/admin/users/${encodeURIComponent(userId ?? "")}`, accountDetailsSchema),
-    enabled: !!userId,
+      api.request(`/api/v1/admin/users/${encodeURIComponent(userId)}`, accountDetailsSchema),
   });
   const person = detail.data;
   async function action(run: () => Promise<unknown>, message: string) {
@@ -87,198 +125,183 @@ export function AccountDetails({
   }
   return (
     <>
-      <Sheet
-        open={!!userId}
-        onOpenChange={(open) => {
-          if (!open && !pending) onClose();
-        }}
-      >
-        <SheetContent className="w-full! sm:max-w-lg!">
-          <SheetHeader className="shrink-0 border-b pr-14">
-            <SheetTitle className="mb-0">{person?.name ?? t("admin.account.details")}</SheetTitle>
-            <SheetDescription className="break-all">{person?.email}</SheetDescription>
-          </SheetHeader>
-          <div className="@container min-h-0 overflow-y-auto px-6 pb-8">
-            <ErrorNotice error={detail.error ?? (!editing ? error : undefined)} />
-            {detail.isPending ? (
-              <Loading />
-            ) : (
-              person && (
-                <>
-                  <div className="mb-7 flex flex-wrap items-center gap-4">
-                    <UserAvatar
-                      name={person.name}
-                      image={person.image}
-                      className="size-16 text-xl"
-                    />
-                    <div className="min-w-40 flex-1">
-                      <Badge variant={person.banned ? "destructive" : "secondary"}>
-                        {person.banned ? t("admin.users.disabled") : t("admin.users.active")}
-                      </Badge>
-                      <p className="mt-2 mb-0 text-xs text-muted-foreground">
-                        {t("admin.account.joined", { date: date(person.createdAt) })}
-                      </p>
-                    </div>
-                    <Button
-                      className="ml-auto"
-                      onClick={() => {
-                        setError(undefined);
-                        setEditing("profile");
-                      }}
-                    >
-                      <Pencil />
-                      {t("admin.account.edit")}
-                    </Button>
-                  </div>
-                  <SettingRow
-                    title={t("admin.account.instanceRole")}
+      <SheetHeader className="shrink-0 border-b pr-14">
+        <SheetTitle className="mb-0">{person?.name ?? t("admin.account.details")}</SheetTitle>
+        <SheetDescription className="break-all">{person?.email}</SheetDescription>
+      </SheetHeader>
+      <div className="@container min-h-0 overflow-y-auto px-6 pb-8">
+        <ErrorNotice error={detail.error ?? (!editing ? error : undefined)} />
+        {detail.isPending ? (
+          <Loading />
+        ) : (
+          person && (
+            <>
+              <div className="mb-7 flex flex-wrap items-center gap-4">
+                <UserAvatar name={person.name} image={person.image} className="size-16 text-xl" />
+                <div className="min-w-40 flex-1">
+                  <Badge variant={person.banned ? "destructive" : "secondary"}>
+                    {person.banned ? t("admin.users.disabled") : t("admin.users.active")}
+                  </Badge>
+                  <p className="mt-2 mb-0 text-xs text-muted-foreground">
+                    {t("admin.account.joined", { date: date(person.createdAt) })}
+                  </p>
+                </div>
+                <Button
+                  className="ml-auto"
+                  onClick={() => {
+                    setError(undefined);
+                    setEditing("profile");
+                  }}
+                >
+                  <Pencil />
+                  {t("admin.account.edit")}
+                </Button>
+              </div>
+              <SettingRow
+                title={t("admin.account.instanceRole")}
+                description={
+                  hasAdminRole(person.role)
+                    ? t("admin.account.adminDescription")
+                    : t("admin.account.userDescription")
+                }
+              >
+                <Button
+                  onClick={() => {
+                    setError(undefined);
+                    setEditing("role");
+                  }}
+                >
+                  {t("admin.account.changeRole")}
+                </Button>
+              </SettingRow>
+              <SettingRow
+                title={t("admin.account.signInMethods")}
+                description={signInMethods(person.providers)}
+              >
+                <Button
+                  onClick={() => {
+                    setError(undefined);
+                    setEditing("password");
+                  }}
+                >
+                  <KeyRound />
+                  {t("admin.account.setPassword")}
+                </Button>
+              </SettingRow>
+              <SettingRow
+                title={t("admin.account.activeSessions")}
+                description={t("admin.account.sessions", { count: person.sessionCount })}
+              >
+                <Confirm
+                  label={t("admin.account.revokeSessions")}
+                  description={t("admin.account.revokeConfirm", { name: person.name })}
+                  onConfirm={() =>
+                    action(
+                      () => auth.admin.revokeUserSessions({ userId: person.id }),
+                      t("admin.account.sessionsRevoked"),
+                    )
+                  }
+                />
+              </SettingRow>
+              {person.id !== identity.id && (
+                <SettingRow
+                  title={t("admin.account.access")}
+                  description={
+                    person.banned
+                      ? t("admin.account.accessDisabled")
+                      : t("admin.account.accessPreserved")
+                  }
+                >
+                  <Confirm
+                    label={person.banned ? t("admin.account.enable") : t("admin.account.disable")}
+                    danger={!person.banned}
                     description={
-                      hasAdminRole(person.role)
-                        ? t("admin.account.adminDescription")
-                        : t("admin.account.userDescription")
+                      person.banned
+                        ? t("admin.account.enableConfirm", { name: person.name })
+                        : t("admin.account.disableConfirm", { name: person.name })
                     }
-                  >
-                    <Button
-                      onClick={() => {
-                        setError(undefined);
-                        setEditing("role");
-                      }}
-                    >
-                      {t("admin.account.changeRole")}
-                    </Button>
-                  </SettingRow>
-                  <SettingRow
-                    title={t("admin.account.signInMethods")}
-                    description={signInMethods(person.providers)}
-                  >
-                    <Button
-                      onClick={() => {
-                        setError(undefined);
-                        setEditing("password");
-                      }}
-                    >
-                      <KeyRound />
-                      {t("admin.account.setPassword")}
-                    </Button>
-                  </SettingRow>
-                  <SettingRow
-                    title={t("admin.account.activeSessions")}
-                    description={t("admin.account.sessions", { count: person.sessionCount })}
-                  >
-                    <Confirm
-                      label={t("admin.account.revokeSessions")}
-                      description={t("admin.account.revokeConfirm", { name: person.name })}
-                      onConfirm={() =>
-                        action(
-                          () => auth.admin.revokeUserSessions({ userId: person.id }),
-                          t("admin.account.sessionsRevoked"),
-                        )
-                      }
-                    />
-                  </SettingRow>
-                  {person.id !== identity.id && (
-                    <SettingRow
-                      title={t("admin.account.access")}
-                      description={
-                        person.banned
-                          ? t("admin.account.accessDisabled")
-                          : t("admin.account.accessPreserved")
-                      }
-                    >
-                      <Confirm
-                        label={
-                          person.banned ? t("admin.account.enable") : t("admin.account.disable")
-                        }
-                        danger={!person.banned}
-                        description={
+                    onConfirm={() =>
+                      action(
+                        () =>
                           person.banned
-                            ? t("admin.account.enableConfirm", { name: person.name })
-                            : t("admin.account.disableConfirm", { name: person.name })
-                        }
-                        onConfirm={() =>
-                          action(
-                            () =>
-                              person.banned
-                                ? auth.admin.unbanUser({ userId: person.id })
-                                : auth.admin.banUser({
-                                    userId: person.id,
-                                    banReason: "Disabled by an instance administrator",
-                                  }),
-                            person.banned
-                              ? t("admin.account.enabled")
-                              : t("admin.account.disabledToast"),
-                          )
-                        }
-                      />
-                    </SettingRow>
-                  )}
-                  {person.id !== identity.id && (
-                    <DeleteAccountRow
-                      account={person}
-                      onDeleted={async () => {
-                        onClose();
-                        await onChanged();
-                      }}
-                    />
-                  )}
-                  <section className="pt-7">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <h3 className="mb-0">{t("admin.account.workspaces")}</h3>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setError(undefined);
-                          setEditing("workspace");
-                        }}
+                            ? auth.admin.unbanUser({ userId: person.id })
+                            : auth.admin.banUser({
+                                userId: person.id,
+                                banReason: "Disabled by an instance administrator",
+                              }),
+                        person.banned
+                          ? t("admin.account.enabled")
+                          : t("admin.account.disabledToast"),
+                      )
+                    }
+                  />
+                </SettingRow>
+              )}
+              {person.id !== identity.id && (
+                <DeleteAccountRow
+                  account={person}
+                  onDeleted={async () => {
+                    onClose();
+                    await onChanged();
+                  }}
+                />
+              )}
+              <section className="pt-7">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="mb-0">{t("admin.account.workspaces")}</h3>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setError(undefined);
+                      setEditing("workspace");
+                    }}
+                  >
+                    <Plus />
+                    {t("admin.account.addToWorkspace")}
+                  </Button>
+                </div>
+                {person.workspaces.length ? (
+                  person.workspaces.map((workspace) => (
+                    <AccessRow key={workspace.id} badge={roleLabels[workspace.role]}>
+                      <Link
+                        to="/workspaces/$workspaceId/settings"
+                        params={{ workspaceId: workspace.id }}
+                        search={{ section: "members" }}
+                        onClick={onClose}
+                        className="text-primary"
+                        dir="auto"
                       >
-                        <Plus />
-                        {t("admin.account.addToWorkspace")}
-                      </Button>
-                    </div>
-                    {person.workspaces.length ? (
-                      person.workspaces.map((workspace) => (
-                        <AccessRow key={workspace.id} badge={roleLabels[workspace.role]}>
-                          <Link
-                            to="/workspaces/$workspaceId/settings"
-                            params={{ workspaceId: workspace.id }}
-                            search={{ section: "members" }}
-                            onClick={onClose}
-                            className="text-primary"
-                            dir="auto"
-                          >
-                            {workspace.name}
-                          </Link>
-                        </AccessRow>
-                      ))
-                    ) : (
-                      <EmptyState title={t("admin.account.noWorkspaces")} className="py-5" />
-                    )}
-                  </section>
-                  {!!person.projects.length && (
-                    <section className="pt-7">
-                      <h3>{t("admin.account.projectAccess")}</h3>
-                      {person.projects.map((project) => (
-                        <AccessRow key={project.id} badge={roleLabels[project.role]}>
-                          <Link
-                            to="/projects/$projectId/settings"
-                            params={{ projectId: project.id }}
-                            search={{ section: "members" }}
-                            onClick={onClose}
-                            className="text-primary"
-                            dir="auto"
-                          >
-                            {project.name}
-                          </Link>
-                        </AccessRow>
-                      ))}
-                    </section>
-                  )}
-                </>
-              )
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
+                        {workspace.name}
+                      </Link>
+                    </AccessRow>
+                  ))
+                ) : (
+                  <EmptyState title={t("admin.account.noWorkspaces")} className="py-5" />
+                )}
+              </section>
+              {!!person.projects.length && (
+                <section className="pt-7">
+                  <h3>{t("admin.account.projectAccess")}</h3>
+                  {person.projects.map((project) => (
+                    <AccessRow key={project.id} badge={roleLabels[project.role]}>
+                      <Link
+                        to="/projects/$projectId/settings"
+                        params={{ projectId: project.id }}
+                        search={{ section: "members" }}
+                        onClick={onClose}
+                        className="text-primary"
+                        dir="auto"
+                      >
+                        {project.name}
+                      </Link>
+                    </AccessRow>
+                  ))}
+                </section>
+              )}
+            </>
+          )
+        )}
+      </div>
       {person && (
         <Modal
           title={
