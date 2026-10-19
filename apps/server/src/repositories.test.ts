@@ -679,6 +679,48 @@ describe("repository connections", () => {
     expect(cancelled?.finishedAt).toBeInstanceOf(Date);
   });
 
+  it("keeps updating a link after its key leaves the title", async () => {
+    const connection = await connect();
+    await send(
+      connection,
+      "pull_request",
+      pullRequest(18, "opened", { title: `${ticket.key} Fix the widget` }),
+    );
+    const merged = await send(
+      connection,
+      "pull_request",
+      pullRequest(18, "closed", {
+        title: "Fix the widget",
+        state: "closed",
+        merged: true,
+        at: "2030-01-01T11:00:00Z",
+      }),
+    );
+    expect(merged.body).toMatchObject({ tickets: [{ key: ticket.key, result: "moved" }] });
+    expect(await current()).toMatchObject({ status: "done" });
+    expect(await links()).toMatchObject([{ remoteState: "merged" }]);
+  });
+
+  it("drops a queued comment whose ticket was deleted", async () => {
+    const connection = await connect({ commentOnLink: true });
+    await tick();
+    github.state.received = [];
+    await send(connection, "pull_request", pullRequest(19, "opened", { ref: `${ticket.key}-x` }));
+    const live = await current();
+    await app.domain.execute(
+      "delete_ticket",
+      { projectId: project.id, ticketId: ticket.id, expectedVersion: live.version },
+      owner,
+    );
+    await tick();
+    expect(github.state.received).toEqual([]);
+    const [dropped] = await fixture.database.db
+      .select()
+      .from(deliveries)
+      .where(and(eq(deliveries.connectionId, connection.id), isNotNull(deliveries.eventId)));
+    expect(dropped).toMatchObject({ error: "link_removed" });
+  });
+
   it("drops queued comments once the connecting administrator loses access", async () => {
     const connection = await connect({ commentOnLink: true }, admin);
     await tick();

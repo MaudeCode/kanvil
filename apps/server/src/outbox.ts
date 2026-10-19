@@ -23,6 +23,7 @@ import {
   projects,
   pushDevices,
   repositoryConnections,
+  resources,
   subscriptions,
   tickets,
 } from "./schema.ts";
@@ -61,6 +62,9 @@ async function load(database: Database, id: string) {
         project: { id: projects.id, key: projects.key, name: projects.name },
         workspaceId: projects.workspaceId,
         projectArchivedAt: projects.archivedAt,
+        // Whether the link a repository comment announces is still on its ticket.
+        linkLive: sql<boolean>`exists (SELECT 1 FROM ${resources} r
+          WHERE r.id::text = ${events.data}->>'resourceId' AND r.ticket_id = ${tickets.id})`,
         account: user,
         preference: notificationPreferences,
         projectRole: projectRoleSQL(user.id, notifications.projectId),
@@ -160,6 +164,8 @@ function skipReason(row: Row, config: Config): string | null {
     if (!connection.commentOnLink) return "comments_disabled";
     // Comments act for the connecting administrator, so they stop with that person's write access.
     if (!row.connectionWriter || event?.projectId !== connection.projectId) return "access_revoked";
+    // A ticket that moved or was deleted, or a removed link, has nothing left to point at.
+    if (!row.ticket || !row.linkLive) return "link_removed";
     return row.projectArchivedAt ? "project_archived" : null;
   }
   if (!destination) return "access_revoked";

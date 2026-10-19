@@ -452,13 +452,30 @@ export async function receiveRepositoryWebhook(
           return done(error.code === "project_archived" ? error.code : "access_revoked");
         throw error;
       }
-      const keys = ticketKeys(change.references);
-      const linked = keys.length
-        ? await tx
-            .select()
-            .from(tickets)
-            .where(and(eq(tickets.projectId, connection.projectId), or(...keys.map(ticketMatch))))
-        : [];
+      // Tickets the change names, plus tickets already linked to it: a later edit can drop the key.
+      const linked = await tx
+        .select()
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.projectId, connection.projectId),
+            or(
+              ...ticketKeys(change.references).map(ticketMatch),
+              inArray(
+                tickets.id,
+                tx
+                  .select({ id: resources.ticketId })
+                  .from(resources)
+                  .where(
+                    and(
+                      eq(resources.projectId, connection.projectId),
+                      eq(resources.url, change.url),
+                    ),
+                  ),
+              ),
+            ),
+          ),
+        );
       if (!linked.length) return done("no_ticket");
       const occurredAt = change.occurredAt ?? new Date();
       const results = [];
