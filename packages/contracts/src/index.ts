@@ -1,6 +1,14 @@
 import { authenticationPolicySchema } from "./instance.ts";
 import type { palettes } from "./theme.ts";
 import { z } from "zod";
+import {
+  activeLocale,
+  defaultLocale,
+  formatDate,
+  formatNumber,
+  labelTable,
+  t,
+} from "./i18n/index.ts";
 
 // The canonical statuses. A project's workflow states each map to one of them, and every rule that
 // reads a ticket's `status` (open, closed, readiness, claims, filters) reads this category.
@@ -12,11 +20,11 @@ export const kinds = ["feature", "bug", "chore", "research", "documentation"] as
 export const difficulties = ["low", "med", "high"] as const;
 export const roles = ["reader", "writer", "admin"] as const;
 export type Role = (typeof roles)[number];
-export const roleLabels: Record<Role, string> = {
-  reader: "Read only",
-  writer: "Can edit",
-  admin: "Admin",
-};
+export const roleLabels = labelTable(roles, (role) => t(`common.role.${role}`));
+export const kindLabels = labelTable(kinds, (kind) => t(`common.kind.${kind}`));
+export const difficultyLabels = labelTable(difficulties, (level) =>
+  t(`common.difficulty.${level}`),
+);
 // The actions a role grants beyond reading. The seeded roles are fixed sets; a workspace defines
 // custom roles as any subset. Credential scopes stay a ceiling: `ticket.write` needs `write`, every
 // other action `admin`.
@@ -30,27 +38,10 @@ export const permissions = [
   "workspace.manage",
 ] as const;
 export type Permission = (typeof permissions)[number];
-export const permissionLabels: Record<Permission, { label: string; description: string }> = {
-  "ticket.write": {
-    label: "Edit tickets",
-    description: "Create, edit, move, claim, and comment on tickets; create projects",
-  },
-  "ticket.delete": { label: "Delete tickets", description: "Delete tickets permanently" },
-  "project.manage": {
-    label: "Manage projects",
-    description: "Project details, workflow, labels, fields, integrations, and lifecycle",
-  },
-  "member.manage": { label: "Manage members", description: "Add, change, and remove members" },
-  "invitation.manage": { label: "Manage invitations", description: "Invite people by email" },
-  "sharing.manage": {
-    label: "Manage sharing",
-    description: "Public read-only links and calendar feeds",
-  },
-  "workspace.manage": {
-    label: "Manage workspace",
-    description: "Workspace details, shared labels, and roles",
-  },
-};
+export const permissionLabels = labelTable(permissions, (permission) => ({
+  label: t(`common.permission.${permission}.label`),
+  description: t(`common.permission.${permission}.description`),
+}));
 // The seeded roles' actions. Their IDs are their names; a custom role's ID is a UUID.
 export const seededPermissions: Record<Role, readonly Permission[]> = {
   reader: [],
@@ -108,21 +99,8 @@ export const scopes = ["read", "write", "claim", "admin"] as const;
 export const attachmentLimit = 10_000_000;
 // An inline upload staged before its ticket exists stays claimable for this long.
 export const stagedUploadLifetime = 86_400_000;
-export const stateLabels: Record<(typeof states)[number], string> = {
-  backlog: "Backlog",
-  todo: "To do",
-  in_progress: "In progress",
-  in_review: "In review",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-export const priorityLabels: Record<(typeof priorities)[number], string> = {
-  urgent: "Urgent",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-  none: "No priority",
-};
+export const stateLabels = labelTable(states, (value) => t(`common.status.${value}`));
+export const priorityLabels = labelTable(priorities, (value) => t(`common.priority.${value}`));
 export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
   backlog: "muted",
   todo: "foreground",
@@ -199,14 +177,9 @@ export const customFieldTypes = [
   "multiselect",
 ] as const;
 export type CustomFieldType = (typeof customFieldTypes)[number];
-export const customFieldTypeLabels: Record<CustomFieldType, string> = {
-  text: "Text",
-  number: "Number",
-  date: "Date",
-  checkbox: "Checkbox",
-  select: "Select",
-  multiselect: "Multi-select",
-};
+export const customFieldTypeLabels = labelTable(customFieldTypes, (type) =>
+  t(`common.customFieldType.${type}`),
+);
 export const customFieldLimit = 50;
 export const customFieldOptionLimit = 100;
 // Any stored value; `customFieldValueSchema` narrows it to one field's type and options. Dates are
@@ -281,7 +254,9 @@ export function customFieldValueSchema(field: Pick<CustomField, "type" | "option
 }
 const optionNames = (field: Pick<CustomField, "options">, value: CustomFieldValue) =>
   (Array.isArray(value) ? value : [value]).map(
-    (optionId) => field.options.find((choice) => choice.id === optionId)?.name ?? "Removed option",
+    (optionId) =>
+      field.options.find((choice) => choice.id === optionId)?.name ??
+      t("common.customField.removedOption"),
   );
 // One reading of a value for every client: lists, details, chips, and native screens.
 export function formatCustomFieldValue(
@@ -291,13 +266,13 @@ export function formatCustomFieldValue(
   if (value === null || value === undefined) return "";
   switch (field.type) {
     case "number":
-      return typeof value === "number" ? value.toLocaleString() : String(value);
+      return typeof value === "number" ? formatNumber(value) : String(value);
     case "date":
       return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
-        ? new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { dateStyle: "medium" })
+        ? formatDate(`${value}T00:00:00`)
         : String(value);
     case "checkbox":
-      return value === true ? "Yes" : "";
+      return value === true ? t("common.customField.checked") : "";
     case "select":
     case "multiselect":
       return optionNames(field, value).join(", ");
@@ -371,15 +346,9 @@ export const filterFields = {
   // `<field id>:<option id | true | none>`; values of one field match any, fields combine with AND.
   customField: z.string().regex(/^[0-9a-f-]{36}:(?:none|true|[0-9a-f-]{36})$/),
 } satisfies Record<FilterField, z.ZodType<string>>;
-export const filterFieldLabels: Record<FilterField, string> = {
-  status: "Status",
-  priority: "Priority",
-  kind: "Kind",
-  difficulty: "Difficulty",
-  label: "Label",
-  assigneeId: "Assignee",
-  customField: "Field",
-};
+export const filterFieldLabels = labelTable(filterFieldNames, (field) =>
+  t(`common.filterField.${field}`),
+);
 export const filterOperators = ["any", "none"] as const;
 export type FilterOperator = (typeof filterOperators)[number];
 export const filterValueLimit = 25;
@@ -468,21 +437,9 @@ export const ticketFilter = z
   })
   .strict()
   .superRefine(rejectConflicts);
-export const sortLabels: Record<z.output<typeof ticketFilter>["sort"], string> = {
-  priority: "Priority",
-  updated: "Recently updated",
-  created: "Recently created",
-  title: "Title",
-  labels: "Labels",
-  due: "Due date",
-  start: "Start date",
-  number: "Ticket number",
-  status: "Status",
-  difficulty: "Difficulty",
-  kind: "Kind",
-  assignee: "Assignee",
-  manual: "Manual",
-};
+export const sortLabels = labelTable(ticketFilter.shape.sort.unwrap().options, (sort) =>
+  t(`common.sort.${sort}`),
+);
 // The direction each sort uses unless the caller sets `order`.
 export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" | "desc"> = {
   priority: "asc",
@@ -499,13 +456,9 @@ export const defaultOrder: Record<z.output<typeof ticketFilter>["sort"], "asc" |
   assignee: "asc",
   manual: "asc",
 };
-export const dueFilterLabels: Record<NonNullable<z.output<typeof ticketFilter>["due"]>, string> = {
-  overdue: "Overdue",
-  today: "Due today",
-  week: "Due this week",
-  scheduled: "Has a due date",
-  none: "No due date",
-};
+export const dueFilterLabels = labelTable(ticketFilter.shape.due.unwrap().options, (due) =>
+  t(`common.due.${due}`),
+);
 export const ticketFields = z
   .object({
     title: text.max(500).overwrite((value) => value.replace(/\s+/gu, " ")),
@@ -748,19 +701,14 @@ export const relationSchema = z.object({
   targetTitle: z.string().optional(),
 });
 export const relationDirections = z.enum(["outgoing", "incoming"]);
-const relationLabels: Record<z.output<typeof relationSchema>["type"], [string, string]> = {
-  blocks: ["Blocks", "Is blocked by"],
-  related: ["Related to", "Related to"],
-  duplicate: ["Duplicates", "Is duplicated by"],
-  causes: ["Causes", "Is caused by"],
-  clones: ["Clones", "Is cloned by"],
-  implements: ["Implements", "Is implemented by"],
-  reviews: ["Reviews", "Is reviewed by"],
-};
+const relationLabel = (type: z.output<typeof relationSchema>["type"], outgoing: boolean) =>
+  t(`common.relation.${type}.${outgoing ? "outgoing" : "incoming"}`);
 export const relationChoices = relationSchema.shape.type.options.flatMap((type) =>
   (type === "related" ? ["outgoing" as const] : relationDirections.options).map((direction) => ({
     value: `${type}:${direction}`,
-    label: relationLabels[type][direction === "outgoing" ? 0 : 1],
+    get label() {
+      return relationLabel(type, direction === "outgoing");
+    },
     type,
     direction,
   })),
@@ -776,7 +724,7 @@ export function relationReference(relation: z.output<typeof relationSchema>, tic
   const referenceId = outgoing ? relation.targetId : relation.sourceId;
   const key = (outgoing ? relation.targetKey : relation.sourceKey) ?? referenceId;
   const title = outgoing ? relation.targetTitle : relation.sourceTitle;
-  const label = relationLabels[relation.type][outgoing ? 0 : 1];
+  const label = relationLabel(relation.type, outgoing);
   return { id: referenceId, label, title: `${key}${title ? ` · ${title}` : ""}` };
 }
 export const commentSchema = z.object({
@@ -862,11 +810,7 @@ export function resourceProvider(url: string): string | null {
 }
 // What a verified link points at on its code host.
 export const remoteKinds = ["branch", "pull_request", "issue"] as const;
-export const remoteKindLabels: Record<(typeof remoteKinds)[number], string> = {
-  branch: "Branch",
-  pull_request: "Pull request",
-  issue: "Issue",
-};
+export const remoteKindLabels = labelTable(remoteKinds, (kind) => t(`common.remoteKind.${kind}`));
 export const resourceSchema = resourceFields.extend({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -948,15 +892,9 @@ export const notificationCategoriesSchema = z.object({
 });
 export const notificationCategories = notificationCategoriesSchema.keyof().options;
 export type NotificationCategory = (typeof notificationCategories)[number];
-export const notificationCategoryLabels: Record<NotificationCategory, string> = {
-  assignment: "Assignments",
-  status: "Status changes",
-  comment: "Comments",
-  mention: "Mentions",
-  update: "Other updates",
-  due_soon: "Due soon",
-  overdue: "Overdue",
-};
+export const notificationCategoryLabels = labelTable(notificationCategories, (category) =>
+  t(`common.notificationCategory.${category}`),
+);
 // The categories an event belongs to, most specific first. A follower receives the event when any
 // of them is enabled and sees the first enabled one.
 export function eventCategories(event: {
@@ -1022,11 +960,16 @@ export const channelKinds = ["email", "ntfy", "gotify", "webhook"] as const;
 export const destinationKinds = ["webhook", "slack", "discord", "mattermost", "telegram"] as const;
 export const deliveryKinds = [...new Set([...channelKinds, ...destinationKinds])];
 export type DeliveryKind = (typeof channelKinds)[number] | (typeof destinationKinds)[number];
+// Product names stay as they are; the generic kinds read in the interface language.
 export const deliveryKindLabels: Record<DeliveryKind, string> = {
-  email: "Email",
+  get email() {
+    return t("common.deliveryKind.email");
+  },
   ntfy: "ntfy",
   gotify: "Gotify",
-  webhook: "Webhook",
+  get webhook() {
+    return t("common.deliveryKind.webhook");
+  },
   slack: "Slack",
   discord: "Discord",
   mattermost: "Mattermost",
@@ -1116,15 +1059,9 @@ export const destinationEvents = [
   ...notificationCategories.filter(projectCategory),
 ] as const;
 export type DestinationEvent = (typeof destinationEvents)[number];
-export const destinationEventLabels: Record<DestinationEvent, string> = {
-  created: "New tickets",
-  assignment: notificationCategoryLabels.assignment,
-  status: notificationCategoryLabels.status,
-  comment: notificationCategoryLabels.comment,
-  update: notificationCategoryLabels.update,
-  due_soon: notificationCategoryLabels.due_soon,
-  overdue: notificationCategoryLabels.overdue,
-};
+export const destinationEventLabels = labelTable(destinationEvents, (event) =>
+  event === "created" ? t("common.destinationEvent.created") : notificationCategoryLabels[event],
+);
 export function destinationEventKeys(event: {
   type: string;
   data: Record<string, unknown>;
@@ -1180,16 +1117,37 @@ export const repositoryProviderDefinitions: Record<
     label: string;
     baseUrl: { default: string | null } | null;
     nested: boolean;
-    change: string;
+    // The catalog entry for the host's change requests; `change` is its name.
+    changeKind: "pull_request" | "merge_request";
+    readonly change: string;
   }
 > = {
-  github: { label: "GitHub", baseUrl: null, nested: false, change: "Pull request" },
-  gitea: { label: "Gitea", baseUrl: { default: null }, nested: false, change: "Pull request" },
+  github: {
+    label: "GitHub",
+    baseUrl: null,
+    nested: false,
+    changeKind: "pull_request",
+    get change() {
+      return t("common.change.pull_request.name");
+    },
+  },
+  gitea: {
+    label: "Gitea",
+    baseUrl: { default: null },
+    nested: false,
+    changeKind: "pull_request",
+    get change() {
+      return t("common.change.pull_request.name");
+    },
+  },
   gitlab: {
     label: "GitLab",
     baseUrl: { default: "https://gitlab.com" },
     nested: true,
-    change: "Merge request",
+    changeKind: "merge_request",
+    get change() {
+      return t("common.change.merge_request.name");
+    },
   },
 };
 export const repositoryTriggers = [
@@ -1200,15 +1158,17 @@ export const repositoryTriggers = [
   "pull_request_closed",
 ] as const;
 export type RepositoryTrigger = (typeof repositoryTriggers)[number];
-const triggerLabels: Record<RepositoryTrigger, (change: string) => string> = {
-  branch_created: () => "Branch created",
-  pull_request_opened: (change) => `${change} opened`,
-  pull_request_draft: (change) => `Draft ${change.toLowerCase()}`,
-  pull_request_merged: (change) => `${change} merged`,
-  pull_request_closed: (change) => `${change} closed unmerged`,
-};
-export const repositoryTriggerLabel = (trigger: RepositoryTrigger, provider: RepositoryProvider) =>
-  triggerLabels[trigger](repositoryProviderDefinitions[provider].change);
+const triggerStates = {
+  pull_request_opened: "opened",
+  pull_request_draft: "draft",
+  pull_request_merged: "merged",
+  pull_request_closed: "closed",
+} as const;
+export function repositoryTriggerLabel(trigger: RepositoryTrigger, provider: RepositoryProvider) {
+  if (trigger === "branch_created") return t("common.change.branchCreated");
+  const kind = repositoryProviderDefinitions[provider].changeKind;
+  return t(`common.change.${kind}.${triggerStates[trigger]}`);
+}
 // A verified link's kind in its host's words; `provider` is the link's provider label.
 export function remoteKindLabel(kind: (typeof remoteKinds)[number], provider: string | null) {
   const host = Object.values(repositoryProviderDefinitions).find((item) => item.label === provider);
@@ -1248,13 +1208,9 @@ export type SyncRule = z.output<typeof syncRuleSchema>;
 // arrived, so the issue may or may not exist. `paused` and `review` sync nothing until reconciled.
 export const issueLinkStates = ["active", "paused", "review", "creating", "unknown"] as const;
 export type IssueLinkState = (typeof issueLinkStates)[number];
-export const issueLinkStateLabels: Record<IssueLinkState, string> = {
-  active: "Syncing",
-  paused: "Paused",
-  review: "Needs review",
-  creating: "Creating issue",
-  unknown: "Creation unconfirmed",
-};
+export const issueLinkStateLabels = labelTable(issueLinkStates, (state) =>
+  t(`common.issueLinkState.${state}`),
+);
 export const issueLinkSchema = z.object({
   id: z.uuid(),
   connectionId: z.uuid(),
@@ -1352,61 +1308,65 @@ export const createdCredentialSchema = z.object({
 });
 export const okSchema = z.object({ ok: z.literal(true) });
 export type ChangeEvent = z.output<typeof eventSchema>;
-export const eventLabels: Record<string, string> = {
-  "label.created": "Label created",
-  "label.updated": "Label updated",
-  "label.deleted": "Label deleted",
-  "workflow.created": "Workflow state added",
-  "workflow.updated": "Workflow state changed",
-  "workflow.deleted": "Workflow state removed",
-  "custom_field.created": "Field created",
-  "custom_field.updated": "Field updated",
-  "custom_field.deleted": "Field deleted",
-  "ticket.created": "Ticket created",
-  "ticket.updated": "Ticket updated",
-  "ticket.deleted": "Ticket deleted",
-  "ticket.moved": "Moved from another project",
-  "ticket.moved_away": "Moved to another project",
-  "ticket.due_soon": "Due soon",
-  "ticket.overdue": "Overdue",
-  "ticket.claimed": "Work claimed",
-  "claim.renewed": "Claim renewed",
-  "claim.released": "Claim released",
-  "claim.recovered": "Claim recovered",
-  "comment.created": "Comment added",
-  "comment.updated": "Comment edited",
-  "comment.deleted": "Comment deleted",
-  "relation.added": "Relationship added",
-  "relation.removed": "Relationship removed",
-  "attachment.created": "File attached",
-  "attachment.deleted": "File removed",
-  "evidence.added": "Evidence attached",
-  "resource.added": "Link added",
-  "resource.updated": "Link edited",
-  "resource.removed": "Link removed",
-  "calendar_feed.created": "Calendar feed created",
-  "calendar_feed.revoked": "Calendar feed revoked",
-  "project.created": "Project created",
-  "project.updated": "Project updated",
-  "project.archived": "Project archived",
-  "project.restored": "Project restored",
-  "project.transferred": "Project moved to another workspace",
-  "project.deleted": "Project deleted",
-  "membership.updated": "Project access changed",
-  "workspace.owner_changed": "Workspace owner changed",
-  "role.created": "Role created",
-  "role.updated": "Role changed",
-  "role.deleted": "Role deleted",
-  "invitation.updated": "Invitation changed",
-  "destination.created": "Destination added",
-  "destination.updated": "Destination changed",
-  "destination.deleted": "Destination removed",
-  "repository.connected": "Repository connected",
-  "repository.updated": "Repository connection changed",
-  "repository.disconnected": "Repository disconnected",
-  "repository.received": "Repository webhook received",
-  "issue_link.updated": "Issue sync changed",
-};
+// Event types with a name of their own; any other reads as its type.
+export const namedEvents = [
+  "label.created",
+  "label.updated",
+  "label.deleted",
+  "workflow.created",
+  "workflow.updated",
+  "workflow.deleted",
+  "custom_field.created",
+  "custom_field.updated",
+  "custom_field.deleted",
+  "ticket.created",
+  "ticket.updated",
+  "ticket.deleted",
+  "ticket.moved",
+  "ticket.moved_away",
+  "ticket.due_soon",
+  "ticket.overdue",
+  "ticket.claimed",
+  "claim.renewed",
+  "claim.released",
+  "claim.recovered",
+  "comment.created",
+  "comment.updated",
+  "comment.deleted",
+  "relation.added",
+  "relation.removed",
+  "attachment.created",
+  "attachment.deleted",
+  "evidence.added",
+  "resource.added",
+  "resource.updated",
+  "resource.removed",
+  "calendar_feed.created",
+  "calendar_feed.revoked",
+  "project.created",
+  "project.updated",
+  "project.archived",
+  "project.restored",
+  "project.transferred",
+  "project.deleted",
+  "membership.updated",
+  "workspace.owner_changed",
+  "role.created",
+  "role.updated",
+  "role.deleted",
+  "invitation.updated",
+  "destination.created",
+  "destination.updated",
+  "destination.deleted",
+  "repository.connected",
+  "repository.updated",
+  "repository.disconnected",
+  "repository.received",
+  "issue_link.updated",
+] as const;
+export const eventLabels: Record<string, string> = labelTable(namedEvents, (type) =>
+  t(`common.event.${type}`),
+);
 export function formatEvent(event: ChangeEvent, includeTicket = false): string {
   const fallback = event.type.replaceAll(".", " ").replaceAll("_", " "),
     label = eventLabels[event.type] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1);
@@ -1548,13 +1508,9 @@ export const ticketImportSchema = bundleSchema(true);
 export type TicketExport = z.output<typeof ticketExportSchema>;
 // A staged import into a new project: previewed, then started, then written in the background.
 export const importStatuses = ["previewed", "running", "completed", "failed", "cancelled"] as const;
-export const importStatusLabels: Record<(typeof importStatuses)[number], string> = {
-  previewed: "Ready to import",
-  running: "Importing",
-  completed: "Imported",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
+export const importStatusLabels = labelTable(importStatuses, (status) =>
+  t(`common.importStatus.${status}`),
+);
 export const importRunSchema = z.object({
   id: z.uuid(),
   workspaceId: z.uuid(),
@@ -1597,26 +1553,31 @@ export const importProviders = ["linear", "jira"] as const;
 export type ImportProvider = (typeof importProviders)[number];
 export const importProviderDefinitions: Record<
   ImportProvider,
-  { label: string; project: string; setup: string }
+  { label: string; readonly project: string; readonly setup: string }
 > = {
   linear: {
     label: "Linear",
-    project: "Team",
-    setup:
-      "Create a personal API key under Settings › Security & access in Linear; read access is enough.",
+    get project() {
+      return t("common.importProvider.linear.project");
+    },
+    get setup() {
+      return t("common.importProvider.linear.setup");
+    },
   },
   jira: {
     label: "Jira",
-    project: "Project",
-    setup:
-      "Jira Cloud signs in with your account email and an API token from id.atlassian.com; Data Center and Server use a personal access token. Browse access to the project is enough.",
+    get project() {
+      return t("common.importProvider.jira.project");
+    },
+    get setup() {
+      return t("common.importProvider.jira.setup");
+    },
   },
 };
 export const jiraEditions = ["cloud", "data_center"] as const;
-export const jiraEditionLabels: Record<(typeof jiraEditions)[number], string> = {
-  cloud: "Cloud",
-  data_center: "Data Center or Server",
-};
+export const jiraEditionLabels = labelTable(jiraEditions, (edition) =>
+  t(`common.jiraEdition.${edition}`),
+);
 const sourceToken = z.string().trim().min(1).max(2000);
 export const importSourceSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("linear"), token: sourceToken }).strict(),
@@ -3453,11 +3414,11 @@ export function errorMessage(error: unknown): string {
       error.message,
     )
   )
-    return "Could not reach Kanvil. Check your connection and retry.";
+    return t("common.error.network");
   if (error instanceof z.ZodError)
     return error.issues
       .slice(0, 3)
-      .map((issue) => `${issue.path.join(".") || "Input"}: ${issue.message}`)
+      .map((issue) => `${issue.path.join(".") || t("common.error.input")}: ${issue.message}`)
       .join("; ");
   if (error instanceof ApiError && Array.isArray(error.details)) {
     const details = z
@@ -3466,16 +3427,42 @@ export function errorMessage(error: unknown): string {
     if (details.success)
       return details.data
         .slice(0, 3)
-        .map((issue) => `${issue.path || "Input"}: ${issue.message}`)
+        .map((issue) => `${issue.path || t("common.error.input")}: ${issue.message}`)
         .join("; ");
   }
+  // The server explains in English; other languages read the code's own wording.
+  if (
+    error instanceof ApiError &&
+    activeLocale() !== defaultLocale &&
+    isTranslatedError(error.code)
+  )
+    return t(`common.error.code.${error.code}`);
   return error instanceof Error
     ? error.message
     : typeof error === "string"
       ? error
-      : "The request could not be completed";
+      : t("common.error.fallback");
 }
+const translatedErrors = [
+  "unauthorized",
+  "session_required",
+  "account_disabled",
+  "forbidden",
+  "insufficient_scope",
+  "workspace_scope_required",
+  "invalid_origin",
+  "not_found",
+  "version_conflict",
+  "claim_conflict",
+  "idempotency_conflict",
+  "project_archived",
+  "rate_limited",
+  "snapshot_required",
+  "request_failed",
+] as const;
+const isTranslatedError = (code: string): code is (typeof translatedErrors)[number] =>
+  translatedErrors.some((known) => known === code);
 
 export function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return formatDate(value, { dateStyle: "medium", timeStyle: "short" });
 }

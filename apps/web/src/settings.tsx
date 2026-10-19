@@ -21,6 +21,7 @@ import {
   FormActions,
   Select,
   SelectItem,
+  reportError,
 } from "./ui.tsx";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -37,6 +38,8 @@ import {
   usePreference,
 } from "./hooks/use-preference.ts";
 import type { accountSections } from "./search.ts";
+import { formatDate, localeDetails, localePreference, locales, t } from "@kanvil/contracts/i18n";
+import { setLocalePreference, useLocalePreference } from "./lib/locale.tsx";
 import { formText } from "./forms.ts";
 export function AccountSettings({ section }: { section: (typeof accountSections)[number] }) {
   const [error, setError] = useAuthError();
@@ -208,11 +211,33 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
 function PreferenceSettings() {
   const identity = useIdentity(),
     [weekStart, setWeekStart] = usePreference(browserPreferences.weekStart),
-    [sidebar, setSidebar] = usePreference(browserPreferences.sidebar);
+    [sidebar, setSidebar] = usePreference(browserPreferences.sidebar),
+    { preference: language } = useLocalePreference();
   return (
     <>
       <section className="[&>.setting-row:last-child]:border-b-0">
         <SectionHeading title="Behavior" />
+        <SettingRow
+          title={t("common.language.label")}
+          description={t("settings.preferences.languageDescription")}
+        >
+          <Select
+            label={t("common.language.label")}
+            labelHidden
+            className="mb-0 w-44"
+            value={language}
+            onValueChange={(value) =>
+              void setLocalePreference(localePreference.parse(value)).catch(reportError)
+            }
+          >
+            <SelectItem value="system">{t("common.language.system")}</SelectItem>
+            {locales.map((locale) => (
+              <SelectItem key={locale} value={locale} lang={locale}>
+                {localeDetails[locale].name}
+              </SelectItem>
+            ))}
+          </Select>
+        </SettingRow>
         <SettingRow title="Week starts on" description="Applies to every date picker.">
           <Select
             label="Week starts on"
@@ -223,9 +248,17 @@ function PreferenceSettings() {
               setWeekStart(browserPreferences.weekStart.schema.parse(value))
             }
           >
-            <SelectItem value="sunday">Sunday</SelectItem>
-            <SelectItem value="monday">Monday</SelectItem>
-            <SelectItem value="saturday">Saturday</SelectItem>
+            <SelectItem value="language">{t("settings.preferences.weekStartLanguage")}</SelectItem>
+            {/* 1 January 2023 was a Sunday. */}
+            <SelectItem value="sunday">
+              {formatDate(new Date(2023, 0, 1), { weekday: "long" })}
+            </SelectItem>
+            <SelectItem value="monday">
+              {formatDate(new Date(2023, 0, 2), { weekday: "long" })}
+            </SelectItem>
+            <SelectItem value="saturday">
+              {formatDate(new Date(2023, 0, 7), { weekday: "long" })}
+            </SelectItem>
           </Select>
         </SettingRow>
         <SettingRow

@@ -50,6 +50,7 @@ import { EditTicket } from "./editor.tsx";
 import { Inbox, Settings } from "./settings.tsx";
 import type { Routes } from "./navigation.ts";
 import { usePushNavigation } from "./push.tsx";
+import { LocaleRoot, startLocale } from "./locale.tsx";
 
 const Stack = createNativeStackNavigator<Routes>();
 const Tabs = createBottomTabNavigator<{
@@ -64,8 +65,9 @@ export default function App() {
     [error, setError] = useState<unknown>();
   useEffect(() => {
     let mounted = true;
-    void AsyncStorage.getItem("kanvil:server")
-      .then(async (url) => {
+    // The first screen already reads the chosen language.
+    void Promise.all([startLocale(), AsyncStorage.getItem("kanvil:server")])
+      .then(async ([, url]) => {
         if (url) {
           const next = await connect(url);
           if (mounted) setConnection(next);
@@ -102,15 +104,17 @@ export default function App() {
     <SafeAreaProvider>
       {/* oxlint-disable-next-line react/style-prop-object -- Expo StatusBar takes a color mode string, not a View style. */}
       <StatusBar style="auto" />
-      {!loaded ? (
-        <Loading />
-      ) : connection ? (
-        <ConnectionContext key={connection.baseUrl} value={connection}>
-          <Session onDisconnect={() => setServer()} />
-        </ConnectionContext>
-      ) : (
-        <ServerSetup onConnect={setServer} error={error} />
-      )}
+      <LocaleRoot>
+        {!loaded ? (
+          <Loading />
+        ) : connection ? (
+          <ConnectionContext key={connection.baseUrl} value={connection}>
+            <Session onDisconnect={() => setServer()} />
+          </ConnectionContext>
+        ) : (
+          <ServerSetup onConnect={setServer} error={error} />
+        )}
+      </LocaleRoot>
     </SafeAreaProvider>
   );
 }

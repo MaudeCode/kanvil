@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { z } from "zod";
+import { firstWeekday } from "@kanvil/contracts/i18n";
 import { useIdentity } from "../data.tsx";
 import {
   ticketDensitySchema,
@@ -35,13 +36,23 @@ export const preferences = {
       .transform((saved) => ({ ...defaultColumns, ...saved }))
       .catch(defaultColumns),
   ),
-  weekStart: preference("week-start", z.enum(["sunday", "monday", "saturday"]).catch("sunday")),
+  weekStart: preference(
+    "week-start",
+    z.enum(["language", "sunday", "monday", "saturday"]).catch("language"),
+  ),
   sidebar: preference("sidebar", z.enum(["last", "expanded", "collapsed"]).catch("last")),
   // The Markdown editor mode a person chose last: raw source or the visual editor.
   editor: preference("editor-mode", z.enum(["write", "visual"]).catch("write")),
 };
-// Day-picker indexes for each week start choice.
-export const weekStarts = { sunday: 0, monday: 1, saturday: 6 } as const;
+// Day-picker indexes for each week start choice; `language` follows the interface language.
+export const weekStarts = {
+  get language() {
+    return firstWeekday();
+  },
+  sunday: 0,
+  monday: 1,
+  saturday: 6,
+} as const;
 export const ticketDisplayPreferences = [
   preferences.density,
   preferences.labelDisplay,

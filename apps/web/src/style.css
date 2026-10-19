@@ -174,6 +174,10 @@
   .markdown a {
     @apply text-primary underline underline-offset-4;
   }
+  /* Ticket text can be in any script; each paragraph reads and aligns in its own direction. */
+  .markdown :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th) {
+    unicode-bidi: plaintext;
+  }
   .markdown > :last-child {
     @apply mb-0;
   }
