@@ -58,8 +58,8 @@ export function useProjects() {
 const settledBy: Record<string, string[]> = {
   list_members: ["membership.", "project."],
   list_workspace_members: ["membership.", "project."],
-  // Invitation writes invalidate it directly; an acceptance also announces the new membership.
-  list_invitations: ["membership."],
+  // An acceptance announces the new membership rather than an invitation change.
+  list_invitations: ["invitation.", "membership."],
   list_project_labels: ["label.", "project."],
   list_calendar_feeds: ["calendar_feed.", "label.", "membership.", "project."],
   list_label_colors: ["label."],

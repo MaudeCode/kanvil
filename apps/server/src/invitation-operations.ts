@@ -75,10 +75,18 @@ async function present(ctx: Context, rows: Row[]): Promise<Invitation[]> {
     version: row.version,
   }));
 }
+// Other administrators' invitation lists follow these events. Project readers receive them too,
+// so they carry no address.
+const announce = (ctx: Context, row: Row) =>
+  publishWorkspace(ctx, row.workspaceId, "invitation.updated", {
+    invitationId: row.id,
+    status: row.status,
+  });
 // Issues a fresh token, stores only its hash, and queues the email when the instance has a relay.
 async function send(ctx: Context, write: (tokenHash: string) => Promise<Row[]>) {
   const token = randomBytes(32).toString("base64url");
   const row = one(await write(digest(token)));
+  await announce(ctx, row);
   const invitation = one(await present(ctx, [row]));
   const url = new URL(`/invite/${token}`, ctx.publicUrl).href;
   const access = invitation.projects
@@ -221,10 +229,16 @@ export const invitationHandlers: Pick<
   },
   async revoke_invitation(ctx, input) {
     const row = await pendingRow(ctx, input.invitationId, input.expectedVersion);
-    await ctx.db
-      .update(invitations)
-      .set({ status: "revoked", version: row.version + 1, updatedAt: new Date() })
-      .where(eq(invitations.id, row.id));
+    await announce(
+      ctx,
+      one(
+        await ctx.db
+          .update(invitations)
+          .set({ status: "revoked", version: row.version + 1, updatedAt: new Date() })
+          .where(eq(invitations.id, row.id))
+          .returning(),
+      ),
+    );
     return { ok: true };
   },
   async get_invitation(ctx, input) {

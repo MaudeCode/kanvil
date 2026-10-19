@@ -863,6 +863,7 @@ export const eventLabels: Record<string, string> = {
   "project.created": "Project created",
   "project.updated": "Project updated",
   "membership.updated": "Project access changed",
+  "invitation.updated": "Invitation changed",
   "destination.created": "Destination added",
   "destination.updated": "Destination changed",
   "destination.deleted": "Destination removed",

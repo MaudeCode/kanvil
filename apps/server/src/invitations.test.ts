@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
-import { invitations, projects } from "./schema.ts";
+import { events, invitations, projects } from "./schema.ts";
 import type { MailMessage } from "./adapters/ports.ts";
 import type { Workspace } from "@kanvil/contracts";
 
@@ -198,6 +198,36 @@ describe("workspace invitations", () => {
       details: { reason: "revoked" },
     });
     expect(await workspaceRole(guest)).toBeUndefined();
+  });
+
+  it("announces every invitation change to the workspace's projects without the address", async () => {
+    const shared = await project();
+    const changes = async () =>
+      (
+        await fixture.database.db
+          .select()
+          .from(events)
+          .where(and(eq(events.projectId, shared.id), eq(events.type, "invitation.updated")))
+          .orderBy(events.id)
+      ).map((event) => event.data);
+    const created = await invite();
+    const resent = await domain.execute(
+      "resend_invitation",
+      { workspaceId: workspace.id, invitationId: created.invitation.id, expectedVersion: 1 },
+      owner,
+    );
+    await domain.execute(
+      "revoke_invitation",
+      { workspaceId: workspace.id, invitationId: created.invitation.id, expectedVersion: 2 },
+      owner,
+    );
+    const announced = await changes();
+    expect(announced).toMatchObject([
+      { workspaceId: workspace.id, invitationId: created.invitation.id, status: "pending" },
+      { invitationId: resent.invitation.id, status: "pending" },
+      { invitationId: created.invitation.id, status: "revoked" },
+    ]);
+    expect(JSON.stringify(announced)).not.toContain("invite.test");
   });
 
   it("keeps one live link per address when an expired invitation is resent", async () => {
