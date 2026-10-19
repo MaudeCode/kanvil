@@ -322,6 +322,91 @@ test("inbox previews updates, takes replies in place, and manages its entries", 
   expect(errors).toEqual([]);
 });
 
+test("comments mention project members and mentions get their own Inbox view", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "MENTION", name: "Mentions" } })
+  ).json();
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title: "Confirm the restore drill timing" },
+    })
+  ).json();
+  // One account joins the project; the other exists on the instance but cannot read it.
+  for (const name of ["Mention reviewer", "Mention outsider"]) {
+    const email = `${name.replace(" ", "-").toLowerCase()}-${crypto.randomUUID()}@example.test`;
+    expect(
+      (
+        await page.request.post("/api/auth/admin/create-user", {
+          headers: { Origin: new URL(page.url()).origin },
+          data: { email, password: "Isolated mention password 234!", name, role: "user" },
+        })
+      ).ok(),
+    ).toBe(true);
+    if (name === "Mention reviewer")
+      await page.request.post(`/api/v1/projects/${project.id}/members`, {
+        data: { email, role: "writer" },
+      });
+  }
+  await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+  const composer = page.getByRole("textbox", { name: "Comment", exact: true });
+  await composer.pressSequentially("Can you time it, @Menti");
+  const options = page.getByRole("listbox", { name: "Mention a member", exact: true });
+  await expect(options.getByRole("option")).toHaveCount(1);
+  await expect(options.getByRole("option", { name: /Mention reviewer/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(options).toHaveCount(0);
+  await expect(composer).toHaveValue(/^Can you time it, \[@Mention reviewer\]\(mention:[^)]+\) $/);
+  // Escape closes the suggestions and leaves the typed text alone.
+  await composer.pressSequentially("and @Test");
+  await expect(options).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(options).toHaveCount(0);
+  await expect(composer).toHaveValue(/and @Test$/);
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  const posted = page.locator("article[id^=comment-]").filter({ hasText: "Can you time it" });
+  await expect(posted).toContainText("Can you time it, @Mention reviewer and @Test");
+  await expect(posted.getByRole("link")).toHaveCount(0);
+
+  // An agent's comment that mentions the owner lands under Mentions; an ordinary one does not.
+  const members = await (await page.request.get(`/api/v1/projects/${project.id}/members`)).json();
+  const owner = members.find((member: { name: string }) => member.name === "Test Owner");
+  const key = await (
+    await page.request.post("/api/v1/credentials", {
+      data: { name: "Mention fixture", projectIds: [project.id], scopes: ["read", "write"] },
+    })
+  ).json();
+  for (const body of [`[@Test Owner](mention:${owner.userId}), please confirm.`, "Unrelated"])
+    await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/comments`, {
+      headers: { Authorization: `Bearer ${key.key}` },
+      data: { body },
+    });
+  await page.goto("/inbox?view=mentions");
+  await expect(page.getByRole("tab", { name: "Mentions", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const rows = page.locator("[data-entry]").filter({ hasText: ticket.key });
+  await expect(rows).toHaveCount(1);
+  await expect(rows.getByRole("img", { name: "Mentions", exact: true })).toBeVisible();
+  // In the preview sheet, Escape first closes the suggestions, then the sheet.
+  await rows.getByRole("button", { name: new RegExp(ticket.title) }).click();
+  const sheet = page.getByRole("dialog", { name: ticket.title, exact: true });
+  await sheet.getByRole("textbox", { name: "Comment", exact: true }).pressSequentially("@Test");
+  await expect(options).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(options).toHaveCount(0);
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await page.getByRole("tab", { name: "All notifications", exact: true }).click();
+  await expect(page.locator("[data-entry]").filter({ hasText: ticket.key })).toHaveCount(2);
+  await page.request.delete(`/api/v1/credentials/${key.id}`);
+  expect(errors).toEqual([]);
+});
+
 test("a deleted ticket stops showing its cached content", async ({ page }) => {
   await signIn(page);
   const project = await (

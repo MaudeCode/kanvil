@@ -1,4 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { mentionLink } from "@kanvil/contracts";
 import {
   Bold,
   Heading,
@@ -13,7 +15,11 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupTextarea, InputGroupAddon } from "@/components/ui/input-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverContent } from "@/components/ui/popover";
+import { commandItemClass } from "@/components/ui/command";
 import { IconButton, Markdown } from "../ui.tsx";
+import { api } from "../data.tsx";
+import { UserIdentity } from "./user-avatar.tsx";
 import {
   formatMarkdown,
   formats,
@@ -33,6 +39,11 @@ const formatIcons: Record<MarkdownFormat, LucideIcon> = {
   tasks: ListChecks,
   code: SquareCode,
 };
+// The `@name` being typed at the caret: an `@` that starts a word, then no spaces or brackets.
+function typedMention(text: string, caret: number) {
+  const match = /(?:^|[\s([{])@([^\s@[\]()]{0,40})$/.exec(text.slice(0, caret));
+  return match?.[1] === undefined ? null : { from: caret - match[1].length - 1, query: match[1] };
+}
 export function MarkdownField({
   label,
   value,
@@ -43,6 +54,7 @@ export function MarkdownField({
   maxLength = 100000,
   required = false,
   footer,
+  mentions,
 }: {
   label: string;
   value: string;
@@ -53,19 +65,30 @@ export function MarkdownField({
   maxLength?: number;
   required?: boolean;
   footer?: ReactNode;
+  // Typing `@` offers this project's members and inserts a mention link.
+  mentions?: string;
 }) {
   const id = useId(),
     [mode, setMode] = useState("write"),
     field = useRef<HTMLTextAreaElement>(null);
-  const apply = (format: MarkdownFormat) => {
+  const members = useQuery({
+    ...api.query("list_members", { projectId: mentions ?? "" }),
+    enabled: !!mentions,
+  });
+  const [caret, setCaret] = useState(0),
+    [dismissed, setDismissed] = useState<number | null>(null),
+    [highlight, setHighlight] = useState("");
+  const typed = mentions ? typedMention(value, caret) : null,
+    query = typed?.query.toLowerCase() ?? "";
+  const matches = (members.data ?? [])
+    .filter((person) => `${person.name} ${person.email}`.toLowerCase().includes(query))
+    .slice(0, 8);
+  const suggesting = !!typed && typed.from !== dismissed && matches.length > 0,
+    active = matches.find((person) => person.userId === highlight) ?? matches[0],
+    optionId = (userId: string) => `${id}-mention-${userId}`;
+  const insert = (edit: { from: number; to: number; text: string; start: number; end: number }) => {
     const element = field.current;
     if (!element) return;
-    const edit = formatMarkdown(
-      element.value,
-      element.selectionStart,
-      element.selectionEnd,
-      format,
-    );
     element.focus();
     element.setSelectionRange(edit.from, edit.to);
     // insertText keeps the edit on the browser's own undo stack; the fallback cannot.
@@ -74,6 +97,18 @@ export function MarkdownField({
       onChange(element.value);
     }
     element.setSelectionRange(edit.start, edit.end);
+    setCaret(edit.end);
+  };
+  const apply = (format: MarkdownFormat) => {
+    const element = field.current;
+    if (element)
+      insert(formatMarkdown(element.value, element.selectionStart, element.selectionEnd, format));
+  };
+  const mention = (person: { name: string; userId: string }) => {
+    if (!typed) return;
+    const text = `${mentionLink(person.name, person.userId)} `,
+      end = typed.from + text.length;
+    insert({ from: typed.from, to: caret, text, start: end, end });
   };
   return (
     <Field
@@ -154,8 +189,33 @@ export function MarkdownField({
               }
               style={variant === "document" ? { minHeight: `${rows}lh` } : undefined}
               value={value}
-              onChange={(event) => onChange(event.target.value)}
+              onChange={(event) => {
+                setCaret(event.target.selectionStart);
+                onChange(event.target.value);
+              }}
+              onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+              {...(mentions && {
+                "aria-autocomplete": "list" as const,
+                "aria-controls": suggesting ? `${id}-mentions` : undefined,
+                "aria-activedescendant": suggesting && active ? optionId(active.userId) : undefined,
+              })}
               onKeyDown={(event) => {
+                if (suggesting && active && !event.nativeEvent.isComposing) {
+                  const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+                  if (step || ["Enter", "Tab", "Escape"].includes(event.key)) {
+                    event.preventDefault();
+                    // Keeps Escape from also closing a surrounding sheet or dialog.
+                    event.stopPropagation();
+                    const at = matches.indexOf(active);
+                    if (step)
+                      setHighlight(
+                        matches[(at + step + matches.length) % matches.length]?.userId ?? "",
+                      );
+                    else if (event.key === "Escape") setDismissed(typed.from);
+                    else mention(active);
+                    return;
+                  }
+                }
                 const format = shortcutFormat(event);
                 // ⌘K with nothing selected stays the command palette.
                 if (
@@ -174,6 +234,45 @@ export function MarkdownField({
               maxLength={maxLength}
               required={required}
             />
+            {mentions && (
+              <Popover
+                open={suggesting}
+                onOpenChange={(open) => {
+                  if (!open && typed) setDismissed(typed.from);
+                }}
+              >
+                <PopoverContent
+                  anchor={field}
+                  align="start"
+                  initialFocus={false}
+                  finalFocus={false}
+                  className="w-[min(20rem,calc(100vw-2rem))] p-1"
+                >
+                  <div role="listbox" id={`${id}-mentions`} aria-label="Mention a member">
+                    {matches.map((person) => (
+                      <div
+                        key={person.userId}
+                        role="option"
+                        id={optionId(person.userId)}
+                        aria-selected={person === active}
+                        data-selected={person === active || undefined}
+                        className={commandItemClass}
+                        // Keeps focus, and so the caret, in the field.
+                        onMouseDown={(event) => event.preventDefault()}
+                        onPointerMove={() => setHighlight(person.userId)}
+                        onClick={() => mention(person)}
+                      >
+                        <UserIdentity
+                          name={person.name}
+                          email={person.email}
+                          image={person.image}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
             {footer && (
               <InputGroupAddon align="block-end" className="justify-end border-t py-2">
                 {footer}

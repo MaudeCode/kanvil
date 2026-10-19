@@ -18,6 +18,7 @@ import {
   snapshotSchema,
   projectSchema,
   hasAdminRole,
+  type NotificationCategory,
 } from "@kanvil/contracts";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
@@ -256,12 +257,20 @@ export const reachable = (projectId: SQLWrapper) =>
     ),
   );
 // Records each (event, recipient) once under its first enabled category and queues push delivery.
+// `categories` replaces the event's own categories for one recipient, as a mention does.
 export async function notify(
   db: Context["db"],
-  pending: { event: typeof events.$inferSelect; recipient: Recipient; reminderKey?: string }[],
+  pending: {
+    event: typeof events.$inferSelect;
+    recipient: Recipient;
+    reminderKey?: string;
+    categories?: NotificationCategory[];
+  }[],
 ) {
-  const entries = pending.flatMap(({ event, recipient, reminderKey }) => {
-    const category = eventCategories(event).find((name) => recipient.categories?.[name] !== false);
+  const entries = pending.flatMap(({ event, recipient, reminderKey, categories }) => {
+    const category = (categories ?? eventCategories(event)).find(
+      (name) => recipient.categories?.[name] !== false,
+    );
     return category ? [{ event, recipient, category, reminderKey }] : [];
   });
   if (!entries.length) return;
@@ -326,29 +335,56 @@ export async function publishMany(ctx: Context, pending: PendingEvent[]) {
     })),
   );
   if (ticketIds.length) {
+    // A person never notifies themselves; an agent's actions still reach its owner.
+    const others = ctx.actor.machine ? undefined : ne(user.id, ctx.actor.id);
     const followers = await ctx.db
       .select({ ticketId: subscriptions.ticketId, ...recipientColumns })
       .from(subscriptions)
       .innerJoin(user, eq(user.id, subscriptions.userId))
       .leftJoin(notificationPreferences, eq(notificationPreferences.userId, subscriptions.userId))
       .where(
-        and(
-          inArray(subscriptions.ticketId, ticketIds),
-          reachable(subscriptions.projectId),
-          ctx.actor.machine ? undefined : ne(subscriptions.userId, ctx.actor.id),
-        ),
+        and(inArray(subscriptions.ticketId, ticketIds), reachable(subscriptions.projectId), others),
       );
+    // Mentioned users who can read the project are recipients too, following or not. The IDs come
+    // from the comment text, so only the server-side reachability check grants anything.
+    const mentioned = await Promise.all(
+      rows.map(async (event) => {
+        const ids = mentionsOf(event);
+        return ids.length
+          ? ctx.db
+              .select(recipientColumns)
+              .from(user)
+              .leftJoin(notificationPreferences, eq(notificationPreferences.userId, user.id))
+              .where(and(inArray(user.id, ids), reachable(sql`${event.projectId}::uuid`), others))
+          : [];
+      }),
+    );
     await notify(
       ctx.db,
-      rows.flatMap((event) =>
-        followers
-          .filter((follower) => follower.ticketId === event.ticketId)
-          .map((recipient) => ({ event, recipient })),
-      ),
+      rows.flatMap((event, index) => {
+        const following = followers.filter((follower) => follower.ticketId === event.ticketId),
+          follows = new Set(following.map((follower) => follower.userId));
+        return [
+          ...following.map((recipient) => ({
+            event,
+            recipient,
+            ...(mentionsOf(event).includes(recipient.userId)
+              ? { categories: ["mention" as const, ...eventCategories(event)] }
+              : {}),
+          })),
+          ...(mentioned[index] ?? [])
+            .filter((recipient) => !follows.has(recipient.userId))
+            .map((recipient) => ({ event, recipient, categories: ["mention" as const] })),
+        ];
+      }),
     );
   }
   return rows;
 }
+const mentionsOf = (event: { data: Record<string, unknown> }) =>
+  Array.isArray(event.data.mentions)
+    ? event.data.mentions.filter((id): id is string => typeof id === "string")
+    : [];
 export async function publish(
   ctx: Context,
   type: string,

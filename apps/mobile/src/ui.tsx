@@ -21,9 +21,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path } from "react-native-svg";
-import { useMarkdown } from "react-native-marked";
+import { Renderer, useMarkdown } from "react-native-marked";
 import { brandMark, palettes } from "@kanvil/contracts/theme";
-import { errorMessage, stateLabels, stateTones, type Ticket } from "@kanvil/contracts";
+import {
+  errorMessage,
+  mentionScheme,
+  stateLabels,
+  stateTones,
+  type Ticket,
+} from "@kanvil/contracts";
 
 export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
 export function Brand() {
@@ -438,6 +444,15 @@ export function Status({ value }: { value: Ticket["status"] }) {
     </Text>
   );
 }
+// A mention has nothing to open, so it reads as emphasized "@Name" text instead of a link.
+class MarkdownRenderer extends Renderer {
+  override link(...[children, href, styles, title]: Parameters<Renderer["link"]>) {
+    return href.startsWith(mentionScheme)
+      ? this.text(children, { ...styles, fontWeight: "600" })
+      : super.link(children, href, styles, title);
+  }
+}
+const markdownRenderer = new MarkdownRenderer();
 export function Markdown({ children }: { children: string }) {
   const colorScheme = useColorScheme(),
     color = usePalette();
@@ -455,6 +470,7 @@ export function Markdown({ children }: { children: string }) {
   const elements = useMarkdown(children, {
     colorScheme: colorScheme === "dark" ? "dark" : "light",
     theme,
+    renderer: markdownRenderer,
   });
   return <View>{elements}</View>;
 }

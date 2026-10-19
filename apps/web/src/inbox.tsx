@@ -29,7 +29,7 @@ import {
 import { TicketPreviewSheet } from "./ticket-detail.tsx";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { actions } from "./lib/actions.ts";
-import type { InboxSearch } from "./search.ts";
+import { inboxSearchSchema, type InboxSearch } from "./search.ts";
 import { cn } from "@/lib/utils";
 
 type Entry = Awaited<ReturnType<ReturnType<typeof api.notifications>["queryFn"]>>[number];
@@ -68,10 +68,11 @@ export function Inbox({
     ) ?? [];
   const unread = entries.filter((entry) => !entry.readAt),
     read = entries.filter((entry) => entry.readAt),
-    visible =
-      search.view === "unread"
-        ? entries.filter((entry) => !entry.readAt || kept.has(entry.id))
-        : entries;
+    visible = {
+      unread: entries.filter((entry) => !entry.readAt || kept.has(entry.id)),
+      mentions: entries.filter((entry) => entry.category === "mention"),
+      all: entries,
+    }[search.view];
   const order = [...new Set(visible.flatMap((entry) => ticketOf(entry) ?? []))];
   const [active, setActive] = useState<string | null>(null);
   const highlighted = visible.find((entry) => entry.id === active);
@@ -223,7 +224,7 @@ export function Inbox({
         value={search.view}
         onValueChange={(value) => {
           setKept(new Set());
-          onSearch({ ...search, view: value === "all" ? "all" : "unread" }, false);
+          onSearch({ ...search, view: inboxSearchSchema.shape.view.parse(value) }, false);
         }}
         className="inbox-tabs mb-5"
       >
@@ -236,6 +237,7 @@ export function Inbox({
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="mentions">Mentions</TabsTrigger>
           <TabsTrigger value="all">All notifications</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -261,7 +263,13 @@ export function Inbox({
       )}
       {!items.isPending && !visible.length && (
         <EmptyState
-          title={search.view === "unread" ? "No unread notifications" : "No notifications"}
+          title={
+            {
+              unread: "No unread notifications",
+              mentions: "No mentions",
+              all: "No notifications",
+            }[search.view]
+          }
           icon={Bell}
         />
       )}

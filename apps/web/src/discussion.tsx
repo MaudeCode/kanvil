@@ -87,6 +87,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
             rows={3}
             required
             maxLength={50000}
+            mentions={ticket.projectId}
             placeholder="Write a comment…"
             footer={
               <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
@@ -163,6 +164,7 @@ function Comment({
             rows={4}
             required
             maxLength={50000}
+            mentions={comment.projectId}
             footer={
               <>
                 <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>

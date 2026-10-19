@@ -35,11 +35,16 @@ import { formatDistanceToNowStrict, isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { toggleTask } from "./lib/markdown.ts";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+  type ExtraProps,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   errorMessage,
   formatTimestamp,
+  mentionScheme,
   stateLabels,
   priorityLabels,
   type Ticket,
@@ -447,11 +452,14 @@ function MarkdownCheckbox({ checked }: { checked: boolean }) {
   );
 }
 const markdownComponents: Components = {
-  a: ({ children, node: _node, ...props }) => (
-    <a {...props} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ children, node: _node, ...props }) =>
+    props.href?.startsWith(mentionScheme) ? (
+      <span className="rounded-sm bg-primary/10 px-0.5 font-medium text-primary">{children}</span>
+    ) : (
+      <a {...props} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    ),
   li: ({ children, node, className, ...props }) =>
     className?.includes("task-list-item") && node ? (
       <li {...props} className={cn(className, "list-none")}>
@@ -482,7 +490,11 @@ export function Markdown({
   return (
     <div className="markdown">
       <MarkdownSource value={{ source: children, ...(onChange ? { onChange } : {}) }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={markdownComponents}
+          urlTransform={(url) => (url.startsWith(mentionScheme) ? url : defaultUrlTransform(url))}
+        >
           {children}
         </ReactMarkdown>
       </MarkdownSource>
