@@ -16,6 +16,7 @@ import {
   type ImportSourceProject,
   type TicketExport,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { api, useOperation } from "../data.tsx";
 import {
   Button,
@@ -34,22 +35,23 @@ import { SettingRow } from "./settings-layout.tsx";
 import { PrefixInput, ProjectAccessField, suggestKey } from "./create-project.tsx";
 import { SummaryList } from "./project-lifecycle.tsx";
 
-const countLabels: [string, string][] = [
-  ["tickets", "Tickets"],
-  ["workflow", "Workflow states"],
-  ["fields", "Custom fields"],
-  ["labels", "Labels"],
-  ["relations", "Relationships"],
-  ["comments", "Comments"],
-  ["evidence", "Evidence"],
-  ["links", "Links"],
-];
-const notExport = "This file is not a Kanvil ticket export.";
+const countKeys = [
+  "tickets",
+  "workflow",
+  "fields",
+  "labels",
+  "relations",
+  "comments",
+  "evidence",
+  "links",
+] as const;
+const notExport = () => t("admin.import.notExport");
 const isRunning = (run: ImportRun | undefined) => run?.status === "running";
 const blocked = (run: ImportRun) => run.issues.some((issue) => issue.severity === "error");
 function progressText(run: ImportRun) {
   const { done, failed, total } = run.progress;
-  return `${importStatusLabels[run.status]} · ${done} of ${total} records${failed ? ` · ${failed} failed` : ""}`;
+  const values = { status: importStatusLabels[run.status], done, failed, count: total };
+  return failed ? t("admin.import.progressFailed", values) : t("admin.import.progress", values);
 }
 
 // Workspace writers create projects from ticket exports; their recent runs list below the action.
@@ -66,13 +68,10 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
   };
   return (
     <>
-      <SettingRow
-        title="Import"
-        description="Creates a project from a Kanvil ticket export, a Linear team, or a Jira project."
-      >
+      <SettingRow title={t("admin.import.title")} description={t("admin.import.description")}>
         <Button onClick={() => show(null)}>
           <Upload />
-          Import project
+          {t("admin.import.action")}
         </Button>
       </SettingRow>
       {runs.data?.map((run) => (
@@ -93,14 +92,14 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
           <Button
             size="sm"
             variant="ghost"
-            aria-label={`Details of ${run.name}`}
+            aria-label={t("admin.import.detailsOf", { name: run.name })}
             onClick={() => show(run.id)}
           >
-            Details
+            {t("admin.import.details")}
           </Button>
         </SettingRow>
       ))}
-      <Modal title="Import project" open={open} onOpenChange={setOpen}>
+      <Modal title={t("admin.import.action")} open={open} onOpenChange={setOpen}>
         {runId ? (
           <ImportRunView workspaceId={workspaceId} runId={runId} onClose={() => setOpen(false)} />
         ) : (
@@ -117,7 +116,9 @@ export function ImportProjects({ workspaceId }: { workspaceId: string }) {
 
 type SourceKind = "file" | ImportProvider;
 const sourceKindLabels: Record<SourceKind, string> = {
-  file: "Kanvil export file",
+  get file() {
+    return t("admin.import.exportFile");
+  },
   linear: importProviderDefinitions.linear.label,
   jira: importProviderDefinitions.jira.label,
 };
@@ -249,7 +250,7 @@ function ImportForm({
       }}
     >
       <Select
-        label="Source"
+        label={t("admin.import.source")}
         value={kind}
         onValueChange={(value) => {
           const next = (["file", ...importProviders] as const).find((item) => item === value);
@@ -269,7 +270,7 @@ function ImportForm({
       </Select>
       {kind === "file" ? (
         <Input
-          label="Export file"
+          label={t("admin.import.file")}
           type="file"
           accept="application/json,.json"
           required
@@ -286,7 +287,7 @@ function ImportForm({
               .then((text) => {
                 const data: unknown = JSON.parse(text);
                 if (!ticketExportSchema.pick({ format: true }).safeParse(data).success)
-                  throw new Error(notExport);
+                  throw new Error(notExport());
                 const parsed = ticketImportSchema.parse(data);
                 if (edits.current !== picked) return;
                 setBundle(parsed);
@@ -295,7 +296,7 @@ function ImportForm({
               })
               .catch((error: unknown) => {
                 if (edits.current === picked)
-                  setFileError(error instanceof SyntaxError ? new Error(notExport) : error);
+                  setFileError(error instanceof SyntaxError ? new Error(notExport()) : error);
               });
           }}
         />
@@ -304,7 +305,7 @@ function ImportForm({
           {kind === "jira" && (
             <>
               <Select
-                label="Jira edition"
+                label={t("admin.import.jiraEdition")}
                 value={credentials.edition}
                 onValueChange={(value) => {
                   const next = jiraEditions.find((item) => item === value);
@@ -318,7 +319,7 @@ function ImportForm({
                 ))}
               </Select>
               <Input
-                label="Site URL"
+                label={t("admin.import.siteUrl")}
                 type="url"
                 required
                 placeholder={
@@ -331,7 +332,7 @@ function ImportForm({
               />
               {credentials.edition === "cloud" && (
                 <Input
-                  label="Account email"
+                  label={t("admin.import.accountEmail")}
                   type="email"
                   required
                   autoComplete="off"
@@ -344,10 +345,10 @@ function ImportForm({
           <Input
             label={
               kind === "linear"
-                ? "API key"
+                ? t("admin.import.apiKey")
                 : credentials.edition === "cloud"
-                  ? "API token"
-                  : "Personal access token"
+                  ? t("admin.import.apiToken")
+                  : t("admin.import.personalToken")
             }
             type="password"
             required
@@ -373,11 +374,11 @@ function ImportForm({
               </Select>
               {projects.length === 0 && (
                 <p className="-mt-2 mb-4 text-sm text-muted-foreground">
-                  These credentials cannot read any {definition.project.toLowerCase()}.
+                  {t("admin.import.noProjects", { label: definition.project })}
                 </p>
               )}
               <Check
-                label="Include comments"
+                label={t("admin.import.includeComments")}
                 checked={includeComments}
                 onCheckedChange={changed(setIncludeComments)}
               />
@@ -389,7 +390,7 @@ function ImportForm({
       {chosen && (
         <>
           <Input
-            label="Project name"
+            label={t("admin.import.projectName")}
             value={name}
             onChange={(event) => changed(setName)(event.target.value)}
             required
@@ -403,8 +404,20 @@ function ImportForm({
       <FormActions
         error={preview.error ?? start.error}
         pending={connect.isPending || preview.isPending || start.isPending}
-        submitLabel={ready ? "Import" : connecting ? "Connect" : "Preview"}
-        pendingLabel={ready ? "Starting…" : connecting ? "Connecting…" : "Checking…"}
+        submitLabel={
+          ready
+            ? t("admin.import.start")
+            : connecting
+              ? t("admin.import.connect")
+              : t("admin.import.preview")
+        }
+        pendingLabel={
+          ready
+            ? t("admin.import.starting")
+            : connecting
+              ? t("admin.import.connecting")
+              : t("admin.import.checking")
+        }
         submitDisabled={connecting ? false : !chosen || (!!run && !ready)}
         onCancel={onCancel}
       />
@@ -417,15 +430,15 @@ function ImportPreview({ run }: { run: ImportRun }) {
   const matched = run.members.filter((person) => person.userId),
     unmatched = run.members.filter((person) => !person.userId);
   const rows: [string, ReactNode][] = [
-    ...countLabels.map(([key, label]): [string, ReactNode] => [
-      label,
+    ...countKeys.map((key): [string, ReactNode] => [
+      t(`admin.import.count.${key}`),
       run.counts[key] ? String(run.counts[key]) : "",
     ]),
-    ["Matched people", matched.map((person) => person.name).join(", ")],
-    ["Unmatched people", unmatched.map((person) => person.name).join(", ")],
+    [t("admin.import.matched"), matched.map((person) => person.name).join(", ")],
+    [t("admin.import.unmatched"), unmatched.map((person) => person.name).join(", ")],
   ];
   return (
-    <section aria-label="Import preview" className="mt-2 border-t pt-3">
+    <section aria-label={t("admin.import.previewLabel")} className="mt-2 border-t pt-3">
       <SummaryList rows={rows} />
       {run.issues.length > 0 && (
         <ul className="m-0 list-none space-y-1.5 p-0 text-sm">
@@ -434,7 +447,11 @@ function ImportPreview({ run }: { run: ImportRun }) {
               key={issue.message}
               className={issue.severity === "error" ? "text-destructive" : "text-muted-foreground"}
             >
-              <span className="sr-only">{issue.severity === "error" ? "Error: " : "Note: "}</span>
+              <span className="sr-only">
+                {issue.severity === "error"
+                  ? t("admin.import.errorPrefix")
+                  : t("admin.import.notePrefix")}
+              </span>
               {issue.message}
             </li>
           ))}
@@ -472,7 +489,7 @@ function ImportRunView({
       <div className="my-3">
         <div
           role="progressbar"
-          aria-label="Import progress"
+          aria-label={t("admin.import.progressLabel")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -488,7 +505,10 @@ function ImportRunView({
         </p>
       </div>
       {run.errors.length > 0 && (
-        <ul aria-label="Records not imported" className="m-0 list-none space-y-1 p-0 text-sm">
+        <ul
+          aria-label={t("admin.import.notImported")}
+          className="m-0 list-none space-y-1 p-0 text-sm"
+        >
           {run.errors.map((error, index) => (
             <li key={index} className="text-destructive">
               {error.label}: {error.message}
@@ -507,7 +527,7 @@ function ImportRunView({
                 .catch(() => {})
             }
           >
-            Stop import
+            {t("admin.import.stop")}
           </Button>
         )}
         {run.projectId && run.status !== "running" && (
@@ -516,7 +536,7 @@ function ImportRunView({
             render={<Link to="/projects/$projectId" params={{ projectId: run.projectId }} />}
             onClick={onClose}
           >
-            Open project
+            {t("admin.import.openProject")}
           </Button>
         )}
       </ModalActions>

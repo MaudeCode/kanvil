@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Trans } from "react-i18next";
 import {
   channelKinds,
   channelRouteModes,
@@ -39,6 +40,7 @@ import {
   type SyncPreview,
   type SyncRule,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -87,58 +89,97 @@ type FieldSpec = {
   optional?: boolean;
 };
 // The inputs each kind needs; fields named in `deliverySecretFields` are write-only.
-const kindFields: Record<DeliveryKind, FieldSpec[]> = {
-  email: [{ name: "address", label: "Email address", type: "email" }],
+const kindFields = (): Record<DeliveryKind, FieldSpec[]> => ({
+  email: [{ name: "address", label: t("admin.delivery.field.address"), type: "email" }],
   ntfy: [
     {
       name: "server",
-      label: "Server",
+      label: t("admin.delivery.field.server"),
       type: "url",
       placeholder: "https://ntfy.sh",
       optional: true,
     },
-    { name: "topic", label: "Topic" },
-    { name: "token", label: "Access token", optional: true },
+    { name: "topic", label: t("admin.delivery.field.topic") },
+    { name: "token", label: t("admin.delivery.field.accessToken"), optional: true },
   ],
   gotify: [
-    { name: "server", label: "Server", type: "url", placeholder: "https://gotify.example.com" },
-    { name: "token", label: "Application token" },
+    {
+      name: "server",
+      label: t("admin.delivery.field.server"),
+      type: "url",
+      placeholder: "https://gotify.example.com",
+    },
+    { name: "token", label: t("admin.delivery.field.applicationToken") },
   ],
   webhook: [
-    { name: "url", label: "Endpoint URL", type: "url", placeholder: "https://" },
-    { name: "secret", label: "Signing secret", optional: true },
+    {
+      name: "url",
+      label: t("admin.delivery.field.endpointUrl"),
+      type: "url",
+      placeholder: "https://",
+    },
+    { name: "secret", label: t("admin.delivery.field.signingSecret"), optional: true },
   ],
-  slack: [{ name: "url", label: "Incoming webhook URL", type: "url" }],
-  discord: [{ name: "url", label: "Webhook URL", type: "url" }],
+  slack: [{ name: "url", label: t("admin.delivery.field.incomingWebhookUrl"), type: "url" }],
+  discord: [{ name: "url", label: t("admin.delivery.field.webhookUrl"), type: "url" }],
   mattermost: [
-    { name: "url", label: "Incoming webhook URL", type: "url" },
-    { name: "channel", label: "Channel", placeholder: "town-square", optional: true },
+    { name: "url", label: t("admin.delivery.field.incomingWebhookUrl"), type: "url" },
+    {
+      name: "channel",
+      label: t("admin.delivery.field.channel"),
+      placeholder: "town-square",
+      optional: true,
+    },
   ],
   telegram: [
-    { name: "token", label: "Bot token" },
-    { name: "chatId", label: "Chat ID", placeholder: "-1001234567890 or @channel" },
-    { name: "topicId", label: "Topic ID", type: "number", optional: true },
+    { name: "token", label: t("admin.delivery.field.botToken") },
+    {
+      name: "chatId",
+      label: t("admin.delivery.field.chatId"),
+      placeholder: t("admin.delivery.field.chatIdPlaceholder"),
+    },
+    { name: "topicId", label: t("admin.delivery.field.topicId"), type: "number", optional: true },
   ],
-};
+});
 const failures: Record<string, string> = {
-  blocked_address: "This address is not allowed",
-  redirect_blocked: "The endpoint redirected",
-  dns_error: "Host not found",
-  network_error: "Could not connect",
-  timeout: "Timed out",
-  invalid_endpoint: "Invalid endpoint",
-  email_unavailable: "Email is not configured on this server",
-  smtp_error: "Mail server unavailable",
+  get blocked_address() {
+    return t("admin.delivery.failure.blockedAddress");
+  },
+  get redirect_blocked() {
+    return t("admin.delivery.failure.redirectBlocked");
+  },
+  get dns_error() {
+    return t("admin.delivery.failure.dnsError");
+  },
+  get network_error() {
+    return t("admin.delivery.failure.networkError");
+  },
+  get timeout() {
+    return t("admin.delivery.failure.timeout");
+  },
+  get invalid_endpoint() {
+    return t("admin.delivery.failure.invalidEndpoint");
+  },
+  get email_unavailable() {
+    return t("admin.delivery.failure.emailUnavailable");
+  },
+  get smtp_error() {
+    return t("admin.delivery.failure.smtpError");
+  },
   // Repository connections.
-  access_revoked: "The administrator who connected it lost access; reconnect",
-  repository_mismatch: "A delivery came from another repository",
+  get access_revoked() {
+    return t("admin.delivery.failure.accessRevoked");
+  },
+  get repository_mismatch() {
+    return t("admin.delivery.failure.repositoryMismatch");
+  },
 };
 const failureText = (code: string) =>
   failures[code] ??
   (code.startsWith("http_")
-    ? `Rejected with HTTP ${code.slice(5)}`
+    ? t("admin.delivery.failure.http", { status: code.slice(5) })
     : code.startsWith("smtp_")
-      ? `Mail server replied ${code.slice(5)}`
+      ? t("admin.delivery.failure.smtp", { code: code.slice(5) })
       : code.replaceAll("_", " "));
 // Health refreshes while a send is queued, so a test shows its result without a reload; a failed
 // send waiting for its retry refreshes slowly.
@@ -148,35 +189,31 @@ const refreshWhilePending = (query: { state: { data?: { health: Health }[] | und
   return pending.some((target) => target.health.status !== "failing") ? 2000 : 30_000;
 };
 
-const deliveryWords = {
-  done: "Delivered",
-  pending: "Sending…",
-  none: "Nothing sent yet",
-  failed: "",
-};
+// `words` picks the wording: a send for channels and destinations, an access check for repositories.
 function HealthText({
   health,
-  words = deliveryWords,
+  words = "delivery",
 }: {
   health: Health;
-  words?: typeof deliveryWords;
+  words?: "delivery" | "access";
 }) {
   if (health.status === "failing" && health.lastAttemptAt)
     return (
       <span className="text-destructive">
-        {words.failed}
-        {failureText(health.error ?? "")} · <RelativeTime value={health.lastAttemptAt} />
-        {health.pending > 0 && " · retrying"}
+        {t(`admin.delivery.health.${words}.failed`, { reason: failureText(health.error ?? "") })} ·{" "}
+        <RelativeTime value={health.lastAttemptAt} />
+        {health.pending > 0 && ` · ${t("admin.delivery.health.retrying")}`}
       </span>
     );
-  if (health.pending) return <>{words.pending}</>;
+  if (health.pending) return <>{t(`admin.delivery.health.${words}.pending`)}</>;
   if (health.lastSuccessAt)
     return (
-      <>
-        {words.done} <RelativeTime value={health.lastSuccessAt} />
-      </>
+      <Trans
+        i18nKey={`admin.delivery.health.${words}.done`}
+        components={{ time: <RelativeTime value={health.lastSuccessAt} /> }}
+      />
     );
-  return <>{words.none}</>;
+  return <>{t(`admin.delivery.health.${words}.none`)}</>;
 }
 // One outbound target: channel, destination, or repository connection. `check` is its test send.
 // Without `canChange`, as on an archived project, only disconnecting remains.
@@ -187,7 +224,11 @@ function DeliveryRow({
   paused,
   health,
   description,
-  check = { label: `Send test to ${name}`, icon: <Send />, queued: "Test queued" },
+  check = {
+    label: t("admin.delivery.sendTest", { name }),
+    icon: <Send />,
+    queued: t("admin.delivery.testQueued"),
+  },
   actions,
   onEdit,
   onTest,
@@ -213,10 +254,14 @@ function DeliveryRow({
     <SettingRow
       title={
         <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-          <span className="wrap-anywhere">{name}</span>
+          <span className="wrap-anywhere" dir="auto">
+            {name}
+          </span>
           <Badge variant="outline">{kind}</Badge>
-          {paused && <Badge variant="secondary">Paused</Badge>}
-          {health.status === "failing" && <Badge variant="destructive">Failing</Badge>}
+          {paused && <Badge variant="secondary">{t("admin.delivery.paused")}</Badge>}
+          {health.status === "failing" && (
+            <Badge variant="destructive">{t("admin.delivery.failing")}</Badge>
+          )}
         </span>
       }
       description={description}
@@ -235,26 +280,28 @@ function DeliveryRow({
             {check.icon}
           </IconButton>
           <IconButton
-            label={`${paused ? "Resume" : "Pause"} ${name}`}
+            label={
+              paused ? t("admin.delivery.resume", { name }) : t("admin.delivery.pause", { name })
+            }
             onClick={() => {
               void onPause(!paused).catch(reportError);
             }}
           >
             {paused ? <Play /> : <Pause />}
           </IconButton>
-          <IconButton label={`Edit ${name}`} onClick={onEdit}>
+          <IconButton label={t("admin.delivery.edit", { name })} onClick={onEdit}>
             <Pencil />
           </IconButton>
         </>
       )}
       <Confirm
-        label={`Disconnect ${name}`}
+        label={t("admin.delivery.disconnect", { name })}
         icon={<Trash2 />}
         danger
         description={removal}
         onConfirm={async () => {
           await onDelete();
-          toast.success(`${name} disconnected`);
+          toast.success(t("admin.delivery.disconnected", { name }));
         }}
       />
     </SettingRow>
@@ -288,7 +335,7 @@ function DeliveryFields({
   return (
     <>
       <Input
-        label="Name"
+        label={t("admin.delivery.name")}
         name="name"
         required
         maxLength={80}
@@ -297,7 +344,7 @@ function DeliveryFields({
       />
       {!target && (
         <Select
-          label="Type"
+          label={t("admin.delivery.type")}
           value={kind}
           onValueChange={(value) => {
             const next = kinds.find((item) => item === value);
@@ -311,23 +358,27 @@ function DeliveryFields({
           ))}
         </Select>
       )}
-      {kindFields[kind].map((field) => {
+      {kindFields()[kind].map((field) => {
         const secret = deliverySecretFields[kind].includes(field.name),
           saved = !!target?.secrets.includes(field.name);
         return (
           <div key={`${kind}-${field.name}`}>
             <Input
-              label={field.optional ? `${field.label} (optional)` : field.label}
+              label={
+                field.optional
+                  ? t("admin.delivery.field.optional", { label: field.label })
+                  : field.label
+              }
               name={`settings.${field.name}`}
               type={secret ? "password" : (field.type ?? "text")}
               autoComplete="off"
               required={!field.optional && !saved}
-              placeholder={saved ? "Saved · leave blank to keep" : field.placeholder}
+              placeholder={saved ? t("admin.delivery.field.savedSecret") : field.placeholder}
               defaultValue={secret ? undefined : target?.settings[field.name]}
             />
             {saved && field.optional && (
               <Check
-                label={`Remove saved ${field.label.toLowerCase()}`}
+                label={t("admin.delivery.field.removeSaved", { label: field.label })}
                 name={`clear.${field.name}`}
               />
             )}
@@ -340,7 +391,7 @@ function DeliveryFields({
 // Submitted settings: blank secrets stay saved, blank fields clear on edit, numbers parse.
 function readSettings(form: FormData, kind: DeliveryKind, editing: boolean) {
   const settings: { kind: DeliveryKind; [field: string]: string | number | null } = { kind };
-  for (const field of kindFields[kind]) {
+  for (const field of kindFields()[kind]) {
     const value = formText(form, `settings.${field.name}`).trim();
     if (form.get(`clear.${field.name}`)) settings[field.name] = "";
     else if (value) settings[field.name] = field.type === "number" ? Number(value) : value;
@@ -442,7 +493,7 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
     void action
       .then(() => {
         setDraft(null);
-        toast.success("Channel saved");
+        toast.success(t("admin.delivery.channelSaved"));
       })
       .catch(() => {});
   }
@@ -467,13 +518,13 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
   return (
     <>
       <DeliveryList
-        title="Channels"
-        addLabel="Add channel"
+        title={t("admin.delivery.channels")}
+        addLabel={t("admin.delivery.addChannel")}
         count={channels.data?.length ?? 0}
         loading={channels.isPending}
         error={channels.error}
         onAdd={() => edit(null)}
-        empty="No channels"
+        empty={t("admin.delivery.noChannels")}
       >
         {channels.data?.map((channel) => (
           <DeliveryRow
@@ -491,12 +542,12 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
             onDelete={() =>
               remove.mutateAsync({ channelId: channel.id, expectedVersion: channel.version })
             }
-            removal={`Disconnect ${channel.name}? Its settings and queued notifications are discarded.`}
+            removal={t("admin.delivery.channelRemoval", { name: channel.name })}
           />
         ))}
       </DeliveryList>
       <Modal
-        title={draft?.channel ? "Edit channel" : "Add channel"}
+        title={draft?.channel ? t("admin.delivery.editChannel") : t("admin.delivery.addChannel")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -513,7 +564,7 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
                 target={draft.channel}
               />
               <FieldSet className="gap-0">
-                <FieldLegend variant="label">Send notifications from</FieldLegend>
+                <FieldLegend variant="label">{t("admin.delivery.sendFrom")}</FieldLegend>
                 {workspaces.data?.map((workspace) => {
                   const route = draft.routes.find((item) => item.workspaceId === workspace.id),
                     mode = route?.mode ?? "off",
@@ -530,9 +581,11 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
                           if (next) setRoute(workspace.id, { mode: next });
                         }}
                       >
-                        <SelectItem value="off">Nothing</SelectItem>
-                        <SelectItem value="all">All projects</SelectItem>
-                        <SelectItem value="selected">Selected projects</SelectItem>
+                        <SelectItem value="off">{t("admin.delivery.routeOff")}</SelectItem>
+                        <SelectItem value="all">{t("admin.delivery.routeAll")}</SelectItem>
+                        <SelectItem value="selected">
+                          {t("admin.delivery.routeSelected")}
+                        </SelectItem>
                       </Select>
                       {mode === "selected" && (
                         <div className="max-h-40 overflow-y-auto pl-3">
@@ -559,7 +612,7 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
               <FormActions
                 error={create.error ?? update.error}
                 pending={busy}
-                submitLabel="Save channel"
+                submitLabel={t("admin.delivery.saveChannel")}
                 onCancel={() => setDraft(null)}
               />
             </FieldSet>
@@ -624,28 +677,22 @@ export function ProjectDestinations({
     void action
       .then(() => {
         setDraft(null);
-        toast.success("Destination saved");
+        toast.success(t("admin.delivery.destinationSaved"));
       })
       .catch(() => {});
   }
   if (!canAdmin)
-    return (
-      <EmptyState
-        title="Project administrators manage integrations"
-        icon={Webhook}
-        className="py-16"
-      />
-    );
+    return <EmptyState title={t("admin.delivery.adminsOnly")} icon={Webhook} className="py-16" />;
   return (
     <>
       <DeliveryList
-        title="Destinations"
-        addLabel="Add destination"
+        title={t("admin.delivery.destinations")}
+        addLabel={t("admin.delivery.addDestination")}
         count={destinations.data?.length ?? 0}
         loading={destinations.isPending}
         error={destinations.error}
         onAdd={canChange ? () => edit(null) : undefined}
-        empty="No destinations"
+        empty={t("admin.delivery.noDestinations")}
       >
         {destinations.data?.map((destination) => (
           <DeliveryRow
@@ -669,12 +716,16 @@ export function ProjectDestinations({
                 expectedVersion: destination.version,
               })
             }
-            removal={`Disconnect ${destination.name}? Its settings and queued messages are discarded.`}
+            removal={t("admin.delivery.destinationRemoval", { name: destination.name })}
           />
         ))}
       </DeliveryList>
       <Modal
-        title={draft?.destination ? "Edit destination" : "Add destination"}
+        title={
+          draft?.destination
+            ? t("admin.delivery.editDestination")
+            : t("admin.delivery.addDestination")
+        }
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -691,7 +742,7 @@ export function ProjectDestinations({
                 target={draft.destination}
               />
               <FieldSet className="gap-0">
-                <FieldLegend variant="label">Send</FieldLegend>
+                <FieldLegend variant="label">{t("admin.delivery.send")}</FieldLegend>
                 {destinationEvents.map((name) => (
                   <Check
                     key={name}
@@ -711,7 +762,7 @@ export function ProjectDestinations({
               <FormActions
                 error={create.error ?? update.error}
                 pending={busy}
-                submitLabel="Save destination"
+                submitLabel={t("admin.delivery.saveDestination")}
                 onCancel={() => setDraft(null)}
               />
             </FieldSet>
@@ -722,21 +773,8 @@ export function ProjectDestinations({
   );
 }
 
-const accessWords = {
-  done: "Access checked",
-  pending: "Checking access…",
-  none: "Access not checked",
-  failed: "Access check: ",
-};
-// What each host's token and webhook need; the form reads its other wording from the definitions.
-const repositorySetup: Record<RepositoryProvider, string> = {
-  github:
-    "The token needs repository read access, and issue and pull request write access to comment or sync issues. Add a GitHub webhook with the URL copied from this repository's row, content type application/json, this secret, and the Branch or tag creation, Branch or tag deletion, Issues, Issue comments, and Pull requests events.",
-  gitea:
-    "The token needs the read:repository scope, and write:issue to comment or sync issues. Add a Gitea webhook with the URL copied from this repository's row, content type application/json, this secret, and the Create, Delete, Issues, Issue Label, Issue Comment, and Pull Request events.",
-  gitlab:
-    "The token needs the read_api scope, and api to comment or sync issues. Add a GitLab webhook with the URL copied from this repository's row, this secret token, and the Push, Issues, Comments, and Merge request events.",
-};
+// What each host's token and webhook need (`admin.repository.setup`); the form reads its other
+// wording from the definitions.
 const providerName = ({ provider, baseUrl }: RepositoryConnection) => {
   const { label } = repositoryProviderDefinitions[provider];
   return baseUrl ? `${label} · ${new URL(baseUrl).host}` : label;
@@ -744,11 +782,12 @@ const providerName = ({ provider, baseUrl }: RepositoryConnection) => {
 function WebhookText({ connection }: { connection: RepositoryConnection }) {
   if (connection.lastEventError)
     return <span className="text-destructive">{failureText(connection.lastEventError)}</span>;
-  if (!connection.lastEventAt) return <>No webhook received</>;
+  if (!connection.lastEventAt) return <>{t("admin.repository.noWebhook")}</>;
   return (
-    <>
-      Webhook received <RelativeTime value={connection.lastEventAt} />
-    </>
+    <Trans
+      i18nKey="admin.repository.webhookReceived"
+      components={{ time: <RelativeTime value={connection.lastEventAt} /> }}
+    />
   );
 }
 // A project's code-host repositories. Signed webhooks link the tickets they name and move them
@@ -830,7 +869,7 @@ export function RepositoryConnections({
     void action
       .then(() => {
         setDraft(null);
-        toast.success("Repository saved");
+        toast.success(t("admin.repository.saved"));
       })
       .catch(() => {});
   }
@@ -840,13 +879,13 @@ export function RepositoryConnections({
   return (
     <>
       <DeliveryList
-        title="Repositories"
-        addLabel="Connect repository"
+        title={t("admin.repository.title")}
+        addLabel={t("admin.repository.connect")}
         count={connections.data?.length ?? 0}
         loading={connections.isPending}
         error={connections.error}
         onAdd={canChange ? () => edit(null) : undefined}
-        empty="No repositories"
+        empty={t("admin.repository.empty")}
         icon={GitBranch}
       >
         {connections.data?.map((connection) => (
@@ -860,24 +899,24 @@ export function RepositoryConnections({
             description={
               <>
                 <WebhookText connection={connection} /> ·{" "}
-                <HealthText health={connection.health} words={accessWords} />
+                <HealthText health={connection.health} words="access" />
                 <SyncText connection={connection} />
               </>
             }
             check={{
-              label: `Check access to ${connection.repository}`,
+              label: t("admin.repository.checkAccess", { repository: connection.repository }),
               icon: <ShieldCheck />,
-              queued: "Access check queued",
+              queued: t("admin.repository.accessQueued"),
             }}
             actions={
               <>
                 <CopyButton
-                  label={`Copy webhook URL for ${connection.repository}`}
+                  label={t("admin.repository.copyWebhook", { repository: connection.repository })}
                   value={connection.webhookUrl}
                 />
                 {canChange && (
                   <IconButton
-                    label={`Issue sync for ${connection.repository}`}
+                    label={t("admin.repository.issueSync", { repository: connection.repository })}
                     onClick={() => setSyncing(connection)}
                   >
                     <ArrowLeftRight />
@@ -902,7 +941,7 @@ export function RepositoryConnections({
                 expectedVersion: connection.version,
               })
             }
-            removal={`Disconnect ${connection.repository}? Its webhook stops working at once. Links it added stay on their tickets.`}
+            removal={t("admin.repository.removal", { repository: connection.repository })}
           />
         ))}
       </DeliveryList>
@@ -923,7 +962,7 @@ export function RepositoryConnections({
         />
       )}
       <Modal
-        title={editing ? "Edit repository" : "Connect repository"}
+        title={editing ? t("admin.repository.edit") : t("admin.repository.connect")}
         open={!!draft}
         onOpenChange={(open) => {
           if (!open) setDraft(null);
@@ -935,7 +974,7 @@ export function RepositoryConnections({
             <FieldSet disabled={busy}>
               {!editing && (
                 <Select
-                  label="Host"
+                  label={t("admin.repository.host")}
                   value={draft.provider}
                   onValueChange={(value) => {
                     const next = repositoryProviders.find((item) => item === value);
@@ -952,7 +991,11 @@ export function RepositoryConnections({
               {host.baseUrl && (
                 <Input
                   key={`${draft.provider}-baseUrl`}
-                  label={host.baseUrl.default ? "Server URL (optional)" : "Server URL"}
+                  label={
+                    host.baseUrl.default
+                      ? t("admin.repository.serverUrlOptional")
+                      : t("admin.repository.serverUrl")
+                  }
                   name="baseUrl"
                   type="url"
                   required={!host.baseUrl.default}
@@ -961,36 +1004,44 @@ export function RepositoryConnections({
                 />
               )}
               <Input
-                label={`${host.label} repository`}
+                label={t("admin.repository.repository", { host: host.label })}
                 name="repository"
                 required
                 autoFocus
-                placeholder={host.nested ? "group/project" : "owner/repository"}
+                placeholder={
+                  host.nested
+                    ? t("admin.repository.nestedPlaceholder")
+                    : t("admin.repository.placeholder")
+                }
                 defaultValue={editing?.repository}
               />
               {(["token", "webhookSecret"] as const).map((field) => (
                 <Input
                   key={field}
-                  label={field === "token" ? "Access token" : "Webhook secret"}
+                  label={
+                    field === "token"
+                      ? t("admin.repository.accessToken")
+                      : t("admin.repository.webhookSecret")
+                  }
                   name={field}
                   type="password"
                   autoComplete="off"
                   required={!editing?.secrets.includes(field)}
                   placeholder={
-                    editing?.secrets.includes(field) ? "Saved · leave blank to keep" : undefined
+                    editing?.secrets.includes(field) ? t("admin.repository.savedSecret") : undefined
                   }
                 />
               ))}
               <p className="-mt-2 mb-4 text-xs text-muted-foreground">
-                {repositorySetup[draft.provider]}
+                {t(`admin.repository.setup.${draft.provider}`)}
               </p>
               <Check
-                label={`Comment on newly linked issues and ${host.change.toLowerCase()}s`}
+                label={t(`admin.repository.commentOnLink.${host.changeKind}`)}
                 checked={draft.commentOnLink}
                 onCheckedChange={(checked) => setDraft({ ...draft, commentOnLink: checked })}
               />
               <FieldSet className="gap-0">
-                <FieldLegend variant="label">Move linked tickets</FieldLegend>
+                <FieldLegend variant="label">{t("admin.repository.moveTickets")}</FieldLegend>
                 {repositoryTriggers.map((trigger) => (
                   <Select
                     key={trigger}
@@ -1007,7 +1058,7 @@ export function RepositoryConnections({
                       });
                     }}
                   >
-                    <SelectItem value="none">No move</SelectItem>
+                    <SelectItem value="none">{t("admin.repository.noMove")}</SelectItem>
                     {workflow.data?.map((state) => (
                       <SelectItem key={state.id} value={state.id}>
                         {state.name}
@@ -1019,7 +1070,7 @@ export function RepositoryConnections({
               <FormActions
                 error={create.error ?? update.error}
                 pending={busy}
-                submitLabel="Save repository"
+                submitLabel={t("admin.repository.save")}
                 onCancel={() => setDraft(null)}
               />
             </FieldSet>
@@ -1032,26 +1083,40 @@ export function RepositoryConnections({
 
 // Why a link stopped syncing; host failures read like delivery failures.
 const syncReasons: Record<string, string> = {
-  labels: "Its sync labels changed",
-  conflict: "Changed on both sides",
-  changed_while_paused: "The issue changed while the repository was paused",
-  unverified: "The host's answer did not confirm the change",
-  claim_conflict: "The ticket is claimed",
-  invalid_content: "The issue is longer than a ticket allows",
+  get labels() {
+    return t("admin.issueSync.reason.labels");
+  },
+  get conflict() {
+    return t("admin.issueSync.reason.conflict");
+  },
+  get changed_while_paused() {
+    return t("admin.issueSync.reason.changedWhilePaused");
+  },
+  get unverified() {
+    return t("admin.issueSync.reason.unverified");
+  },
+  get claim_conflict() {
+    return t("admin.issueSync.reason.claimConflict");
+  },
+  get invalid_content() {
+    return t("admin.issueSync.reason.invalidContent");
+  },
 };
 const syncReason = (reason: string | null) =>
   reason ? (syncReasons[reason] ?? failureText(reason)) : null;
 const stoppedStates = ["paused", "review", "unknown"] as const;
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 function SyncText({ connection }: { connection: RepositoryConnection }) {
   const links = connection.issueLinks,
     syncing = (links.active ?? 0) + (links.creating ?? 0),
     stopped = stoppedStates.reduce((total, state) => total + (links[state] ?? 0), 0);
   return (
     <>
-      {syncing > 0 && ` · ${plural(syncing, "issue")} syncing`}
+      {syncing > 0 && ` · ${t("admin.issueSync.issuesSyncing", { count: syncing })}`}
       {stopped > 0 && (
-        <span className="text-[var(--warning)]"> · {plural(stopped, "link")} stopped</span>
+        <span className="text-[var(--warning)]">
+          {" "}
+          · {t("admin.issueSync.linksStopped", { count: stopped })}
+        </span>
       )}
     </>
   );
@@ -1104,14 +1169,14 @@ function SyncRuleFields({
           />
           {rule.labels.length > 1 && (
             <Select
-              label="Match"
+              label={t("admin.issueSync.match")}
               value={rule.match}
               onValueChange={(value) =>
                 onChange({ ...rule, match: value === "all" ? "all" : "any" })
               }
             >
-              <SelectItem value="any">Any of these labels</SelectItem>
-              <SelectItem value="all">All of these labels</SelectItem>
+              <SelectItem value="any">{t("admin.issueSync.matchAny")}</SelectItem>
+              <SelectItem value="all">{t("admin.issueSync.matchAll")}</SelectItem>
             </Select>
           )}
         </>
@@ -1119,11 +1184,11 @@ function SyncRuleFields({
     </FieldSet>
   );
 }
-const previewRows: [keyof Omit<SyncPreview, "fingerprint">, string][] = [
-  ["matching", "Keep syncing"],
-  ["export", "New issues to create"],
-  ["pause", "Links to pause"],
-  ["review", "Links to review"],
+const previewRows: (keyof Omit<SyncPreview, "fingerprint">)[] = [
+  "matching",
+  "export",
+  "pause",
+  "review",
 ];
 // Which tickets export as issues and which issues import as tickets. Saving previews the effect
 // first; applying sends that preview's fingerprint, so a changed project is previewed again.
@@ -1179,13 +1244,13 @@ function IssueSyncRules({
       })
       .then(() => {
         onClose();
-        toast.success("Issue sync applied");
+        toast.success(t("admin.issueSync.applied"));
       })
       .catch(() => setPreviewed(null));
   }
   return (
     <Modal
-      title={`Issue sync · ${connection.repository}`}
+      title={t("admin.issueSync.title", { repository: connection.repository })}
       open
       onOpenChange={(open) => {
         if (!open) onClose();
@@ -1199,33 +1264,35 @@ function IssueSyncRules({
           <ProjectLabelProvider projectId={undefined} labels={catalog}>
             <FieldSet disabled={busy}>
               <SyncRuleFields
-                legend={`Kanvil to ${host}`}
-                enableLabel="Export tickets as issues"
-                description="Open tickets get a new issue; title, description, state, and new comments stay in step."
-                labelsLabel="Only tickets with these labels"
-                emptyText="Every open ticket"
+                legend={t("admin.issueSync.outbound", { host })}
+                enableLabel={t("admin.issueSync.exportTickets")}
+                description={t("admin.issueSync.exportDescription")}
+                labelsLabel={t("admin.issueSync.ticketLabels")}
+                emptyText={t("admin.issueSync.everyTicket")}
                 rule={current.outbound}
                 labels={catalog}
                 onChange={(outbound) => change({ outbound })}
               />
               <SyncRuleFields
-                legend={`${host} to Kanvil`}
-                enableLabel="Import issues as tickets"
-                description={`Open issues import when ${host} next reports them.`}
-                labelsLabel="Only issues with these labels"
-                emptyText="Every open issue"
+                legend={t("admin.issueSync.inbound", { host })}
+                enableLabel={t("admin.issueSync.importIssues")}
+                description={t("admin.issueSync.importDescription", { host })}
+                labelsLabel={t("admin.issueSync.issueLabels")}
+                emptyText={t("admin.issueSync.everyIssue")}
                 rule={current.inbound}
                 labels={catalog}
                 onChange={(inbound) => change({ inbound })}
               />
               {previewed && (
                 <dl
-                  aria-label="Preview"
+                  aria-label={t("admin.issueSync.previewLabel")}
                   className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 border-t pt-3 text-sm animate-in fade-in-0"
                 >
-                  {previewRows.map(([key, label]) => (
+                  {previewRows.map((key) => (
                     <div key={key} className="contents">
-                      <dt className="text-muted-foreground">{label}</dt>
+                      <dt className="text-muted-foreground">
+                        {t(`admin.issueSync.preview.${key}`)}
+                      </dt>
                       <dd className="text-right tabular-nums">{previewed[key]}</dd>
                     </div>
                   ))}
@@ -1234,7 +1301,9 @@ function IssueSyncRules({
               <FormActions
                 error={preview.error ?? apply.error}
                 pending={busy}
-                submitLabel={previewed ? "Apply" : "Preview"}
+                submitLabel={
+                  previewed ? t("common.action.apply") : t("admin.issueSync.previewAction")
+                }
                 onCancel={onClose}
               />
             </FieldSet>
@@ -1266,7 +1335,7 @@ function IssueLinkReview({
   const host = repositoryProviderDefinitions[connection.provider].label;
   return (
     <section className="[&>.setting-row:last-child]:border-b-0">
-      <SectionHeading title={`Stopped links · ${connection.repository}`} />
+      <SectionHeading title={t("admin.issueSync.stopped", { repository: connection.repository })} />
       <ErrorNotice error={links.error} />
       {links.isPending ? (
         <Loading />
@@ -1302,7 +1371,7 @@ function IssueLinkReview({
           >
             {canChange && (
               <Button variant="outline" size="sm" onClick={() => setReviewing(link)}>
-                Review
+                {t("admin.issueSync.review")}
               </Button>
             )}
           </SettingRow>
@@ -1346,7 +1415,9 @@ function IssueLinkComparison({
       })
       .then(() => {
         onClose();
-        toast.success(resolution === "unlink" ? "Link removed" : "Sync resumed");
+        toast.success(
+          resolution === "unlink" ? t("admin.issueSync.linkRemoved") : t("admin.issueSync.resumed"),
+        );
       });
   };
   const data = comparison.data,
@@ -1357,7 +1428,7 @@ function IssueLinkComparison({
       ? {
           title: content.title,
           description: content.description,
-          state: content.open ? "Open" : "Closed",
+          state: content.open ? t("admin.issueSync.open") : t("admin.issueSync.closed"),
         }
       : null;
   };
@@ -1365,7 +1436,7 @@ function IssueLinkComparison({
     remote = values("remote");
   return (
     <Modal
-      title={`Review ${link.ticketKey}`}
+      title={t("admin.issueSync.reviewTitle", { key: link.ticketKey })}
       open
       onOpenChange={(open) => {
         if (!open) onClose();
@@ -1381,10 +1452,9 @@ function IssueLinkComparison({
             <>
               <p className="text-sm text-muted-foreground">
                 {syncReason(data.link.reason)}
-                {!created &&
-                  ` · ${host} may already have this issue; check before creating it again.`}
+                {!created && ` · ${t("admin.issueSync.mayExist", { host })}`}
               </p>
-              <Table aria-label="Comparison">
+              <Table aria-label={t("admin.issueSync.comparison")}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-24" />
@@ -1395,7 +1465,9 @@ function IssueLinkComparison({
                 <TableBody>
                   {(["title", "description", "state"] as const).map((field) => (
                     <TableRow key={field}>
-                      <TableHead className="align-top capitalize">{field}</TableHead>
+                      <TableHead className="align-top capitalize">
+                        {t(`admin.issueSync.field.${field}`)}
+                      </TableHead>
                       {[local, remote].map((side, index) => (
                         <TableCell
                           key={index}
@@ -1404,8 +1476,8 @@ function IssueLinkComparison({
                             local?.[field] === remote?.[field] && "text-muted-foreground",
                           )}
                         >
-                          <div className="max-h-40 overflow-auto">
-                            {side ? side[field] || "—" : "Not reported"}
+                          <div className="max-h-40 overflow-auto" dir="auto">
+                            {side ? side[field] || "—" : t("admin.issueSync.notReported")}
                           </div>
                         </TableCell>
                       ))}
@@ -1415,28 +1487,28 @@ function IssueLinkComparison({
               </Table>
               <ModalActions>
                 <Button disabled={reconcile.isPending} onClick={() => setUnlinking(true)}>
-                  Unlink
+                  {t("admin.issueSync.unlink")}
                 </Button>
                 <Button
                   variant="outline"
                   disabled={reconcile.isPending || !remote}
                   onClick={() => void resolve("remote").catch(() => {})}
                 >
-                  Keep {host}
+                  {t("admin.issueSync.keepHost", { host })}
                 </Button>
                 <Button
                   disabled={reconcile.isPending}
                   onClick={() => void resolve("kanvil").catch(() => {})}
                 >
-                  {created ? "Keep Kanvil" : "Create issue again"}
+                  {created ? t("admin.issueSync.keepKanvil") : t("admin.issueSync.createAgain")}
                 </Button>
               </ModalActions>
               <Confirm
                 trigger={false}
                 open={unlinking}
                 onOpenChange={setUnlinking}
-                label={`Unlink ${link.ticketKey}`}
-                description={`Stop syncing ${link.ticketKey}? The ticket and the issue both stay.`}
+                label={t("admin.issueSync.unlinkTicket", { key: link.ticketKey })}
+                description={t("admin.issueSync.unlinkConfirm", { key: link.ticketKey })}
                 onConfirm={() => resolve("unlink")}
               />
             </>

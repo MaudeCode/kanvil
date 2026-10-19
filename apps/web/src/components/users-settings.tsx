@@ -34,6 +34,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { t } from "@kanvil/contracts/i18n";
 function AccountAdministration({
   onCreated,
   onCancel,
@@ -76,10 +77,16 @@ function AccountAdministration({
           void create(event);
         }}
       >
-        <Input label="Name" name="name" required maxLength={120} autoFocus />
-        <Input label="Email" name="email" type="email" required autoComplete="off" />
+        <Input label={t("admin.users.name")} name="name" required maxLength={120} autoFocus />
         <Input
-          label="Initial password"
+          label={t("admin.users.email")}
+          name="email"
+          type="email"
+          required
+          autoComplete="off"
+        />
+        <Input
+          label={t("admin.users.initialPassword")}
           name="password"
           type="password"
           autoComplete="new-password"
@@ -87,15 +94,15 @@ function AccountAdministration({
           maxLength={128}
           required
         />
-        <Select label="Instance role" name="role">
-          <SelectItem value="user">User</SelectItem>
-          <SelectItem value="admin">Administrator</SelectItem>
+        <Select label={t("admin.users.instanceRole")} name="role">
+          <SelectItem value="user">{t("admin.users.user")}</SelectItem>
+          <SelectItem value="admin">{t("admin.users.administrator")}</SelectItem>
         </Select>
         <FormActions
           error={error}
           pending={pending}
-          submitLabel="Create account"
-          pendingLabel="Creating…"
+          submitLabel={t("admin.users.create")}
+          pendingLabel={t("admin.users.creating")}
           onCancel={onCancel}
         />
       </form>
@@ -128,19 +135,23 @@ export function UsersSettings() {
   return (
     <section>
       <SectionHeading
-        title="Users"
+        title={t("admin.users.title")}
         action={
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <SearchField
-              label="Search users"
-              placeholder="Name or email…"
+              label={t("admin.users.search")}
+              placeholder={t("admin.users.searchPlaceholder")}
               value={query}
               onChange={(value) => {
                 setQuery(value);
                 setOffset(0);
               }}
             />
-            <IconButton label="New user" variant="default" onClick={() => setCreating(true)}>
+            <IconButton
+              label={t("admin.users.new")}
+              variant="default"
+              onClick={() => setCreating(true)}
+            >
               <UserPlus />
             </IconButton>
           </div>
@@ -148,7 +159,7 @@ export function UsersSettings() {
       />
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <Select
-          label="Instance role filter"
+          label={t("admin.users.roleFilter")}
           labelHidden
           className="mb-0 w-40"
           value={role}
@@ -157,12 +168,12 @@ export function UsersSettings() {
             setOffset(0);
           }}
         >
-          <SelectItem value="all">All roles</SelectItem>
-          <SelectItem value="admin">Administrators</SelectItem>
-          <SelectItem value="user">Users</SelectItem>
+          <SelectItem value="all">{t("admin.users.allRoles")}</SelectItem>
+          <SelectItem value="admin">{t("admin.users.administrators")}</SelectItem>
+          <SelectItem value="user">{t("admin.users.users")}</SelectItem>
         </Select>
         <Select
-          label="Account status filter"
+          label={t("admin.users.statusFilter")}
           labelHidden
           className="mb-0 w-40"
           value={status}
@@ -171,9 +182,9 @@ export function UsersSettings() {
             setOffset(0);
           }}
         >
-          <SelectItem value="all">All accounts</SelectItem>
-          <SelectItem value="active">Active</SelectItem>
-          <SelectItem value="disabled">Disabled</SelectItem>
+          <SelectItem value="all">{t("admin.users.allAccounts")}</SelectItem>
+          <SelectItem value="active">{t("admin.users.active")}</SelectItem>
+          <SelectItem value="disabled">{t("admin.users.disabled")}</SelectItem>
         </Select>
       </div>
       <ErrorNotice error={users.error} />
@@ -181,20 +192,24 @@ export function UsersSettings() {
         <Loading />
       ) : !users.data?.users.length ? (
         <EmptyState
-          title={query || role !== "all" || status !== "all" ? "No matching users" : "No users"}
+          title={
+            query || role !== "all" || status !== "all"
+              ? t("admin.users.noMatches")
+              : t("admin.users.empty")
+          }
           className="py-12"
         />
       ) : (
         <div aria-busy={users.isFetching}>
-          <Table mobileLayout="rows" aria-label="Users">
+          <Table mobileLayout="rows" aria-label={t("admin.users.title")}>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Joined</TableHead>
+                <TableHead>{t("admin.users.user")}</TableHead>
+                <TableHead>{t("admin.users.role")}</TableHead>
+                <TableHead>{t("admin.users.status")}</TableHead>
+                <TableHead>{t("admin.users.joined")}</TableHead>
                 <TableHead>
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t("admin.users.actions")}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -220,24 +235,29 @@ export function UsersSettings() {
                         />
                       </Button>
                     </TableCell>
-                    <TableCell data-label="Role">
+                    <TableCell data-label={t("admin.users.role")}>
                       <Badge variant="secondary">
-                        {hasAdminRole(person.role) ? "Administrator" : "User"}
+                        {hasAdminRole(person.role)
+                          ? t("admin.users.administrator")
+                          : t("admin.users.user")}
                       </Badge>
                     </TableCell>
-                    <TableCell data-label="Status">
+                    <TableCell data-label={t("admin.users.status")}>
                       <Badge variant={person.banned ? "destructive" : "outline"}>
-                        {person.banned ? "Disabled" : "Active"}
+                        {person.banned ? t("admin.users.disabled") : t("admin.users.active")}
                       </Badge>
                     </TableCell>
-                    <TableCell data-label="Joined" className="text-xs text-muted-foreground">
+                    <TableCell
+                      data-label={t("admin.users.joined")}
+                      className="text-xs text-muted-foreground"
+                    >
                       <RelativeTime value={person.createdAt} />
                     </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Manage ${person.name}`}
+                        aria-label={t("admin.users.manage", { name: person.name })}
                         onClick={() => setSelected(person.id)}
                       >
                         <MoreHorizontal />
@@ -251,13 +271,18 @@ export function UsersSettings() {
         </div>
       )}
       <Pager
-        noun="users"
+        noun={t("admin.users.pagerNoun")}
         offset={offset}
         total={users.data?.total ?? 0}
         size={25}
         onChange={setOffset}
       />
-      <Modal title="Create account" open={creating} onOpenChange={setCreating} busy={pending}>
+      <Modal
+        title={t("admin.users.create")}
+        open={creating}
+        onOpenChange={setCreating}
+        busy={pending}
+      >
         <AccountAdministration
           pending={pending}
           setPending={setPending}
@@ -269,7 +294,7 @@ export function UsersSettings() {
             setStatus("all");
             setOffset(0);
             setSelected(id);
-            toast.success(`Created ${email}`);
+            toast.success(t("admin.users.created", { email }));
           }}
         />
       </Modal>
