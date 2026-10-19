@@ -8,6 +8,7 @@ import { fetch as expoFetch } from "expo/fetch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@kanvil/client";
 import { type Operation } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 
 export async function connect(url: string) {
   const parsed = new URL(url.trim());
@@ -19,11 +20,8 @@ export async function connect(url: string) {
     parsed.search ||
     parsed.hash
   )
-    throw new Error(
-      "Use your Kanvil server's HTTP or HTTPS origin, without a path or credentials.",
-    );
-  if (parsed.protocol === "http:" && !__DEV__)
-    throw new Error("Use HTTPS to connect to your Kanvil server.");
+    throw new Error(t("native.server.invalidOrigin"));
+  if (parsed.protocol === "http:" && !__DEV__) throw new Error(t("native.server.httpsRequired"));
   const baseUrl = parsed.origin;
   const prefix = `kanvil_${await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, baseUrl)}`;
   const auth = createAuthClient({
@@ -67,7 +65,9 @@ export function useProjects() {
 export function useLive() {
   const { api } = useConnection(),
     cache = useQueryClient(),
-    [state, setState] = useState("connecting");
+    [state, setState] = useState<"connecting" | "connected" | "offline" | "closed" | "signedOut">(
+      "connecting",
+    );
   useEffect(() => {
     const controller = new AbortController();
     void api
@@ -76,7 +76,7 @@ export function useLive() {
         invalidate: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
         onState: setState,
       })
-      .catch(() => setState("Sign in to reconnect"));
+      .catch(() => setState("signedOut"));
     return () => controller.abort();
   }, [api, cache]);
   return state;

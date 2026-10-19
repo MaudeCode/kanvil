@@ -4,7 +4,14 @@ import { View, Text } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { states, stateLabels, priorityLabels, type Ticket } from "@kanvil/contracts";
+import {
+  states,
+  stateLabels,
+  priorityLabels,
+  difficultyLabels,
+  type Ticket,
+} from "@kanvil/contracts";
+import { formatNumber, t } from "@kanvil/contracts/i18n";
 import { useConnection, useProjects, useOperation } from "./data.tsx";
 import {
   Body,
@@ -48,7 +55,7 @@ export function Projects() {
           refreshing={projects.isRefetching}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>No projects yet</Body>
+              <Body muted>{t("native.projects.empty")}</Body>
             </View>
           }
           renderItem={({ item }) => (
@@ -95,8 +102,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   });
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: route.params.name ?? project?.name ?? "Tickets",
-      headerRight: createHeaderAction("New ticket", () =>
+      title: route.params.name ?? project?.name ?? t("native.screen.tickets"),
+      headerRight: createHeaderAction(t("native.screen.newTicket"), () =>
         navigation.navigate("Edit", { projectId }),
       ),
     });
@@ -106,18 +113,18 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     <Screen scroll={false}>
       <View style={{ padding: 20, gap: 14 }}>
         <Field
-          label="Search tickets"
+          label={t("native.tickets.search")}
           value={query}
           onChangeText={setQuery}
-          placeholder="Title, description, or key"
+          placeholder={t("native.tickets.searchPlaceholder")}
           returnKeyType="search"
         />
         <Choice
-          label="Status"
+          label={t("common.filterField.status")}
           value={status}
           onChange={setStatus}
           options={[
-            { value: "", label: "All statuses" },
+            { value: "", label: t("native.tickets.allStatuses") },
             ...states.map((value) => ({ value, label: stateLabels[value] })),
           ]}
         />
@@ -139,7 +146,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>No matching tickets</Body>
+              <Body muted>{t("native.tickets.empty")}</Body>
             </View>
           }
           ListFooterComponent={
@@ -147,7 +154,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
               <Loading />
             ) : (
               <Text style={{ color: color.muted, textAlign: "center", padding: 20 }}>
-                {rows.length} of {tickets.data?.pages[0]?.total ?? 0}
+                {t("native.tickets.count", {
+                  shown: formatNumber(rows.length),
+                  total: formatNumber(tickets.data?.pages[0]?.total ?? 0),
+                })}
               </Text>
             )
           }
@@ -171,10 +181,12 @@ function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: () => void })
         <>
           <Status ticket={ticket} />
           <Body muted small>
-            {priorityLabels[ticket.priority]} priority
+            {t("native.ticket.priority", { priority: priorityLabels[ticket.priority] })}
           </Body>
           <Body muted small>
-            {ticket.difficulty ?? "Unspecified difficulty"}
+            {ticket.difficulty
+              ? difficultyLabels[ticket.difficulty]
+              : t("native.ticket.noDifficulty")}
           </Body>
         </>
       }
@@ -192,11 +204,16 @@ function ProjectAction() {
     navigation = useNavigation();
   return (
     <>
-      <Button title="New project" plain compact onPress={() => setOpen(true)} />
-      <Sheet title="New project" open={open} onClose={() => setOpen(false)}>
-        <Field label="Project name" value={name} onChangeText={setName} maxLength={120} />
+      <Button title={t("native.projects.new")} plain compact onPress={() => setOpen(true)} />
+      <Sheet title={t("native.projects.new")} open={open} onClose={() => setOpen(false)}>
         <Field
-          label="Ticket prefix"
+          label={t("native.projects.name")}
+          value={name}
+          onChangeText={setName}
+          maxLength={120}
+        />
+        <Field
+          label={t("native.projects.prefix")}
           value={key}
           onChangeText={(value) => setKey(value.toUpperCase())}
           autoCapitalize="characters"
@@ -204,7 +221,7 @@ function ProjectAction() {
           maxLength={10}
         />
         <Field
-          label="Description"
+          label={t("native.projects.description")}
           value={description}
           onChangeText={setDescription}
           multiline
@@ -212,7 +229,7 @@ function ProjectAction() {
         />
         <ErrorNotice error={create.error} />
         <Button
-          title="Create project"
+          title={t("native.projects.create")}
           disabled={create.isPending || !name.trim() || key.length < 2}
           primary
           onPress={() => {

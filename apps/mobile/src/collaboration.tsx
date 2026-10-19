@@ -4,6 +4,7 @@ import {
   relationChoices,
   parseRelationChoice,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -63,13 +64,16 @@ export function Relations({
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
   return (
-    <Section title="Relationships">
+    <Section title={t("native.relations.title")}>
       {ticket.parentId && (
         <Button
           title={
             parent.data
-              ? `Parent · ${parent.data.ticket.key} · ${parent.data.ticket.title}`
-              : "Open parent ticket"
+              ? t("native.relations.parent", {
+                  key: parent.data.ticket.key,
+                  title: parent.data.ticket.title,
+                })
+              : t("native.relations.openParent")
           }
           onPress={() =>
             navigation.push("Ticket", { projectId: ticket.projectId, ticketId: ticket.parentId! })
@@ -78,7 +82,7 @@ export function Relations({
       )}
       {children.data && (children.data.total > 0 || offset > 0) && (
         <>
-          <Body>Child tickets</Body>
+          <Body>{t("native.relations.children")}</Body>
           {children.data.items.map((child) => (
             <Row
               key={child.id}
@@ -92,12 +96,12 @@ export function Relations({
           {(children.data.total > 20 || offset > 0) && (
             <View style={styles.actions}>
               <Button
-                title="Previous children"
+                title={t("native.relations.previousChildren")}
                 disabled={!offset}
                 onPress={() => setOffset(Math.max(0, offset - 20))}
               />
               <Button
-                title="Next children"
+                title={t("native.relations.nextChildren")}
                 disabled={offset + 20 >= children.data.total}
                 onPress={() => setOffset(offset + 20)}
               />
@@ -116,12 +120,12 @@ export function Relations({
               }
             />
             <Button
-              title="Remove relationship"
+              title={t("native.relations.remove")}
               onPress={() =>
-                Alert.alert("Remove relationship?", "", [
-                  { text: "Cancel", style: "cancel" },
+                Alert.alert(t("native.relations.removeTitle"), "", [
+                  { text: t("common.action.cancel"), style: "cancel" },
                   {
-                    text: "Remove",
+                    text: t("common.action.remove"),
                     style: "destructive",
                     onPress: () =>
                       remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
@@ -132,17 +136,22 @@ export function Relations({
           </View>
         );
       })}
-      <Button title="Add relationship" onPress={() => setOpen(true)} />
+      <Button title={t("native.relations.add")} onPress={() => setOpen(true)} />
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
-      <Sheet title="Add relationship" open={open} onClose={() => setOpen(false)}>
-        <Field label="Find ticket" value={query} onChangeText={setQuery} />
-        <Choice label="Relationship" value={type} onChange={setType} options={relationChoices} />
+      <Sheet title={t("native.relations.add")} open={open} onClose={() => setOpen(false)}>
+        <Field label={t("native.relations.find")} value={query} onChangeText={setQuery} />
         <Choice
-          label="Ticket"
+          label={t("native.relations.type")}
+          value={type}
+          onChange={setType}
+          options={relationChoices}
+        />
+        <Choice
+          label={t("native.relations.ticket")}
           value={target}
           onChange={setTarget}
           options={[
-            { value: "", label: "Choose a ticket" },
+            { value: "", label: t("native.relations.choose") },
             ...(matches.data?.items
               .filter((item) => item.id !== ticket.id)
               .map((item) => ({ value: item.id, label: `${item.key} · ${item.title}` })) ?? []),
@@ -150,7 +159,7 @@ export function Relations({
         />
         <ErrorNotice error={matches.error ?? add.error} />
         <Button
-          title="Add"
+          title={t("common.action.add")}
           primary
           disabled={!target || add.isPending}
           onPress={() => {
@@ -192,24 +201,24 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     };
   }, [key]);
   return (
-    <Section title="Discussion">
+    <Section title={t("native.discussion.title")}>
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}
       <View style={styles.actions}>
         <Button
-          title="Previous comments"
+          title={t("native.discussion.previous")}
           disabled={!offset}
           onPress={() => setOffset(Math.max(0, offset - 50))}
         />
         <Button
-          title="Next comments"
+          title={t("native.discussion.next")}
           disabled={offset + 50 >= (comments.data?.total ?? 0)}
           onPress={() => setOffset(offset + 50)}
         />
       </View>
       <Field
-        label="Comment (Markdown)"
+        label={t("native.discussion.field")}
         value={body}
         onChangeText={(value) => {
           setBody(value);
@@ -220,7 +229,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
       />
       <ErrorNotice error={error ?? comments.error ?? add.error} />
       <Button
-        title="Comment"
+        title={t("native.discussion.submit")}
         primary
         disabled={!body.trim() || add.isPending}
         onPress={() => {
@@ -253,7 +262,7 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
     <View style={{ gap: 10, paddingVertical: 12 }}>
       <Body muted>
         {comment.actorId === identity.id
-          ? "You"
+          ? t("native.discussion.you")
           : memberName(members.data, deleted.data, comment.actorId)}{" "}
         · {formatTimestamp(comment.createdAt)}
       </Body>
@@ -261,7 +270,7 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
       {(comment.actorId === identity.id || identity.admin) && (
         <View style={styles.actions}>
           <Button
-            title="Edit comment"
+            title={t("native.discussion.edit")}
             onPress={() => {
               setBody(comment.body);
               setEditingVersion(comment.version);
@@ -269,32 +278,42 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
             }}
           />
           <Button
-            title="Delete comment"
+            title={t("native.discussion.delete")}
             danger
             onPress={() =>
-              Alert.alert("Delete comment?", "Permanently remove this comment?", [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Delete",
-                  style: "destructive",
-                  onPress: () =>
-                    remove.mutate({
-                      projectId: comment.projectId,
-                      commentId: comment.id,
-                      expectedVersion: comment.version,
-                    }),
-                },
-              ])
+              Alert.alert(
+                t("native.discussion.deleteTitle"),
+                t("native.discussion.deleteMessage"),
+                [
+                  { text: t("common.action.cancel"), style: "cancel" },
+                  {
+                    text: t("common.action.delete"),
+                    style: "destructive",
+                    onPress: () =>
+                      remove.mutate({
+                        projectId: comment.projectId,
+                        commentId: comment.id,
+                        expectedVersion: comment.version,
+                      }),
+                  },
+                ],
+              )
             }
           />
         </View>
       )}
       <ErrorNotice error={remove.error} />
-      <Sheet title="Edit comment" open={open} onClose={() => setOpen(false)}>
-        <Field label="Comment" multiline value={body} maxLength={50000} onChangeText={setBody} />
+      <Sheet title={t("native.discussion.edit")} open={open} onClose={() => setOpen(false)}>
+        <Field
+          label={t("native.discussion.editField")}
+          multiline
+          value={body}
+          maxLength={50000}
+          onChangeText={setBody}
+        />
         <ErrorNotice error={update.error} />
         <Button
-          title="Save comment"
+          title={t("native.discussion.save")}
           disabled={!body.trim() || update.isPending}
           primary
           onPress={() => {

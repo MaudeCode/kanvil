@@ -1,5 +1,12 @@
 import { formatEvent, formatTimestamp } from "@kanvil/contracts";
-import { useState } from "react";
+import {
+  localeDetails,
+  localePreference,
+  locales,
+  t,
+  type LocalePreference,
+} from "@kanvil/contracts/i18n";
+import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,11 +20,13 @@ import {
   forgetDevicePush,
   pushProjectId,
 } from "./push.tsx";
+import { savedLocalePreference, setLocalePreference } from "./locale.tsx";
 import {
   Body,
   List,
   Button,
   Check,
+  Choice,
   ErrorNotice,
   Field,
   Loading,
@@ -43,7 +52,7 @@ export function Inbox() {
     <Screen scroll={false}>
       <View style={{ padding: 16 }}>
         <Button
-          title="Mark all read"
+          title={t("native.inbox.markAllRead")}
           disabled={!items.data?.some((item) => !item.readAt)}
           onPress={() => {
             void read().catch(setError);
@@ -63,7 +72,7 @@ export function Inbox() {
           refreshing={items.isRefetching}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>No notifications</Body>
+              <Body muted>{t("native.inbox.empty")}</Body>
             </View>
           }
           renderItem={({ item }) => (
@@ -117,13 +126,13 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
     },
   });
   return (
-    <Section title="Notifications">
+    <Section title={t("native.notifications.title")}>
       <ErrorNotice
         error={preferences.error ?? update.error ?? registration.error ?? device.error}
       />
       {preferences.data && (
         <Check
-          label="Subscribed ticket updates in Inbox"
+          label={t("native.notifications.inApp")}
           checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
           disabled={update.isPending || registration.isPending}
           onChange={(inApp) => {
@@ -134,21 +143,23 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
       {pushAvailable && preferences.data && (
         <>
           <Check
-            label="Push notifications"
+            label={t("native.notifications.push")}
             checked={update.isPending ? (update.variables.push ?? false) : preferences.data.push}
             disabled={update.isPending || registration.isPending}
             onChange={(push) => update.mutate({ inApp: preferences.data?.inApp ?? true, push })}
           />
           {typeof pushProjectId === "string" ? (
             <Button
-              title={device.data ? "Disable push on this device" : "Enable push on this device"}
+              title={
+                device.data
+                  ? t("native.notifications.disableDevice")
+                  : t("native.notifications.enableDevice")
+              }
               disabled={registration.isPending || update.isPending || device.isPending}
               onPress={() => registration.mutate(!device.data)}
             />
           ) : (
-            <Body muted>
-              This build needs an Expo project ID and signing configuration for push.
-            </Body>
+            <Body muted>{t("native.notifications.unconfigured")}</Body>
           )}
         </>
       )}
@@ -164,7 +175,17 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
     [next, setNext] = useState(""),
     [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [language, setLanguage] = useState<LocalePreference>("system");
+  useEffect(() => {
+    let mounted = true;
+    void savedLocalePreference().then((value) => {
+      if (mounted) setLanguage(value);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const info = useQuery({
     queryKey: ["info", baseUrl],
     queryFn: () => api.request("/api/v1/info", infoSchema),
@@ -213,7 +234,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       if (result.error) throw new Error(result.error.message);
       setCurrent("");
       setNext("");
-      setMessage("Password updated; other sessions revoked");
+      setMessage(t("native.settings.password.updated"));
     } catch (cause) {
       setError(cause);
     } finally {
@@ -227,23 +248,37 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       <Body muted>{baseUrl}</Body>
       <ErrorNotice error={error} />
       {message && <Body>{message}</Body>}
-      <Section title="Local password">
+      <Choice
+        label={t("common.language.label")}
+        value={language}
+        options={[
+          { value: "system", label: t("common.language.system") },
+          ...locales.map((locale) => ({ value: locale, label: localeDetails[locale].name })),
+        ]}
+        onChange={(value) => {
+          const choice = localePreference.parse(value);
+          setLanguage(choice);
+          setError(undefined);
+          void setLocalePreference(choice).catch(setError);
+        }}
+      />
+      <Section title={t("native.settings.password.title")}>
         <Field
-          label="Current password"
+          label={t("native.settings.password.current")}
           value={current}
           onChangeText={setCurrent}
           secureTextEntry
           autoComplete="current-password"
         />
         <Field
-          label="New password"
+          label={t("native.settings.password.new")}
           value={next}
           onChangeText={setNext}
           secureTextEntry
           autoComplete="new-password"
         />
         <Button
-          title="Change password"
+          title={t("native.settings.password.change")}
           disabled={pending || !current || next.length < 12}
           onPress={() => {
             void changePassword();
@@ -253,12 +288,12 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       {info.data?.oidc && (
         <Section title={info.data.oidc.name}>
           {accounts.data?.some((account) => account.providerId === "oidc") ? (
-            <Body>Account linked</Body>
+            <Body>{t("native.settings.oidc.linked")}</Body>
           ) : (
             <>
-              <Body>Link this account before signing in with your identity provider.</Body>
+              <Body>{t("native.settings.oidc.explanation")}</Body>
               <Button
-                title={`Link ${info.data.oidc.name}`}
+                title={t("native.settings.oidc.link", { provider: info.data.oidc.name })}
                 onPress={() => {
                   void auth
                     .linkSocial({ provider: "oidc", callbackURL: "kanvil://auth/callback" })
@@ -276,35 +311,31 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       )}
       <NotificationPreferences pushAvailable={info.data?.push ?? false} />
       <Button
-        title="Sign out"
+        title={t("native.settings.signOut.action")}
         disabled={pending}
         onPress={() =>
-          Alert.alert(
-            "Sign out?",
-            "Cached tickets and drafts for this account will be removed from this device.",
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Sign out",
-                onPress: () => {
-                  void logout();
-                },
+          Alert.alert(t("native.settings.signOut.title"), t("native.settings.signOut.message"), [
+            { text: t("common.action.cancel"), style: "cancel" },
+            {
+              text: t("native.settings.signOut.action"),
+              onPress: () => {
+                void logout();
               },
-            ],
-          )
+            },
+          ])
         }
       />
       <Button
-        title="Change server"
+        title={t("native.server.change")}
         disabled={pending}
         onPress={() =>
           Alert.alert(
-            "Change server?",
-            "Sign out and clear this account's local cache and drafts?",
+            t("native.settings.changeServer.title"),
+            t("native.settings.changeServer.message"),
             [
-              { text: "Cancel", style: "cancel" },
+              { text: t("common.action.cancel"), style: "cancel" },
               {
-                text: "Change server",
+                text: t("native.server.change"),
                 onPress: () => {
                   void logout(true);
                 },
