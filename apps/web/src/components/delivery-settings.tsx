@@ -123,7 +123,8 @@ function Health({ target }: { target: Target }) {
     );
   return <>Nothing sent yet</>;
 }
-// One channel or destination: what it sends to, its latest delivery, and its actions.
+// One channel or destination: what it sends to, its latest delivery, and its actions. Without
+// `onEdit`, `onTest`, and `onPause`, as on an archived project, only disconnecting remains.
 function DeliveryRow({
   target,
   onEdit,
@@ -133,9 +134,9 @@ function DeliveryRow({
   removal,
 }: {
   target: Target;
-  onEdit: () => void;
-  onTest: () => Promise<unknown>;
-  onPause: (paused: boolean) => Promise<unknown>;
+  onEdit?: (() => void) | undefined;
+  onTest?: (() => Promise<unknown>) | undefined;
+  onPause?: ((paused: boolean) => Promise<unknown>) | undefined;
   onDelete: () => Promise<unknown>;
   removal: string;
 }) {
@@ -155,27 +156,33 @@ function DeliveryRow({
         </>
       }
     >
-      <IconButton
-        label={`Send test to ${target.name}`}
-        onClick={() => {
-          void onTest()
-            .then(() => toast.success("Test queued"))
-            .catch(reportError);
-        }}
-      >
-        <Send />
-      </IconButton>
-      <IconButton
-        label={`${target.paused ? "Resume" : "Pause"} ${target.name}`}
-        onClick={() => {
-          void onPause(!target.paused).catch(reportError);
-        }}
-      >
-        {target.paused ? <Play /> : <Pause />}
-      </IconButton>
-      <IconButton label={`Edit ${target.name}`} onClick={onEdit}>
-        <Pencil />
-      </IconButton>
+      {onTest && (
+        <IconButton
+          label={`Send test to ${target.name}`}
+          onClick={() => {
+            void onTest()
+              .then(() => toast.success("Test queued"))
+              .catch(reportError);
+          }}
+        >
+          <Send />
+        </IconButton>
+      )}
+      {onPause && (
+        <IconButton
+          label={`${target.paused ? "Resume" : "Pause"} ${target.name}`}
+          onClick={() => {
+            void onPause(!target.paused).catch(reportError);
+          }}
+        >
+          {target.paused ? <Play /> : <Pause />}
+        </IconButton>
+      )}
+      {onEdit && (
+        <IconButton label={`Edit ${target.name}`} onClick={onEdit}>
+          <Pencil />
+        </IconButton>
+      )}
       <Confirm
         label={`Disconnect ${target.name}`}
         icon={<Trash2 />}
@@ -279,7 +286,7 @@ function DeliveryList({
   count: number;
   loading: boolean;
   error: unknown;
-  onAdd: () => void;
+  onAdd?: (() => void) | undefined;
   empty: string;
   children: ReactNode;
 }) {
@@ -288,9 +295,11 @@ function DeliveryList({
       <SectionHeading
         title={title}
         action={
-          <IconButton label={addLabel} variant="default" onClick={onAdd}>
-            <Plus />
-          </IconButton>
+          onAdd && (
+            <IconButton label={addLabel} variant="default" onClick={onAdd}>
+              <Plus />
+            </IconButton>
+          )
         }
       />
       <ErrorNotice error={error} />
@@ -482,13 +491,16 @@ export function NotificationChannels({ emailAvailable }: { emailAvailable: boole
   );
 }
 
-// A project's activity feed to chat or a signed webhook. Only project administrators see it.
+// A project's activity feed to chat or a signed webhook. Only project administrators see it;
+// while the project is archived (`canChange` false) they can only disconnect destinations.
 export function ProjectDestinations({
   projectId,
   canAdmin,
+  canChange = canAdmin,
 }: {
   projectId: string;
   canAdmin: boolean;
+  canChange?: boolean;
 }) {
   const destinations = useQuery({
     ...api.query("list_project_destinations", { projectId }),
@@ -553,22 +565,29 @@ export function ProjectDestinations({
         count={destinations.data?.length ?? 0}
         loading={destinations.isPending}
         error={destinations.error}
-        onAdd={() => edit(null)}
+        onAdd={canChange ? () => edit(null) : undefined}
         empty="No destinations"
       >
         {destinations.data?.map((destination) => (
           <DeliveryRow
             key={destination.id}
             target={destination}
-            onEdit={() => edit(destination)}
-            onTest={() => test.mutateAsync({ projectId, destinationId: destination.id })}
-            onPause={(paused) =>
-              update.mutateAsync({
-                projectId,
-                destinationId: destination.id,
-                expectedVersion: destination.version,
-                paused,
-              })
+            onEdit={canChange ? () => edit(destination) : undefined}
+            onTest={
+              canChange
+                ? () => test.mutateAsync({ projectId, destinationId: destination.id })
+                : undefined
+            }
+            onPause={
+              canChange
+                ? (paused) =>
+                    update.mutateAsync({
+                      projectId,
+                      destinationId: destination.id,
+                      expectedVersion: destination.version,
+                      paused,
+                    })
+                : undefined
             }
             onDelete={() =>
               remove.mutateAsync({

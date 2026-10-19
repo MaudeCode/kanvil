@@ -12,6 +12,7 @@ import {
   calendarFeeds,
   claims,
   comments,
+  eventAudiences,
   events,
   invitations,
   members,
@@ -98,7 +99,10 @@ async function assertTransferable(ctx: Context, workspaceId: string) {
     fail(400, "validation_error", "The project is already in this workspace");
   await requireWorkspace(ctx, current.workspaceId, true);
 }
-async function transferImpact(ctx: Context, workspaceId: string) {
+// Active members of the project and its workspaces, with their read access now (`before`) and with
+// the project in `workspaceId` (`after`). Instance administrators read every project, so no
+// lifecycle change affects them and they are left out.
+async function projectPeople(ctx: Context, workspaceId = project(ctx).workspaceId) {
   const current = project(ctx),
     // Qualified, since a single-table select renders bare "id", which the subquery binds to p.
     qualifiedUser = sql`${user}."id"`;
@@ -109,7 +113,7 @@ async function transferImpact(ctx: Context, workspaceId: string) {
       email: user.email,
       role: user.role,
       before: projectRoleSQL(qualifiedUser, current.id),
-      after: projectRoleSQL(qualifiedUser, current.id, { workspaceId }),
+      after: projectRoleSQL(qualifiedUser, current.id, workspaceId),
     })
     .from(user)
     .where(
@@ -134,10 +138,20 @@ async function transferImpact(ctx: Context, workspaceId: string) {
       ),
     )
     .orderBy(user.name);
-  // Instance administrators read every project, so a move changes nothing for them.
-  const person = ({ userId, name, email }: (typeof people)[number]) => ({ userId, name, email });
-  const affected = people.filter((row) => !hasAdminRole(row.role)),
-    losingAccess = affected.filter((row) => row.before && !row.after).map(person),
+  return people.filter((row) => !hasAdminRole(row.role));
+}
+// Lets the people a deletion or move cut off replay the event that did it, and no one else.
+async function recordAudience(ctx: Context, event: { id: bigint }, userIds: string[]) {
+  if (userIds.length)
+    await ctx.db
+      .insert(eventAudiences)
+      .values(userIds.map((userId) => ({ eventId: event.id, userId })));
+}
+async function transferImpact(ctx: Context, workspaceId: string) {
+  const current = project(ctx),
+    affected = await projectPeople(ctx, workspaceId);
+  const person = ({ userId, name, email }: (typeof affected)[number]) => ({ userId, name, email });
+  const losingAccess = affected.filter((row) => row.before && !row.after).map(person),
     gainingAccess = affected.filter((row) => !row.before && row.after).map(person);
   // Labels resolve by name within a workspace. Shared labels the tickets use become project labels
   // unless the destination shares the name too; project labels the destination shares give way.
@@ -294,13 +308,18 @@ export const lifecycleHandlers: Pick<
         ),
       );
     await dropProjectFromInvitations(ctx, current);
-    await publish({ ...ctx, project: toProject(row) }, "project.transferred", null, {
+    const event = await publish({ ...ctx, project: toProject(row) }, "project.transferred", null, {
       version: row.version,
       fromWorkspaceId: current.workspaceId,
       workspaceId: row.workspaceId,
       copiedLabels: transfer.copiedLabels,
       mergedLabels: transfer.mergedLabels,
     });
+    await recordAudience(
+      ctx,
+      event,
+      transfer.losingAccess.map((person) => person.userId),
+    );
     return row;
   },
   // The project row stays as a tombstone: its prefix is never reused, and its activity and the
@@ -311,6 +330,7 @@ export const lifecycleHandlers: Pick<
     if (input.confirmKey.trim().toUpperCase() !== current.key)
       fail(400, "validation_error", "Type the project prefix to confirm deletion");
     assertNoBlockers(await claimBlockers(ctx));
+    const readers = (await projectPeople(ctx)).filter((person) => person.before);
     // Destinations go first, so the deletion events queue no outbound deliveries.
     await ctx.db.delete(projectDestinations).where(eq(projectDestinations.projectId, current.id));
     await ctx.db.delete(calendarFeeds).where(eq(calendarFeeds.projectId, current.id));
@@ -319,7 +339,7 @@ export const lifecycleHandlers: Pick<
       .from(tickets)
       .where(eq(tickets.projectId, current.id))
       .orderBy(asc(tickets.number));
-    await publishMany(
+    const published = await publishMany(
       ctx,
       [
         ...removed.map((ticket) => ({
@@ -335,10 +355,17 @@ export const lifecycleHandlers: Pick<
       ],
       false,
     );
+    await recordAudience(
+      ctx,
+      requireRow(published.at(-1)),
+      readers.map((person) => person.userId),
+    );
     // Comments, attachments, relationships, follows, evidence, and links cascade with the tickets.
     await ctx.db.delete(tickets).where(eq(tickets.projectId, current.id));
     await ctx.db.delete(stagedUploads).where(eq(stagedUploads.projectId, current.id));
     await ctx.db.delete(projectLabels).where(eq(projectLabels.projectId, current.id));
+    // Direct grants go too; the recorded audience is what still reaches former readers.
+    await ctx.db.delete(members).where(eq(members.projectId, current.id));
     await dropProjectFromInvitations(ctx, current);
     await changed(ctx, {
       deletedAt: new Date(),

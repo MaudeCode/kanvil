@@ -184,10 +184,18 @@ export function ProjectSettings({
           <CustomFieldSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="integrations">
-          <ProjectDestinations projectId={project.id} canAdmin={access.canAdmin} />
+          <ProjectDestinations
+            projectId={project.id}
+            canAdmin={access.canManage}
+            canChange={access.canAdmin}
+          />
         </SettingsPanel>
         <SettingsPanel value="calendar">
-          <CalendarFeedSettings projectId={project.id} canAdmin={access.canAdmin} />
+          <CalendarFeedSettings
+            projectId={project.id}
+            canAdmin={access.canManage}
+            canCreate={access.canAdmin}
+          />
         </SettingsPanel>
       </SettingsLayout>
     </>

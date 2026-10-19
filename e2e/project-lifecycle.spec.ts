@@ -12,6 +12,9 @@ test("archives, restores, moves, and deletes a project from its settings", async
   await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
     data: { title: "Work that outlives a move" },
   });
+  await page.request.post(`/api/v1/projects/${project.id}/calendar-feeds`, {
+    data: { name: "Lifecycle feed", timeZone: "UTC" },
+  });
   await page.request.post("/api/v1/workspaces", {
     data: { name: "Lifecycle destination", slug: "lifecycle-destination" },
   });
@@ -28,6 +31,12 @@ test("archives, restores, moves, and deletes a project from its settings", async
   await expect(notice).toBeVisible();
   const newTicket = page.getByRole("button", { name: "New ticket", exact: true });
   await expect(newTicket).toBeDisabled();
+  // Feeds can still be revoked while archived; new ones cannot be shared.
+  await page.goto(`/projects/${project.id}/settings?section=calendar`);
+  await expect(
+    page.getByRole("button", { name: "Revoke Lifecycle feed", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "New calendar feed", exact: true })).toHaveCount(0);
   await page.goto("/");
   const archived = page.getByRole("region", { name: "Archived projects", exact: true });
   await expect(archived.getByRole("link", { name: /^Lifecycle project LIFECYCLE/ })).toBeVisible();

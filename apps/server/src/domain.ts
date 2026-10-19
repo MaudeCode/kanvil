@@ -1,19 +1,7 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  ne,
-  or,
-  sql,
-  type SQLWrapper,
-} from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import {
   closedStates,
   eventCategories,
@@ -45,6 +33,7 @@ import type { MailMessage } from "./adapters/ports.ts";
 import {
   claims,
   deliveries,
+  eventAudiences,
   eventClock,
   events,
   notificationChannels,
@@ -58,7 +47,7 @@ import {
   tickets,
 } from "./schema.ts";
 import type { Connection, Database, Transaction } from "./database.ts";
-import { projectRole, projectRoleSQL, readsProject } from "./project-access.ts";
+import { projectRole, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace } from "./workspace-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { lifecycleHandlers } from "./project-lifecycle.ts";
@@ -696,8 +685,8 @@ export function createDomain(
       fail(410, "snapshot_required", "Fetch a fresh snapshot before reconnecting", {
         cursor: clock.value.toString(),
       });
-    // People who could read a project before it was deleted or moved away still receive the event
-    // that ended their access, so their clients drop what they cached.
+    // People a deletion or move cut off still receive the event that did it, so their clients drop
+    // what they cached. The audience was recorded with the event; instance administrators read all.
     const farewell = projectId
       ? undefined
       : and(
@@ -705,11 +694,12 @@ export function createDomain(
           identity.projectIds ? inArray(events.projectId, [...identity.projectIds]) : undefined,
           identity.admin
             ? undefined
-            : isNotNull(
-                projectRoleSQL(identity.id, events.projectId, {
-                  workspaceId: sql`(${events.data}->>'fromWorkspaceId')::uuid`,
-                  deleted: true,
-                }),
+            : inArray(
+                events.id,
+                database.db
+                  .select({ id: eventAudiences.eventId })
+                  .from(eventAudiences)
+                  .where(eq(eventAudiences.userId, identity.id)),
               ),
         );
     const rows =

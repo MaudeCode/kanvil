@@ -9,6 +9,7 @@ import {
   eventClock,
   events,
   invitations,
+  members,
   projectLabels,
   relations,
   subscriptions,
@@ -362,6 +363,12 @@ describe("project lifecycle", () => {
       (await received(member, before)).filter((event) => event.projectId === project.id),
     ).toEqual([{ type: "project.deleted", projectId: project.id }]);
     expect(await received(guest, before)).toEqual([]);
+    // The audience is the one recorded at deletion: joining afterwards grants no replay.
+    await join(workspace, emails.guest, "admin");
+    expect(
+      (await received(guest, before)).filter((event) => event.projectId === project.id),
+    ).toEqual([]);
+    await join(workspace, emails.guest, null);
     await expect(
       domain.readPublic("get_public_project", { projectId: project.id }),
     ).rejects.toMatchObject({ status: 404 });
@@ -383,6 +390,7 @@ describe("project lifecycle", () => {
     ).rejects.toMatchObject({ code: "duplicate_prefix" });
     const db = fixture.database.db;
     expect(await db.select().from(tickets).where(eq(tickets.projectId, project.id))).toEqual([]);
+    expect(await db.select().from(members).where(eq(members.projectId, project.id))).toEqual([]);
     expect(
       await db.select().from(attachments).where(eq(attachments.projectId, project.id)),
     ).toEqual([]);

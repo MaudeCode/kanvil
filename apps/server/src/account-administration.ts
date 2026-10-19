@@ -309,7 +309,7 @@ export function createAccountAdministration(database: Database, auth: Auth, conf
               createdAt: workspaces.createdAt,
               // Drizzle leaves columns unqualified in single-table selects; qualify the correlation.
               memberCount: sql<number>`(SELECT count(*)::int FROM workspace_members m WHERE m.workspace_id = workspaces.id)`,
-              projectCount: sql<number>`(SELECT count(*)::int FROM projects p WHERE p.workspace_id = workspaces.id)`,
+              projectCount: sql<number>`(SELECT count(*)::int FROM projects p WHERE p.workspace_id = workspaces.id AND p.deleted_at IS NULL)`,
             })
             .from(workspaces)
             .where(filter)

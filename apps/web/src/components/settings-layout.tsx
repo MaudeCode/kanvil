@@ -27,7 +27,7 @@ import { submitOnModEnter } from "../forms.ts";
 import { createContext, use, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useIdentity, useProjects, useWorkspace } from "../data.tsx";
+import { useIdentity, useProject, useProjects, useWorkspace } from "../data.tsx";
 import {
   expanded,
   settingsEntries,
@@ -40,10 +40,16 @@ import { ProjectIcon } from "./project-icon.tsx";
 export function useSettingsGroups() {
   const identity = useIdentity(),
     workspace = useWorkspace(),
-    projects = useProjects();
+    projects = useProjects(),
+    pathname = useRouterState({ select: (state) => state.location.pathname }),
+    // An archived project leaves the list but keeps its sections while its settings are open.
+    opened = useProject(pathname.match(/^\/projects\/([^/]+)/)?.[1] ?? "").data;
   return settingsGroups({
     workspace: workspace.active?.role ? workspace.active : undefined,
-    projects: projects.data ?? [],
+    projects: [
+      ...(projects.data ?? []),
+      ...(opened?.archivedAt && opened.workspaceId === workspace.active?.id ? [opened] : []),
+    ],
     admin: identity.admin,
   });
 }

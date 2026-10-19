@@ -25,13 +25,16 @@ import { ProjectLabelProvider } from "./project-label-provider.tsx";
 
 // The browser's zone names the days a new feed's all-day events fall on.
 const browserZone = () => new Intl.DateTimeFormat().resolvedOptions().timeZone;
-// Project calendar feeds, beside the label directory. Only administrators share them.
+// Project calendar feeds, beside the label directory. Only administrators share them; while the
+// project is archived (`canCreate` false) they can still revoke feeds.
 export function CalendarFeedSettings({
   projectId,
   canAdmin,
+  canCreate = canAdmin,
 }: {
   projectId: string;
   canAdmin: boolean;
+  canCreate?: boolean;
 }) {
   const feeds = useQuery({
     ...api.query("list_calendar_feeds", { projectId }),
@@ -50,7 +53,7 @@ export function CalendarFeedSettings({
       <SectionHeading
         title="Calendar feeds"
         action={
-          canAdmin && (
+          canCreate && (
             <IconButton
               label="New calendar feed"
               variant="default"
