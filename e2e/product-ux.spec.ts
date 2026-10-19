@@ -984,7 +984,7 @@ test("ticket links are added, edited, and removed beside attachments, with remot
   page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page);
   const project = await (
-    await page.request.post("/api/v1/projects", { data: { key: "LINKUX", name: "Links" } })
+    await page.request.post("/api/v1/projects", { data: { key: "LINKRES", name: "Links" } })
   ).json();
   const ticket = await (
     await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
