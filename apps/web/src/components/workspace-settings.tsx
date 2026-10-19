@@ -6,6 +6,7 @@ import { Button, CopyButton, EmptyState, ErrorNotice, Loading } from "../ui.tsx"
 import { Badge } from "@/components/ui/badge";
 import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
+import { InvitationList } from "./invitations.tsx";
 import type { workspaceSections } from "../search.ts";
 export function WorkspaceSettings({
   workspaceId,
@@ -102,6 +103,7 @@ export function WorkspaceSettings({
             scope="workspace"
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
+          {canAdmin && <InvitationList workspaceId={workspaceId} />}
         </SettingsPanel>
       </SettingsLayout>
     </>

@@ -4,7 +4,7 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
-import { type ChangeEvent, type Operation, type Workspace } from "@kanvil/contracts";
+import { infoSchema, type ChangeEvent, type Operation, type Workspace } from "@kanvil/contracts";
 import type { Query } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -19,6 +19,16 @@ export const Identity = createContext<{
   clearPrivateData: () => void;
 }>({ id: "", name: "", email: "", admin: false, image: null, clearPrivateData: () => {} });
 export const useIdentity = () => useContext(Identity);
+// Public instance details and sign-in options, shared by signed-out and signed-in screens.
+export const useInfo = () =>
+  useQuery({ queryKey: ["info"], queryFn: () => api.request("/api/v1/info", infoSchema) });
+// Ends the session, clears this account's cached data, and loads `next` signed out.
+export async function signOut(identity: { clearPrivateData: () => void }, next = "/login") {
+  const result = await auth.signOut();
+  if (result.error) throw new Error(result.error.message);
+  identity.clearPrivateData();
+  window.location.assign(next);
+}
 export function useOperation<K extends Operation>(name: K) {
   const cache = useQueryClient();
   return useMutation({
@@ -48,6 +58,8 @@ export function useProjects() {
 const settledBy: Record<string, string[]> = {
   list_members: ["membership.", "project."],
   list_workspace_members: ["membership.", "project."],
+  // Invitation writes invalidate it directly; an acceptance also announces the new membership.
+  list_invitations: ["membership."],
   list_project_labels: ["label.", "project."],
   list_calendar_feeds: ["calendar_feed.", "label.", "membership.", "project."],
   list_label_colors: ["label."],

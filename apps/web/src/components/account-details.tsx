@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Pencil, KeyRound, Plus } from "lucide-react";
-import { hasAdminRole, okSchema } from "@kanvil/contracts";
+import { hasAdminRole, okSchema, roleLabels } from "@kanvil/contracts";
 import { accountDetailsSchema } from "@kanvil/contracts/users";
 import { toast } from "sonner";
 import { api, auth, date, useIdentity, useOperation, useWorkspaces } from "../data.tsx";
@@ -29,7 +29,6 @@ import { Badge } from "@/components/ui/badge";
 import { SettingRow } from "./settings-layout.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { formText } from "../forms.ts";
-import { roleLabels } from "./member-directory.tsx";
 // One workspace or project grant: a link to its member settings and the role or access it carries.
 export function AccessRow({ children, badge }: { children: ReactNode; badge: ReactNode }) {
   return (

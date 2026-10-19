@@ -3,7 +3,6 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  infoSchema,
   notificationCategories,
   notificationCategoryLabels,
   reminderUnits,
@@ -11,7 +10,7 @@ import {
   type NotificationPreferences,
 } from "@kanvil/contracts";
 import { notificationCategoryIcons } from "./lib/notification-categories.ts";
-import { api, auth, useIdentity } from "./data.tsx";
+import { api, auth, useIdentity, useInfo } from "./data.tsx";
 import {
   Button,
   ErrorNotice,
@@ -40,10 +39,7 @@ import type { accountSections } from "./search.ts";
 import { formText } from "./forms.ts";
 export function AccountSettings({ section }: { section: (typeof accountSections)[number] }) {
   const [error, setError] = useAuthError();
-  const info = useQuery({
-      queryKey: ["info"],
-      queryFn: () => api.request("/api/v1/info", infoSchema),
-    }),
+  const info = useInfo(),
     accounts = useQuery({
       queryKey: ["accounts"],
       refetchOnMount: "always",

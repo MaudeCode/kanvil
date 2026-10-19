@@ -19,7 +19,7 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { Settings, FolderOpen, ChevronRight } from "lucide-react";
-import { hasAdminRole, formatEvent, infoSchema } from "@kanvil/contracts";
+import { hasAdminRole, formatEvent } from "@kanvil/contracts";
 import {
   groupSettingsSearchSchema,
   projectSettingsSearchSchema,
@@ -34,7 +34,7 @@ import {
 import { SearchResults } from "./search-results.tsx";
 import { Inbox } from "./inbox.tsx";
 
-import { Login, Consent } from "./auth.tsx";
+import { Login, Consent, AcceptInvitation } from "./auth.tsx";
 import {
   ActorName,
   api,
@@ -44,6 +44,7 @@ import {
   useProjects,
   useWorkspace,
   useIdentity,
+  useInfo,
   clearPrivateStorage,
 } from "./data.tsx";
 import {
@@ -231,10 +232,7 @@ function Shell() {
   const connection = useLive(),
     [sidebar] = usePreference(preferences.sidebar);
   useConnectionToast(connection);
-  const info = useQuery({
-    queryKey: ["info"],
-    queryFn: () => api.request("/api/v1/info", infoSchema),
-  });
+  const info = useInfo();
   useEffect(() => {
     document.title =
       info.data?.name && info.data.name !== "Kanvil" ? `${info.data.name} · Kanvil` : "Kanvil";
@@ -564,6 +562,13 @@ function HomeRedirect() {
   return <Loading />;
 }
 const consent = createRoute({ getParentRoute: () => root, path: "/authorize", component: Consent });
+const invitation = createRoute({
+  getParentRoute: () => root,
+  path: "/invite/$token",
+  component: function InvitationPage() {
+    return <AcceptInvitation token={invitation.useParams().token} />;
+  },
+});
 const inbox = createRoute({
   getParentRoute: () => shell,
   path: "/inbox",
@@ -746,6 +751,7 @@ const router = createRouter({
     ]),
     login,
     consent,
+    invitation,
   ]),
   defaultPreload: "intent",
 });

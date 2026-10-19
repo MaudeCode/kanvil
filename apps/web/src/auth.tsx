@@ -2,11 +2,14 @@ import { useAuthError } from "./hooks/use-auth-error.ts";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { infoSchema, okSchema } from "@kanvil/contracts";
+import { okSchema, roleLabels } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
 import { z } from "zod";
-import { api, auth } from "./data.tsx";
-import { Brand, Button, ErrorNotice, Input, Loading } from "./ui.tsx";
+import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { api, auth, signOut, useIdentity, useInfo, useOperation } from "./data.tsx";
+import { rememberWorkspace } from "./components/workspace-provider.tsx";
+import { Brand, Button, ErrorNotice, Input, Loading, RelativeTime } from "./ui.tsx";
 import { Spinner } from "@/components/ui/spinner";
 import { Separator } from "@/components/ui/separator";
 import { ShieldCheck } from "lucide-react";
@@ -68,10 +71,7 @@ function AuthScreen({
 
 export function Login() {
   const [error, setError] = useAuthError();
-  const info = useQuery({
-      queryKey: ["info"],
-      queryFn: () => api.request("/api/v1/info", infoSchema),
-    }),
+  const info = useInfo(),
     [pending, setPending] = useState(false),
     [emailOpen, setEmailOpen] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -107,12 +107,19 @@ export function Login() {
   if (info.isPending) return <Loading />;
   const provider = info.data?.oidc,
     setup = info.data?.setupRequired,
+    invited = window.location.pathname.startsWith("/invite/"),
     emailEnabled = info.data?.authentication.emailPasswordEnabled ?? true,
     showEmail = setup || (emailEnabled && (!provider || emailOpen));
   return (
     <AuthScreen
       title={setup ? "Create your owner account" : "Sign in"}
-      subtitle={setup ? "The first account administers this instance." : undefined}
+      subtitle={
+        setup
+          ? "The first account administers this instance."
+          : invited
+            ? "Sign in with the invited email address to accept the invitation."
+            : undefined
+      }
       instance={info.data}
     >
       <ErrorNotice error={info.error ?? error} />
@@ -227,10 +234,7 @@ const authorizationSchema = z.object({
 export function Consent() {
   const params = new URLSearchParams(window.location.search),
     clientId = params.get("client_id");
-  const info = useQuery({
-    queryKey: ["info"],
-    queryFn: () => api.request("/api/v1/info", infoSchema),
-  });
+  const info = useInfo();
   const client = useQuery({
     queryKey: ["oauth-client", clientId],
     enabled: !!clientId,
@@ -293,6 +297,117 @@ export function Consent() {
           Allow access
         </Button>
       </div>
+    </AuthScreen>
+  );
+}
+const unavailable = {
+  expired: "This invitation has expired.",
+  revoked: "This invitation was revoked.",
+  accepted: "This invitation was already accepted.",
+};
+// The page behind an invitation link. Accepting needs the invited address; the server checks it
+// again together with the sender's current authority.
+export function AcceptInvitation({ token }: { token: string }) {
+  const identity = useIdentity(),
+    navigate = useNavigate(),
+    info = useInfo(),
+    invitation = useQuery({ ...api.query("get_invitation", { token }), retry: false }),
+    accept = useOperation("accept_invitation"),
+    [error, setError] = useState<unknown>();
+  const data = invitation.data;
+  if (invitation.isPending) return <Loading />;
+  return (
+    <AuthScreen
+      title={
+        !data
+          ? "Invitation unavailable"
+          : data.status === "pending"
+            ? `Join ${data.workspace.name}`
+            : data.workspace.name
+      }
+      instance={info.data}
+    >
+      <ErrorNotice error={invitation.error ?? accept.error ?? error} />
+      {data && (
+        <>
+          <dl className="mb-6 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 border-y py-4 text-sm">
+            <dt className="text-muted-foreground">Invited</dt>
+            <dd className="m-0 wrap-anywhere">{data.email}</dd>
+            {data.invitedBy && (
+              <>
+                <dt className="text-muted-foreground">From</dt>
+                <dd className="m-0">{data.invitedBy}</dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">Access</dt>
+            <dd className="m-0">
+              {roleLabels[data.role]} ·{" "}
+              {data.projects
+                ? data.projects.map((project) => project.name).join(", ") || "Removed projects"
+                : "Whole workspace"}
+            </dd>
+            {data.status === "pending" && (
+              <>
+                <dt className="text-muted-foreground">Expires</dt>
+                <dd className="m-0">
+                  <RelativeTime value={data.expiresAt} />
+                </dd>
+              </>
+            )}
+          </dl>
+          {data.status !== "pending" ? (
+            <>
+              <p className="mb-6 text-sm">
+                {unavailable[data.status]} Ask a workspace administrator for a new invitation.
+              </p>
+              <Button render={<a href="/" />}>Open Kanvil</Button>
+            </>
+          ) : !data.matchesAccount ? (
+            <>
+              <p className="mb-6 text-sm">
+                You are signed in as <span className="font-medium">{identity.email}</span>. Sign in
+                as {data.email} to accept.
+              </p>
+              <Button
+                onClick={() => {
+                  setError(undefined);
+                  void signOut(identity, window.location.pathname).catch(setError);
+                }}
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="default"
+              size="lg"
+              className="w-full"
+              disabled={accept.isPending}
+              onClick={() => {
+                void accept
+                  .mutateAsync({ token })
+                  .then((result) => {
+                    rememberWorkspace(identity.id, result.workspaceId);
+                    toast.success(`Joined ${data.workspace.name}`);
+                    return navigate(
+                      result.projectIds?.length === 1
+                        ? {
+                            to: "/projects/$projectId",
+                            params: { projectId: result.projectIds[0] },
+                          }
+                        : { to: "/" },
+                    );
+                  })
+                  .catch(() => {});
+              }}
+            >
+              {accept.isPending ? <Spinner /> : null}
+              Accept invitation
+            </Button>
+          )}
+        </>
+      )}
+      {!data && <Button render={<a href="/" />}>Open Kanvil</Button>}
     </AuthScreen>
   );
 }
