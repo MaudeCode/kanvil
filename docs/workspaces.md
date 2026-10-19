@@ -12,6 +12,8 @@ Existing projects are assigned to a default workspace and remain private. Existi
 
 Workspace operations use the same operation registry, authorization, transaction lock, idempotency receipts, and HTTP/MCP implementations as projects. Realtime visibility continues to derive from accessible projects, so revoked membership stops event delivery. Workspace changes invalidate project consumers through project events; an empty workspace also refreshes in browser queries on focus.
 
+Workspace administrators can define labels every project in the workspace uses, beside each project's own labels. Projects show workspace labels read-only in their label settings; renaming or deleting one updates every project's tickets and saved views together. See [the API reference](api.md) for conflict and adoption rules.
+
 Project icons can use a bundled, searchable open-source icon collection or a normalized image upload. Uploaded bytes use the existing blob storage adapter and authenticated project access. Referenced icons must remain excluded from orphan cleanup, and backup/restore retains them with other blob objects.
 
 ## Verification
@@ -19,6 +21,7 @@ Project icons can use a bundled, searchable open-source icon collection or a nor
 - Upgrade populated databases without widening private project access or changing ticket identifiers.
 - Test workspace and private-project isolation, inherited versus explicit roles, scoped API keys, removal, last-admin guards, and idempotent writes through the shared domain.
 - Exercise workspace discovery through HTTP and MCP and access revocation through realtime replay and image routes.
+- Test shared label catalogs, access-filtered counts, cross-project renames and deletions, claims, and same-name adoption.
 - Test invitation creation, resend, revocation, expiry, email mismatch, sender demotion, concurrent acceptance, and the acceptance page.
 - Test workspace switching, deep links, settings navigation, member search and role changes, icon selection/upload/removal, and account administration in browser workflows.
 - Review light/dark desktop and phone layouts with real content. Keep publication separate from local verification.

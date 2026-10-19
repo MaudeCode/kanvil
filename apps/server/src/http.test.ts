@@ -382,6 +382,10 @@ describe("HTTP, realtime, and MCP", () => {
         "create_project_label",
         "update_project_label",
         "delete_project_label",
+        "list_workspace_labels",
+        "create_workspace_label",
+        "update_workspace_label",
+        "delete_workspace_label",
       ])
         expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
       const managedLabel = await client().call("create_project_label", {

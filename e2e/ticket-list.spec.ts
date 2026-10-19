@@ -120,6 +120,79 @@ test("project settings manage reusable colored labels across live ticket views",
   await observer.close();
 });
 
+test("workspace labels reach every project and adopt same-name project labels explicitly", async ({
+  page,
+}) => {
+  await signIn(page);
+  const workspace = await (
+    await page.request.post("/api/v1/workspaces", {
+      data: { name: "Shared labels", slug: "shared-labels" },
+    })
+  ).json();
+  const [first, second] = await Promise.all(
+    [
+      ["WSLABELA", "Label consumer"],
+      ["WSLABELB", "Label adopter"],
+    ].map(async ([key, name]) =>
+      (
+        await page.request.post("/api/v1/projects", {
+          data: { workspaceId: workspace.id, visibility: "workspace", key, name },
+        })
+      ).json(),
+    ),
+  );
+  await page.request.post(`/api/v1/projects/${second.id}/tickets`, {
+    data: { title: "Uses a project bug label", labels: ["bug"] },
+  });
+  await page.goto(`/workspaces/${workspace.id}/settings?section=labels`);
+  await expect(page.getByRole("heading", { name: "Labels", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New label", exact: true }).click();
+  await page.getByRole("textbox", { name: "Label name", exact: true }).fill("Shared");
+  await page.getByRole("button", { name: "teal label color", exact: true }).click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit label Shared", exact: true })).toBeVisible();
+  // A name projects already define is adopted only after an explicit choice.
+  await page.getByRole("button", { name: "New label", exact: true }).click();
+  await page.getByRole("textbox", { name: "Label name", exact: true }).fill("bug");
+  await page.getByRole("button", { name: "red label color", exact: true }).click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  const adopt = page.getByRole("checkbox", { name: "Adopt the project labels", exact: true });
+  await expect(adopt).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("WSLABELB");
+  await adopt.click();
+  await page.getByRole("button", { name: "Save label", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("1 ticket", { exact: true })).toBeVisible();
+
+  await page.goto(`/projects/${first.id}/settings?section=labels`);
+  const sharedRow = page.locator('[data-slot="item"]').filter({ hasText: "Shared" });
+  await expect(sharedRow).toContainText("Workspace");
+  await expect(page.getByRole("button", { name: "Edit label Shared", exact: true })).toHaveCount(0);
+  await page.goto(`/projects/${first.id}`);
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).fill("Ticket with shared label");
+  await page.getByRole("button", { name: "Edit labels", exact: true }).click();
+  await page.getByRole("button", { name: "Choose labels", exact: true }).click();
+  await page.getByRole("option", { name: "Shared", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("table", { name: "Tickets" })
+      .locator('[data-label-color="teal"]')
+      .filter({ hasText: /^Shared$/ }),
+  ).toBeVisible();
+  const catalog = await (
+    await page.request.get(`/api/v1/projects/${second.id}/labels/catalog`)
+  ).json();
+  expect(catalog.map(({ scope, name }: { scope: string; name: string }) => [scope, name])).toEqual([
+    ["workspace", "bug"],
+    ["workspace", "Shared"],
+  ]);
+});
+
 test("priority icons distinguish every level and keep names in pickers", async ({ page }) => {
   await signIn(page);
   const project = await (

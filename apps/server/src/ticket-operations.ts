@@ -21,6 +21,7 @@ import {
   events,
   projects,
   projectLabels,
+  workspaceLabels,
   relations,
   stagedUploads,
   subscriptions,
@@ -179,11 +180,28 @@ async function validateReferences(
   ticketId: string,
   changes: Pick<ParsedInput<"update_ticket">["changes"], "assigneeId" | "parentId" | "labels">,
 ) {
-  if (changes.labels?.length)
-    await ctx.db
-      .insert(projectLabels)
-      .values(changes.labels.map((name) => ({ projectId: project(ctx).id, name })))
-      .onConflictDoNothing();
+  if (changes.labels?.length) {
+    // New names register as project labels unless the workspace already defines them.
+    const shared = new Set(
+      (
+        await ctx.db
+          .select({ name: workspaceLabels.name })
+          .from(workspaceLabels)
+          .where(
+            and(
+              eq(workspaceLabels.workspaceId, project(ctx).workspaceId),
+              inArray(workspaceLabels.name, changes.labels),
+            ),
+          )
+      ).map((row) => row.name),
+    );
+    const own = changes.labels.filter((name) => !shared.has(name));
+    if (own.length)
+      await ctx.db
+        .insert(projectLabels)
+        .values(own.map((name) => ({ projectId: project(ctx).id, name })))
+        .onConflictDoNothing();
+  }
   if (changes.assigneeId && !(await projectMember(ctx, changes.assigneeId)))
     fail(400, "invalid_assignee", "Assign a project member");
   if (changes.parentId) {
@@ -262,15 +280,17 @@ export async function updateTicket(ctx: Context, input: ParsedInput<"update_tick
   await publish(ctx, event.type, event.ticketId, event.data);
   return row;
 }
-export function labelUsage(ctx: Context, archived: "include" | "exclude" | "only") {
+// Label usage counts in the context project, or in the projects `where` selects.
+export function labelUsage(
+  ctx: Context,
+  archived: "include" | "exclude" | "only",
+  where: SQL = eq(tickets.projectId, project(ctx).id),
+) {
   const labels = ctx.db
     .select({ name: sql<string>`unnest(${tickets.labels})`.as("name") })
     .from(tickets)
     .where(
-      and(
-        eq(tickets.projectId, project(ctx).id),
-        archived === "include" ? undefined : eq(tickets.archived, archived === "only"),
-      ),
+      and(where, archived === "include" ? undefined : eq(tickets.archived, archived === "only")),
     )
     .as("ticket_labels");
   return ctx.db

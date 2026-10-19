@@ -10,7 +10,7 @@ import { Button, CopyButton, RelativeTime, Select, SelectItem, reportError } fro
 import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { ProjectIconPicker } from "./project-icon-picker.tsx";
-import { ProjectLabelSettings } from "./project-label-settings.tsx";
+import { LabelSettings } from "./label-settings.tsx";
 import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
 import { ProjectDestinations } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
@@ -151,7 +151,7 @@ export function ProjectSettings({
           <ProjectWorkflowSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="labels">
-          <ProjectLabelSettings projectId={project.id} canAdmin={access.canAdmin} />
+          <LabelSettings owner={{ projectId: project.id }} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="integrations">
           <ProjectDestinations projectId={project.id} canAdmin={access.canAdmin} />

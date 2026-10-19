@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EditableHeading, SettingsLayout, SettingsPanel, SettingRow } from "./settings-layout.tsx";
 import { MemberDirectory } from "./member-directory.tsx";
 import { InvitationList } from "./invitations.tsx";
+import { LabelSettings } from "./label-settings.tsx";
 import type { workspaceSections } from "../search.ts";
 export function WorkspaceSettings({
   workspaceId,
@@ -104,6 +105,9 @@ export function WorkspaceSettings({
             onChange={(email, role) => member.mutateAsync({ workspaceId, email, role })}
           />
           {canAdmin && <InvitationList workspaceId={workspaceId} />}
+        </SettingsPanel>
+        <SettingsPanel value="labels">
+          <LabelSettings owner={{ workspaceId }} canAdmin={canAdmin} />
         </SettingsPanel>
       </SettingsLayout>
     </>

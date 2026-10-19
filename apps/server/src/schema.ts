@@ -126,6 +126,21 @@ export const projectLabels = pgTable(
   },
   (table) => [unique("project_label_name").on(table.projectId, table.name)],
 );
+// Labels every project in the workspace can use. A name lives here or in project_labels within
+// one workspace, never both; the label handlers keep that invariant.
+export const workspaceLabels = pgTable(
+  "workspace_labels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("gray"),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [unique("workspace_label_name").on(table.workspaceId, table.name)],
+);
 // Site-wide palette of custom label colors; a hex value joins it when any label is saved with it.
 export const labelColors = pgTable("label_colors", {
   value: text("value").primaryKey(),

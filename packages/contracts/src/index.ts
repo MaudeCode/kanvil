@@ -90,13 +90,8 @@ const tags = z
   .array(text.max(40))
   .max(30)
   .overwrite((values) => [...new Set(values)]);
-export const projectLabelSchema = z.object({
-  id: z.uuid(),
-  projectId: z.uuid(),
-  name: text.max(40),
-  color: labelColor,
-  version,
-});
+const labelFields = { id: z.uuid(), name: text.max(40), color: labelColor, version };
+export const projectLabelSchema = z.object({ ...labelFields, projectId: z.uuid() });
 export type ProjectLabel = z.output<typeof projectLabelSchema>;
 // One named state of a project's workflow. Every category keeps at least one state, so a client
 // that writes only `status` always lands on one: the first state of that category.
@@ -126,6 +121,20 @@ export const workflowOrder = (
   a: { category: string; position: number },
   b: { category: string; position: number },
 ) => categoryRank(a.category) - categoryRank(b.category) || a.position - b.position;
+// Shared by every project in the workspace; a name is defined by the workspace or by projects,
+// never both.
+export const workspaceLabelSchema = z.object({ ...labelFields, workspaceId: z.uuid() });
+const labelCount = { count: z.number().int().nonnegative() };
+const workspaceCatalogLabel = workspaceLabelSchema.extend({
+  scope: z.literal("workspace"),
+  ...labelCount,
+});
+// A project's catalog: its own labels and its workspace's, with ticket counts; `scope` names the owner.
+export const catalogLabelSchema = z.discriminatedUnion("scope", [
+  projectLabelSchema.extend({ scope: z.literal("project"), ...labelCount }),
+  workspaceCatalogLabel,
+]);
+export type CatalogLabel = z.output<typeof catalogLabelSchema>;
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -1004,6 +1013,58 @@ export const operations = {
     "admin",
     "Manage workspace access; removal also revokes direct project access in this workspace.",
   ),
+  list_workspace_labels: op(
+    z.object({ workspaceId: z.uuid() }),
+    z.array(workspaceCatalogLabel),
+    "GET",
+    "/workspaces/{workspaceId}/labels",
+    "read",
+    "List the workspace's shared labels with ticket counts from the projects you can read, including archived tickets.",
+  ),
+  create_workspace_label: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        name: text.max(40),
+        color: labelColor.default("gray"),
+        adopt: z.boolean().default(false),
+      })
+      .strict(),
+    workspaceLabelSchema,
+    "POST",
+    "/workspaces/{workspaceId}/labels",
+    "admin",
+    "Create a label every project in the workspace can use. When projects already define the name, the write fails with `label_conflict` unless `adopt` replaces those project definitions; their tickets keep the label.",
+  ),
+  update_workspace_label: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        labelId: z.uuid(),
+        expectedVersion: version,
+        name: text.max(40),
+        color: labelColor,
+        adopt: z.boolean().default(false),
+      })
+      .strict(),
+    workspaceLabelSchema,
+    "PATCH",
+    "/workspaces/{workspaceId}/labels/{labelId}",
+    "admin",
+    "Rename or recolor a workspace label. Renames update tickets and saved-view filters in every project of the workspace atomically; renaming onto a project label needs `adopt`.",
+  ),
+  delete_workspace_label: op(
+    z
+      .object({ ...mutation, workspaceId: z.uuid(), labelId: z.uuid(), expectedVersion: version })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/workspaces/{workspaceId}/labels/{labelId}",
+    "admin",
+    "Delete a workspace label and remove it from tickets and saved-view filters in every project of the workspace atomically.",
+  ),
   list_invitations: op(
     z.object({ workspaceId: z.uuid() }),
     z.array(invitationSchema),
@@ -1259,11 +1320,11 @@ export const operations = {
   ),
   list_project_labels: op(
     projectInput,
-    z.array(projectLabelSchema.extend({ count: z.number().int().nonnegative() })),
+    z.array(catalogLabelSchema),
     "GET",
     "/projects/{projectId}/labels/catalog",
     "read",
-    "List project label definitions, colors, and ticket counts, including unused labels and archived tickets.",
+    "List the labels tickets in this project can use: the project's own definitions and its workspace's shared labels (`scope`), with colors and this project's ticket counts, including unused labels and archived tickets.",
   ),
   create_project_label: op(
     projectInput
@@ -1277,7 +1338,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/labels",
     "admin",
-    "Create a reusable project label. Label names are unique within the project.",
+    "Create a reusable project label. Label names are unique within the project and cannot repeat a workspace label.",
   ),
   update_project_label: op(
     projectInput

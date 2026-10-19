@@ -35,11 +35,11 @@ const account: Sections<typeof accountSections> = {
 const workspace: Sections<typeof workspaceSections> = {
   general: { label: "General", icon: Settings2 },
   members: { label: "Members", icon: Users },
+  labels: { label: "Labels", icon: Tags },
 };
 const project: Sections<typeof projectSections> = {
   ...workspace,
   workflow: { label: "Workflow", icon: Workflow },
-  labels: { label: "Labels", icon: Tags },
   integrations: { label: "Integrations", icon: Webhook },
   calendar: { label: "Calendar feeds", icon: CalendarSync },
 };
