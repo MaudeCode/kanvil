@@ -50,6 +50,12 @@ import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
 import { resolveState } from "./workflow-operations.ts";
 import { likePattern } from "./search.ts";
+import {
+  applyCustomFieldValues,
+  assertCustomFieldFilters,
+  customFieldPredicate,
+  projectCustomFields,
+} from "./custom-field-operations.ts";
 import { z } from "zod";
 import {
   closedStates,
@@ -241,7 +247,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   await assertWorkerClaim(ctx, current, input.claimId);
   await validateReferences(ctx, current.id, input.changes);
   const state = await resolveState(ctx, input.changes, current);
-  const { startAt, dueAt, ...changes } = input.changes,
+  const { startAt, dueAt, customFields, ...changes } = input.changes,
     dates = dateColumns({ startAt, dueAt });
   assertSchedule(
     dates.startAt === undefined ? current.startAt : dates.startAt,
@@ -255,6 +261,13 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
         ...changes,
         ...state,
         ...dates,
+        ...(customFields && {
+          customFields: applyCustomFieldValues(
+            await projectCustomFields(ctx),
+            current.customFields,
+            customFields,
+          ),
+        }),
         version: current.version + 1,
         updatedAt: new Date(),
       })
@@ -326,6 +339,7 @@ const filterColumns = {
   difficulty: tickets.difficulty,
 };
 function predicateSQL({ field, operator, values }: TicketPredicate) {
+  if (field === "customField") return customFieldPredicate(operator, values);
   if (field === "label") {
     const overlap = sql`${tickets.labels} && ${sql.param(values)}::text[]`;
     return operator === "any" ? overlap : sql`NOT (${overlap})`;
@@ -409,6 +423,7 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
       uploads: _uploads,
       startAt,
       dueAt,
+      customFields,
       ...fields
     } = input,
     dates = dateColumns({ startAt, dueAt });
@@ -426,6 +441,7 @@ async function createTicketRow(ctx: Context, input: ParsedInput<"create_ticket">
         ...fields,
         ...state,
         ...dates,
+        customFields: applyCustomFieldValues(await projectCustomFields(ctx), null, customFields),
         id,
         projectId: counter.id,
         number: counter.nextNumber - 1,
@@ -570,6 +586,7 @@ export const ticketHandlers: Pick<
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
     const related = input.relatedTo ? await getTicket(ctx, input.relatedTo) : undefined;
     const search = input.q ? await ctx.search.where(ctx.db, [project(ctx).id], input.q) : undefined;
+    await assertCustomFieldFilters(ctx, [project(ctx).id], input);
     const where = and(
       eq(tickets.projectId, project(ctx).id),
       parent ? eq(tickets.parentId, parent.id) : undefined,
@@ -678,6 +695,7 @@ export const ticketHandlers: Pick<
           ? source.assigneeId
           : null,
       parentId: source.parentId,
+      customFields: source.customFields,
       automationReady: false,
       holdReason: null,
       archived: false,
@@ -810,8 +828,9 @@ export const ticketHandlers: Pick<
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId);
     if (!allowed.length)
       return { items: [], total: 0, counts, engine: "postgres" as const, indexing: false };
-    const ids = allowed.map((row) => row.id),
-      key = input.q.toUpperCase(),
+    const ids = allowed.map((row) => row.id);
+    await assertCustomFieldFilters(ctx, ids, input);
+    const key = input.q.toUpperCase(),
       like = likePattern(input.q),
       match = await ctx.search.where(ctx.db, ids, input.q),
       filtered = ticketPredicates(input).length > 0,

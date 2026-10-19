@@ -135,6 +135,144 @@ export const catalogLabelSchema = z.discriminatedUnion("scope", [
   workspaceCatalogLabel,
 ]);
 export type CatalogLabel = z.output<typeof catalogLabelSchema>;
+// Typed project fields. The server owns each definition; a ticket keeps its values by field ID.
+export const customFieldTypes = [
+  "text",
+  "number",
+  "date",
+  "checkbox",
+  "select",
+  "multiselect",
+] as const;
+export type CustomFieldType = (typeof customFieldTypes)[number];
+export const customFieldTypeLabels: Record<CustomFieldType, string> = {
+  text: "Text",
+  number: "Number",
+  date: "Date",
+  checkbox: "Checkbox",
+  select: "Select",
+  multiselect: "Multi-select",
+};
+export const customFieldLimit = 50;
+export const customFieldOptionLimit = 100;
+// Any stored value; `customFieldValueSchema` narrows it to one field's type and options. Dates are
+// calendar days (YYYY-MM-DD), so they read the same in every time zone.
+export const customFieldValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]);
+export type CustomFieldValue = z.output<typeof customFieldValue>;
+// Writes name fields by ID; null clears a value. Unnamed fields keep theirs.
+const customFieldValues = z.record(z.uuid(), customFieldValue.nullable());
+export const customFieldOptionSchema = z.object({
+  id: z.uuid(),
+  name: text.max(60),
+  color: labelColor,
+});
+export const customFieldSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  name: text.max(60),
+  type: z.enum(customFieldTypes),
+  // Choices of a select or multi-select field, in display order. Their IDs never change.
+  options: z.array(customFieldOptionSchema),
+  // New tickets must have a value; existing tickets keep theirs until edited.
+  required: z.boolean(),
+  // Applied when a new ticket omits the field.
+  defaultValue: customFieldValue.nullable(),
+  version,
+});
+export type CustomField = z.output<typeof customFieldSchema>;
+// An option list as an administrator saves it; a new option may bring its own ID or get one.
+const customFieldOptions = z
+  .array(
+    z
+      .object({ id: z.uuid().optional(), name: text.max(60), color: labelColor.default("gray") })
+      .strict(),
+  )
+  .max(customFieldOptionLimit)
+  .refine(
+    (options) =>
+      new Set(options.map((option) => option.name.toLowerCase())).size === options.length,
+    "Option names must be unique",
+  )
+  .refine((options) => {
+    const ids = options.flatMap((option) => (option.id ? [option.id] : []));
+    return new Set(ids).size === ids.length;
+  }, "Option IDs must be unique");
+// An empty value is no value: an unchecked box, blank text, or no chosen options.
+const emptyToNull = (value: CustomFieldValue | null) =>
+  value === false || value === "" || (Array.isArray(value) && !value.length) ? null : value;
+// The values one field accepts. Server validation, editors, and imports share it.
+export function customFieldValueSchema(field: Pick<CustomField, "type" | "options">) {
+  const option = z
+    .string()
+    .refine(
+      (optionId) => field.options.some((choice) => choice.id === optionId),
+      "Choose one of its options",
+    );
+  const typed: z.ZodType<CustomFieldValue> =
+    field.type === "text"
+      ? z.string().trim().max(1000)
+      : field.type === "number"
+        ? z.number()
+        : field.type === "date"
+          ? z.iso.date()
+          : field.type === "checkbox"
+            ? z.boolean()
+            : field.type === "select"
+              ? option
+              : z
+                  .array(option)
+                  .max(customFieldOptionLimit)
+                  .overwrite((ids) => [...new Set(ids)]);
+  return typed.nullable().transform(emptyToNull);
+}
+const optionNames = (field: Pick<CustomField, "options">, value: CustomFieldValue) =>
+  (Array.isArray(value) ? value : [value]).map(
+    (optionId) => field.options.find((choice) => choice.id === optionId)?.name ?? "Removed option",
+  );
+// One reading of a value for every client: lists, details, chips, and native screens.
+export function formatCustomFieldValue(
+  field: Pick<CustomField, "type" | "options">,
+  value: CustomFieldValue | null | undefined,
+): string {
+  if (value === null || value === undefined) return "";
+  switch (field.type) {
+    case "number":
+      return typeof value === "number" ? value.toLocaleString() : String(value);
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { dateStyle: "medium" })
+        : String(value);
+    case "checkbox":
+      return value === true ? "Yes" : "";
+    case "select":
+    case "multiselect":
+      return optionNames(field, value).join(", ");
+    default:
+      return String(value);
+  }
+}
+// A custom field filter names the field and one value: an option ID, `true` for a checked box, or
+// `none` for no value.
+export const customFieldFilterTokens = { empty: "none", checked: "true" } as const;
+export const customFieldFilter = (fieldId: string, token: string) => `${fieldId}:${token}`;
+export function parseCustomFieldFilter(value: string) {
+  const at = value.indexOf(":");
+  return { fieldId: value.slice(0, at), token: value.slice(at + 1) };
+}
+export function customFieldFilterText(
+  field: Pick<CustomField, "name" | "type" | "options">,
+  token: string,
+) {
+  const choice =
+    token === customFieldFilterTokens.empty
+      ? field.type === "checkbox"
+        ? "Not checked"
+        : "No value"
+      : token === customFieldFilterTokens.checked && field.type === "checkbox"
+        ? "Checked"
+        : optionNames(field, token).join("");
+  return `${field.name}: ${choice}`;
+}
 const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -157,6 +295,7 @@ export const filterFieldNames = [
   "difficulty",
   "label",
   "assigneeId",
+  "customField",
 ] as const;
 export type FilterField = (typeof filterFieldNames)[number];
 export const filterFields = {
@@ -167,6 +306,8 @@ export const filterFields = {
   label: z.string().max(40),
   // A user id, or "none" for unassigned tickets.
   assigneeId: z.union([id, z.literal("none")]),
+  // `<field id>:<option id | true | none>`; values of one field match any, fields combine with AND.
+  customField: z.string().regex(/^[0-9a-f-]{36}:(?:none|true|[0-9a-f-]{36})$/),
 } satisfies Record<FilterField, z.ZodType<string>>;
 export const filterFieldLabels: Record<FilterField, string> = {
   status: "Status",
@@ -175,6 +316,7 @@ export const filterFieldLabels: Record<FilterField, string> = {
   difficulty: "Difficulty",
   label: "Label",
   assigneeId: "Assignee",
+  customField: "Field",
 };
 export const filterOperators = ["any", "none"] as const;
 export type FilterOperator = (typeof filterOperators)[number];
@@ -197,6 +339,8 @@ const filterShape = {
   labelNot: filterValues(filterFields.label),
   assigneeId: filterValues(filterFields.assigneeId),
   assigneeIdNot: filterValues(filterFields.assigneeId),
+  customField: filterValues(filterFields.customField),
+  customFieldNot: filterValues(filterFields.customField),
 };
 export type FilterKey = keyof typeof filterShape;
 export const filterKey = (field: FilterField, operator: FilterOperator): FilterKey =>
@@ -324,6 +468,7 @@ export const ticketFields = z
     startAt: dueDate.nullable(),
     dueAt: dueDate.nullable(),
     archived: z.boolean(),
+    customFields: customFieldValues,
   })
   .strict();
 export const ticketChanges = ticketFields
@@ -395,9 +540,10 @@ export const projectSchema = z.object({
 // order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
   ...ticketFields.shape,
-  // Servers that predate start dates or workflows omit these fields.
+  // Servers that predate start dates, workflows, or custom fields omit these fields.
   startAt: dueDate.nullable().default(null),
   stateId: z.uuid().nullable().default(null),
+  customFields: z.record(z.string(), customFieldValue).default({}),
   claimRequired: z.boolean(),
   id: z.uuid(),
   projectId: z.uuid(),
@@ -888,6 +1034,9 @@ export const eventLabels: Record<string, string> = {
   "workflow.created": "Workflow state added",
   "workflow.updated": "Workflow state changed",
   "workflow.deleted": "Workflow state removed",
+  "custom_field.created": "Field created",
+  "custom_field.updated": "Field updated",
+  "custom_field.deleted": "Field deleted",
   "ticket.created": "Ticket created",
   "ticket.updated": "Ticket updated",
   "ticket.deleted": "Ticket deleted",
@@ -1444,6 +1593,80 @@ export const operations = {
     "admin",
     "Delete a workflow state after moving its tickets, archived ones included, to another state of the project, publishing their updates. The last state of a category cannot be deleted.",
   ),
+  list_custom_fields: op(
+    projectInput,
+    z.array(customFieldSchema.extend({ count: z.number().int().nonnegative() })),
+    "GET",
+    "/projects/{projectId}/custom-fields",
+    "read",
+    "List the project's custom field definitions in display order, each with how many tickets hold a value, including archived tickets.",
+  ),
+  create_custom_field: op(
+    projectInput
+      .extend({
+        ...mutation,
+        name: customFieldSchema.shape.name,
+        type: customFieldSchema.shape.type,
+        options: customFieldOptions.default([]),
+        required: z.boolean().default(false),
+        defaultValue: customFieldValue.nullable().default(null),
+      })
+      .strict(),
+    customFieldSchema,
+    "POST",
+    "/projects/{projectId}/custom-fields",
+    "admin",
+    "Define a typed ticket field: text, number, date (YYYY-MM-DD), checkbox, select, or multi-select with options. Names are unique within the project.",
+  ),
+  update_custom_field: op(
+    projectInput
+      .extend({
+        ...mutation,
+        fieldId: z.uuid(),
+        expectedVersion: version,
+        name: customFieldSchema.shape.name.optional(),
+        // The complete option list in display order; options keep their IDs.
+        options: customFieldOptions.optional(),
+        required: z.boolean().optional(),
+        // Null clears the default; omitting it keeps the saved one.
+        defaultValue: customFieldValue.nullable().optional(),
+        // Where the values of removed options go: another option of the new list, or null to clear.
+        reassign: z.record(z.uuid(), z.uuid().nullable()).optional(),
+      })
+      .strict()
+      .refine(
+        (input) =>
+          [input.name, input.options, input.required, input.defaultValue].some(
+            (value) => value !== undefined,
+          ),
+        "Change the name, options, required rule, or default",
+      ),
+    customFieldSchema,
+    "PATCH",
+    "/projects/{projectId}/custom-fields/{fieldId}",
+    "admin",
+    "Rename a custom field, edit its options, or change its required rule or default at its current version. The type never changes. Removing an option that tickets or the default still use requires `reassign` to map it to a remaining option or to null; affected tickets and saved-view filters update atomically.",
+  ),
+  move_custom_field: op(
+    projectInput
+      .extend({ ...mutation, fieldId: z.uuid(), expectedVersion: version, ...placement })
+      .strict()
+      .refine(oneNeighbor, "Name one neighbor: before or after")
+      .refine((input) => input.before ?? input.after, "Name a neighbor: before or after"),
+    customFieldSchema,
+    "POST",
+    "/projects/{projectId}/custom-fields/{fieldId}/move",
+    "admin",
+    "Place a custom field directly before or after another field of the project in display order.",
+  ),
+  delete_custom_field: op(
+    projectInput.extend({ ...mutation, fieldId: z.uuid(), expectedVersion: version }).strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/custom-fields/{fieldId}",
+    "admin",
+    "Delete a custom field and remove its values from tickets and saved-view filters atomically.",
+  ),
   get_ticket: op(
     ticketInput,
     z.object({
@@ -1481,13 +1704,14 @@ export const operations = {
         holdReason: z.string().trim().max(2000).nullable().default(null),
         archived: z.boolean().default(false),
         uploads: z.array(z.uuid()).max(50).default([]),
+        customFields: customFieldValues.default({}),
       })
       .strict(),
     ticketSchema,
     "POST",
     "/projects/{projectId}/tickets",
     "write",
-    "Create a ticket. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. Reuse requestId when retrying this write.",
+    "Create a ticket. `customFields` maps field IDs from list_custom_fields to values; omitted fields take their default, and a required field must end with a value. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. Reuse requestId when retrying this write.",
   ),
   duplicate_ticket: op(
     ticketInput.extend(mutation).strict(),
@@ -1510,7 +1734,7 @@ export const operations = {
     "PATCH",
     "/projects/{projectId}/tickets/{ticketId}",
     "write",
-    "Update a ticket with optimistic concurrency. Worker completion requires its active claim.",
+    "Update a ticket with optimistic concurrency. Worker completion requires its active claim. `changes.customFields` sets only the named fields; null clears one.",
   ),
   move_ticket: op(
     ticketInput

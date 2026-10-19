@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  customFieldFilterText,
+  customFieldValueSchema,
+  formatCustomFieldValue,
   eventCategories,
   mentionLink,
   infoSchema,
@@ -16,7 +19,7 @@ import {
   ticketFields,
   ticketSchema,
 } from "./index.ts";
-import { createTicketDraft, ticketDraftSchema } from "./drafts.ts";
+import { createTicketDraft, ticketDefaults, ticketDraftSchema } from "./drafts.ts";
 
 describe("agent write contracts", () => {
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
@@ -363,5 +366,58 @@ describe("mentions", () => {
   it("writes a Markdown link that still reads as the name", () => {
     expect(mentionLink("Ada Lovelace", "user_1")).toBe("[@Ada Lovelace](mention:user_1)");
     expect(mentionLink("[ops] \\ Ada", "user_2")).toBe("[@\\[ops\\] \\\\ Ada](mention:user_2)");
+  });
+});
+const plain = (type: "text" | "number" | "date" | "checkbox") =>
+  customFieldValueSchema({ type, options: [] });
+describe("custom fields", () => {
+  const high = "10000000-0000-4000-8000-000000000011",
+    low = "10000000-0000-4000-8000-000000000012";
+  const severity = {
+    name: "Severity",
+    type: "select" as const,
+    options: [
+      { id: high, name: "High", color: "red" as const },
+      { id: low, name: "Low", color: "gray" as const },
+    ],
+  };
+  it("narrows values to the field's type and reads empty values as none", () => {
+    expect(customFieldValueSchema(severity).parse(high)).toBe(high);
+    expect(
+      customFieldValueSchema(severity).safeParse("10000000-0000-4000-8000-000000000099"),
+    ).toMatchObject({ success: false });
+    const areas = { ...severity, type: "multiselect" as const };
+    expect(customFieldValueSchema(areas).parse([low, low])).toEqual([low]);
+    expect(customFieldValueSchema(areas).parse([])).toBeNull();
+    expect(plain("text").parse("  spaced  ")).toBe("spaced");
+    expect(plain("text").parse("   ")).toBeNull();
+    expect(plain("checkbox").parse(false)).toBeNull();
+    expect(plain("number").safeParse("3").success).toBe(false);
+    expect(plain("date").safeParse("2026-02-31").success).toBe(false);
+    expect(plain("date").parse("2026-02-28")).toBe("2026-02-28");
+  });
+  it("formats values and filter choices the same way for every client", () => {
+    expect(formatCustomFieldValue({ ...severity, type: "multiselect" }, [low, high])).toBe(
+      "Low, High",
+    );
+    expect(formatCustomFieldValue(severity, "10000000-0000-4000-8000-000000000099")).toBe(
+      "Removed option",
+    );
+    expect(formatCustomFieldValue({ type: "checkbox", options: [] }, true)).toBe("Yes");
+    expect(formatCustomFieldValue(severity, undefined)).toBe("");
+    expect(customFieldFilterText(severity, high)).toBe("Severity: High");
+    expect(customFieldFilterText(severity, "none")).toBe("Severity: No value");
+    expect(customFieldFilterText({ ...severity, type: "checkbox", options: [] }, "none")).toBe(
+      "Severity: Not checked",
+    );
+  });
+  it("keeps tickets and drafts from before custom fields readable", () => {
+    const { customFields: _customFields, ...saved } = ticketDefaults;
+    expect(ticketDraftSchema.parse({ fields: saved }).fields.customFields).toEqual({});
+    expect(
+      ticketFilter.safeParse({ customField: `${high}:${low}`, customFieldNot: `${high}:none` })
+        .success,
+    ).toBe(true);
+    expect(ticketFilter.safeParse({ customField: "severity:high" }).success).toBe(false);
   });
 });

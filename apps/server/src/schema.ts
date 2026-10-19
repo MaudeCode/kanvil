@@ -143,6 +143,32 @@ export const workspaceLabels = pgTable(
   },
   (table) => [unique("workspace_label_name").on(table.workspaceId, table.name)],
 );
+// A project's typed ticket field. Option IDs stay stable so ticket values survive renames; tickets
+// keep values in `tickets.custom_fields` by field ID.
+export const customFields = pgTable(
+  "custom_fields",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    options: jsonb("options")
+      .$type<{ id: string; name: string; color: string }[]>()
+      .notNull()
+      .default([]),
+    required: boolean("required").notNull().default(false),
+    defaultValue: jsonb("default_value").$type<string | number | boolean | string[]>(),
+    // Display order within the project; see ordering.ts.
+    position: bigint("position", { mode: "number" }).notNull().default(0),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [
+    unique("custom_field_name").on(table.projectId, table.name),
+    index("custom_field_project_position").on(table.projectId, table.position),
+  ],
+);
 // Site-wide palette of custom label colors; a hex value joins it when any label is saved with it.
 export const labelColors = pgTable("label_colors", {
   value: text("value").primaryKey(),
@@ -203,6 +229,11 @@ export const tickets = pgTable(
     startAt: timestamp("start_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
     archived: boolean("archived").notNull().default(false),
+    // Values of the project's custom fields by field ID; see custom-field-operations.ts.
+    customFields: jsonb("custom_fields")
+      .$type<Record<string, string | number | boolean | string[]>>()
+      .notNull()
+      .default({}),
     // Place in the project's manual order; see ordering.ts.
     position: bigint("position", { mode: "number" }).notNull().default(0),
     createdBy: text("created_by")

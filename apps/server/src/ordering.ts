@@ -1,12 +1,12 @@
 import { and, asc, desc, eq, gt, lt, ne, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
-import { projects, tickets } from "./schema.ts";
+import { customFields, projects, tickets } from "./schema.ts";
 import { fail, type Context } from "./domain.ts";
 
-// Manual order: tickets within a project and projects within a workspace each carry a `position`.
-// Callers name a neighbor, never a number. A move takes the midpoint between the neighbor and the
-// next item of the scope; only when no integer is left between them is the scope renumbered, which
-// keeps every item's relative order and changes no version.
+// Manual order: tickets and custom fields within a project and projects within a workspace each
+// carry a `position`. Callers name a neighbor, never a number. A move takes the midpoint between
+// the neighbor and the next item of the scope; only when no integer is left between them is the
+// scope renumbered, which keeps every item's relative order and changes no version.
 const gap = 1024;
 interface Order {
   table: PgTable;
@@ -32,6 +32,14 @@ export const projectPositions: Order = {
   tiebreak: projects.name,
   scope: (id) =>
     eq(projects.workspaceId, sql`(SELECT workspace_id FROM projects WHERE id = ${id}::uuid)`),
+};
+export const customFieldPositions: Order = {
+  table: customFields,
+  id: customFields.id,
+  position: customFields.position,
+  tiebreak: customFields.name,
+  scope: (id) =>
+    eq(customFields.projectId, sql`(SELECT project_id FROM custom_fields WHERE id = ${id}::uuid)`),
 };
 // The position after every item matching `scope`, for a new item.
 export const endPosition = (order: Order, scope: SQL) =>

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
-import { filterList, isHexColor, ticketFilter } from "@kanvil/contracts";
+import { filterKey, filterList, isHexColor, ticketFilter } from "@kanvil/contracts";
 import { renameFeedLabel } from "./calendar-operations.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { labelColors, projectLabels, projects, tickets, views, workspaceLabels } from "./schema.ts";
@@ -92,7 +92,7 @@ async function availableWorkspaceName(
   );
 }
 // A custom color becomes part of the site-wide palette the first time a label uses it.
-async function rememberLabelColor(ctx: Context, color: string) {
+export async function rememberLabelColor(ctx: Context, color: string) {
   if (isHexColor(color))
     await ctx.db
       .insert(labelColors)
@@ -128,33 +128,43 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
       ).event,
     );
   await publishMany(ctx, pending);
-  // Saved label filters hold a list, or a single name from before lists existed.
+  await rewriteViewFilters(ctx, "label", (tag) => (tag !== name ? tag : (replacement ?? null)));
+  if (replacement) await renameFeedLabel(ctx, name, replacement);
+}
+// Rewrites one filter field in the context project's saved views: `rename` maps each value to its
+// replacement, or to null to drop it. Saved filters hold a list, or a single value from before
+// lists existed. A rename can land on a value the view excludes; the included value wins.
+export async function rewriteViewFilters(
+  ctx: Context,
+  field: "label" | "customField",
+  rename: (value: string) => string | null,
+) {
+  const excludedKey = filterKey(field, "none");
   const saved = await ctx.db
     .select()
     .from(views)
     .where(
       and(
         eq(views.projectId, project(ctx).id),
-        sql`(${views.filters}->'label' ? ${name} OR ${views.filters}->'labelNot' ? ${name})`,
+        sql`(${views.filters} ? ${field} OR ${views.filters} ? ${excludedKey})`,
       ),
     );
-  const rename = (values: string | string[] | undefined) => {
-    const next = filterList(values).flatMap((tag) =>
-      tag !== name ? [tag] : replacement ? [replacement] : [],
-    );
+  const apply = (values: string | string[] | undefined) => {
+    const next = filterList(values).flatMap((value) => rename(value) ?? []);
     return next.length ? [...new Set(next)] : undefined;
   };
   for (const view of saved) {
     const filters = ticketFilter.parse(view.filters),
-      label = rename(filters.label);
-    // A rename can land on a name the view excludes; the included label wins.
-    const labelNot = rename(filters.labelNot)?.filter((tag) => !label?.includes(tag));
-    await ctx.db
-      .update(views)
-      .set({ filters: { ...filters, label, labelNot: labelNot?.length ? labelNot : undefined } })
-      .where(eq(views.id, view.id));
+      included = apply(filters[field]),
+      excluded = apply(filters[excludedKey])?.filter((value) => !included?.includes(value)),
+      next = {
+        ...filters,
+        [field]: included,
+        [excludedKey]: excluded?.length ? excluded : undefined,
+      };
+    if (JSON.stringify(next) !== JSON.stringify(filters))
+      await ctx.db.update(views).set({ filters: next }).where(eq(views.id, view.id));
   }
-  if (replacement) await renameFeedLabel(ctx, name, replacement);
 }
 // A workspace label change reaches every project of the workspace in the same transaction. The
 // caller is a workspace administrator, which is the administrator role in each of those projects.

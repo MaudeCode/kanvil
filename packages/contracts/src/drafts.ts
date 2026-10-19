@@ -18,6 +18,8 @@ export const ticketDraftSchema = z.object({
     stateId: z.uuid().nullable().default(null),
     startAt: dueDate.nullable().default(null),
     dueAt: dueDate.nullable().default(null),
+    // Drafts saved before custom fields omit them.
+    customFields: ticketFields.shape.customFields.default({}),
   }),
   version: z.number().int().positive().optional(),
   // The project a new ticket will be created in, when the author chose one other than where the
