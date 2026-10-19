@@ -13,4 +13,12 @@ describe("session write limiter", () => {
     expect(() => limiter.consume("bob", 300)).not.toThrow();
     expect(() => limiter.consume("alice", 1001)).not.toThrow();
   });
+  it("holds at most its capacity of keys, dropping the least recently used", () => {
+    const limiter = createWriteLimiter(1, 60_000, 2);
+    limiter.consume("a", 0);
+    limiter.consume("b", 1);
+    limiter.consume("c", 2);
+    expect(() => limiter.consume("a", 3)).not.toThrow();
+    expect(() => limiter.consume("a", 4)).toThrowError(expect.objectContaining({ status: 429 }));
+  });
 });
