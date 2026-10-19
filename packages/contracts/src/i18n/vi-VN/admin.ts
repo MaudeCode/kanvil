@@ -90,12 +90,12 @@ export default {
     storageVerified: "Đã xác minh kết nối lưu trữ",
     testStorage: "Kiểm tra kết nối lưu trữ",
     filesWaiting_other:
-      "{{count}} tệp đang chờ chuyển. Các tệp đang chờ vẫn đọc được từ PostgreSQL.",
+      "{{count, number}} tệp đang chờ chuyển. Các tệp đang chờ vẫn đọc được từ PostgreSQL.",
     transfersComplete: "Đã chuyển xong mọi tệp.",
     storageDeployment:
       "Lưu trữ được cấu hình bởi KANVIL_STORAGE_PROVIDER và các biến triển khai S3_*.",
     locations: "Vị trí lưu trữ hiện có",
-    locationFiles_other: "{{count}} tệp",
+    locationFiles_other: "{{count, number}} tệp",
     cleanUp: "Dọn tệp không dùng",
     cleanUpConfirm:
       "Xóa các tệp không được tham chiếu và các lượt tải lên thất bại cũ hơn một ngày? Tệp đính kèm vào phiếu hoặc hồ sơ được giữ lại.",
@@ -195,7 +195,7 @@ export default {
     signInMethods: "Phương thức đăng nhập",
     setPassword: "Đặt mật khẩu cục bộ",
     activeSessions: "Phiên đang hoạt động",
-    sessions_other: "{{count}} phiên",
+    sessions_other: "{{count, number}} phiên",
     revokeSessions: "Thu hồi phiên",
     revokeConfirm: "Đăng xuất {{name}} khỏi mọi thiết bị? Khóa API vẫn hoạt động.",
     sessionsRevoked: "Đã thu hồi phiên",
@@ -363,8 +363,8 @@ export default {
       claimConflict: "Phiếu đã được nhận",
       invalidContent: "Issue dài hơn mức một phiếu cho phép",
     },
-    issuesSyncing_other: "{{count}} issue đang đồng bộ",
-    linksStopped_other: "{{count}} liên kết đã dừng",
+    issuesSyncing_other: "{{count, number}} issue đang đồng bộ",
+    linksStopped_other: "{{count, number}} liên kết đã dừng",
     match: "Khớp",
     matchAny: "Bất kỳ nhãn nào trong số này",
     matchAll: "Tất cả các nhãn này",
@@ -423,8 +423,9 @@ export default {
       links: "Liên kết",
     },
     notExport: "Tệp này không phải bản xuất phiếu của Kanvil.",
-    progress_other: "{{status}} · {{done}} trên {{count}} bản ghi",
-    progressFailed_other: "{{status}} · {{done}} trên {{count}} bản ghi · {{failed}} thất bại",
+    progress_other: "{{status}} · {{done, number}} trên {{count, number}} bản ghi",
+    progressFailed_other:
+      "{{status}} · {{done, number}} trên {{count, number}} bản ghi · {{failed, number}} thất bại",
     title: "Nhập",
     description:
       "Tạo dự án từ bản xuất phiếu Kanvil hoặc từ trình theo dõi khác: Linear, Jira, Trello, Plane, PLANKA hoặc Kaneo.",

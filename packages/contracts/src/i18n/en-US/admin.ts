@@ -95,15 +95,15 @@ export default {
     storageVerified: "Storage connection verified",
     testStorage: "Test storage connection",
     filesWaiting_one:
-      "{{count}} file waiting for transfer. Pending files remain readable from PostgreSQL.",
+      "{{count, number}} file waiting for transfer. Pending files remain readable from PostgreSQL.",
     filesWaiting_other:
-      "{{count}} files waiting for transfer. Pending files remain readable from PostgreSQL.",
+      "{{count, number}} files waiting for transfer. Pending files remain readable from PostgreSQL.",
     transfersComplete: "All file transfers completed.",
     storageDeployment:
       "Storage is configured by KANVIL_STORAGE_PROVIDER and S3_* deployment variables.",
     locations: "Existing storage locations",
-    locationFiles_one: "{{count}} file",
-    locationFiles_other: "{{count}} files",
+    locationFiles_one: "{{count, number}} file",
+    locationFiles_other: "{{count, number}} files",
     cleanUp: "Clean unused files",
     cleanUpConfirm:
       "Remove unreferenced files and failed uploads older than one day? Files attached to tickets or profiles are retained.",
@@ -210,8 +210,8 @@ export default {
     signInMethods: "Sign-in methods",
     setPassword: "Set local password",
     activeSessions: "Active sessions",
-    sessions_one: "{{count}} session",
-    sessions_other: "{{count}} sessions",
+    sessions_one: "{{count, number}} session",
+    sessions_other: "{{count, number}} sessions",
     revokeSessions: "Revoke sessions",
     revokeConfirm: "Sign {{name}} out of every device? API keys stay active.",
     sessionsRevoked: "Sessions revoked",
@@ -385,10 +385,10 @@ export default {
       claimConflict: "The ticket is claimed",
       invalidContent: "The issue is longer than a ticket allows",
     },
-    issuesSyncing_one: "{{count}} issue syncing",
-    issuesSyncing_other: "{{count}} issues syncing",
-    linksStopped_one: "{{count}} link stopped",
-    linksStopped_other: "{{count}} links stopped",
+    issuesSyncing_one: "{{count, number}} issue syncing",
+    issuesSyncing_other: "{{count, number}} issues syncing",
+    linksStopped_one: "{{count, number}} link stopped",
+    linksStopped_other: "{{count, number}} links stopped",
     match: "Match",
     matchAny: "Any of these labels",
     matchAll: "All of these labels",
@@ -450,10 +450,12 @@ export default {
     },
     notExport: "This file is not a Kanvil ticket export.",
     // A run's status, then how many of its `count` records are written and how many failed.
-    progress_one: "{{status}} · {{done}} of {{count}} record",
-    progress_other: "{{status}} · {{done}} of {{count}} records",
-    progressFailed_one: "{{status}} · {{done}} of {{count}} record · {{failed}} failed",
-    progressFailed_other: "{{status}} · {{done}} of {{count}} records · {{failed}} failed",
+    progress_one: "{{status}} · {{done, number}} of {{count, number}} record",
+    progress_other: "{{status}} · {{done, number}} of {{count, number}} records",
+    progressFailed_one:
+      "{{status}} · {{done, number}} of {{count, number}} record · {{failed, number}} failed",
+    progressFailed_other:
+      "{{status}} · {{done, number}} of {{count, number}} records · {{failed, number}} failed",
     title: "Import",
     description:
       "Creates a project from a Kanvil ticket export or another tracker: Linear, Jira, Trello, Plane, PLANKA, or Kaneo.",

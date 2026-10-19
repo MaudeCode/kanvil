@@ -89,11 +89,11 @@ export default {
     storageVerified: "저장소 연결이 확인되었습니다",
     testStorage: "저장소 연결 테스트",
     filesWaiting_other:
-      "파일 {{count}}개가 전송 대기 중입니다. 대기 중인 파일은 PostgreSQL에서 계속 읽을 수 있습니다.",
+      "파일 {{count, number}}개가 전송 대기 중입니다. 대기 중인 파일은 PostgreSQL에서 계속 읽을 수 있습니다.",
     transfersComplete: "모든 파일 전송이 완료되었습니다.",
     storageDeployment: "저장소는 KANVIL_STORAGE_PROVIDER 및 S3_* 배포 변수로 구성됩니다.",
     locations: "기존 저장 위치",
-    locationFiles_other: "파일 {{count}}개",
+    locationFiles_other: "파일 {{count, number}}개",
     cleanUp: "사용하지 않는 파일 정리",
     cleanUpConfirm:
       "참조되지 않는 파일과 하루 이상 지난 실패한 업로드를 제거할까요? 티켓이나 프로필에 첨부된 파일은 유지됩니다.",
@@ -192,7 +192,7 @@ export default {
     signInMethods: "로그인 방법",
     setPassword: "로컬 비밀번호 설정",
     activeSessions: "활성 세션",
-    sessions_other: "세션 {{count}}개",
+    sessions_other: "세션 {{count, number}}개",
     revokeSessions: "세션 취소",
     revokeConfirm:
       "모든 기기에서 {{name}}을(를) 로그아웃할까요? API 키는 계속 활성 상태로 유지됩니다.",
@@ -357,8 +357,8 @@ export default {
       claimConflict: "티켓이 선점되어 있습니다",
       invalidContent: "이슈가 티켓에서 허용하는 길이보다 깁니다",
     },
-    issuesSyncing_other: "이슈 {{count}}개 동기화 중",
-    linksStopped_other: "링크 {{count}}개 중지됨",
+    issuesSyncing_other: "이슈 {{count, number}}개 동기화 중",
+    linksStopped_other: "링크 {{count, number}}개 중지됨",
     match: "일치 조건",
     matchAny: "이 레이블 중 하나",
     matchAll: "이 레이블 모두",
@@ -417,8 +417,9 @@ export default {
       links: "링크",
     },
     notExport: "이 파일은 Kanvil 티켓 내보내기 파일이 아닙니다.",
-    progress_other: "{{status}} · 레코드 {{count}}개 중 {{done}}개",
-    progressFailed_other: "{{status}} · 레코드 {{count}}개 중 {{done}}개 · {{failed}}개 실패",
+    progress_other: "{{status}} · 레코드 {{count, number}}개 중 {{done, number}}개",
+    progressFailed_other:
+      "{{status}} · 레코드 {{count, number}}개 중 {{done, number}}개 · {{failed, number}}개 실패",
     title: "가져오기",
     description:
       "Kanvil 티켓 내보내기 또는 다른 트래커(Linear, Jira, Trello, Plane, PLANKA, Kaneo)에서 프로젝트를 만듭니다.",

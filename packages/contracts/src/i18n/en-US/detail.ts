@@ -28,7 +28,7 @@ export default {
     nextTicket: "Next ticket",
     nextTicketShortcut: "Next ticket (J)",
     // The ticket's place in the list it was opened from, such as "3 / 12".
-    position: "{{position}} / {{total}}",
+    position: "{{position, number}} / {{total, number}}",
     subscribe: "Subscribe",
     unsubscribe: "Unsubscribe",
     subscribed: "Subscribed to updates",
@@ -118,7 +118,7 @@ export default {
     heading: "Attachments",
     tooLarge: "Choose files no larger than 10 MB each.",
     attached_one: "File attached",
-    attached_other: "{{count}} files attached",
+    attached_other: "{{count, number}} files attached",
     attach: "Attach file",
     emptyWritable: "No attachments. Drop files here.",
     empty: "No attachments",
@@ -167,7 +167,7 @@ export default {
     newChild: "New child ticket",
     newChildTitle: "New child of {{key}}",
     // The heading and how many children are done, such as "Child tickets 2/5".
-    children: "Child tickets <count>{{done}}/{{total}}</count>",
+    children: "Child tickets <count>{{done, number}}/{{total, number}}</count>",
     previousChildren: "Previous children",
     nextChildren: "Next children",
     empty: "No relationships",

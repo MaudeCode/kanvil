@@ -91,12 +91,12 @@ export default {
     storageVerified: "ストレージへの接続を確認しました",
     testStorage: "ストレージへの接続をテスト",
     filesWaiting_other:
-      "{{count}}件のファイルが転送待ちです。保留中のファイルは引き続きPostgreSQLから読み取れます。",
+      "{{count, number}}件のファイルが転送待ちです。保留中のファイルは引き続きPostgreSQLから読み取れます。",
     transfersComplete: "すべてのファイル転送が完了しました。",
     storageDeployment:
       "ストレージはKANVIL_STORAGE_PROVIDERとS3_*のデプロイ変数で設定されています。",
     locations: "既存の保存場所",
-    locationFiles_other: "{{count}}件のファイル",
+    locationFiles_other: "{{count, number}}件のファイル",
     cleanUp: "未使用のファイルを削除",
     cleanUpConfirm:
       "参照されていないファイルと1日以上前の失敗したアップロードを削除しますか？チケットやプロフィールに添付されたファイルは保持されます。",
@@ -196,7 +196,7 @@ export default {
     signInMethods: "サインイン方法",
     setPassword: "ローカルパスワードを設定",
     activeSessions: "有効なセッション",
-    sessions_other: "{{count}}件のセッション",
+    sessions_other: "{{count, number}}件のセッション",
     revokeSessions: "セッションを無効化",
     revokeConfirm: "{{name}}をすべてのデバイスからサインアウトしますか？APIキーは有効なままです。",
     sessionsRevoked: "セッションを無効化しました",
@@ -360,8 +360,8 @@ export default {
       claimConflict: "チケットは引き受け中です",
       invalidContent: "Issueがチケットの上限より長すぎます",
     },
-    issuesSyncing_other: "{{count}}件のIssueを同期中",
-    linksStopped_other: "{{count}}件のリンクが停止",
+    issuesSyncing_other: "{{count, number}}件のIssueを同期中",
+    linksStopped_other: "{{count, number}}件のリンクが停止",
     match: "一致条件",
     matchAny: "これらのラベルのいずれか",
     matchAll: "これらのラベルのすべて",
@@ -421,8 +421,9 @@ export default {
       links: "リンク",
     },
     notExport: "このファイルはKanvilのチケットエクスポートではありません。",
-    progress_other: "{{status}} · {{count}}件中{{done}}件のレコード",
-    progressFailed_other: "{{status}} · {{count}}件中{{done}}件のレコード · {{failed}}件失敗",
+    progress_other: "{{status}} · {{count, number}}件中{{done, number}}件のレコード",
+    progressFailed_other:
+      "{{status}} · {{count, number}}件中{{done, number}}件のレコード · {{failed, number}}件失敗",
     title: "インポート",
     description:
       "Kanvilのチケットエクスポート、または他のトラッカー（Linear、Jira、Trello、Plane、PLANKA、Kaneo）からプロジェクトを作成します。",

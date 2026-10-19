@@ -19,7 +19,7 @@ export default {
     allTickets: "All tickets",
     customView: "Custom view",
     // How many selected tickets come from a section, as in "2 Done".
-    sectionCount: "{{n}} {{section}}",
+    sectionCount: "{{n, number}} {{section}}",
     planning: "{{project}} planning",
     // Where a selection comes from: the project, then the sections, as in "Kanvil (2 Done)".
     collection: "{{source}} ({{sections}})",
@@ -49,10 +49,10 @@ export default {
     board: "Ticket board",
     tickets: "Tickets",
     resizeColumn: "Resize {{column}} column",
-    count_one: "{{count}} ticket",
-    count_other: "{{count}} tickets",
-    scheduledCount_one: "{{count}} scheduled ticket",
-    scheduledCount_other: "{{count}} scheduled tickets",
+    count_one: "{{count, number}} ticket",
+    count_other: "{{count, number}} tickets",
+    scheduledCount_one: "{{count, number}} scheduled ticket",
+    scheduledCount_other: "{{count, number}} scheduled tickets",
   },
   // Moving a ticket to another project.
   move: {
@@ -153,8 +153,8 @@ export default {
     searchTickets: "Search tickets",
     searchTicketsPlaceholder: "Search tickets…",
     filters: "Filters",
-    // {{active}} is the number of filters in use.
-    filtersActive: "Filters ({{active}})",
+    // {{active, number}} is the number of filters in use.
+    filtersActive: "Filters ({{active, number}})",
     due: "Due",
     anyDue: "Any due date",
     archived: "Archived",
@@ -224,16 +224,16 @@ export default {
   selection: {
     region: "Selected tickets",
     clear: "Clear selection",
-    selected_one: "{{count}} selected",
-    selected_other: "{{count}} selected",
+    selected_one: "{{count, number}} selected",
+    selected_other: "{{count, number}} selected",
     // <wide> is hidden on narrow screens.
-    selectedOf_one: "{{count}} of {{total}}<wide> selected</wide>",
-    selectedOf_other: "{{count}} of {{total}}<wide> selected</wide>",
-    applied_one: "{{label}} applied to {{count}} ticket",
-    applied_other: "{{label}} applied to {{count}} tickets",
-    // A bulk edit failed after {{done}} tickets were already changed.
-    partlyApplied_one: "Applied to {{done}} of {{count}} ticket",
-    partlyApplied_other: "Applied to {{done}} of {{count}} tickets",
+    selectedOf_one: "{{count, number}} of {{total}}<wide> selected</wide>",
+    selectedOf_other: "{{count, number}} of {{total}}<wide> selected</wide>",
+    applied_one: "{{label}} applied to {{count, number}} ticket",
+    applied_other: "{{label}} applied to {{count, number}} tickets",
+    // A bulk edit failed after {{done, number}} tickets were already changed.
+    partlyApplied_one: "Applied to {{done, number}} of {{count, number}} ticket",
+    partlyApplied_other: "Applied to {{done, number}} of {{count, number}} tickets",
     mixedDue: "Mixed due dates",
     fields: "Fields",
     more: "More actions",
@@ -243,15 +243,15 @@ export default {
     restore: "Restore selected",
     archive: "Archive selected",
     delete: "Delete selected",
-    deleteLimit: "Delete up to {{limit}} at once",
-    archiveConfirm_one: "Archive {{count}} ticket from {{collection}}?",
-    archiveConfirm_other: "Archive {{count}} tickets from {{collection}}?",
+    deleteLimit: "Delete up to {{limit, number}} at once",
+    archiveConfirm_one: "Archive {{count, number}} ticket from {{collection}}?",
+    archiveConfirm_other: "Archive {{count, number}} tickets from {{collection}}?",
     deleteConfirm_one:
-      "Permanently delete {{count}} ticket from {{collection}}, with their comments, relationships, and attachments? Children outside the selection lose their parent.",
+      "Permanently delete {{count, number}} ticket from {{collection}}, with their comments, relationships, and attachments? Children outside the selection lose their parent.",
     deleteConfirm_other:
-      "Permanently delete {{count}} tickets from {{collection}}, with their comments, relationships, and attachments? Children outside the selection lose their parent.",
-    deleted_one: "Deleted {{count}} ticket",
-    deleted_other: "Deleted {{count}} tickets",
+      "Permanently delete {{count, number}} tickets from {{collection}}, with their comments, relationships, and attachments? Children outside the selection lose their parent.",
+    deleted_one: "Deleted {{count, number}} ticket",
+    deleted_other: "Deleted {{count, number}} tickets",
   },
   // Context menus of tickets, projects, and people. {{key}} is a ticket key such as KAN-12.
   menu: {
@@ -297,11 +297,11 @@ export default {
     emptyWeeks: "Nothing scheduled in these weeks",
     // {{title}} is the month, such as "October 2026".
     monthTickets: "Tickets in {{title}}",
-    showDay_one: "Show all {{count}} ticket on {{day}}",
-    showDay_other: "Show all {{count}} tickets on {{day}}",
+    showDay_one: "Show all {{count, number}} ticket on {{day}}",
+    showDay_other: "Show all {{count, number}} tickets on {{day}}",
     // Tickets on a calendar day beyond the ones it shows.
-    more_one: "{{count}} more",
-    more_other: "{{count}} more",
+    more_one: "{{count, number}} more",
+    more_other: "{{count, number}} more",
     ticketColumn: "Ticket",
     scheduledTickets: "Scheduled tickets",
   },

@@ -91,12 +91,12 @@ export default {
     storageVerified: "Koneksi penyimpanan terverifikasi",
     testStorage: "Uji koneksi penyimpanan",
     filesWaiting_other:
-      "{{count}} file menunggu ditransfer. File yang tertunda tetap dapat dibaca dari PostgreSQL.",
+      "{{count, number}} file menunggu ditransfer. File yang tertunda tetap dapat dibaca dari PostgreSQL.",
     transfersComplete: "Semua transfer file selesai.",
     storageDeployment:
       "Penyimpanan dikonfigurasi oleh KANVIL_STORAGE_PROVIDER dan variabel deployment S3_*.",
     locations: "Lokasi penyimpanan yang ada",
-    locationFiles_other: "{{count}} file",
+    locationFiles_other: "{{count, number}} file",
     cleanUp: "Bersihkan file yang tidak digunakan",
     cleanUpConfirm:
       "Hapus file tanpa rujukan dan unggahan gagal yang berusia lebih dari satu hari? File yang dilampirkan ke tiket atau profil tetap disimpan.",
@@ -196,7 +196,7 @@ export default {
     signInMethods: "Metode masuk",
     setPassword: "Atur kata sandi lokal",
     activeSessions: "Sesi aktif",
-    sessions_other: "{{count}} sesi",
+    sessions_other: "{{count, number}} sesi",
     revokeSessions: "Cabut sesi",
     revokeConfirm: "Keluarkan {{name}} dari semua perangkat? Kunci API tetap aktif.",
     sessionsRevoked: "Sesi dicabut",
@@ -361,8 +361,8 @@ export default {
       claimConflict: "Tiket sedang diklaim",
       invalidContent: "Isu lebih panjang dari batas tiket",
     },
-    issuesSyncing_other: "{{count}} isu disinkronkan",
-    linksStopped_other: "{{count}} tautan berhenti",
+    issuesSyncing_other: "{{count, number}} isu disinkronkan",
+    linksStopped_other: "{{count, number}} tautan berhenti",
     match: "Cocokkan",
     matchAny: "Salah satu label ini",
     matchAll: "Semua label ini",
@@ -421,8 +421,9 @@ export default {
       links: "Tautan",
     },
     notExport: "File ini bukan ekspor tiket Kanvil.",
-    progress_other: "{{status}} · {{done}} dari {{count}} catatan",
-    progressFailed_other: "{{status}} · {{done}} dari {{count}} catatan · {{failed}} gagal",
+    progress_other: "{{status}} · {{done, number}} dari {{count, number}} catatan",
+    progressFailed_other:
+      "{{status}} · {{done, number}} dari {{count, number}} catatan · {{failed, number}} gagal",
     title: "Impor",
     description:
       "Membuat proyek dari ekspor tiket Kanvil atau pelacak lain: Linear, Jira, Trello, Plane, PLANKA, atau Kaneo.",
