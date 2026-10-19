@@ -14,6 +14,7 @@ import {
   type Handlers,
 } from "./domain.ts";
 import { updateTicketRow } from "./ticket-operations.ts";
+import { reassignTransitions } from "./repository-operations.ts";
 
 type Category = (typeof states)[number];
 type State = typeof workflowStates.$inferSelect;
@@ -256,6 +257,7 @@ export const workflowHandlers: Pick<
           })
         ).event,
       );
+    await reassignTransitions(ctx, current.id, target.id);
     await ctx.db.delete(workflowStates).where(eq(workflowStates.id, current.id));
     await renumber(
       ctx,

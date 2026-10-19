@@ -10,6 +10,7 @@ import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createHttpSender, createMailSender } from "./adapters/outbound.ts";
 import type { OutboundSenders } from "./adapters/ports.ts";
 import { deliverBatch, outbound } from "./outbox.ts";
+import { defaultAdapters } from "./runtime-adapters.ts";
 import { deliverySecrets } from "./sealing.ts";
 import {
   deliveries,
@@ -91,7 +92,13 @@ describe("notification channels and project destinations", () => {
     mail: createMailSender(mail.url, "Kanvil <kanvil@example.test>"),
   });
   const tick = (allowPrivate = true) =>
-    deliverBatch(fixture.database, fixture.config, senders(allowPrivate), secrets());
+    deliverBatch(
+      fixture.database,
+      fixture.config,
+      senders(allowPrivate),
+      secrets(),
+      defaultAdapters.repositories(fixture.config),
+    );
   const queued = () => fixture.database.db.select().from(deliveries);
   const comment = (body = "Agent progress") =>
     app.domain.execute(

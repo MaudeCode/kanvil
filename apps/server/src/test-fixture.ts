@@ -21,6 +21,8 @@ export async function createFixture({
     KANVIL_URL: "http://localhost:5180",
     BETTER_AUTH_SECRET: crypto.randomUUID(),
     KANVIL_SETUP_TOKEN: crypto.randomUUID(),
+    // Repository connections in tests never reach GitHub; suites that need a host run a fake one.
+    KANVIL_GITHUB_API_URL: "https://api.github.kanvil.invalid",
   });
   try {
     await beforeMigrate?.(database);

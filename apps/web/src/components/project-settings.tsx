@@ -24,7 +24,7 @@ import { ProjectIconPicker } from "./project-icon-picker.tsx";
 import { LabelSettings } from "./label-settings.tsx";
 import { ProjectWorkflowSettings } from "./project-workflow-settings.tsx";
 import { CustomFieldSettings } from "./custom-field-settings.tsx";
-import { ProjectDestinations } from "./delivery-settings.tsx";
+import { ProjectDestinations, RepositoryConnections } from "./delivery-settings.tsx";
 import { CalendarFeedSettings } from "./calendar-feed-settings.tsx";
 import { ArchiveProjectRow, DeleteProjectRow, MoveProject } from "./project-lifecycle.tsx";
 import type { projectSections } from "../search.ts";
@@ -188,6 +188,11 @@ export function ProjectSettings({
           <CustomFieldSettings projectId={project.id} canAdmin={access.canAdmin} />
         </SettingsPanel>
         <SettingsPanel value="integrations">
+          <RepositoryConnections
+            projectId={project.id}
+            canAdmin={access.canManage}
+            canChange={access.canAdmin}
+          />
           <ProjectDestinations
             projectId={project.id}
             canAdmin={access.canManage}

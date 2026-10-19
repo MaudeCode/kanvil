@@ -523,6 +523,7 @@ export const resources = pgTable(
     title: text("title").notNull().default(""),
     provider: text("provider"),
     // Written only by a configured connection; null means the remote state is unknown.
+    remoteKind: text("remote_kind"),
     remoteState: text("remote_state"),
     remoteCheckedAt: timestamp("remote_checked_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
@@ -662,8 +663,47 @@ export const projectDestinations = pgTable(
   },
   (table) => [index("project_destination_project").on(table.projectId)],
 );
-// The shared outbox. Each row targets one push device, account channel, or project destination;
-// a row without a notification or event is a test message.
+// A project's code-host repository. `settings` is sealed: it holds the access token and the webhook
+// signing secret. Webhook transitions act as `createdBy`, so they stop if that account loses access.
+export const repositoryConnections = pgTable(
+  "repository_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    repository: text("repository").notNull(),
+    settings: text("settings").notNull(),
+    paused: boolean("paused").notNull().default(false),
+    commentOnLink: boolean("comment_on_link").notNull().default(false),
+    transitions: jsonb("transitions").$type<Record<string, string>>().notNull().default({}),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+    lastEventError: text("last_event_error"),
+    ...health(),
+  },
+  (table) => [unique("repository_connection_name").on(table.projectId, table.repository)],
+);
+// Webhook deliveries already handled, so a redelivery or replay applies nothing twice.
+export const receivedWebhooks = pgTable(
+  "received_webhooks",
+  {
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => repositoryConnections.id, { onDelete: "cascade" }),
+    deliveryId: text("delivery_id").notNull(),
+    event: text("event").notNull(),
+    outcome: text("outcome").notNull(),
+    receivedAt: time("received_at"),
+  },
+  (table) => [primaryKey({ columns: [table.connectionId, table.deliveryId] })],
+);
+// The shared outbox. Each row targets one push device, account channel, project destination, or
+// repository connection; a row without a notification or event is a test message or access check.
 export const deliveries = pgTable(
   "deliveries",
   {
@@ -681,6 +721,9 @@ export const deliveries = pgTable(
     destinationId: uuid("destination_id").references(() => projectDestinations.id, {
       onDelete: "cascade",
     }),
+    connectionId: uuid("connection_id").references(() => repositoryConnections.id, {
+      onDelete: "cascade",
+    }),
     attempts: integer("attempts").notNull().default(0),
     availableAt: time("available_at"),
     receiptId: text("receipt_id"),
@@ -693,9 +736,10 @@ export const deliveries = pgTable(
     unique("delivery_device").on(table.notificationId, table.deviceId),
     unique("delivery_channel").on(table.notificationId, table.channelId),
     unique("delivery_destination").on(table.eventId, table.destinationId),
+    unique("delivery_connection").on(table.eventId, table.connectionId),
     check(
       "delivery_one_target",
-      sql`num_nonnulls(${table.deviceId}, ${table.channelId}, ${table.destinationId}) = 1`,
+      sql`num_nonnulls(${table.deviceId}, ${table.channelId}, ${table.destinationId}, ${table.connectionId}) = 1`,
     ),
   ],
 );

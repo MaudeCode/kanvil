@@ -55,6 +55,8 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // The GitHub REST API that repository connections call; GitHub Enterprise Server uses its own.
+    KANVIL_GITHUB_API_URL: z.url({ protocol: /^https?$/ }).default("https://api.github.com"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .superRefine((value, ctx) => {
