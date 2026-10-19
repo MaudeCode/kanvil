@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import { cn } from "cn";
+import { t } from "@kanvil/contracts/i18n";
 
 import {
   Dialog,
@@ -26,8 +27,8 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 }
 
 function CommandDialog({
-  title = "Command Palette",
-  description = "Search for a command to run...",
+  title = t("shell.primitive.commandTitle"),
+  description = t("shell.primitive.commandDescription"),
   children,
   className,
   showCloseButton = false,

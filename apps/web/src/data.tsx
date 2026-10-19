@@ -14,6 +14,7 @@ import {
   type Permission,
   type Workspace,
 } from "@kanvil/contracts";
+import { t } from "@kanvil/contracts/i18n";
 import type { Query } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -136,7 +137,7 @@ export function useLive(projectId?: string) {
           ),
         onState: setState,
       })
-      .catch(() => setState("Sign in to reconnect"));
+      .catch(() => setState(t("shell.connection.signIn")));
     return () => controller.abort();
   }, [cache, projectId]);
   return state;
@@ -204,7 +205,7 @@ export function ActorName({
   return (
     <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId ?? undefined}>
       {avatar && <UserAvatar name={name} image={image} className="size-7 text-[10px]" />}
-      {actorId === identity.id ? "You" : name}
+      {actorId === identity.id ? t("shell.you") : name}
     </span>
   );
 }

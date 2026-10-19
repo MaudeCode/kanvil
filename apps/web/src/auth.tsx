@@ -4,6 +4,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { okSchema, roleLabels } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
+import { t } from "@kanvil/contracts/i18n";
+import { Trans } from "react-i18next";
 import { z } from "zod";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -44,11 +46,14 @@ function AuthScreen({
           >
             <path d={brandMark.path} fill="currentColor" />
           </svg>
-          <p className="m-0 text-2xl leading-snug font-semibold tracking-tight text-foreground">
+          <p
+            dir="auto"
+            className="m-0 text-2xl leading-snug font-semibold tracking-tight text-foreground"
+          >
             {name}
           </p>
           {instance?.description && (
-            <p className="mt-2 mb-0 max-w-sm text-sm text-muted-foreground">
+            <p dir="auto" className="mt-2 mb-0 max-w-sm text-sm text-muted-foreground">
               {instance.description}
             </p>
           )}
@@ -112,13 +117,9 @@ export function Login() {
     showEmail = setup || (emailEnabled && (!provider || emailOpen));
   return (
     <AuthScreen
-      title={setup ? "Create your owner account" : "Sign in"}
+      title={setup ? t("shell.auth.createOwner") : t("shell.auth.signIn")}
       subtitle={
-        setup
-          ? "The first account administers this instance."
-          : invited
-            ? "Sign in with the invited email address to accept the invitation."
-            : undefined
+        setup ? t("shell.auth.ownerHint") : invited ? t("shell.auth.invitedHint") : undefined
       }
       instance={info.data}
     >
@@ -152,7 +153,7 @@ export function Login() {
             }}
           >
             {pending ? <Spinner /> : null}
-            Sign in with {provider.name}
+            {t("shell.auth.signInWith", { provider: provider.name })}
           </Button>
           {emailEnabled && !showEmail && (
             <Button
@@ -162,13 +163,13 @@ export function Login() {
               disabled={pending}
               onClick={() => setEmailOpen(true)}
             >
-              Use email and password
+              {t("shell.auth.useEmail")}
             </Button>
           )}
           {showEmail && (
             <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
               <Separator className="flex-1" />
-              or
+              {t("shell.auth.or")}
               <Separator className="flex-1" />
             </div>
           )}
@@ -183,15 +184,25 @@ export function Login() {
         >
           {setup && (
             <>
-              <Input label="Name" name="name" autoComplete="name" required maxLength={120} />
-              <Input label="Setup token" name="token" type="password" required autoComplete="off" />
-              <small className="-mt-2 mb-5 block">
-                Use KANVIL_SETUP_TOKEN from your instance configuration.
-              </small>
+              <Input
+                label={t("shell.auth.name")}
+                name="name"
+                autoComplete="name"
+                required
+                maxLength={120}
+              />
+              <Input
+                label={t("shell.auth.setupToken")}
+                name="token"
+                type="password"
+                required
+                autoComplete="off"
+              />
+              <small className="-mt-2 mb-5 block">{t("shell.auth.setupTokenHint")}</small>
             </>
           )}
           <Input
-            label="Email"
+            label={t("shell.auth.email")}
             name="email"
             type="email"
             autoComplete="username"
@@ -200,7 +211,7 @@ export function Login() {
             autoFocus
           />
           <Input
-            label="Password"
+            label={t("shell.auth.password")}
             name="password"
             type="password"
             minLength={12}
@@ -217,7 +228,11 @@ export function Login() {
             disabled={pending}
           >
             {pending ? <Spinner /> : null}
-            {pending ? "Signing in…" : setup ? "Create account" : "Sign in"}
+            {pending
+              ? t("shell.auth.signingIn")
+              : setup
+                ? t("shell.auth.createAccount")
+                : t("shell.auth.signIn")}
           </Button>
         </form>
       )}
@@ -254,8 +269,7 @@ export function Consent() {
       const result = await auth.oauth2.consent({ accept });
       if (result.error) throw new Error(result.error.message);
       const response = authorizationSchema.parse(result.data);
-      if (!response.url)
-        throw new Error("The authorization request has expired. Reconnect your client.");
+      if (!response.url) throw new Error(t("shell.auth.consent.expired"));
       window.location.assign(response.url);
     } catch (cause) {
       setError(cause);
@@ -264,8 +278,12 @@ export function Consent() {
   }
   return (
     <AuthScreen
-      title={`Authorize ${client.data?.client_name ?? "client"}`}
-      subtitle="This client requests access as your account. Project permissions still apply."
+      title={
+        client.data?.client_name
+          ? t("shell.auth.consent.title", { client: client.data.client_name })
+          : t("shell.auth.consent.titleUnnamed")
+      }
+      subtitle={t("shell.auth.consent.subtitle")}
       instance={info.data}
     >
       <ErrorNotice error={client.error ?? error} />
@@ -284,7 +302,7 @@ export function Consent() {
             void consent(false);
           }}
         >
-          Deny
+          {t("shell.auth.consent.deny")}
         </Button>
         <Button
           variant="default"
@@ -294,17 +312,12 @@ export function Consent() {
           }}
         >
           {pending ? <Spinner /> : null}
-          Allow access
+          {t("shell.auth.consent.allow")}
         </Button>
       </div>
     </AuthScreen>
   );
 }
-const unavailable = {
-  expired: "This invitation has expired.",
-  revoked: "This invitation was revoked.",
-  accepted: "This invitation was already accepted.",
-};
 // The page behind an invitation link. Accepting needs the invited address; the server checks it
 // again together with the sender's current authority.
 export function AcceptInvitation({ token }: { token: string }) {
@@ -320,9 +333,9 @@ export function AcceptInvitation({ token }: { token: string }) {
     <AuthScreen
       title={
         !data
-          ? "Invitation unavailable"
+          ? t("shell.auth.invitation.unavailable")
           : data.status === "pending"
-            ? `Join ${data.workspace.name}`
+            ? t("shell.auth.invitation.join", { workspace: data.workspace.name })
             : data.workspace.name
       }
       instance={info.data}
@@ -331,24 +344,27 @@ export function AcceptInvitation({ token }: { token: string }) {
       {data && (
         <>
           <dl className="mb-6 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 border-y py-4 text-sm">
-            <dt className="text-muted-foreground">Invited</dt>
+            <dt className="text-muted-foreground">{t("shell.auth.invitation.invited")}</dt>
             <dd className="m-0 wrap-anywhere">{data.email}</dd>
             {data.invitedBy && (
               <>
-                <dt className="text-muted-foreground">From</dt>
-                <dd className="m-0">{data.invitedBy}</dd>
+                <dt className="text-muted-foreground">{t("shell.auth.invitation.from")}</dt>
+                <dd dir="auto" className="m-0">
+                  {data.invitedBy}
+                </dd>
               </>
             )}
-            <dt className="text-muted-foreground">Access</dt>
+            <dt className="text-muted-foreground">{t("shell.auth.invitation.access")}</dt>
             <dd className="m-0">
               {roleLabels[data.role]} ·{" "}
               {data.projects
-                ? data.projects.map((project) => project.name).join(", ") || "Removed projects"
-                : "Whole workspace"}
+                ? data.projects.map((project) => project.name).join(", ") ||
+                  t("shell.auth.invitation.removedProjects")
+                : t("shell.auth.invitation.wholeWorkspace")}
             </dd>
             {data.status === "pending" && (
               <>
-                <dt className="text-muted-foreground">Expires</dt>
+                <dt className="text-muted-foreground">{t("shell.auth.invitation.expires")}</dt>
                 <dd className="m-0">
                   <RelativeTime value={data.expiresAt} />
                 </dd>
@@ -357,16 +373,17 @@ export function AcceptInvitation({ token }: { token: string }) {
           </dl>
           {data.status !== "pending" ? (
             <>
-              <p className="mb-6 text-sm">
-                {unavailable[data.status]} Ask a workspace administrator for a new invitation.
-              </p>
-              <Button render={<a href="/" />}>Open Kanvil</Button>
+              <p className="mb-6 text-sm">{t(`shell.auth.invitation.${data.status}`)}</p>
+              <Button render={<a href="/" />}>{t("shell.openKanvil")}</Button>
             </>
           ) : !data.matchesAccount ? (
             <>
               <p className="mb-6 text-sm">
-                You are signed in as <span className="font-medium">{identity.email}</span>. Sign in
-                as {data.email} to accept.
+                <Trans
+                  i18nKey="shell.auth.invitation.wrongAccount"
+                  values={{ current: identity.email, invited: data.email }}
+                  components={{ account: <span className="font-medium" /> }}
+                />
               </p>
               <Button
                 onClick={() => {
@@ -374,7 +391,7 @@ export function AcceptInvitation({ token }: { token: string }) {
                   void signOut(identity, window.location.pathname).catch(setError);
                 }}
               >
-                Sign out
+                {t("shell.auth.invitation.signOut")}
               </Button>
             </>
           ) : (
@@ -388,7 +405,9 @@ export function AcceptInvitation({ token }: { token: string }) {
                   .mutateAsync({ token })
                   .then((result) => {
                     rememberWorkspace(identity.id, result.workspaceId);
-                    toast.success(`Joined ${data.workspace.name}`);
+                    toast.success(
+                      t("shell.auth.invitation.joined", { workspace: data.workspace.name }),
+                    );
                     return navigate(
                       result.projectIds?.length === 1
                         ? {
@@ -402,12 +421,12 @@ export function AcceptInvitation({ token }: { token: string }) {
               }}
             >
               {accept.isPending ? <Spinner /> : null}
-              Accept invitation
+              {t("shell.auth.invitation.accept")}
             </Button>
           )}
         </>
       )}
-      {!data && <Button render={<a href="/" />}>Open Kanvil</Button>}
+      {!data && <Button render={<a href="/" />}>{t("shell.openKanvil")}</Button>}
     </AuthScreen>
   );
 }

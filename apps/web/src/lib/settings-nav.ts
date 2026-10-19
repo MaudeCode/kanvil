@@ -18,43 +18,54 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import { t } from "@kanvil/contracts/i18n";
 import { accountSections, adminSections, projectSections, workspaceSections } from "../search.ts";
 // Every settings destination, shared by the settings navigation, breadcrumbs and the palette.
-type Sections<T extends readonly string[]> = Record<T[number], { label: string; icon: LucideIcon }>;
+// Labels read the interface language each time they are read.
+type Section = { label: string; icon: LucideIcon };
+type Sections<T extends readonly string[]> = Record<T[number], Section>;
 type SettingsSection = (
   | typeof accountSections
   | typeof adminSections
   | typeof projectSections
   | typeof workspaceSections
 )[number];
+const sectionOf = (label: () => string, icon: LucideIcon): Section => ({
+  get label() {
+    return label();
+  },
+  icon,
+});
 const account: Sections<typeof accountSections> = {
-  account: { label: "Profile & security", icon: UserRound },
-  appearance: { label: "Appearance", icon: Palette },
-  preferences: { label: "Preferences", icon: Settings2 },
-  credentials: { label: "API keys", icon: KeyRound },
-  notifications: { label: "Notifications", icon: Bell },
+  account: sectionOf(() => t("shell.settingsNav.section.profile"), UserRound),
+  appearance: sectionOf(() => t("shell.settingsNav.section.appearance"), Palette),
+  preferences: sectionOf(() => t("shell.settingsNav.section.preferences"), Settings2),
+  credentials: sectionOf(() => t("shell.settingsNav.section.credentials"), KeyRound),
+  notifications: sectionOf(() => t("shell.settingsNav.section.notifications"), Bell),
 };
 const workspace: Sections<typeof workspaceSections> = {
-  general: { label: "General", icon: Settings2 },
-  members: { label: "Members", icon: Users },
-  roles: { label: "Roles", icon: UserCog },
-  labels: { label: "Labels", icon: Tags },
+  general: sectionOf(() => t("shell.settingsNav.section.general"), Settings2),
+  members: sectionOf(() => t("shell.settingsNav.section.members"), Users),
+  roles: sectionOf(() => t("shell.settingsNav.section.roles"), UserCog),
+  labels: sectionOf(() => t("shell.settingsNav.section.labels"), Tags),
 };
 const project: Sections<typeof projectSections> = {
-  ...workspace,
-  workflow: { label: "Workflow", icon: Workflow },
-  fields: { label: "Fields", icon: Rows3 },
-  integrations: { label: "Integrations", icon: Webhook },
-  calendar: { label: "Calendar feeds", icon: CalendarSync },
+  general: workspace.general,
+  members: workspace.members,
+  labels: workspace.labels,
+  workflow: sectionOf(() => t("shell.settingsNav.section.workflow"), Workflow),
+  fields: sectionOf(() => t("shell.settingsNav.section.fields"), Rows3),
+  integrations: sectionOf(() => t("shell.settingsNav.section.integrations"), Webhook),
+  calendar: sectionOf(() => t("shell.settingsNav.section.calendar"), CalendarSync),
 };
 const admin: Sections<typeof adminSections> = {
-  general: { label: "General", icon: Settings2 },
-  storage: { label: "File storage", icon: HardDrive },
-  search: { label: "Search", icon: Search },
-  events: { label: "Event delivery", icon: Network },
-  users: { label: "Users", icon: Users },
-  workspaces: { label: "Workspaces", icon: Building2 },
-  authentication: { label: "Authentication", icon: ShieldCheck },
+  general: workspace.general,
+  storage: sectionOf(() => t("shell.settingsNav.section.storage"), HardDrive),
+  search: sectionOf(() => t("shell.settingsNav.section.search"), Search),
+  events: sectionOf(() => t("shell.settingsNav.section.events"), Network),
+  users: sectionOf(() => t("shell.settingsNav.section.users"), Users),
+  workspaces: sectionOf(() => t("shell.settingsNav.section.workspaces"), Building2),
+  authentication: sectionOf(() => t("shell.settingsNav.section.authentication"), ShieldCheck),
 };
 export type SettingsEntry<P = never> = {
   to: string;
@@ -73,7 +84,7 @@ export type SettingsGroup<P = never> = {
 const entries = <T extends SettingsSection>(
   to: string,
   ids: readonly T[],
-  sections: Record<T, { label: string; icon: LucideIcon }>,
+  sections: Record<T, Section>,
 ) => ids.map((section) => ({ to, section, ...sections[section] }));
 // Groups appear only for what the server already granted: a workspace role, the projects listed
 // for this user, and the instance administrator role from the session.
@@ -85,23 +96,23 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
   const groups: SettingsGroup<P>[] = [
     {
       id: "account",
-      label: "Account",
-      title: "Settings",
+      label: t("shell.settingsNav.account"),
+      title: t("shell.settingsNav.settings"),
       entries: entries("/settings", accountSections, account),
     },
   ];
   if (scope.workspace)
     groups.push({
       id: "workspace",
-      label: "Workspace",
-      title: "Workspace settings",
+      label: t("shell.settingsNav.workspace"),
+      title: t("shell.settingsNav.workspaceSettings"),
       entries: entries(`/workspaces/${scope.workspace.id}/settings`, workspaceSections, workspace),
     });
   if (scope.projects.length)
     groups.push({
       id: "projects",
-      label: "Projects",
-      title: "Project settings",
+      label: t("shell.settingsNav.projects"),
+      title: t("shell.settingsNav.projectSettings"),
       entries: scope.projects.map((item) => {
         const to = `/projects/${item.id}/settings`;
         return {
@@ -116,8 +127,8 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
   if (scope.admin)
     groups.push({
       id: "admin",
-      label: "Administration",
-      title: "Administration",
+      label: t("shell.settingsNav.administration"),
+      title: t("shell.settingsNav.administration"),
       entries: entries("/admin", adminSections, admin),
     });
   return groups;
