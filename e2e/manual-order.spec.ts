@@ -154,3 +154,40 @@ test("project administrators reorder the workspace's projects from the sidebar",
   await page.reload();
   await expect.poll(order).toEqual(["Order third", "Order second", "Order first"]);
 });
+
+test("My work steps a writable ticket's status from the keyboard and the ticket menu", async ({
+  page,
+}) => {
+  await signIn(page);
+  const session = z
+    .object({ user: z.object({ id: z.string() }) })
+    .parse(await (await page.request.get("/api/auth/get-session")).json());
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "WORKSTEP", name: "Work steps" } })
+  ).json();
+  const ticket = z.object({ id: z.string() }).parse(
+    await (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: "Stepped from My work", assigneeId: session.user.id },
+      })
+    ).json(),
+  );
+  const status = async () =>
+    z
+      .object({ ticket: z.object({ status: z.string() }) })
+      .parse(
+        await (
+          await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticket.id}`)
+        ).json(),
+      ).ticket.status;
+  await page.goto("/my-work?q=Stepped");
+  await expect(row(page, "Stepped from My work")).toBeVisible();
+  await page.keyboard.press("j");
+  await expect(page.locator("tr.ticket-row[data-active=true]")).toContainText("Stepped");
+  await page.keyboard.press("]");
+  await expect.poll(status).toBe("in_progress");
+  await row(page, "Stepped from My work").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Move", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Move to previous status/ }).click();
+  await expect.poll(status).toBe("todo");
+});

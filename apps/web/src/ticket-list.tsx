@@ -887,9 +887,16 @@ export function TicketList({
     followActive.current = true;
     place(ticket, placement);
   };
+  // My work spans projects, so status steps check each ticket's own project, like inline edits.
+  const writable = (ticket: Ticket) =>
+    project
+      ? canWrite
+      : ["writer", "admin"].includes(
+          projects.data?.find((item) => item.id === ticket.projectId)?.role ?? "",
+        );
   const moveActive = (command: MoveCommand) => {
-    const ticket = active && canWrite ? latest.get(active) : undefined,
-      placement = ticket && targetFor(ticket, command);
+    const ticket = active ? latest.get(active) : undefined,
+      placement = ticket && writable(ticket) && targetFor(ticket, command);
     if (ticket && placement) runMove(ticket, placement);
   };
   // The ticket menu lists the moves this list offers, disabled where there is nowhere to go.
@@ -1232,7 +1239,7 @@ export function TicketList({
                           key={row.id}
                           ticket={row.original}
                           onPreview={() => showPreview(row.id, true)}
-                          moves={canWrite ? () => menuMoves(row.original) : undefined}
+                          moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
                         >
                           <li
                             className={cn(
@@ -1445,7 +1452,7 @@ export function TicketList({
                         key={row.id}
                         ticket={row.original}
                         onPreview={() => showPreview(row.id, true)}
-                        moves={canWrite ? () => menuMoves(row.original) : undefined}
+                        moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
                       >
                         <TableRow
                           className={cn(
