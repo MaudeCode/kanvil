@@ -237,6 +237,25 @@ describe("custom workspace roles", () => {
     );
   });
 
+  it("refuses to remove a workspace member whose project roles exceed the caller", async () => {
+    const hidden = await project("private");
+    const manager = await role("Member manager", ["ticket.write", "member.manage"]);
+    await join("member", manager.id);
+    await join("other", "reader");
+    await domain.execute(
+      "set_member",
+      { projectId: hidden.id, email: email("other"), role: "admin" },
+      owner,
+    );
+    // Removal also drops every direct project role in the workspace, so each must be grantable.
+    await expect(join("other", null, member)).rejects.toMatchObject({
+      status: 403,
+      code: "forbidden",
+    });
+    const people = await domain.execute("list_members", { projectId: hidden.id }, owner);
+    expect(people.find((person) => person.userId === other.id)).toMatchObject({ role: "admin" });
+  });
+
   it("revokes a removed action at once and rewrites the seeded stand-in", async () => {
     const shared = await project();
     const editor = await role("Editor", ["ticket.write"]);

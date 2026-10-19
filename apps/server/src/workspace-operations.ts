@@ -275,6 +275,18 @@ export const workspaceHandlers: Pick<
         )
     )[0];
     await assertHeldGrantable(ctx, existing && heldRole(existing));
+    // Removal also drops the person's direct project roles here, so each must be grantable too.
+    if (!target) {
+      const direct = (
+        await ctx.db
+          .select({ role: members.role, roleId: members.roleId })
+          .from(members)
+          .innerJoin(projects, eq(projects.id, members.projectId))
+          .where(and(eq(members.userId, person.id), eq(projects.workspaceId, current.id)))
+      ).map(heldRole);
+      const granted = await permissionsOf(ctx.db, direct);
+      for (const id of direct) assertGrantable(ctx, granted(id), id);
+    }
     if (existing?.role === "admin" && input.role !== "admin") {
       const admins = await ctx.db
         .select()
