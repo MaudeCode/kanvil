@@ -1,7 +1,7 @@
 import { hasAdminRole } from "@kanvil/contracts";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useEffect, useState } from "react";
-import { AppState, View, useColorScheme } from "react-native";
+import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -24,7 +24,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { infoSchema, okSchema } from "@kanvil/contracts";
+import { authResult, infoSchema, okSchema } from "@kanvil/contracts";
 import {
   connect,
   type Connection,
@@ -180,43 +180,159 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     [password, setPassword] = useState(""),
     [name, setName] = useState(""),
     [token, setToken] = useState(""),
+    [code, setCode] = useState(""),
+    [flow, setFlow] = useState<"code" | "reset" | null>(null),
+    [sent, setSent] = useState(false),
     [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false);
-  async function login(oidc = false) {
+  async function attempt(action: () => Promise<void>) {
     setError(undefined);
     setPending(true);
     try {
-      if (info.data?.setupRequired)
-        await api.request("/api/v1/setup", okSchema, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, token, email, password }),
-        });
-      const result = oidc
-        ? await auth.signIn.social({ provider: "oidc", callbackURL: "kanvil://auth/callback" })
-        : await auth.signIn.email({ email, password });
-      if (result.error) throw new Error(result.error.message);
-      await auth.getSession();
+      await action();
     } catch (cause) {
       setError(cause);
     } finally {
       setPending(false);
     }
   }
+  const login = (provider?: string) =>
+    attempt(async () => {
+      if (info.data?.setupRequired)
+        await api.request("/api/v1/setup", okSchema, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, token, email, password }),
+        });
+      authResult(
+        provider
+          ? await auth.signIn.social({ provider, callbackURL: "kanvil://auth/callback" })
+          : await auth.signIn.email({ email, password }),
+      );
+      await auth.getSession();
+    });
+  async function sendCode() {
+    authResult(
+      flow === "reset"
+        ? await auth.emailOtp.requestPasswordReset({ email })
+        : await auth.emailOtp.sendVerificationOtp({ email, type: "sign-in" }),
+    );
+    setSent(true);
+  }
+  const submitCode = () =>
+    attempt(async () => {
+      if (!sent) return sendCode();
+      if (flow === "code") {
+        authResult(await auth.signIn.emailOtp({ email, otp: code }));
+        await auth.getSession();
+        return;
+      }
+      authResult(await auth.emailOtp.resetPassword({ email, otp: code, password }));
+      setFlow(null);
+      setSent(false);
+      setCode("");
+      setPassword("");
+      Alert.alert("Password reset", "Sign in with the new password.");
+    });
   if (info.isPending)
     return (
       <SafeAreaView style={{ flex: 1 }}>
         <Loading />
       </SafeAreaView>
     );
+  const setup = info.data?.setupRequired,
+    emailField = (
+      <Field
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        editable={!sent}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="email"
+        textContentType="username"
+      />
+    );
+  if (flow)
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <Screen>
+          <Brand />
+          <Heading>{flow === "reset" ? "Reset password" : "Sign in with a code"}</Heading>
+          {sent && (
+            <Body
+              muted
+            >{`If ${email} has an account, a code is on its way. It expires in 10 minutes.`}</Body>
+          )}
+          <ErrorNotice error={error} />
+          {emailField}
+          {sent && (
+            <Field
+              label="Code"
+              value={code}
+              onChangeText={setCode}
+              keyboardType="number-pad"
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              maxLength={6}
+            />
+          )}
+          {sent && flow === "reset" && (
+            <Field
+              label="New password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+            />
+          )}
+          <Button
+            title={!sent ? "Email me a code" : flow === "reset" ? "Reset password" : "Sign in"}
+            primary
+            disabled={
+              pending ||
+              !email ||
+              (sent && code.length !== 6) ||
+              (sent && flow === "reset" && password.length < 12)
+            }
+            onPress={() => {
+              void submitCode();
+            }}
+          />
+          {sent && (
+            <Button
+              title="Resend code"
+              disabled={pending}
+              onPress={() => {
+                void attempt(sendCode);
+              }}
+            />
+          )}
+          <Button
+            title="Back to sign in"
+            disabled={pending}
+            onPress={() => {
+              setError(undefined);
+              setFlow(null);
+              setSent(false);
+              setCode("");
+            }}
+          />
+        </Screen>
+      </SafeAreaView>
+    );
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
         <Brand />
-        <Heading>{info.data?.setupRequired ? "Create your owner account" : "Sign in"}</Heading>
+        <Heading>{setup ? "Create your owner account" : "Sign in"}</Heading>
         <Body muted>{baseUrl}</Body>
         <ErrorNotice error={error ?? info.error} />
-        {info.data?.setupRequired && (
+        {setup && (
           <>
             <Field label="Name" value={name} onChangeText={setName} autoComplete="name" />
             <Field
@@ -231,18 +347,9 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           </>
         )}
-        {(info.data?.setupRequired || info.data?.authentication.emailPasswordEnabled) && (
+        {(setup || info.data?.authentication.emailPasswordEnabled) && (
           <>
-            <Field
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="username"
-            />
+            {emailField}
             <Field
               label="Password"
               value={password}
@@ -254,9 +361,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
               textContentType="password"
             />
             <Button
-              title={
-                pending ? "Signing in…" : info.data?.setupRequired ? "Create account" : "Sign in"
-              }
+              title={pending ? "Signing in…" : setup ? "Create account" : "Sign in"}
               primary
               disabled={pending || !email || password.length < 12}
               onPress={() => {
@@ -265,14 +370,37 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           </>
         )}
-        {info.data?.oidc && !info.data.setupRequired && (
-          <Button
-            title={`Sign in with ${info.data.oidc.name}`}
-            disabled={pending}
-            onPress={() => {
-              void login(true);
-            }}
-          />
+        {!setup &&
+          info.data?.providers.map((provider) => (
+            <Button
+              key={provider.id}
+              title={`Sign in with ${provider.name}`}
+              disabled={pending}
+              onPress={() => {
+                void login(provider.id);
+              }}
+            />
+          ))}
+        {!setup && info.data?.emailCodes && (
+          <>
+            <Button
+              title="Email me a sign-in code"
+              disabled={pending}
+              onPress={() => {
+                setError(undefined);
+                setFlow("code");
+              }}
+            />
+            <Button
+              title="Forgot password?"
+              disabled={pending}
+              onPress={() => {
+                setError(undefined);
+                setPassword("");
+                setFlow("reset");
+              }}
+            />
+          </>
         )}
         <Button
           title="Change server"

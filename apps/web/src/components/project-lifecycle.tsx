@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   ApiError,
   deletedAccountName,
+  signInMethodLabels,
   type AccountImpact,
   type Project,
   type ProjectImpact,
@@ -471,11 +472,8 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   );
 }
 export const signInMethods = (providers: readonly string[]) =>
-  providers
-    .map((provider) =>
-      provider === "credential" ? "Local password" : provider === "oidc" ? "OIDC" : provider,
-    )
-    .join(", ") || "No linked sign-in methods";
+  providers.map((provider) => signInMethodLabels[provider] ?? provider).join(", ") ||
+  "No linked sign-in methods";
 const accountRows = (impact: AccountImpact): ImpactRows => [
   ["Sign-in", signInMethods(impact.providers)],
   ["Sessions", `${counted(impact.sessions, "session")} signed out`],

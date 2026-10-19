@@ -250,18 +250,18 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           }}
         />
       </Section>
-      {info.data?.oidc && (
-        <Section title={info.data.oidc.name}>
-          {accounts.data?.some((account) => account.providerId === "oidc") ? (
+      {info.data?.providers.map((provider) => (
+        <Section key={provider.id} title={provider.name}>
+          {accounts.data?.some((account) => account.providerId === provider.id) ? (
             <Body>Account linked</Body>
           ) : (
             <>
-              <Body>Link this account before signing in with your identity provider.</Body>
+              <Body>Link this account before signing in with this provider.</Body>
               <Button
-                title={`Link ${info.data.oidc.name}`}
+                title={`Link ${provider.name}`}
                 onPress={() => {
                   void auth
-                    .linkSocial({ provider: "oidc", callbackURL: "kanvil://auth/callback" })
+                    .linkSocial({ provider: provider.id, callbackURL: "kanvil://auth/callback" })
                     .then(async (result) => {
                       if (result.error) throw new Error(result.error.message);
                       await accounts.refetch();
@@ -273,7 +273,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           )}
           <ErrorNotice error={accounts.error} />
         </Section>
-      )}
+      ))}
       <NotificationPreferences pushAvailable={info.data?.push ?? false} />
       <Button
         title="Sign out"

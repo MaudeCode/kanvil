@@ -10,11 +10,16 @@ import { eq } from "drizzle-orm";
 const credentialPermissions = z.object({ kanvil: z.array(z.enum(scopes)) });
 const credentialMetadata = z.object({ projectIds: z.array(z.uuid()).max(1000) });
 // ponytail: per-process sliding window; move to PostgreSQL or the broker if Kanvil runs on several instances.
-export function createWriteLimiter(max: number, windowMs = 60_000) {
+// Keys stay in the order they were last used, so pruning reads from the front: expired keys go,
+// and past `capacity` the least recently used key goes too. Callers may key it by input from the
+// public, so neither memory nor the cost of a request grows with how many keys it has seen.
+export function createWriteLimiter(max: number, windowMs = 60_000, capacity = 10_000) {
   const recent = new Map<string, number[]>();
   return {
     consume(key: string, now = Date.now()) {
       const hits = (recent.get(key) ?? []).filter((at) => at > now - windowMs);
+      recent.delete(key);
+      recent.set(key, hits);
       if (hits.length >= max) {
         const retryAfterSeconds = Math.max(
           1,
@@ -25,10 +30,14 @@ export function createWriteLimiter(max: number, windowMs = 60_000) {
         });
       }
       hits.push(now);
-      recent.set(key, hits);
-      if (recent.size > 10_000)
-        for (const [id, stamps] of recent)
-          if (!stamps.some((at) => at > now - windowMs)) recent.delete(id);
+      for (const [id, stamps] of recent) {
+        if (recent.size <= capacity && (stamps.at(-1) ?? 0) > now - windowMs) break;
+        recent.delete(id);
+      }
+    },
+    // Returns the latest hit, for work that failed before it counted.
+    release(key: string) {
+      recent.get(key)?.pop();
     },
   };
 }

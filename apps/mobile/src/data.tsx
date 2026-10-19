@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { createAuthClient } from "better-auth/react";
-import { adminClient } from "better-auth/client/plugins";
+import { adminClient, emailOTPClient } from "better-auth/client/plugins";
 import { expoClient } from "@better-auth/expo/client";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
@@ -30,6 +30,7 @@ export async function connect(url: string) {
     baseURL: baseUrl,
     plugins: [
       adminClient(),
+      emailOTPClient(),
       expoClient({ scheme: "kanvil", storagePrefix: prefix, storage: SecureStore }),
     ],
   });

@@ -260,6 +260,13 @@
       "when": 1792409663803,
       "tag": "0036_workspace_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792415534481,
+      "tag": "0037_email_code_owner",
+      "breakpoints": true
     }
   ]
 }

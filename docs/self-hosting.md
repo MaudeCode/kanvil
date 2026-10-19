@@ -1,6 +1,6 @@
 # Self-hosting
 
-Kanvil runs as one application service and PostgreSQL 18. Tickets, comments, authentication, durable events, and attachment bytes live in PostgreSQL. PocketID is optional; local login remains available alongside OIDC.
+Kanvil runs as one application service and PostgreSQL 18. Tickets, comments, authentication, durable events, and attachment bytes live in PostgreSQL. PocketID is optional; local login remains available alongside OIDC, GitHub, Google, Discord, and emailed codes.
 
 ## Install from npm
 
@@ -123,6 +123,35 @@ services:
 
 Native devices must also trust that authority. Never mount the authority's private key.
 
+## GitHub, Google, and Discord
+
+Each built-in provider turns on when both of its values are set, and appears on the web and native sign-in screens and in account settings in that order, after the OIDC provider. Register the matching callback URL with each provider's OAuth app:
+
+```text
+https://kanvil.example.com/api/auth/callback/github
+https://kanvil.example.com/api/auth/callback/google
+https://kanvil.example.com/api/auth/callback/discord
+```
+
+```dotenv
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+```
+
+These providers only sign in accounts that linked them: sign in another way, then link the provider in account settings. They never create an account or claim one with the same email, whatever **Automatically create users from SSO** says, and the provider must have verified the email. GitHub and Google sign-in uses state and PKCE; Discord uses state. Google's ID token is checked against Google's signing keys, issuer, audience, and age, and posted ID tokens are refused.
+
+## Email codes and password reset
+
+With `SMTP_URL` and `SMTP_FROM` set and password sign-in enabled, the sign-in screens offer **Email me a sign-in code** and **Forgot password?**. Both email a six-digit code and a link that opens the page the request started on, such as an invitation, with that code filled in. A code works once, expires after 10 minutes, and is discarded after three wrong attempts. Asking again while a code is valid mails the same code and restarts its 10 minutes, so a resend never invalidates a code already received; codes are stored encrypted with `BETTER_AUTH_SECRET`. Codes reach existing, enabled accounts only: an unknown, disabled, or deleted address gets the same answer and no email, and each address receives at most three codes per 15 minutes per application process (an email the relay refuses does not count). Resetting a password signs out every session of the account. Deleting an account or changing its address discards its outstanding codes, and an account under a ban cannot use a code, whenever it was issued.
+
+The first code sign-in to an account whose email was never verified removes the account's password, linked providers, and sessions before signing in, so access that predates proof of the mailbox does not carry over. Accounts created by an administrator start unverified; a password reset verifies the email without removing anything.
+
+Better Auth also limits these endpoints per client IP when `NODE_ENV=production` (three requests per minute for sending codes). Behind a reverse proxy, forward the client address in `X-Forwarded-For`.
+
 ## Instance administration
 
 Administrators can edit the instance name and description, manage accounts, review every workspace with its administrators and member/project counts (Administration → Workspaces) and manage its members without joining it, and configure local/S3 file storage, PostgreSQL/Elasticsearch search, and PostgreSQL/RabbitMQ event delivery in Administration. See [optional infrastructure](infrastructure.md) for deployment variables, adapter interfaces, recovery behavior, and S3 backup requirements. OIDC, public URL, and push credentials remain deployment settings.
@@ -197,7 +226,7 @@ Check login, tickets, attachment downloads, and consumer access before deleting 
 
 Administration → Authentication controls **Email and password sign-in** and **Automatically create users from SSO** independently. Defaults keep password sign-in enabled and SSO provisioning disabled. Public email signup is always closed. Changes apply to subsequent authentication requests without restarting; sessions and scoped credentials keep their existing lifecycle.
 
-Before disabling password sign-in, configure OIDC and explicitly link the acting administrator's provider account in User settings. A binding must match the configured provider's issuer and client ID; relink the administrator after changing either. New SSO users require a provider-verified email and receive the ordinary user role with no workspace or project membership. A matching local email requires explicit account linking. Existing linked users can sign in with provisioning disabled. While password sign-in is disabled, users must retain at least one binding for the configured provider; enable password sign-in before unlinking the last one.
+Disabling password sign-in also turns off email codes and password reset. Before disabling it, configure OIDC and explicitly link the acting administrator's provider account in User settings. A binding must match the configured provider's issuer and client ID; relink the administrator after changing either. New SSO users require a provider-verified email and receive the ordinary user role with no workspace or project membership. A matching local email requires explicit account linking. Existing linked users can sign in with provisioning disabled. While password sign-in is disabled, users must retain at least one binding for the configured provider; enable password sign-in before unlinking the last one.
 
 ## Account recovery
 

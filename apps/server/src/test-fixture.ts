@@ -1,4 +1,5 @@
 import pg from "pg";
+import { createServer } from "node:net";
 import { createDatabase, type Database } from "./database.ts";
 import { migrateDatabase } from "./migrate.ts";
 import { readConfig } from "./config.ts";
@@ -43,5 +44,59 @@ export async function createFixture({
       await admin.query(`DROP DATABASE "${name}"`);
       await admin.end();
     },
+  };
+}
+
+// A local SMTP server that accepts every message, so email never leaves the machine. Quoted-printable
+// messages are kept decoded.
+export async function startMailbox(onMessage?: (message: string) => void) {
+  const messages: string[] = [];
+  // While set, the relay refuses every message with a permanent failure.
+  const state = { rejecting: false };
+  const server = createServer((socket) => {
+    let buffer = "",
+      body: string | undefined;
+    socket.write("220 fake ESMTP\r\n");
+    socket.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      for (let end = buffer.indexOf("\r\n"); end >= 0; end = buffer.indexOf("\r\n")) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (body !== undefined) {
+          if (line === "." && state.rejecting) {
+            body = undefined;
+            socket.write("550 rejected\r\n");
+          } else if (line === ".") {
+            const message = body.includes("Content-Transfer-Encoding: quoted-printable")
+              ? body
+                  .replaceAll("=\n", "")
+                  .replace(/=([0-9A-F]{2})/g, (_, hex: string) =>
+                    String.fromCharCode(parseInt(hex, 16)),
+                  )
+              : body;
+            messages.push(message);
+            onMessage?.(message);
+            body = undefined;
+            socket.write("250 queued\r\n");
+          } else body += `${line}\n`;
+          continue;
+        }
+        const command = line.slice(0, 4).toUpperCase();
+        if (command === "DATA") {
+          body = "";
+          socket.write("354 send\r\n");
+        } else if (command === "QUIT") socket.end("221 bye\r\n");
+        else socket.write("250 ok\r\n");
+      }
+    });
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
+  return {
+    messages,
+    state,
+    url: `smtp://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((done) => server.close(() => done())),
   };
 }

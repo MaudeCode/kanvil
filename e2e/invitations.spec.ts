@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signIn, useEmailLogin } from "./auth.ts";
+import { mailTo, signIn, useEmailLogin } from "./auth.ts";
 import { choose } from "./controls.ts";
 
 const password = "Invitation browser password 234!";
@@ -51,9 +51,10 @@ test("an invitation link grants its project access once to the invited account",
   await form.getByRole("checkbox", { name: "Invited work", exact: true }).check();
   await form.getByRole("button", { name: "Invite", exact: true }).click();
   const sent = page.getByRole("dialog", { name: "Invitation link" });
-  await expect(sent.getByText(/Email is not configured on this instance/)).toBeVisible();
+  await expect(sent.getByText(/Emailed to invitee@example.test/)).toBeVisible();
   const link = await sent.getByRole("textbox", { name: "Invitation link" }).inputValue();
   expect(link).toMatch(/\/invite\/[\w-]{40,}$/);
+  await expect.poll(() => mailTo("invitee@example.test").join()).toContain(link);
   await sent.getByRole("button", { name: "Done", exact: true }).click();
   const row = page.locator(".invitation-row").filter({ hasText: "invitee@example.test" });
   await expect(row).toContainText("Can edit · Invited work");

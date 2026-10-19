@@ -96,41 +96,45 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
               Change password
             </Button>
           </SettingRow>
-          {info.data?.oidc && (
-            <SettingRow
-              title={info.data.oidc.name}
-              description={
-                accounts.data?.some((account) => account.providerId === "oidc")
-                  ? "Use this identity provider to sign in to the same account."
-                  : "Link your account before signing in through this provider."
-              }
-            >
-              {accounts.data?.some((account) => account.providerId === "oidc") ? (
-                <Badge variant="secondary">Linked</Badge>
-              ) : (
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    setPending(true);
-                    setError(undefined);
-                    void auth
-                      .linkSocial({
-                        provider: "oidc",
-                        callbackURL: `${window.location.origin}/settings?section=account`,
-                        errorCallbackURL: `${window.location.origin}/settings?section=account`,
-                      })
-                      .then((result) => {
-                        if (result.error) throw new Error(result.error.message);
-                      })
-                      .catch(setError)
-                      .finally(() => setPending(false));
-                  }}
-                >
-                  Link {info.data.oidc.name}
-                </Button>
-              )}
-            </SettingRow>
-          )}
+          {info.data?.providers.map((provider) => {
+            const linked = accounts.data?.some((account) => account.providerId === provider.id);
+            return (
+              <SettingRow
+                key={provider.id}
+                title={provider.name}
+                description={
+                  linked
+                    ? "Use this identity provider to sign in to the same account."
+                    : "Link your account before signing in through this provider."
+                }
+              >
+                {linked ? (
+                  <Badge variant="secondary">Linked</Badge>
+                ) : (
+                  <Button
+                    disabled={pending}
+                    onClick={() => {
+                      setPending(true);
+                      setError(undefined);
+                      void auth
+                        .linkSocial({
+                          provider: provider.id,
+                          callbackURL: `${window.location.origin}/settings?section=account`,
+                          errorCallbackURL: `${window.location.origin}/settings?section=account`,
+                        })
+                        .then((result) => {
+                          if (result.error) throw new Error(result.error.message);
+                        })
+                        .catch(setError)
+                        .finally(() => setPending(false));
+                    }}
+                  >
+                    Link {provider.name}
+                  </Button>
+                )}
+              </SettingRow>
+            );
+          })}
           <DeleteAccountRow
             account={identity}
             // The deletion ended every session; leave with the private data cleared.

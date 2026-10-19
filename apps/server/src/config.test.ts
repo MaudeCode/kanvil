@@ -42,3 +42,14 @@ it("validates provider requirements and accepts compatible optional services", (
     ELASTICSEARCH_AUTH: "none",
   });
 });
+it("requires each OAuth app's client ID and secret together", () => {
+  expect(() => readConfig({ ...base, GITHUB_CLIENT_ID: "fixture-client" })).toThrow(
+    "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET",
+  );
+  expect(() => readConfig({ ...base, DISCORD_CLIENT_SECRET: "fixture-secret" })).toThrow(
+    "DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET",
+  );
+  expect(
+    readConfig({ ...base, GOOGLE_CLIENT_ID: "fixture-client", GOOGLE_CLIENT_SECRET: "fixture" }),
+  ).toMatchObject({ GOOGLE_CLIENT_ID: "fixture-client" });
+});
