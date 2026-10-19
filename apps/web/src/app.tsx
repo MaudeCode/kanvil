@@ -484,7 +484,7 @@ function ProjectDirectory() {
                           · {project.overdueTickets} overdue
                         </span>
                       )}
-                      {project.closedTickets > 0 &&
+                      {project.closedTickets + project.openTickets > 0 &&
                         ` · ${Math.round(
                           (100 * project.closedTickets) /
                             (project.closedTickets + project.openTickets),

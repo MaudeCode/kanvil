@@ -437,7 +437,14 @@ export function TicketList({
   }
   const all = [...latest.values()];
   const total = groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0);
-  const [now] = useState(() => Date.now());
+  // Due windows move with the clock, so a ticket passes into Overdue while the list stays open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (grouping === "due") setNow(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [grouping]);
   const sections: Section[] =
     grouping === "status"
       ? groups.flatMap(({ status, data }) =>

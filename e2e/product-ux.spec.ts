@@ -663,6 +663,9 @@ test("home summarizes assigned work and activity, and My work lists every assign
     .getByRole("listitem")
     .filter({ hasText: "Assigned beta" });
   await expect(betaRow).toContainText("2 open · 1 overdue · 33% done · next due");
+  await expect(
+    page.locator(".project-list").getByRole("listitem").filter({ hasText: "Assigned alpha" }),
+  ).toContainText("101 open · 0% done");
 
   await assigned.getByRole("link", { name: /in My work$/ }).click();
   await expect(page).toHaveURL(/\/my-work(\?|$)/);
@@ -684,4 +687,32 @@ test("home summarizes assigned work and activity, and My work lists every assign
   await expect(
     page.getByRole("rowgroup", { name: "Assigned beta tickets" }).locator("tr.ticket-row"),
   ).toHaveCount(2);
+});
+
+test("My work moves a ticket into Overdue when its due time passes while the page is open", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date() });
+  await signIn(page);
+  const session = await (await page.request.get("/api/auth/get-session")).json();
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "WORKCLOCK", name: "Clock" } })
+  ).json();
+  const soon = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: {
+        title: "Due within minutes",
+        assigneeId: session.user.id,
+        dueAt: new Date(Date.now() + 2 * 60_000).toISOString(),
+      },
+    })
+  ).json();
+  await page.goto("/my-work");
+  await expect(
+    page.getByRole("rowgroup", { name: "Due today tickets" }).getByText(soon.title),
+  ).toBeVisible();
+  await page.clock.fastForward("05:00");
+  await expect(
+    page.getByRole("rowgroup", { name: "Overdue tickets" }).getByText(soon.title),
+  ).toBeVisible();
 });
