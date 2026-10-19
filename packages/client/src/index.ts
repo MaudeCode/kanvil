@@ -121,7 +121,10 @@ export function createClient(options: {
           values.requestId ??= (options.requestId ?? randomRequestId)();
         init.body = JSON.stringify(values);
       }
-      const data = await decode(await send(url, init));
+      // A lost response is retried only when the server can recognize the repeat; otherwise a
+      // retry could create a second record, such as another calendar feed.
+      const replayable = spec.method === "GET" || "requestId" in values;
+      const data = await decode(await (replayable ? send(url, init) : request(url, init)));
       return parseOutput(name, data);
     },
     async subscribe(subscription: {

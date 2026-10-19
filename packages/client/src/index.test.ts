@@ -51,3 +51,17 @@ it("sends no requestId to writes that do not accept one", async () => {
   await client.call("create_calendar_feed", { projectId: "p", name: "Feed", timeZone: "UTC" });
   expect(bodies).toEqual([{ name: "Feed", labels: [], timeZone: "UTC" }]);
 });
+it("does not repeat a write without a requestId when its response is lost", async () => {
+  let attempts = 0;
+  const client = createClient({
+    baseUrl: "http://localhost:5180",
+    fetch: async () => {
+      attempts += 1;
+      throw new TypeError("Lost response");
+    },
+  });
+  await expect(
+    client.call("create_calendar_feed", { projectId: "p", name: "Feed", timeZone: "UTC" }),
+  ).rejects.toThrow("Lost response");
+  expect(attempts).toBe(1);
+});
