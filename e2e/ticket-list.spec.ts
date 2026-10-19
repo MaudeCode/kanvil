@@ -316,8 +316,21 @@ test("selection floats without moving rows and retains selection on failed updat
       json: { error: { code: "version_conflict", message: "Reload changed tickets" } },
     }),
   );
+  // The failure refetch is slow; until it lands the selection still holds stale versions.
+  const listPath = (url: URL) => url.pathname === `/api/v1/projects/${project.id}/tickets`;
+  await page.route(listPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.fallback();
+  });
+  const failed = page.waitForResponse((response) => response.url().endsWith("/tickets/bulk"));
   await setProperty(dock, "Status", "In review");
+  await failed;
+  await page.waitForTimeout(300);
+  const status = dock.getByRole("combobox", { name: "Status", exact: true });
+  expect(await status.isDisabled()).toBe(true);
   await expect(page.getByText("Reload changed tickets", { exact: true })).toBeVisible();
+  await expect(status).toBeEnabled();
+  await page.unroute(listPath);
   await expect(dock.getByRole("status")).toHaveText("2 selected");
   await page.unroute(bulkPath);
   await setProperty(dock, "Status", "In review");

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Archive, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,7 +38,9 @@ export function TicketSelectionToolbar({
   onClear: () => void;
 }) {
   const bulk = useOperation("bulk_update_tickets"),
-    cache = useQueryClient();
+    cache = useQueryClient(),
+    [recovering, setRecovering] = useState(false),
+    busy = bulk.isPending || recovering;
   const projectId = selected[0]?.projectId;
   if (!projectId) return null;
   const write = (changes: Partial<Ticket>) =>
@@ -50,13 +53,19 @@ export function TicketSelectionToolbar({
         })),
         changes,
       })
-      .catch((error: unknown) => {
-        // The server rolled the whole batch back; reload so the selection carries current versions.
-        void cache.invalidateQueries({ queryKey: ["kanvil"] });
+      .catch(async (error: unknown) => {
+        // The server rolled the whole batch back; stay busy until the reload brings the selection
+        // current versions, so a retry cannot resend stale ones.
+        setRecovering(true);
+        try {
+          await cache.invalidateQueries({ queryKey: ["kanvil"] });
+        } finally {
+          setRecovering(false);
+        }
         throw error;
       });
   function apply(changes: Partial<Ticket>, label: string) {
-    if (bulk.isPending) return;
+    if (busy) return;
     void write(changes)
       .then(() => {
         toast.success(`${label} applied to ${selected.length} tickets`);
@@ -74,18 +83,13 @@ export function TicketSelectionToolbar({
         aria-label="Selected tickets"
       >
         <div className="flex items-center gap-1 pr-1">
-          <IconButton
-            label="Clear selection"
-            size="icon-sm"
-            disabled={bulk.isPending}
-            onClick={onClear}
-          >
+          <IconButton label="Clear selection" size="icon-sm" disabled={busy} onClick={onClear}>
             <X />
           </IconButton>
           <span className="text-xs font-medium whitespace-nowrap tabular-nums" role="status">
             {selected.length} selected
           </span>
-          {bulk.isPending && <Spinner className="size-3.5" />}
+          {busy && <Spinner className="size-3.5" />}
         </div>
         <Separator orientation="vertical" className="hidden h-5! sm:block" />
         {propertyOrder.map((name) => {
@@ -98,7 +102,7 @@ export function TicketSelectionToolbar({
               projectId={projectId}
               value={value}
               mixed={mixed}
-              disabled={bulk.isPending}
+              disabled={busy}
               align="end"
               onChange={(next) => apply(propertyChange(name, next), propertyLabels[name])}
             >
@@ -111,7 +115,7 @@ export function TicketSelectionToolbar({
           replace
           value={labels.value}
           mixed={labels.mixed}
-          disabled={bulk.isPending}
+          disabled={busy}
           textClassName={wideText}
           onChange={(next) => apply({ labels: next }, "Labels")}
         />
@@ -121,14 +125,14 @@ export function TicketSelectionToolbar({
           placeholder={due.mixed ? "Mixed due dates" : "Due date"}
           value={!due.mixed && due.value ? new Date(due.value) : null}
           mixed={due.mixed}
-          disabled={bulk.isPending}
+          disabled={busy}
           textClassName={wideText}
           onChange={(date) => apply({ dueAt: date ? endOfDay(date) : null }, "Due date")}
         />
         <Separator orientation="vertical" className="hidden h-5! sm:block" />
         <Confirm
           label="Archive selected"
-          disabled={bulk.isPending}
+          disabled={busy}
           icon={<Archive />}
           description={`Archive ${selected.length} selected tickets?`}
           onConfirm={async () => {
