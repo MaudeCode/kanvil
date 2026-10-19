@@ -2,7 +2,8 @@ import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
 import { and, asc, count, desc, eq, getTableColumns, inArray, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
-import { isHexColor } from "@kanvil/contracts";
+import { isHexColor, roles } from "@kanvil/contracts";
+import { z } from "zod";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import {
   members,
@@ -268,12 +269,28 @@ export const projectHandlers: Pick<
         ),
       )
       .groupBy(tickets.projectId);
+    // The caller's effective role per project, so clients can tell writable projects in one read.
+    const access = ctx.actor.admin
+      ? []
+      : await ctx.db
+          // Qualified, since a single-table select renders bare "id", which the subquery binds to p.
+          .select({ id: projects.id, role: projectRoleSQL(ctx.actor.id, sql`${projects}."id"`) })
+          .from(projects)
+          .where(
+            inArray(
+              projects.id,
+              rows.map((row) => row.id),
+            ),
+          );
     return rows.map((row) => {
       const stats = counts.find((entry) => entry.projectId === row.id);
       return {
         ...toProject(row),
         openTickets: stats?.open ?? 0,
         overdueTickets: stats?.overdue ?? 0,
+        role: ctx.actor.admin
+          ? ("admin" as const)
+          : z.enum(roles).parse(access.find((entry) => entry.id === row.id)?.role),
       };
     });
   },

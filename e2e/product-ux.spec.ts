@@ -500,8 +500,24 @@ test("create more keeps one composer open across projects without mixing their d
     parent.key,
   );
 
-  // Switching project clears its parent and loads the other project's catalogs.
+  // Switching project applies at once and holds submission until beta's members are checked.
+  let releaseMembers: (() => void) | undefined;
+  const membersGate = new Promise<void>((resolve) => {
+    releaseMembers = resolve;
+  });
+  await page.route(`**/api/v1/projects/${beta.id}/members`, async (route) => {
+    await membersGate;
+    await route.continue();
+  });
   await choose(page, "Project", "Beta batch");
+  await expect(page.getByRole("combobox", { name: "Project", exact: true })).toHaveText(
+    "Beta batch",
+  );
+  await expect(page.getByRole("button", { name: "Create ticket", exact: true })).toBeDisabled();
+  releaseMembers?.();
+  await expect(page.getByRole("button", { name: "Create ticket", exact: true })).toBeEnabled();
+  await page.unroute(`**/api/v1/projects/${beta.id}/members`);
+  // Switching project clears its parent and loads the other project's catalogs.
   await expect(page.getByRole("combobox", { name: "Parent ticket", exact: true })).toHaveText(
     "Parent",
   );

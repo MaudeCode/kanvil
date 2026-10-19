@@ -62,11 +62,11 @@ describe("workspace boundaries and inherited project access", () => {
     const shared = await project(),
       privateProject = await project("private");
     await membership("reader");
-    expect(
+    const listed = async () =>
       (await domain.execute("list_projects", { workspaceId: workspace.id }, member)).map(
-        (row) => row.id,
-      ),
-    ).toEqual([shared.id]);
+        ({ id, role }) => ({ id, role }),
+      );
+    expect(await listed()).toEqual([{ id: shared.id, role: "reader" }]);
     await expect(
       domain.execute("list_tickets", { projectId: privateProject.id }, member),
     ).rejects.toMatchObject({ status: 404 });
@@ -74,6 +74,7 @@ describe("workspace boundaries and inherited project access", () => {
       domain.execute("create_ticket", { projectId: shared.id, title: "Forbidden" }, member),
     ).rejects.toMatchObject({ status: 403 });
     await membership("writer");
+    expect(await listed()).toEqual([{ id: shared.id, role: "writer" }]);
     const ticket = await domain.execute(
       "create_ticket",
       { projectId: shared.id, title: "Inherited write access" },

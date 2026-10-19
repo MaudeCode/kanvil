@@ -103,8 +103,13 @@ export function useProjectAccess(projectId: string, enabled = true) {
   const role = identity.admin
     ? "admin"
     : members.data?.find((member) => member.userId === identity.id)?.role;
-  return { role, canWrite: role === "writer" || role === "admin", canAdmin: role === "admin" };
+  return { role, ...accessOf(role) };
 }
+// The one rule turning a project role into UI permissions, shared with list_projects rows.
+export const accessOf = (role: string | undefined) => ({
+  canWrite: role === "writer" || role === "admin",
+  canAdmin: role === "admin",
+});
 export function ActorName({
   projectId,
   actorId,

@@ -97,7 +97,9 @@ export function TicketEditor({
     update = useOperation("update_ticket"),
     cache = useQueryClient(),
     titleField = useRef<HTMLTextAreaElement>(null),
-    submitting = useRef(false);
+    submitting = useRef(false),
+    switches = useRef(0),
+    [switching, setSwitching] = useState(false);
   function changeDraft(next: typeof draft) {
     setDraft(next);
     try {
@@ -123,19 +125,28 @@ export function TicketEditor({
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) =>
     changeDraft({ ...latest.current, fields: { ...latest.current.fields, [key]: value } });
   // A new ticket may target another writable project; its parent and assignee must belong there.
+  // The target applies at once, and submitting waits until the assignee is checked against the
+  // latest choice, so a ticket never goes to the previous project or with a stale assignee.
   async function changeProject(next: string) {
-    const members = await cache.ensureQueryData(api.query("list_members", { projectId: next }));
-    const current = latest.current,
-      { assigneeId } = current.fields;
+    const switchId = ++switches.current;
     changeDraft({
-      ...current,
+      ...latest.current,
       projectId: next === projectId ? undefined : next,
-      fields: {
-        ...current.fields,
-        parentId: null,
-        assigneeId: members.some((member) => member.userId === assigneeId) ? assigneeId : null,
-      },
+      fields: { ...latest.current.fields, parentId: null },
     });
+    setSwitching(true);
+    let members: { userId: string }[] = [];
+    try {
+      members = await cache.ensureQueryData(api.query("list_members", { projectId: next }));
+    } finally {
+      if (switchId === switches.current) {
+        const current = latest.current,
+          { assigneeId } = current.fields;
+        if (assigneeId && !members.some((member) => member.userId === assigneeId))
+          changeDraft({ ...current, fields: { ...current.fields, assigneeId: null } });
+        setSwitching(false);
+      }
+    }
   }
   const fields = draft.fields,
     target = draft.projectId ?? projectId,
@@ -144,11 +155,12 @@ export function TicketEditor({
       JSON.stringify(draft.fields) !== JSON.stringify(base.fields) ||
       draft.projectId !== base.projectId,
     pending = create.isPending || update.isPending,
+    blocked = pending || stale || switching,
     automation = fields.automationReady || fields.scopes.length > 0 || !!fields.holdReason;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // The ref also stops a second ⌘↵ that lands before the pending state renders.
-    if (stale || pending || submitting.current) return;
+    if (blocked || submitting.current) return;
     const values = ticketFields.parse(fields);
     submitting.current = true;
     setModalBusy?.(true);
@@ -524,7 +536,7 @@ export function TicketEditor({
             </label>
           )}
           <DialogClose render={<Button disabled={pending} />}>Cancel</DialogClose>
-          <Button type="submit" variant="default" disabled={pending || stale}>
+          <Button type="submit" variant="default" disabled={blocked}>
             {pending ? <Spinner /> : null}
             {pending ? "Saving…" : ticket ? "Save ticket" : "Create ticket"}
             {!pending && (
