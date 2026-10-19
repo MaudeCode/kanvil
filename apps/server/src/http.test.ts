@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createClient } from "@kanvil/client";
 import { z } from "zod";
-import { attachmentLimit, ticketSchema, snapshotSchema, type ChangeEvent } from "@kanvil/contracts";
+import {
+  attachmentLimit,
+  attachmentPath,
+  ticketSchema,
+  snapshotSchema,
+  type ChangeEvent,
+} from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
 import { createFixture } from "./test-fixture.ts";
 
@@ -520,6 +526,35 @@ describe("HTTP, realtime, and MCP", () => {
         ])
       ).rowCount,
     ).toBe(0);
+  });
+  it("serves a staged upload only to its uploader at the address it keeps once claimed", async () => {
+    const project = await newProject(),
+      api = client(),
+      bytes = Buffer.from("staged inline image");
+    const stage = () =>
+      api.call("stage_upload", {
+        projectId: project.id,
+        name: "inline.png",
+        contentType: "image/png",
+        data: bytes.toString("base64"),
+      });
+    const [kept, dropped] = [await stage(), await stage()];
+    const path = (id: string) => attachmentPath(project.id, id);
+    expect((await request(path(kept.id))).status).toBe(401);
+    const staged = await request(path(kept.id), { headers: sessionHeaders() });
+    expect(staged.status).toBe(200);
+    expect(Buffer.from(await staged.arrayBuffer())).toEqual(bytes);
+    const ticket = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Composed with an inline image",
+      uploads: [kept.id],
+    });
+    expect(
+      await api.call("list_attachments", { projectId: project.id, ticketId: ticket.id }),
+    ).toMatchObject([{ id: kept.id, name: "inline.png" }]);
+    expect((await request(path(kept.id), { headers: sessionHeaders() })).status).toBe(200);
+    await api.call("discard_upload", { projectId: project.id, uploadId: dropped.id });
+    expect((await request(path(dropped.id), { headers: sessionHeaders() })).status).toBe(404);
   });
   it("retries a lost write response without creating duplicate work", async () => {
     const project = await newProject();

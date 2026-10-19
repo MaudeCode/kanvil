@@ -307,6 +307,25 @@ export const attachments = pgTable("attachments", {
   size: integer("size").notNull(),
   createdAt: time("created_at"),
 });
+// Inline files a person uploaded while composing a ticket that does not exist yet. Only the
+// uploader can read or claim one; create_ticket turns it into an attachment with the same ID.
+export const stagedUploads = pgTable(
+  "staged_uploads",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .references(() => blobObjects.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    actorId: actor(),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: time("created_at"),
+  },
+  (table) => [index("staged_uploads_created").on(table.createdAt)],
+);
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 export const attachmentContent = pgTable("attachment_content", {
   id: uuid("id")

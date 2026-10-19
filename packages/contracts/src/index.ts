@@ -45,6 +45,8 @@ export const hasAdminRole = (role: string | null | undefined) =>
   role?.split(",").includes("admin") ?? false;
 export const scopes = ["read", "write", "claim", "admin"] as const;
 export const attachmentLimit = 10_000_000;
+// An inline upload staged before its ticket exists stays claimable for this long.
+export const stagedUploadLifetime = 86_400_000;
 export const stateLabels: Record<(typeof states)[number], string> = {
   backlog: "Backlog",
   todo: "To do",
@@ -411,6 +413,13 @@ export const attachmentSchema = z.object({
   size: z.number().int().nonnegative(),
   createdAt: timestamp,
 });
+export const stagedUploadSchema = attachmentSchema
+  .omit({ ticketId: true })
+  .extend({ expiresAt: timestamp });
+// The authorized address of an attachment's bytes. A staged upload keeps this address once
+// create_ticket claims it, so Markdown that embeds it needs no rewrite.
+export const attachmentPath = (projectId: string, attachmentId: string) =>
+  `/api/v1/projects/${projectId}/attachments/${attachmentId}/content`;
 const httpUrl = z.url().regex(/^https?:\/\//i, "Use an HTTP or HTTPS URL");
 export const evidenceFields = z.object({
   kind: z.enum(["pull_request", "test", "review", "deployment", "device", "other"]),
@@ -826,6 +835,20 @@ export function formatEvent(event: ChangeEvent, includeTicket = false): string {
 }
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
+// One uploaded file: attachments and staged inline uploads accept the same bytes.
+const fileFields = {
+  name: text.max(255).refine((value) => {
+    for (const character of value)
+      if (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) return false;
+    return true;
+  }, "Use a filename without control characters"),
+  contentType: z
+    .string()
+    .max(120)
+    .regex(/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i)
+    .default("application/octet-stream"),
+  data: z.string().max(Math.ceil(attachmentLimit / 3) * 4),
+};
 const op = <I extends z.ZodObject, O extends z.ZodType>(
   input: I,
   output: O,
@@ -1153,13 +1176,14 @@ export const operations = {
         automationReady: z.boolean().default(false),
         holdReason: z.string().trim().max(2000).nullable().default(null),
         archived: z.boolean().default(false),
+        uploads: z.array(z.uuid()).max(50).default([]),
       })
       .strict(),
     ticketSchema,
     "POST",
     "/projects/{projectId}/tickets",
     "write",
-    "Create a ticket. Reuse requestId when retrying this write.",
+    "Create a ticket. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. Reuse requestId when retrying this write.",
   ),
   duplicate_ticket: op(
     ticketInput.extend(mutation).strict(),
@@ -1366,27 +1390,28 @@ export const operations = {
     "Read durable ticket activity.",
   ),
   upload_attachment: op(
-    ticketInput
-      .extend({
-        ...mutation,
-        name: text.max(255).refine((value) => {
-          for (const character of value)
-            if (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) return false;
-          return true;
-        }, "Use a filename without control characters"),
-        contentType: z
-          .string()
-          .max(120)
-          .regex(/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i)
-          .default("application/octet-stream"),
-        data: z.string().max(Math.ceil(attachmentLimit / 3) * 4),
-      })
-      .strict(),
+    ticketInput.extend({ ...mutation, ...fileFields }).strict(),
     attachmentSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/attachments",
     "write",
     "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path.",
+  ),
+  stage_upload: op(
+    projectInput.extend({ ...mutation, ...fileFields }).strict(),
+    stagedUploadSchema,
+    "POST",
+    "/projects/{projectId}/uploads",
+    "write",
+    "Stage up to 10 MB of base64-encoded bytes for a ticket that does not exist yet. Only you can read it, at its attachment content address, until create_ticket claims it; unclaimed uploads expire after 24 hours.",
+  ),
+  discard_upload: op(
+    projectInput.extend({ ...mutation, uploadId: z.uuid() }).strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/uploads/{uploadId}",
+    "write",
+    "Delete one of your unclaimed staged uploads and its bytes.",
   ),
   list_attachments: op(
     ticketInput,

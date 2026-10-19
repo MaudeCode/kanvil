@@ -1,7 +1,7 @@
 import { createAccountAdministration } from "./account-administration.ts";
 import { createDatabase } from "./database.ts";
 import { createInstance } from "./instance.ts";
-import { createBlobStorage, imageResponse } from "./blob-storage.ts";
+import { createBlobStorage, imageResponse, stagedUploadCutoff } from "./blob-storage.ts";
 import { createTicketSearch } from "./search.ts";
 import { registerInstanceRoutes } from "./instance-routes.ts";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
@@ -10,7 +10,7 @@ import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -52,6 +52,7 @@ import {
   notifications,
   notificationPreferences,
   pushDevices,
+  stagedUploads,
 } from "./schema.ts";
 import type { Database } from "./database.ts";
 import type { Config } from "./config.ts";
@@ -404,16 +405,42 @@ export async function createApplication(
     return Response.json({ cursor: row.value.toString() });
   });
   app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
-    const id = z.uuid().parse(c.req.param("id"));
-    const row = one(await database.db.select().from(attachments).where(eq(attachments.id, id)));
-    const authorized = await domain.execute(
-      "list_attachments",
-      { projectId: c.req.param("projectId"), ticketId: row.ticketId },
-      c.get("actor"),
-    );
-    requireRow(authorized.find((item) => item.id === id));
-    const bytes = row.objectId
-      ? (await blobs.get(row.objectId)).data
+    const id = z.uuid().parse(c.req.param("id")),
+      projectId = c.req.param("projectId"),
+      actor = c.get("actor");
+    const attached = (
+      await database.db.select().from(attachments).where(eq(attachments.id, id))
+    )[0];
+    let row: { name: string; contentType: string; size: number }, objectId: string | null;
+    if (attached) {
+      const authorized = await domain.execute(
+        "list_attachments",
+        { projectId, ticketId: attached.ticketId },
+        actor,
+      );
+      requireRow(authorized.find((item) => item.id === id));
+      row = attached;
+      objectId = attached.objectId;
+    } else {
+      // Before create_ticket claims it, the same address serves a staged upload to its uploader.
+      const visible = await domain.execute("get_project", { projectId }, actor);
+      row = one(
+        await database.db
+          .select()
+          .from(stagedUploads)
+          .where(
+            and(
+              eq(stagedUploads.id, id),
+              eq(stagedUploads.projectId, visible.id),
+              eq(stagedUploads.actorId, actor.id),
+              gt(stagedUploads.createdAt, stagedUploadCutoff()),
+            ),
+          ),
+      );
+      objectId = id;
+    }
+    const bytes = objectId
+      ? (await blobs.get(objectId)).data
       : one(
           await database.db
             .select({ data: attachmentContent.data })

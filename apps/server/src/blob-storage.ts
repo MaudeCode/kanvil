@@ -2,7 +2,8 @@ import { createPollingJob } from "./adapters/polling-jobs.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 import { createHash } from "node:crypto";
 import { and, eq, isNull, isNotNull, lt, or, sql, count } from "drizzle-orm";
-import { blobObjects, attachments, profilePhotos, projects } from "./schema.ts";
+import { stagedUploadLifetime } from "@kanvil/contracts";
+import { blobObjects, attachments, profilePhotos, projects, stagedUploads } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
 import { fail, requireRow, one } from "./domain.ts";
@@ -12,6 +13,8 @@ import type {
   ObjectStore,
   ObjectStoreConfiguration,
 } from "./adapters/ports.ts";
+// Staged uploads created before this instant have expired: nobody can read, claim, or discard them.
+export const stagedUploadCutoff = () => new Date(Date.now() - stagedUploadLifetime);
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 export function decodeBlobData(value: string, limit: number) {
   const bytes = Buffer.from(value, "base64");
@@ -147,11 +150,14 @@ export function createBlobStorage(
   }
   async function collectBatch() {
     return database.db.transaction(async (tx) => {
+      // An expired staged upload releases its bytes; the unreferenced object goes below.
+      await tx.delete(stagedUploads).where(lt(stagedUploads.createdAt, stagedUploadCutoff()));
       const rows = await tx
         .select({ object: blobObjects })
         .from(blobObjects)
         .leftJoin(attachments, eq(attachments.objectId, blobObjects.id))
         .leftJoin(profilePhotos, eq(profilePhotos.objectId, blobObjects.id))
+        .leftJoin(stagedUploads, eq(stagedUploads.id, blobObjects.id))
         .leftJoin(
           projects,
           or(
@@ -163,6 +169,7 @@ export function createBlobStorage(
           and(
             isNull(attachments.id),
             isNull(profilePhotos.userId),
+            isNull(stagedUploads.id),
             isNull(projects.id),
             lt(blobObjects.createdAt, new Date(Date.now() - 86400000)),
           ),

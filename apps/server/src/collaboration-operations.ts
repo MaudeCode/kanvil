@@ -1,9 +1,22 @@
-import { decodeBlobData } from "./blob-storage.ts";
-import { attachmentLimit, resourceProvider } from "@kanvil/contracts";
-import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, ne, or } from "drizzle-orm";
+import { decodeBlobData, stagedUploadCutoff } from "./blob-storage.ts";
+import { attachmentLimit, resourceProvider, stagedUploadLifetime } from "@kanvil/contracts";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  or,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   attachments,
+  blobObjects,
   comments,
   events,
   evidence,
@@ -12,6 +25,7 @@ import {
   subscriptions,
   notifications,
   deliveries,
+  stagedUploads,
   tickets,
 } from "./schema.ts";
 import { assertNoCycle } from "./ticket-operations.ts";
@@ -71,6 +85,8 @@ export const collaborationHandlers: Pick<
   | "delete_comment"
   | "list_activity"
   | "upload_attachment"
+  | "stage_upload"
+  | "discard_upload"
   | "list_attachments"
   | "delete_attachment"
   | "list_evidence"
@@ -231,6 +247,45 @@ export const collaborationHandlers: Pick<
     );
     await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
     return row;
+  },
+  // No event: a staged upload is private to its uploader until create_ticket claims it and
+  // publishes the attachment with the ticket.
+  async stage_upload(ctx, input) {
+    const bytes = decodeBlobData(input.data, attachmentLimit);
+    const id = crypto.randomUUID();
+    await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
+    const row = one(
+      await ctx.db
+        .insert(stagedUploads)
+        .values({
+          id,
+          projectId: project(ctx).id,
+          actorId: ctx.actor.id,
+          name: input.name,
+          contentType: input.contentType,
+          size: bytes.length,
+        })
+        .returning(),
+    );
+    return { ...row, expiresAt: new Date(row.createdAt.getTime() + stagedUploadLifetime) };
+  },
+  async discard_upload(ctx, input) {
+    const row = one(
+      await ctx.db
+        .delete(stagedUploads)
+        .where(
+          and(
+            eq(stagedUploads.id, input.uploadId),
+            eq(stagedUploads.projectId, project(ctx).id),
+            eq(stagedUploads.actorId, ctx.actor.id),
+            gt(stagedUploads.createdAt, stagedUploadCutoff()),
+          ),
+        )
+        .returning(),
+    );
+    // Unclaimed bytes never reach external storage, so removing the row removes them.
+    await ctx.db.delete(blobObjects).where(eq(blobObjects.id, row.id));
+    return { ok: true };
   },
   async list_attachments(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
