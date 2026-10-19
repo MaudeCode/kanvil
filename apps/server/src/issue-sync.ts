@@ -88,6 +88,19 @@ export const localContent = (ticket: Ticket): IssueContent => ({
   description: ticket.description,
   open: !complete(ticket.status),
 });
+// The ticket update that writes issue content, validated whole. Content a ticket cannot hold is
+// refused, never shortened: a shortened copy would read as a Kanvil edit and overwrite the issue.
+const issueUpdate = (ticket: Ticket, content: Partial<IssueContent>) =>
+  operations.update_ticket.input.safeParse({
+    projectId: ticket.projectId,
+    ticketId: ticket.id,
+    expectedVersion: ticket.version,
+    changes: {
+      ...(content.title !== undefined && { title: content.title }),
+      ...(content.description !== undefined && { description: content.description }),
+      ...(content.open !== undefined && { status: content.open ? "todo" : "done" }),
+    },
+  });
 
 // An exported issue's body ends with a hidden marker naming its ticket. When the host's answer to the
 // creation is lost, the issue's own webhook still finds the waiting link by it; copied comments carry
@@ -404,16 +417,15 @@ export async function receiveIssue(
     const labels = connection.inbound.labels
       .map((id) => names.get(id))
       .filter((name): name is string => !!name && carried.has(name.toLowerCase()));
-    const { row: ticket, event } = await createTicketRow(
-      ctx,
-      operations.create_ticket.input.parse({
-        projectId: connection.projectId,
-        title: content.title.slice(0, 500) || `Issue #${issue.number}`,
-        description: content.description.slice(0, 100_000),
-        status: "todo",
-        labels,
-      }),
-    );
+    const input = operations.create_ticket.input.safeParse({
+      projectId: connection.projectId,
+      title: content.title.trim() || `Issue #${issue.number}`,
+      description: content.description,
+      status: "todo",
+      labels,
+    });
+    if (!input.success) return { key: `#${issue.number}`, result: "invalid_content" };
+    const { row: ticket, event } = await createTicketRow(ctx, input.data);
     await publish(ctx, event.type, event.ticketId, event.data);
     // The creation's own event may already have queued an export of the new ticket; the import
     // takes that link over before anything is sent.
@@ -489,28 +501,19 @@ export async function receiveIssue(
   if (Object.keys(apply).length) {
     // The normal ticket update: version, claim, and workflow checks, and its event. The connection
     // writes as a worker without a claim, so a claimed ticket stops the link for review instead.
+    const input = issueUpdate(ticket, apply);
     try {
-      const { event } = await updateTicketRow(
-        ctx,
-        operations.update_ticket.input.parse({
-          projectId: ticket.projectId,
-          ticketId: ticket.id,
-          expectedVersion: ticket.version,
-          changes: {
-            ...(apply.title !== undefined && { title: apply.title.slice(0, 500) }),
-            ...(apply.description !== undefined && {
-              description: apply.description.slice(0, 100_000),
-            }),
-            ...(apply.open !== undefined && { status: apply.open ? "todo" : "done" }),
-          },
-        }),
-      );
+      if (!input.success) fail(400, "invalid_content", "The issue does not fit a ticket");
+      const { event } = await updateTicketRow(ctx, input.data);
       await publish(ctx, event.type, event.ticketId, event.data);
     } catch (error) {
-      if (!(error instanceof ApiError || error instanceof z.ZodError)) throw error;
-      const reason = error instanceof ApiError ? error.code : "invalid_content";
-      await setLink(db, connection.projectId, link, { ...recorded, state: "review", reason });
-      return { key: ticket.key, result: reason };
+      if (!(error instanceof ApiError)) throw error;
+      await setLink(db, connection.projectId, link, {
+        ...recorded,
+        state: "review",
+        reason: error.code,
+      });
+      return { key: ticket.key, result: error.code };
     }
     Object.assign(next, apply);
   }
@@ -775,7 +778,7 @@ export async function sendIssueSync(
     ),
   );
   if (!sent.ok) {
-    // An update sets whole values, so repeating it is safe. A missing issue stops the link.
+    // An update sets whole values, so repeating it is safe. A missing issue pauses the link.
     if (sent.error.code === "http_404" || sent.error.code === "http_410")
       return locked(database, async (db) => {
         await finish(db, job, sent.error.code);
@@ -783,9 +786,14 @@ export async function sendIssueSync(
         if (current?.state === "active")
           await setLink(db, projectId, current, { state: "paused", reason: sent.error.code });
       });
-    return sent.error.retry
-      ? retry(database, job, sent.error.code)
-      : finish(database.db, job, sent.error.code);
+    if (sent.error.retry && job.attempts < 4) return retry(database, job, sent.error.code);
+    // Out of retries, or refused: the edit would otherwise wait unsent for the next ticket change.
+    return locked(database, async (db) => {
+      await finish(db, job, sent.error.code);
+      const current = await fresh(db, link.id);
+      if (current?.state === "active")
+        await setLink(db, projectId, current, { state: "review", reason: sent.error.code });
+    });
   }
   const issue = readIssue(driver, sent.body);
   return locked(database, async (db) => {
@@ -1075,21 +1083,17 @@ export const issueSyncHandlers: Pick<
     const remote = stored(link.remote),
       changed = differs(localContent(ticket), remote);
     if (changed.length) {
-      const { event } = await updateTicketRow(
-        ctx,
-        operations.update_ticket.input.parse({
-          projectId,
-          ticketId: ticket.id,
-          expectedVersion: ticket.version,
-          changes: {
-            ...(changed.includes("title") && { title: remote.title.slice(0, 500) }),
-            ...(changed.includes("description") && {
-              description: remote.description.slice(0, 100_000),
-            }),
-            ...(changed.includes("open") && { status: remote.open ? "todo" : "done" }),
-          },
-        }),
+      const write = issueUpdate(
+        ticket,
+        Object.fromEntries(changed.map((field) => [field, remote[field]])),
       );
+      if (!write.success)
+        fail(
+          400,
+          "validation_error",
+          "The issue's title or description is longer than a ticket allows; keep Kanvil or unlink",
+        );
+      const { event } = await updateTicketRow(ctx, write.data);
       await publish(ctx, event.type, event.ticketId, event.data);
     }
     await setLink(ctx.db, projectId, link, {

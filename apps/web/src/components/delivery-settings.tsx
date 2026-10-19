@@ -1037,7 +1037,7 @@ const syncReasons: Record<string, string> = {
   changed_while_paused: "The issue changed while the repository was paused",
   unverified: "The host's answer did not confirm the change",
   claim_conflict: "The ticket is claimed",
-  invalid_content: "The issue's content does not fit a ticket",
+  invalid_content: "The issue is longer than a ticket allows",
 };
 const syncReason = (reason: string | null) =>
   reason ? (syncReasons[reason] ?? failureText(reason)) : null;

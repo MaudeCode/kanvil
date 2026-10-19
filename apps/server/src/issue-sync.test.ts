@@ -644,6 +644,53 @@ describe("issue sync", () => {
     expect(await linkOf(refused)).toMatchObject({ state: "paused", reason: "http_422" });
   });
 
+  it("refuses issue content longer than a ticket allows instead of truncating it", async () => {
+    const name = await labelName();
+    const ticket = await create("Fits", [name]);
+    const { connection, number } = await exported(ticket);
+    const long = "x".repeat(100_001);
+    expect(synced(await editIssue(connection, number, { body: long }))).toMatchObject({
+      result: "sync_invalid_content",
+    });
+    expect(await linkOf(ticket)).toMatchObject({ state: "review", reason: "invalid_content" });
+    expect((await current(ticket)).description).toBe("");
+    expect(await flush()).toEqual([]);
+    expect(forge.state.issues.get(number)?.body).toBe(long);
+    await expect(reconcile(ticket, "remote")).rejects.toMatchObject({ code: "validation_error" });
+    expect((await current(ticket)).description).toBe("");
+
+    await apply(connection, off, rule());
+    forge.state.issues.set(900, {
+      number: 900,
+      title: "y".repeat(501),
+      body: "",
+      state: "open",
+      labels: [name],
+      updated_at: forge.stamp(),
+    });
+    expect(synced(await reportIssue(connection, 900, "opened"))).toMatchObject({
+      result: "sync_invalid_content",
+    });
+    const tickets = await app.domain.execute("list_tickets", { projectId: project.id }, owner);
+    expect(tickets.items).toHaveLength(1);
+  });
+
+  it("stops a link for review once an update has used its retries", async () => {
+    const ticket = await create("Unreachable", [await labelName()]);
+    const { number } = await exported(ticket);
+    await update(ticket, { title: "Never arrives" });
+    forge.state.script = Array.from({ length: 5 }, () => ({ status: 503 }));
+    for (let attempt = 0; attempt < 5; attempt++) {
+      expect(await flush()).toMatchObject([{ method: "PATCH" }]);
+      await fixture.database.db.update(deliveries).set({ availableAt: new Date() });
+    }
+    expect(await linkOf(ticket)).toMatchObject({ state: "review", reason: "http_503" });
+    expect(forge.state.issues.get(number)?.title).toBe("Unreachable");
+    await reconcile(ticket, "kanvil");
+    expect(await flush()).toMatchObject([{ method: "PATCH" }]);
+    expect(forge.state.issues.get(number)?.title).toBe("Never arrives");
+  });
+
   it("imports qualifying issues and keeps issue state for review while the connection is paused", async () => {
     const name = await labelName();
     const connection = await apply(await connect(), off, rule());
