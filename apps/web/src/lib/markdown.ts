@@ -1,7 +1,8 @@
 // Plain-text Markdown edits shared by the formatting toolbar, its shortcuts, and interactive
 // checklists. The text stays canonical Markdown; nothing here keeps a separate document model.
 
-const listMarker = /^(?:[-*+] (?:\[[ xX]\] )?|\d+[.)] )/;
+// Any list marker, ordered or not, with its optional task box.
+const listMarker = /^(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?/;
 // Toolbar order. `key` matches a letter on any layout; `code` matches a digit row key under Shift.
 export const formats = {
   heading: { label: "Heading", prefix: "### ", pattern: /^#{1,6} /, replaces: /^#{1,6} / },
@@ -21,7 +22,7 @@ export const formats = {
     shortcut: "⌘ ⇧ 7",
     code: "Digit7",
     prefix: "1. ",
-    pattern: /^\d+[.)] /,
+    pattern: /^\d+[.)] (?!\[[ xX]\] )/,
     replaces: listMarker,
   },
   tasks: {
@@ -29,7 +30,7 @@ export const formats = {
     shortcut: "⌘ ⇧ 9",
     code: "Digit9",
     prefix: "- [ ] ",
-    pattern: /^[-*+] \[[ xX]\] /,
+    pattern: /^(?:[-*+]|\d+[.)]) \[[ xX]\] /,
     replaces: listMarker,
   },
   code: { label: "Code block", shortcut: "⌘ E", key: "e", fence: "```" },

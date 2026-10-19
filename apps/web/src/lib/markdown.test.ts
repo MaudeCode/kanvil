@@ -28,6 +28,10 @@ it("prefixes, replaces, and removes line formats across the selected lines", () 
   expect(format("«- one\n  - two»", "tasks")).toBe("«- [ ] one\n  - [ ] two»");
   expect(format("«- [x] one»", "tasks")).toBe("«one»");
   expect(format("«- [x] one»", "bullets")).toBe("«- one»");
+  expect(format("«1. [ ] one»", "tasks")).toBe("«one»");
+  expect(format("«1. [ ] one\ntwo»", "tasks")).toBe("«- [ ] one\n- [ ] two»");
+  expect(format("«1. [x] one»", "numbers")).toBe("«1. one»");
+  expect(format("«1. [x] one»", "bullets")).toBe("«- one»");
   expect(format("## Ti«»tle", "heading")).toBe("Ti«»tle");
   expect(format("Ti«»tle", "heading")).toBe("### Ti«»tle");
   expect(format("«»", "tasks")).toBe("- [ ] «»");
