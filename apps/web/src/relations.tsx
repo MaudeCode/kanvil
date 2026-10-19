@@ -1,7 +1,8 @@
 import { TicketPicker } from "./components/ticket-picker.tsx";
 import { TicketLink } from "./components/ticket-link.tsx";
+import { PropertyValue, TicketProperty, useTicketChange } from "./components/ticket-property.tsx";
 import { Unlink, Plus, GitBranchPlus, CornerLeftUp } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   relationReference,
@@ -117,12 +118,15 @@ export function Relations({ ticket }: { ticket: Ticket }) {
           </h3>
           <ItemGroup className="gap-0">
             {children.data.items.map((child) => (
-              <Item size="xs" className="px-0" key={child.id}>
-                <TicketIndicator property="status" value={child.status} iconOnly />
-                <ItemContent className="min-w-0">
-                  <TicketLink projectId={ticket.projectId} ticketId={child.id} ticket={child} />
-                </ItemContent>
-              </Item>
+              <ReferenceRow
+                key={child.id}
+                projectId={ticket.projectId}
+                ticketId={child.id}
+                ticket={child}
+                canWrite={access.canWrite}
+              >
+                <TicketLink projectId={ticket.projectId} ticketId={child.id} ticket={child} />
+              </ReferenceRow>
             ))}
           </ItemGroup>
           {(children.data.total > 20 || offset > 0) && (
@@ -149,27 +153,28 @@ export function Relations({ ticket }: { ticket: Ticket }) {
         {relations.data?.map((relation) => {
           const reference = relationReference(relation, ticket.id);
           return (
-            <Item size="xs" className="px-0" key={relation.id}>
-              <ItemContent className="min-w-0 gap-0">
-                <span className="text-xs text-muted-foreground">{reference.label}</span>
-                <TicketLink projectId={ticket.projectId} ticketId={reference.id}>
-                  {reference.title}
-                </TicketLink>
-              </ItemContent>
-              {access.canWrite && (
-                <ItemActions>
-                  <IconButton
-                    size="icon-sm"
-                    label={`Remove ${relation.type} relationship`}
-                    onClick={() =>
-                      remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
-                    }
-                  >
-                    <Unlink />
-                  </IconButton>
-                </ItemActions>
-              )}
-            </Item>
+            <ReferenceRow
+              key={relation.id}
+              projectId={ticket.projectId}
+              ticketId={reference.id}
+              canWrite={access.canWrite}
+              label={reference.label}
+              action={
+                <IconButton
+                  size="icon-sm"
+                  label={`Remove ${relation.type} relationship`}
+                  onClick={() =>
+                    remove.mutate({ projectId: ticket.projectId, relationId: relation.id })
+                  }
+                >
+                  <Unlink />
+                </IconButton>
+              }
+            >
+              <TicketLink projectId={ticket.projectId} ticketId={reference.id}>
+                {reference.title}
+              </TicketLink>
+            </ReferenceRow>
           );
         })}
       </ItemGroup>
@@ -237,5 +242,81 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       </Modal>
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
     </section>
+  );
+}
+
+// A child or linked ticket whose status and assignee edit in place for writers.
+function ReferenceRow({
+  projectId,
+  ticketId,
+  ticket,
+  canWrite,
+  label,
+  action,
+  children,
+}: {
+  projectId: string;
+  ticketId: string;
+  ticket?: Ticket;
+  canWrite: boolean;
+  label?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const loaded = useQuery({
+    ...api.query("get_ticket", { projectId, ticketId }),
+    enabled: !ticket,
+  });
+  const current = ticket ?? loaded.data?.ticket;
+  const { change } = useTicketChange({ id: ticketId, projectId, version: current?.version ?? 0 });
+  const editable = canWrite && current;
+  return (
+    <Item size="xs" className="px-0">
+      {editable ? (
+        <TicketProperty
+          property="status"
+          value={current.status}
+          onChange={(status) => void change({ status })}
+          projectId={projectId}
+          variant="cell"
+          iconOnly
+          ariaLabel={`Status of ${current.key}`}
+          className="mx-0"
+        />
+      ) : (
+        current && <TicketIndicator property="status" value={current.status} iconOnly />
+      )}
+      <ItemContent className="min-w-0 gap-0">
+        {label && <span className="text-xs text-muted-foreground">{label}</span>}
+        {children}
+      </ItemContent>
+      {(editable || current?.assigneeId || (canWrite && action)) && (
+        <ItemActions className="gap-0">
+          {editable ? (
+            <TicketProperty
+              property="assignee"
+              value={current.assigneeId}
+              onChange={(assignee) => void change({ assignee })}
+              projectId={projectId}
+              variant="cell"
+              iconOnly
+              align="end"
+              ariaLabel={`Assignee of ${current.key}`}
+              className="mx-0"
+            />
+          ) : (
+            current?.assigneeId && (
+              <PropertyValue
+                property="assignee"
+                value={current.assigneeId}
+                projectId={projectId}
+                iconOnly
+              />
+            )
+          )}
+          {canWrite && action}
+        </ItemActions>
+      )}
+    </Item>
   );
 }

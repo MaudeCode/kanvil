@@ -48,6 +48,70 @@ test("parent, child, and relationship links show ticket titles", async ({ page }
   await page.getByRole("link", { name: `${parent.key} · ${parent.title}`, exact: true }).click();
   await expect(page.getByRole("heading", { name: parent.title, exact: true })).toBeVisible();
 });
+test("child and related ticket properties change in place", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "INLINE", name: "Inline links" } })
+  ).json();
+  const create = async (ticketTitle: string, parentId?: string) =>
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: ticketTitle, ...(parentId ? { parentId } : {}) },
+      })
+    ).json();
+  const read = async (ticketId: string) =>
+    (await (await page.request.get(`/api/v1/projects/${project.id}/tickets/${ticketId}`)).json())
+      .ticket;
+  const parent = await create("Inline parent"),
+    child = await create("Inline child", parent.id),
+    peer = await create("Inline peer");
+  await page.request.post(`/api/v1/projects/${project.id}/tickets/${parent.id}/relations`, {
+    data: { targetId: peer.id, type: "related" },
+  });
+  await page.goto(`/projects/${project.id}/tickets/${parent.id}`);
+  const count = page.getByRole("heading", { name: /Child tickets/ });
+  await expect(count).toHaveText("Child tickets 0/1");
+  await expect(page.getByText(`${child.key} is unfinished`, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: `Status of ${child.key}`, exact: true }),
+  ).toBeVisible();
+
+  // A rejected write settles back to the server state instead of leaving a false completed count.
+  await page.route(`**/api/v1/projects/${project.id}/tickets/${child.id}`, (route) =>
+    route.request().method() === "PATCH"
+      ? route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: "version_conflict",
+              message: "The ticket changed; reload before saving",
+            },
+          },
+        })
+      : route.fallback(),
+  );
+  await setProperty(page, `Status of ${child.key}`, "Done");
+  await expect(page.getByText("The ticket changed; reload before saving")).toBeVisible();
+  await expect(count).toHaveText("Child tickets 0/1");
+  await page.unroute(`**/api/v1/projects/${project.id}/tickets/${child.id}`);
+
+  await setProperty(page, `Status of ${child.key}`, "Done");
+  await expect(count).toHaveText("Child tickets 1/1");
+  await expect(page.getByText(`${child.key} is unfinished`, { exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await read(child.id)).status).toBe("done");
+
+  await page.getByRole("combobox", { name: `Assignee of ${peer.key}`, exact: true }).click();
+  await page.getByRole("option", { name: /Test Owner/ }).click();
+  await expect.poll(async () => (await read(peer.id)).assigneeId).toBeTruthy();
+  await setProperty(page, `Status of ${peer.key}`, "In progress");
+  await expect.poll(async () => (await read(peer.id)).status).toBe("in_progress");
+  await expect(page.getByRole("heading", { name: parent.title, exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove related relationship", exact: true }).click();
+  await expect(page.getByRole("link", { name: `${peer.key} · ${peer.title}` })).toHaveCount(0);
+  await page.getByRole("link", { name: `${child.key} · ${child.title}`, exact: true }).click();
+  await expect(page.getByRole("heading", { name: child.title, exact: true })).toBeVisible();
+});
 test("owner setup, tickets, discussion, attachments, credentials, and realtime conflicts", async ({
   page,
 }) => {

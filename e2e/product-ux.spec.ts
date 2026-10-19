@@ -132,6 +132,11 @@ test("readers see readable ticket content without mutation controls", async ({ p
           description: "- [ ] Reviewed by a writer",
         },
       })
+    ).json(),
+    child = await (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+        data: { title: "Readable child", parentId: ticket.id },
+      })
     ).json();
   const email = `reader-${crypto.randomUUID()}@example.test`,
     password = "Isolated reader password 234!";
@@ -171,6 +176,12 @@ test("readers see readable ticket content without mutation controls", async ({ p
     await expect(reader.getByRole("button", { name: "Add relationship", exact: true })).toHaveCount(
       0,
     );
+    await expect(
+      reader.getByRole("link", { name: `${child.key} · ${child.title}`, exact: true }),
+    ).toBeVisible();
+    await expect(
+      reader.getByRole("combobox", { name: `Status of ${child.key}`, exact: true }),
+    ).toHaveCount(0);
     await reader.getByRole("tab", { name: "Evidence", exact: true }).click();
     await expect(reader.getByRole("button", { name: "Add evidence", exact: true })).toHaveCount(0);
     await reader.getByRole("tab", { name: "Discussion", exact: true }).click();
