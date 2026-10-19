@@ -12,6 +12,7 @@ import {
   notificationReadInput,
   notificationsSchema,
   okSchema,
+  type NotificationPreferencesInput,
   type ChangeEvent,
   operations,
   parseOutput,
@@ -247,7 +248,7 @@ export function createClient(options: {
           api.request("/api/v1/notifications/preferences", notificationPreferencesSchema),
       };
     },
-    setNotificationPreferences(this: void, input: { inApp: boolean; push?: boolean }) {
+    setNotificationPreferences(this: void, input: NotificationPreferencesInput) {
       return api.request("/api/v1/notifications/preferences", notificationPreferencesSchema, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

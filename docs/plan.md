@@ -85,7 +85,7 @@ Deliver reference consumers and contract tests within Kanvil. External applicati
 - Ticket composer that can target any writable project and stay open to create several tickets in a row.
 - Inbox that opens an update's ticket in the same preview sheet, with its discussion and reply composer, and marks entries read or unread, dismisses them, clears read entries, and marks all read, from the keyboard as well.
 - Home overview of your assigned work, recent activity, and project progress, with a complete My work list across the workspace's projects grouped by due date or project.
-- One settings navigation for account, current workspace, projects, and instance administration (shown only where the server grants access), including personal and notification preferences. The `?` help and the `⌘K` palette read one action catalog, so labels and keys match.
+- One settings navigation for account, current workspace, projects, and instance administration (shown only where the server grants access), including personal and notification preferences: Inbox and push channels, per-category flags, and a due-soon reminder lead, with overdue notices. The `?` help and the `⌘K` palette read one action catalog, so labels and keys match.
 - Native mobile lists and navigation, ticket editing, comments, attachments, deep links, and notifications.
 - Live updates while connected, recovery after disconnection, cached reading, and locally saved drafts.
 - Shared client operations, validation, formatting, design tokens, and status presentation rules.

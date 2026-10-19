@@ -420,7 +420,8 @@ export const eventSchema = z.object({
   id: z.string().regex(/^\d+$/),
   projectId: z.uuid(),
   ticketId: z.uuid().nullable(),
-  actorId: z.string(),
+  // Null for notices the server raises on its own clock, such as due-date reminders.
+  actorId: z.string().nullable(),
   type: z.string(),
   data: z.record(z.string(), z.unknown()),
   createdAt: timestamp,
@@ -452,10 +453,56 @@ export const infoSchema = z.object({
   oidc: z.object({ id: z.string(), name: z.string() }).nullable(),
   push: z.boolean().default(false),
 });
+// Every category starts enabled, so accounts saved before categories keep receiving every update.
+export const notificationCategoriesSchema = z.object({
+  assignment: z.boolean().default(true),
+  status: z.boolean().default(true),
+  comment: z.boolean().default(true),
+  update: z.boolean().default(true),
+  due_soon: z.boolean().default(true),
+  overdue: z.boolean().default(true),
+});
+export const notificationCategories = notificationCategoriesSchema.keyof().options;
+export type NotificationCategory = (typeof notificationCategories)[number];
+export const notificationCategoryLabels: Record<NotificationCategory, string> = {
+  assignment: "Assignments",
+  status: "Status changes",
+  comment: "Comments",
+  update: "Other updates",
+  due_soon: "Due soon",
+  overdue: "Overdue",
+};
+// The categories an event belongs to, most specific first. A follower receives the event when any
+// of them is enabled and sees the first enabled one.
+export function eventCategories(event: {
+  type: string;
+  data: Record<string, unknown>;
+}): NotificationCategory[] {
+  if (event.type === "ticket.due_soon") return ["due_soon"];
+  if (event.type === "ticket.overdue") return ["overdue"];
+  if (event.type.startsWith("comment.")) return ["comment"];
+  if (event.type !== "ticket.updated" || !Array.isArray(event.data.changedFields))
+    return ["update"];
+  const fields = new Set<unknown>(event.data.changedFields);
+  const found: NotificationCategory[] = [];
+  if (fields.delete("assigneeId")) found.push("assignment");
+  if (fields.delete("status")) found.push("status");
+  if (fields.size || !found.length) found.push("update");
+  return found;
+}
+export const reminderUnits = ["minutes", "hours", "days", "weeks"] as const;
+export const reminderUnitSchema = z.enum(reminderUnits);
+const reminderLead = z.object({
+  amount: z.number().int().min(1).max(999),
+  unit: reminderUnitSchema,
+});
 export const notificationsSchema = z.array(
   z.object({
     id: z.uuid(),
     readAt: timestamp.nullable(),
+    // Older servers omit the category; unknown future categories read as a generic update.
+    category: z.enum(notificationCategories).catch("update"),
+    createdAt: timestamp.optional(),
     event: eventSchema,
   }),
 );
@@ -467,10 +514,20 @@ export const notificationReadInput = notificationIdsInput
 export const notificationPreferencesSchema = z.object({
   inApp: z.boolean().default(true),
   push: z.boolean().default(false),
+  categories: notificationCategoriesSchema.prefault({}),
+  reminderLead: reminderLead.prefault({ amount: 1, unit: "days" }),
 });
+// Omitted fields keep their saved value; `categories` merges with the saved flags.
 export const notificationPreferencesInput = z
-  .object({ inApp: z.boolean(), push: z.boolean().optional() })
+  .object({
+    inApp: z.boolean(),
+    push: z.boolean().optional(),
+    categories: z.partialRecord(z.enum(notificationCategories), z.boolean()).optional(),
+    reminderLead: reminderLead.strict().optional(),
+  })
   .strict();
+export type NotificationPreferences = z.output<typeof notificationPreferencesSchema>;
+export type NotificationPreferencesInput = z.input<typeof notificationPreferencesInput>;
 export const pushDeviceInput = z.object({ token: z.string().min(1).max(250) }).strict();
 export const credentialsSchema = z.array(
   z.object({
@@ -508,6 +565,8 @@ export const eventLabels: Record<string, string> = {
   "ticket.created": "Ticket created",
   "ticket.updated": "Ticket updated",
   "ticket.deleted": "Ticket deleted",
+  "ticket.due_soon": "Due soon",
+  "ticket.overdue": "Overdue",
   "ticket.claimed": "Work claimed",
   "claim.renewed": "Claim renewed",
   "claim.released": "Claim released",

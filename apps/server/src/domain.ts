@@ -1,9 +1,10 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import {
   closedStates,
+  eventCategories,
   ApiError,
   operations,
   parseOutput,
@@ -210,6 +211,94 @@ export async function subscribe(
       .values(ids.map((userId) => ({ projectId, ticketId, userId })))
       .onConflictDoNothing();
 }
+type NewEvent = Omit<typeof events.$inferInsert, "id" | "createdAt">;
+// Appends events with consecutive ids from the replay clock and wakes realtime readers on commit.
+export async function appendEvents(db: Context["db"], pending: NewEvent[]) {
+  const clock = one(
+    await db
+      .update(eventClock)
+      .set({ value: sql`${eventClock.value} + ${pending.length}` })
+      .where(eq(eventClock.id, 1))
+      .returning(),
+  );
+  const first = clock.value - BigInt(pending.length) + 1n;
+  const rows = await insertAll(
+    pending.map((item, index) => ({ ...item, id: first + BigInt(index) })),
+    (batch) => db.insert(events).values(batch).returning(),
+  );
+  await db.execute(sql`SELECT pg_notify('kanvil_events', ${clock.value.toString()})`);
+  return rows;
+}
+// The preference columns `notify` needs, selected alongside a user joined as a recipient.
+export const recipientColumns = {
+  userId: user.id,
+  inApp: notificationPreferences.inApp,
+  push: notificationPreferences.push,
+  categories: notificationPreferences.categories,
+};
+export type Recipient = {
+  userId: string;
+  inApp: boolean | null;
+  push: boolean | null;
+  categories: Record<string, boolean> | null;
+};
+// A joined user who can still read the project, is active, and has a delivery channel on.
+export const reachable = (projectId: SQLWrapper) =>
+  and(
+    or(
+      isNotNull(projectRoleSQL(user.id, projectId)),
+      sql`'admin' = any(string_to_array(${user.role}, ','))`,
+    ),
+    sql`not coalesce(${user.banned}, false)`,
+    or(
+      sql`coalesce(${notificationPreferences.inApp}, true)`,
+      eq(notificationPreferences.push, true),
+    ),
+  );
+// Records each (event, recipient) once under its first enabled category and queues push delivery.
+export async function notify(
+  db: Context["db"],
+  pending: { event: typeof events.$inferSelect; recipient: Recipient }[],
+) {
+  const entries = pending.flatMap(({ event, recipient }) => {
+    const category = eventCategories(event).find((name) => recipient.categories?.[name] !== false);
+    return category ? [{ event, recipient, category }] : [];
+  });
+  if (!entries.length) return;
+  const created = await insertAll(
+    entries.map(({ event, recipient, category }) => ({
+      userId: recipient.userId,
+      projectId: event.projectId,
+      eventId: event.id,
+      category,
+      inbox: recipient.inApp ?? true,
+    })),
+    (batch) => db.insert(notifications).values(batch).onConflictDoNothing().returning(),
+  );
+  // Push is decided per (event, user), matched by key rather than by insert order.
+  const pushing = new Set(
+    entries
+      .filter(({ recipient }) => recipient.push)
+      .map(({ event, recipient }) => `${event.id}:${recipient.userId}`),
+  );
+  if (!pushing.size) return;
+  const devices = await db
+    .select({ id: pushDevices.id, userId: pushDevices.userId })
+    .from(pushDevices)
+    .where(
+      inArray(pushDevices.userId, [
+        ...new Set(entries.filter((e) => e.recipient.push).map((e) => e.recipient.userId)),
+      ]),
+    );
+  const deliveries = created.flatMap((notification) =>
+    pushing.has(`${notification.eventId}:${notification.userId}`)
+      ? devices
+          .filter((device) => device.userId === notification.userId)
+          .map((device) => ({ notificationId: notification.id, deviceId: device.id }))
+      : [],
+  );
+  await insertAll(deliveries, (batch) => db.insert(pushDeliveries).values(batch).returning());
+}
 // Writes a batch of events with consecutive ids and one notification fan-out; bulk edits stay cheap.
 export async function publishMany(ctx: Context, pending: PendingEvent[]) {
   if (!pending.length) return [];
@@ -224,96 +313,39 @@ export async function publishMany(ctx: Context, pending: PendingEvent[]) {
         ).map((row) => [row.id, { key: row.key, title: row.title }])
       : [],
   );
-  const clock = one(
-    await ctx.db
-      .update(eventClock)
-      .set({ value: sql`${eventClock.value} + ${pending.length}` })
-      .where(eq(eventClock.id, 1))
-      .returning(),
-  );
-  const first = clock.value - BigInt(pending.length) + 1n;
   const source = { kind: ctx.actor.machine ? "credential" : "session", id: ctx.actor.ownerId };
-  const rows = await insertAll(
-    pending.map((item, index) => ({
-      id: first + BigInt(index),
+  const rows = await appendEvents(
+    ctx.db,
+    pending.map((item) => ({
       projectId: item.projectId ?? project(ctx).id,
       ticketId: item.ticketId,
       actorId: ctx.actor.id,
       type: item.type,
       data: { ...item.data, ...(item.ticketId ? titles.get(item.ticketId) : {}), source },
     })),
-    (batch) => ctx.db.insert(events).values(batch).returning(),
   );
   if (ticketIds.length) {
     const followers = await ctx.db
-      .select({
-        ticketId: subscriptions.ticketId,
-        userId: subscriptions.userId,
-        inApp: notificationPreferences.inApp,
-        push: notificationPreferences.push,
-      })
+      .select({ ticketId: subscriptions.ticketId, ...recipientColumns })
       .from(subscriptions)
       .innerJoin(user, eq(user.id, subscriptions.userId))
       .leftJoin(notificationPreferences, eq(notificationPreferences.userId, subscriptions.userId))
       .where(
         and(
           inArray(subscriptions.ticketId, ticketIds),
-          or(
-            isNotNull(projectRoleSQL(user.id, subscriptions.projectId)),
-            sql`'admin' = any(string_to_array(${user.role}, ','))`,
-          ),
-          sql`not coalesce(${user.banned}, false)`,
+          reachable(subscriptions.projectId),
           ctx.actor.machine ? undefined : ne(subscriptions.userId, ctx.actor.id),
-          or(
-            sql`coalesce(${notificationPreferences.inApp}, true)`,
-            eq(notificationPreferences.push, true),
-          ),
         ),
       );
-    const entries = rows.flatMap((event) =>
-      followers
-        .filter((follower) => follower.ticketId === event.ticketId)
-        .map((follower) => ({ event, follower })),
+    await notify(
+      ctx.db,
+      rows.flatMap((event) =>
+        followers
+          .filter((follower) => follower.ticketId === event.ticketId)
+          .map((recipient) => ({ event, recipient })),
+      ),
     );
-    if (entries.length) {
-      const created = await insertAll(
-        entries.map(({ event, follower }) => ({
-          userId: follower.userId,
-          projectId: event.projectId,
-          eventId: event.id,
-          inbox: follower.inApp ?? true,
-        })),
-        (batch) => ctx.db.insert(notifications).values(batch).returning(),
-      );
-      // Push is decided per (event, user), matched by key rather than by insert order.
-      const pushing = new Set(
-        entries
-          .filter(({ follower }) => follower.push)
-          .map(({ event, follower }) => `${event.id}:${follower.userId}`),
-      );
-      if (pushing.size) {
-        const devices = await ctx.db
-          .select({ id: pushDevices.id, userId: pushDevices.userId })
-          .from(pushDevices)
-          .where(
-            inArray(pushDevices.userId, [
-              ...new Set(entries.filter((e) => e.follower.push).map((e) => e.follower.userId)),
-            ]),
-          );
-        const deliveries = created.flatMap((notification) =>
-          pushing.has(`${notification.eventId}:${notification.userId}`)
-            ? devices
-                .filter((device) => device.userId === notification.userId)
-                .map((device) => ({ notificationId: notification.id, deviceId: device.id }))
-            : [],
-        );
-        await insertAll(deliveries, (batch) =>
-          ctx.db.insert(pushDeliveries).values(batch).returning(),
-        );
-      }
-    }
   }
-  await ctx.db.execute(sql`SELECT pg_notify('kanvil_events', ${clock.value.toString()})`);
   return rows;
 }
 export async function publish(

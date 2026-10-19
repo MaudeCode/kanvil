@@ -745,7 +745,7 @@ export const ticketHandlers: Pick<
                         id: row.id,
                         projectId: owner.id,
                         ticketId: row.ticket_id,
-                        actorId: row.actor_id ?? "",
+                        actorId: row.actor_id,
                         type: row.event_type ?? "",
                         data: row.data ?? {},
                         createdAt: at,

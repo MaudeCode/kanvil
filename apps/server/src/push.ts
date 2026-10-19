@@ -1,4 +1,4 @@
-import { hasAdminRole } from "@kanvil/contracts";
+import { closedStates, hasAdminRole } from "@kanvil/contracts";
 import { projectRoleSQL } from "./project-access.ts";
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { Expo, type ExpoPushTicket, type ExpoPushReceipt } from "expo-server-sdk";
@@ -47,7 +47,12 @@ export async function deliverPushBatch(database: Database, config: Config, trans
             session: session,
             projectRole: projectRoleSQL(user.id, notifications.projectId),
             subscription: subscriptions,
-            ticketId: tickets.id,
+            ticket: {
+              id: tickets.id,
+              dueAt: tickets.dueAt,
+              status: tickets.status,
+              archived: tickets.archived,
+            },
           })
           .from(pushDeliveries)
           .innerJoin(pushDevices, eq(pushDevices.id, pushDeliveries.deviceId))
@@ -75,10 +80,25 @@ export async function deliverPushBatch(database: Database, config: Config, trans
         row.account.banned ||
         row.session.expiresAt <= new Date() ||
         !row.preference?.push ||
-        (!row.subscription && row.ticketId !== null) ||
+        (!row.subscription && row.ticket !== null) ||
         (!row.projectRole && !hasAdminRole(row.account.role))
       ) {
         await finish("access_revoked");
+        continue;
+      }
+      if (row.preference.categories[row.notification.category] === false) {
+        await finish("category_disabled");
+        continue;
+      }
+      // A reminder is stale once its ticket closes, is archived or deleted, or moves its due date.
+      if (
+        (event.type === "ticket.due_soon" || event.type === "ticket.overdue") &&
+        (!row.ticket ||
+          row.ticket.archived ||
+          closedStates.some((state) => state === row.ticket?.status) ||
+          row.ticket.dueAt?.getTime() !== new Date(String(event.data.dueAt)).getTime())
+      ) {
+        await finish("reminder_stale");
         continue;
       }
       if (row.notification.createdAt.getTime() < Date.now() - 86_400_000) {

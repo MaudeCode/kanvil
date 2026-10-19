@@ -36,6 +36,7 @@ import {
 } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor, one } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
+import { sendDueReminders } from "./reminders.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -62,6 +63,17 @@ const setupInput = z
     password: z.string().min(12).max(128),
   })
   .strict();
+const toPreferences = (row?: typeof notificationPreferences.$inferSelect) =>
+  notificationPreferencesSchema.parse(
+    row
+      ? {
+          inApp: row.inApp,
+          push: row.push,
+          categories: row.categories,
+          reminderLead: { amount: row.reminderAmount, unit: row.reminderUnit },
+        }
+      : {},
+  );
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
 export async function createApplication(
@@ -90,6 +102,7 @@ export async function createApplication(
     void search.sync().catch(() => {});
   });
   const push = adapters.push(database, config);
+  const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
   const accounts = createAccountAdministration(integrationDatabase, auth, config);
   const app = new OpenAPIHono<{ Variables: Variables }>({
     defaultHook: (result) => {
@@ -389,21 +402,33 @@ export async function createApplication(
         .from(notificationPreferences)
         .where(eq(notificationPreferences.userId, c.get("actor").id))
     )[0];
-    return Response.json(
-      notificationPreferencesSchema.parse(row ? { inApp: row.inApp, push: row.push } : {}),
-    );
+    return Response.json(toPreferences(row));
   });
   app.put("/api/v1/notifications/preferences", async (c) => {
     const identity = requireSession(c.get("actor"));
-    const input = notificationPreferencesInput.parse(await c.req.json());
+    const { categories, reminderLead, ...channels } = notificationPreferencesInput.parse(
+      await c.req.json(),
+    );
+    const values = {
+      ...channels,
+      ...(reminderLead && { reminderAmount: reminderLead.amount, reminderUnit: reminderLead.unit }),
+    };
     const row = one(
       await database.db
         .insert(notificationPreferences)
-        .values({ userId: identity.id, ...input })
-        .onConflictDoUpdate({ target: notificationPreferences.userId, set: input })
-        .returning({ inApp: notificationPreferences.inApp, push: notificationPreferences.push }),
+        .values({ userId: identity.id, ...values, categories: categories ?? {} })
+        .onConflictDoUpdate({
+          target: notificationPreferences.userId,
+          set: {
+            ...values,
+            ...(categories && {
+              categories: sql`${notificationPreferences.categories} || ${JSON.stringify(categories)}::jsonb`,
+            }),
+          },
+        })
+        .returning(),
     );
-    return Response.json(notificationPreferencesSchema.parse(row));
+    return Response.json(toPreferences(row));
   });
   app.post("/api/v1/notifications/device", async (c) => {
     const identity = requireSession(c.get("actor"));
@@ -443,7 +468,13 @@ export async function createApplication(
     return Response.json(
       json(
         await database.db
-          .select({ id: notifications.id, readAt: notifications.readAt, event: events })
+          .select({
+            id: notifications.id,
+            readAt: notifications.readAt,
+            category: notifications.category,
+            createdAt: notifications.createdAt,
+            event: events,
+          })
           .from(notifications)
           .innerJoin(events, eq(events.id, notifications.eventId))
           .where(
@@ -706,6 +737,7 @@ export async function createApplication(
       await blobs.close();
       await integrationDatabase.pool.end();
       await push.close();
+      await reminders.close();
     },
   };
 }
