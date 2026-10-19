@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { z } from "zod";
 export const ownerEmail = "owner@example.test";
@@ -27,7 +30,28 @@ export async function signIn(page: Page) {
     .click();
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
 }
+// Opens the password form, which configured sign-in providers fold behind a button.
 export async function useEmailLogin(page: Page) {
   const choice = page.getByRole("button", { name: "Use email and password", exact: true });
+  await expect(choice.or(page.getByLabel("Email", { exact: true }))).toBeVisible();
   if (await choice.isVisible()) await choice.click();
+}
+
+// Mail the test server's SMTP fake received for an address, oldest first.
+export function mailTo(email: string) {
+  const file = join(tmpdir(), `kanvil-e2e-${process.env.KANVIL_TEST_PORT ?? "5190"}.mail`);
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => z.string().parse(JSON.parse(line)))
+    .filter((message) => message.includes(`To: ${email}`));
+}
+// Waits for the email code at `index` among an address's mail and returns it with its link.
+export async function codeFor(email: string, index: number) {
+  await expect.poll(() => mailTo(email).length).toBeGreaterThan(index);
+  const message = mailTo(email)[index] ?? "";
+  return {
+    code: /code is (\d{6})\./.exec(message)?.[1] ?? "",
+    link: /(https?:\/\/\S+\?\S*code=\S+)/.exec(message)?.[1] ?? "",
+  };
 }

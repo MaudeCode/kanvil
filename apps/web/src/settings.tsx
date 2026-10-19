@@ -99,41 +99,43 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
               {t("settings.account.changePassword")}
             </Button>
           </SettingRow>
-          {info.data?.oidc && (
-            <SettingRow
-              title={info.data.oidc.name}
-              description={
-                accounts.data?.some((account) => account.providerId === "oidc")
-                  ? t("settings.account.oidcLinked")
-                  : t("settings.account.oidcUnlinked")
-              }
-            >
-              {accounts.data?.some((account) => account.providerId === "oidc") ? (
-                <Badge variant="secondary">{t("settings.account.linked")}</Badge>
-              ) : (
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    setPending(true);
-                    setError(undefined);
-                    void auth
-                      .linkSocial({
-                        provider: "oidc",
-                        callbackURL: `${window.location.origin}/settings?section=account`,
-                        errorCallbackURL: `${window.location.origin}/settings?section=account`,
-                      })
-                      .then((result) => {
-                        if (result.error) throw new Error(result.error.message);
-                      })
-                      .catch(setError)
-                      .finally(() => setPending(false));
-                  }}
-                >
-                  {t("settings.account.link", { name: info.data.oidc.name })}
-                </Button>
-              )}
-            </SettingRow>
-          )}
+          {info.data?.providers.map((provider) => {
+            const linked = accounts.data?.some((account) => account.providerId === provider.id);
+            return (
+              <SettingRow
+                key={provider.id}
+                title={provider.name}
+                description={
+                  linked ? t("settings.account.oidcLinked") : t("settings.account.oidcUnlinked")
+                }
+              >
+                {linked ? (
+                  <Badge variant="secondary">{t("settings.account.linked")}</Badge>
+                ) : (
+                  <Button
+                    disabled={pending}
+                    onClick={() => {
+                      setPending(true);
+                      setError(undefined);
+                      void auth
+                        .linkSocial({
+                          provider: provider.id,
+                          callbackURL: `${window.location.origin}/settings?section=account`,
+                          errorCallbackURL: `${window.location.origin}/settings?section=account`,
+                        })
+                        .then((result) => {
+                          if (result.error) throw new Error(result.error.message);
+                        })
+                        .catch(setError)
+                        .finally(() => setPending(false));
+                    }}
+                  >
+                    {t("settings.account.link", { name: provider.name })}
+                  </Button>
+                )}
+              </SettingRow>
+            );
+          })}
           <DeleteAccountRow
             account={identity}
             // The deletion ended every session; leave with the private data cleared.

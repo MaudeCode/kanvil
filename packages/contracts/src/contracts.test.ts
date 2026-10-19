@@ -277,6 +277,10 @@ it("defaults legacy public authentication capabilities for web and native client
       authentication: { emailPasswordEnabled: false, ssoAutoProvision: true },
     }).authentication,
   ).toEqual({ emailPasswordEnabled: false, ssoAutoProvision: true });
+  expect(infoSchema.parse(legacy)).toMatchObject({ providers: [], emailCodes: false });
+  expect(infoSchema.parse({ ...legacy, oidc: { id: "oidc", name: "PocketID" } }).providers).toEqual(
+    [{ id: "oidc", name: "PocketID" }],
+  );
 });
 
 describe("ticket filter predicates", () => {

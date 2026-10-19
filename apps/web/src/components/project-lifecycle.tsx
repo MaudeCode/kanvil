@@ -5,6 +5,7 @@ import { Archive, ArchiveRestore, ArrowRightLeft, Download, LogIn, Trash2 } from
 import { toast } from "sonner";
 import {
   ApiError,
+  signInMethodLabels,
   type AccountImpact,
   type Project,
   type ProjectImpact,
@@ -527,15 +528,8 @@ export function DeleteWorkspaceRow({ workspace }: { workspace: Workspace }) {
   );
 }
 export const signInMethods = (providers: readonly string[]) =>
-  formatList(
-    providers.map((provider) =>
-      provider === "credential"
-        ? t("settings.account.localPassword")
-        : provider === "oidc"
-          ? "OIDC"
-          : provider,
-    ),
-  ) || t("settings.lifecycle.noSignInMethods");
+  formatList(providers.map((provider) => signInMethodLabels[provider] ?? provider)) ||
+  t("settings.lifecycle.noSignInMethods");
 const accountRows = (impact: AccountImpact): ImpactRows => [
   [t("settings.lifecycle.row.signIn"), signInMethods(impact.providers)],
   [

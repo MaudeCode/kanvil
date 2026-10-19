@@ -922,17 +922,51 @@ export const searchResultSchema = z.object({
   at: timestamp,
 });
 export type SearchResult = z.output<typeof searchResultSchema>;
-export const infoSchema = z.object({
-  authentication: authenticationPolicySchema.default(() => authenticationPolicySchema.parse({})),
-  name: z.string(),
-  description: z.string().default(""),
-  version: z.string(),
-  setupRequired: z.boolean(),
-  oidc: z.object({ id: z.string(), name: z.string() }).nullable(),
-  push: z.boolean().default(false),
-  // Whether the instance has SMTP configured for email notification channels.
-  email: z.boolean().default(false),
-});
+const signInProviderSchema = z.object({ id: z.string(), name: z.string() });
+// Names for an account's sign-in methods; the deployment names its own OIDC provider.
+// Product names stay as they are; the local password reads in the interface language.
+export const signInMethodLabels: Record<string, string> = {
+  get credential() {
+    return t("common.signIn.localPassword");
+  },
+  oidc: "OIDC",
+  github: "GitHub",
+  google: "Google",
+  discord: "Discord",
+};
+// Returns a Better Auth client result or throws its error. Wrong, used, and expired email codes
+// fail apart; people see one message for them.
+export function authResult<
+  T extends { error: { code?: string | undefined; message?: string | undefined } | null },
+>(result: T) {
+  if (!result.error) return result;
+  throw new Error(
+    ["INVALID_OTP", "OTP_EXPIRED", "TOO_MANY_ATTEMPTS"].includes(result.error.code ?? "")
+      ? t("common.signIn.invalidCode")
+      : (result.error.message ?? t("common.error.fallback")),
+  );
+}
+export const infoSchema = z
+  .object({
+    authentication: authenticationPolicySchema.default(() => authenticationPolicySchema.parse({})),
+    name: z.string(),
+    description: z.string().default(""),
+    version: z.string(),
+    setupRequired: z.boolean(),
+    oidc: signInProviderSchema.nullable(),
+    // Every configured sign-in provider in display order: the OIDC provider, then GitHub, Google,
+    // and Discord. Servers before it report only `oidc`.
+    providers: z.array(signInProviderSchema).optional(),
+    push: z.boolean().default(false),
+    // Whether the instance has SMTP configured for email notification channels.
+    email: z.boolean().default(false),
+    // Whether emailed codes sign people in and reset passwords.
+    emailCodes: z.boolean().default(false),
+  })
+  .transform((info) => ({
+    ...info,
+    providers: info.providers ?? (info.oidc ? [info.oidc] : []),
+  }));
 // Every category starts enabled, so accounts saved before categories keep receiving every update.
 export const notificationCategoriesSchema = z.object({
   assignment: z.boolean().default(true),

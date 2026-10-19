@@ -1,7 +1,7 @@
 import { hasAdminRole } from "@kanvil/contracts";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useEffect, useState } from "react";
-import { AppState, View, useColorScheme } from "react-native";
+import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -25,8 +25,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { infoSchema, okSchema } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { authResult, infoSchema, okSchema } from "@kanvil/contracts";
 import {
   connect,
   type Connection,
@@ -54,6 +53,7 @@ import { Inbox, Settings } from "./settings.tsx";
 import type { Routes } from "./navigation.ts";
 import { usePushNavigation } from "./push.tsx";
 import { LocaleRoot, startLocale } from "./locale.tsx";
+import { t } from "@kanvil/contracts/i18n";
 
 const Stack = createNativeStackNavigator<Routes>();
 const Tabs = createBottomTabNavigator<{
@@ -190,45 +190,163 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     [password, setPassword] = useState(""),
     [name, setName] = useState(""),
     [token, setToken] = useState(""),
+    [code, setCode] = useState(""),
+    [flow, setFlow] = useState<"code" | "reset" | null>(null),
+    [sent, setSent] = useState(false),
     [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false);
-  async function login(oidc = false) {
+  async function attempt(action: () => Promise<void>) {
     setError(undefined);
     setPending(true);
     try {
-      if (info.data?.setupRequired)
-        await api.request("/api/v1/setup", okSchema, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, token, email, password }),
-        });
-      const result = oidc
-        ? await auth.signIn.social({ provider: "oidc", callbackURL: "kanvil://auth/callback" })
-        : await auth.signIn.email({ email, password });
-      if (result.error) throw new Error(result.error.message);
-      await auth.getSession();
+      await action();
     } catch (cause) {
       setError(cause);
     } finally {
       setPending(false);
     }
   }
+  const login = (provider?: string) =>
+    attempt(async () => {
+      if (info.data?.setupRequired)
+        await api.request("/api/v1/setup", okSchema, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, token, email, password }),
+        });
+      authResult(
+        provider
+          ? await auth.signIn.social({ provider, callbackURL: "kanvil://auth/callback" })
+          : await auth.signIn.email({ email, password }),
+      );
+      await auth.getSession();
+    });
+  async function sendCode() {
+    authResult(
+      flow === "reset"
+        ? await auth.emailOtp.requestPasswordReset({ email })
+        : await auth.emailOtp.sendVerificationOtp({ email, type: "sign-in" }),
+    );
+    setSent(true);
+  }
+  const submitCode = () =>
+    attempt(async () => {
+      if (!sent) return sendCode();
+      if (flow === "code") {
+        authResult(await auth.signIn.emailOtp({ email, otp: code }));
+        await auth.getSession();
+        return;
+      }
+      authResult(await auth.emailOtp.resetPassword({ email, otp: code, password }));
+      setFlow(null);
+      setSent(false);
+      setCode("");
+      setPassword("");
+      Alert.alert(t("common.signIn.resetDoneTitle"), t("common.signIn.resetDoneBody"));
+    });
   if (info.isPending)
     return (
       <SafeAreaView style={{ flex: 1 }}>
         <Loading />
       </SafeAreaView>
     );
+  const setup = info.data?.setupRequired,
+    emailField = (
+      <Field
+        label={t("native.login.email")}
+        value={email}
+        onChangeText={setEmail}
+        editable={!sent}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="email"
+        textContentType="username"
+      />
+    );
+  if (flow)
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <Screen>
+          <Brand />
+          <Heading>
+            {flow === "reset" ? t("common.signIn.resetTitle") : t("common.signIn.codeTitle")}
+          </Heading>
+          {sent && <Body muted>{t("common.signIn.codeSent", { email })}</Body>}
+          <ErrorNotice error={error} />
+          {emailField}
+          {sent && (
+            <Field
+              label={t("common.signIn.code")}
+              value={code}
+              onChangeText={setCode}
+              keyboardType="number-pad"
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              maxLength={6}
+            />
+          )}
+          {sent && flow === "reset" && (
+            <Field
+              label={t("common.signIn.newPassword")}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+            />
+          )}
+          <Button
+            title={
+              !sent
+                ? t("common.signIn.sendCode")
+                : flow === "reset"
+                  ? t("common.signIn.resetTitle")
+                  : t("native.login.signIn")
+            }
+            primary
+            disabled={
+              pending ||
+              !email ||
+              (sent && code.length !== 6) ||
+              (sent && flow === "reset" && password.length < 12)
+            }
+            onPress={() => {
+              void submitCode();
+            }}
+          />
+          {sent && (
+            <Button
+              title={t("common.signIn.resend")}
+              disabled={pending}
+              onPress={() => {
+                void attempt(sendCode);
+              }}
+            />
+          )}
+          <Button
+            title={t("common.signIn.back")}
+            disabled={pending}
+            onPress={() => {
+              setError(undefined);
+              setFlow(null);
+              setSent(false);
+              setCode("");
+            }}
+          />
+        </Screen>
+      </SafeAreaView>
+    );
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <Screen>
         <Brand />
-        <Heading>
-          {info.data?.setupRequired ? t("native.login.setupTitle") : t("native.login.signIn")}
-        </Heading>
+        <Heading>{setup ? t("native.login.setupTitle") : t("native.login.signIn")}</Heading>
         <Body muted>{baseUrl}</Body>
         <ErrorNotice error={error ?? info.error} />
-        {info.data?.setupRequired && (
+        {setup && (
           <>
             <Field
               label={t("native.login.name")}
@@ -248,18 +366,9 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           </>
         )}
-        {(info.data?.setupRequired || info.data?.authentication.emailPasswordEnabled) && (
+        {(setup || info.data?.authentication.emailPasswordEnabled) && (
           <>
-            <Field
-              label={t("native.login.email")}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="username"
-            />
+            {emailField}
             <Field
               label={t("native.login.password")}
               value={password}
@@ -274,7 +383,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
               title={
                 pending
                   ? t("native.login.signingIn")
-                  : info.data?.setupRequired
+                  : setup
                     ? t("native.login.createAccount")
                     : t("native.login.signIn")
               }
@@ -286,14 +395,37 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
             />
           </>
         )}
-        {info.data?.oidc && !info.data.setupRequired && (
-          <Button
-            title={t("native.login.signInWith", { provider: info.data.oidc.name })}
-            disabled={pending}
-            onPress={() => {
-              void login(true);
-            }}
-          />
+        {!setup &&
+          info.data?.providers.map((provider) => (
+            <Button
+              key={provider.id}
+              title={t("native.login.signInWith", { provider: provider.name })}
+              disabled={pending}
+              onPress={() => {
+                void login(provider.id);
+              }}
+            />
+          ))}
+        {!setup && info.data?.emailCodes && (
+          <>
+            <Button
+              title={t("common.signIn.emailCode")}
+              disabled={pending}
+              onPress={() => {
+                setError(undefined);
+                setFlow("code");
+              }}
+            />
+            <Button
+              title={t("common.signIn.forgot")}
+              disabled={pending}
+              onPress={() => {
+                setError(undefined);
+                setPassword("");
+                setFlow("reset");
+              }}
+            />
+          </>
         )}
         <Button
           title={t("native.server.change")}

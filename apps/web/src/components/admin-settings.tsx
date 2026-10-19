@@ -9,9 +9,9 @@ import {
   type AdminInstance,
 } from "@kanvil/contracts/instance";
 import { okSchema } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { formatList, t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
-import { api } from "../data.tsx";
+import { api, useInfo } from "../data.tsx";
 import {
   Button,
   Check,
@@ -88,6 +88,7 @@ function initial(data: AdminInstance) {
 }
 function InstanceSettings({ data, section }: { data: AdminInstance; section: string }) {
   const cache = useQueryClient(),
+    info = useInfo(),
     [draft, setDraft] = useState(() => initial(data)),
     [pending, setPending] = useState(false),
     [error, setError] = useState<unknown>(),
@@ -618,7 +619,10 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
               void action(save, t("admin.authentication.saved"), true);
             }}
           >
-            <SettingRow title={t("admin.authentication.emailPassword")}>
+            <SettingRow
+              title={t("admin.authentication.emailPassword")}
+              description={t("admin.authentication.emailPasswordDescription")}
+            >
               <Switch
                 aria-label={t("admin.authentication.emailPassword")}
                 checked={draft.authentication.emailPasswordEnabled}
@@ -652,6 +656,16 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
             </SettingRow>
             <SettingRow title={t("admin.authentication.identityProvider")}>
               {data.deployment.oidc?.name ?? t("admin.authentication.notConfigured")}
+            </SettingRow>
+            <SettingRow
+              title={t("admin.authentication.linkedProviders")}
+              description={t("admin.authentication.linkedProvidersDescription")}
+            >
+              {formatList(
+                info.data?.providers
+                  .filter((provider) => provider.id !== "oidc")
+                  .map((provider) => provider.name) ?? [],
+              ) || t("admin.authentication.notConfigured")}
             </SettingRow>
             <FormActions
               layout="inline"

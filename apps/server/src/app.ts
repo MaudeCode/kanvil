@@ -38,6 +38,7 @@ import {
 } from "./access.ts";
 import { createDomain, fail, json, requireRow, type Actor, one } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
+import { emailCodesAvailable, signInProviders } from "./auth.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { sendDueReminders } from "./reminders.ts";
 import { deliverBatch } from "./outbox.ts";
@@ -232,17 +233,21 @@ export async function createApplication(
   });
   const setupRequired = async () =>
     (await database.pool.query('SELECT count(*)::int AS count FROM "user"')).rows[0]?.count === 0;
-  app.get("/api/v1/info", async () =>
-    Response.json({
+  app.get("/api/v1/info", async () => {
+    const authentication = await instance.authentication(),
+      providers = signInProviders(config);
+    return Response.json({
       ...(await instance.read().then((row) => ({ name: row.name, description: row.description }))),
       version: applicationVersion,
-      authentication: await instance.authentication(),
+      authentication,
       setupRequired: await setupRequired(),
       push: config.KANVIL_PUSH_ENABLED,
       email: !!config.SMTP_URL,
-      oidc: config.OIDC_DISCOVERY_URL ? { id: "oidc", name: config.OIDC_NAME } : null,
-    }),
-  );
+      emailCodes: emailCodesAvailable(config, authentication),
+      oidc: providers.find((provider) => provider.id === "oidc") ?? null,
+      providers,
+    });
+  });
   app.post("/api/v1/setup", async (c) => {
     access.checkOrigin(c.req.raw);
     const input = setupInput.parse(await c.req.json());

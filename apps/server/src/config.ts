@@ -41,6 +41,13 @@ const envSchema = z
     OIDC_CLIENT_ID: optionalEnv(z.string().min(1)),
     OIDC_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     OIDC_NAME: z.string().default("PocketID"),
+    // Built-in OAuth apps. Each pair turns on one provider; it only signs in accounts that linked it.
+    GITHUB_CLIENT_ID: optionalEnv(z.string().min(1)),
+    GITHUB_CLIENT_SECRET: optionalEnv(z.string().min(1)),
+    GOOGLE_CLIENT_ID: optionalEnv(z.string().min(1)),
+    GOOGLE_CLIENT_SECRET: optionalEnv(z.string().min(1)),
+    DISCORD_CLIENT_ID: optionalEnv(z.string().min(1)),
+    DISCORD_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     KANVIL_SESSION_WRITE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(120),
     KANVIL_PUSH_ENABLED: z
       .enum(["true", "false"])
@@ -102,6 +109,12 @@ const envSchema = z
     ].filter(Boolean).length;
     if (supplied !== 0 && supplied !== 3)
       ctx.addIssue({ code: "custom", message: "Configure all three OIDC settings together" });
+    for (const name of ["GITHUB", "GOOGLE", "DISCORD"] as const)
+      if (!value[`${name}_CLIENT_ID`] !== !value[`${name}_CLIENT_SECRET`])
+        ctx.addIssue({
+          code: "custom",
+          message: `Configure ${name}_CLIENT_ID and ${name}_CLIENT_SECRET together`,
+        });
     if (value.SMTP_URL && !value.SMTP_FROM)
       ctx.addIssue({ code: "custom", message: "SMTP_FROM is required with SMTP_URL" });
     if (!new URL(value.DATABASE_URL).protocol.startsWith("postgres"))

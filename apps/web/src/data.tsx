@@ -1,7 +1,7 @@
 import { UserAvatar } from "./components/user-avatar.tsx";
 import { createContext, useContext, useEffect, useState } from "react";
 import { createAuthClient } from "better-auth/react";
-import { adminClient } from "better-auth/client/plugins";
+import { adminClient, emailOTPClient } from "better-auth/client/plugins";
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createClient } from "@kanvil/client";
 import {
@@ -18,7 +18,9 @@ import { t } from "@kanvil/contracts/i18n";
 import type { Query } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export const auth = createAuthClient({ plugins: [adminClient(), oauthProviderClient()] });
+export const auth = createAuthClient({
+  plugins: [adminClient(), emailOTPClient(), oauthProviderClient()],
+});
 export const api = createClient({ baseUrl: window.location.origin });
 export const Identity = createContext<{
   id: string;

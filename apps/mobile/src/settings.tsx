@@ -285,18 +285,18 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           }}
         />
       </Section>
-      {info.data?.oidc && (
-        <Section title={info.data.oidc.name}>
-          {accounts.data?.some((account) => account.providerId === "oidc") ? (
+      {info.data?.providers.map((provider) => (
+        <Section key={provider.id} title={provider.name}>
+          {accounts.data?.some((account) => account.providerId === provider.id) ? (
             <Body>{t("native.settings.oidc.linked")}</Body>
           ) : (
             <>
               <Body>{t("native.settings.oidc.explanation")}</Body>
               <Button
-                title={t("native.settings.oidc.link", { provider: info.data.oidc.name })}
+                title={t("native.settings.oidc.link", { provider: provider.name })}
                 onPress={() => {
                   void auth
-                    .linkSocial({ provider: "oidc", callbackURL: "kanvil://auth/callback" })
+                    .linkSocial({ provider: provider.id, callbackURL: "kanvil://auth/callback" })
                     .then(async (result) => {
                       if (result.error) throw new Error(result.error.message);
                       await accounts.refetch();
@@ -308,7 +308,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
           )}
           <ErrorNotice error={accounts.error} />
         </Section>
-      )}
+      ))}
       <NotificationPreferences pushAvailable={info.data?.push ?? false} />
       <Button
         title={t("native.settings.signOut.action")}

@@ -2,7 +2,7 @@ import { useAuthError } from "./hooks/use-auth-error.ts";
 import { formText } from "./forms.ts";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { okSchema, roleLabels } from "@kanvil/contracts";
+import { authResult, okSchema, roleLabels } from "@kanvil/contracts";
 import { brandMark } from "@kanvil/contracts/theme";
 import { formatList, t } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
@@ -74,19 +74,50 @@ function AuthScreen({
   );
 }
 
+// A sign-in that continues an OAuth authorization returns where to go next.
+// Keeps the page the person started on, such as an invitation, minus an emailed code.
+function dropEmailedCode() {
+  const page = new URL(window.location.href);
+  for (const key of ["email", "code", "reset"]) page.searchParams.delete(key);
+  window.history.replaceState(null, "", page);
+}
+function continueSignIn(data: unknown) {
+  if (data && typeof data === "object" && "url" in data && typeof data.url === "string")
+    window.location.assign(data.url);
+  else if (window.location.pathname === "/login") window.location.assign("/");
+  else dropEmailedCode();
+}
+// An emailed code links back to the page that asked for it.
+const returnHere = () => ({ headers: { "X-Kanvil-Return": window.location.pathname } });
 export function Login() {
   const [error, setError] = useAuthError();
+  // An emailed link opens this screen with its address and code filled in.
+  const [link] = useState(() => new URLSearchParams(window.location.search));
   const info = useInfo(),
     [pending, setPending] = useState(false),
-    [emailOpen, setEmailOpen] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget),
-      email = formText(values, "email"),
-      password = formText(values, "password");
+    [emailOpen, setEmailOpen] = useState(false),
+    [email, setEmail] = useState(() => link.get("email") ?? ""),
+    [flow, setFlow] = useState<"code" | "reset" | null>(() =>
+      link.get("code") ? (link.get("reset") ? "reset" : "code") : null,
+    ),
+    [sent, setSent] = useState(() => !!link.get("code")),
+    [leaving, setLeaving] = useState<string>();
+  async function attempt(action: () => Promise<void>) {
     setPending(true);
     setError(undefined);
     try {
+      await action();
+    } catch (cause) {
+      setError(cause);
+    } finally {
+      setPending(false);
+    }
+  }
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget),
+      password = formText(values, "password");
+    void attempt(async () => {
       if (info.data?.setupRequired)
         await api.request("/api/v1/setup", okSchema, {
           method: "POST",
@@ -98,23 +129,158 @@ export function Login() {
             token: values.get("token"),
           }),
         });
-      const result = await auth.signIn.email({ email, password });
-      if (result.error) throw new Error(result.error.message);
-      if (result.data && "url" in result.data && typeof result.data.url === "string")
-        window.location.assign(result.data.url);
-      else if (window.location.pathname === "/login") window.location.assign("/");
-    } catch (cause) {
-      setError(cause);
-    } finally {
-      setPending(false);
-    }
+      continueSignIn(authResult(await auth.signIn.email({ email, password })).data);
+    });
+  }
+  async function sendCode() {
+    authResult(
+      flow === "reset"
+        ? await auth.emailOtp.requestPasswordReset({ email }, returnHere())
+        : await auth.emailOtp.sendVerificationOtp({ email, type: "sign-in" }, returnHere()),
+    );
+    setSent(true);
+  }
+  function submitCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget),
+      otp = formText(values, "code");
+    void attempt(async () => {
+      if (!sent) return sendCode();
+      if (flow === "code")
+        return continueSignIn(authResult(await auth.signIn.emailOtp({ email, otp })).data);
+      authResult(
+        await auth.emailOtp.resetPassword({ email, otp, password: formText(values, "password") }),
+      );
+      dropEmailedCode();
+      setFlow(null);
+      setSent(false);
+      setEmailOpen(true);
+      toast.success(t("common.signIn.resetDone"));
+    });
+  }
+  // The browser leaves for the provider, so the buttons stay disabled unless starting fails.
+  function socialSignIn(provider: string) {
+    setPending(true);
+    setLeaving(provider);
+    setError(undefined);
+    const callbackURL = new URL(window.location.href);
+    callbackURL.searchParams.delete("error");
+    callbackURL.searchParams.delete("error_description");
+    void auth.signIn
+      .social({
+        provider,
+        callbackURL: callbackURL.href,
+        errorCallbackURL: `${window.location.origin}/login`,
+      })
+      .then(authResult)
+      .catch((cause) => {
+        setError(cause);
+        setPending(false);
+        setLeaving(undefined);
+      });
   }
   if (info.isPending) return <Loading />;
-  const provider = info.data?.oidc,
-    setup = info.data?.setupRequired,
+  const setup = info.data?.setupRequired,
+    providers = setup ? [] : (info.data?.providers ?? []),
     invited = window.location.pathname.startsWith("/invite/"),
     emailEnabled = info.data?.authentication.emailPasswordEnabled ?? true,
-    showEmail = setup || (emailEnabled && (!provider || emailOpen));
+    emailCodes = !setup && !!info.data?.emailCodes,
+    showEmail = setup || (emailEnabled && (!providers.length || emailOpen));
+  if (flow)
+    return (
+      <AuthScreen
+        title={flow === "reset" ? t("common.signIn.resetTitle") : t("common.signIn.codeTitle")}
+        subtitle={sent ? t("common.signIn.codeSent", { email }) : undefined}
+        instance={info.data}
+      >
+        <ErrorNotice error={info.error ?? error} />
+        <form onSubmit={submitCode} className="flex flex-col">
+          <Input
+            label={t("shell.auth.email")}
+            name="email"
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={pending || sent}
+            autoFocus={!sent}
+          />
+          {sent && (
+            <Input
+              label={t("common.signIn.code")}
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              minLength={6}
+              maxLength={6}
+              required
+              defaultValue={link.get("code") ?? ""}
+              disabled={pending}
+              autoFocus
+            />
+          )}
+          {sent && flow === "reset" && (
+            <Input
+              label={t("common.signIn.newPassword")}
+              name="password"
+              type="password"
+              minLength={12}
+              maxLength={128}
+              autoComplete="new-password"
+              required
+              disabled={pending}
+            />
+          )}
+          <Button
+            type="submit"
+            variant="default"
+            size="lg"
+            className="mt-2 w-full"
+            disabled={pending}
+          >
+            {pending ? <Spinner /> : null}
+            {!sent
+              ? t("common.signIn.sendCode")
+              : flow === "reset"
+                ? t("common.signIn.resetTitle")
+                : t("shell.auth.signIn")}
+          </Button>
+        </form>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <Button
+            variant="link"
+            size="sm"
+            className="px-0"
+            disabled={pending}
+            onClick={() => {
+              setError(undefined);
+              setFlow(null);
+              setSent(false);
+            }}
+          >
+            {t("common.signIn.back")}
+          </Button>
+          {sent && (
+            <Button
+              variant="link"
+              size="sm"
+              className="px-0"
+              disabled={pending}
+              onClick={() =>
+                void attempt(async () => {
+                  await sendCode();
+                  toast.success(t("common.signIn.resent"));
+                })
+              }
+            >
+              {t("common.signIn.resend")}
+            </Button>
+          )}
+        </div>
+      </AuthScreen>
+    );
   return (
     <AuthScreen
       title={setup ? t("shell.auth.createOwner") : t("shell.auth.signIn")}
@@ -124,37 +290,21 @@ export function Login() {
       instance={info.data}
     >
       <ErrorNotice error={info.error ?? error} />
-      {provider && !setup && (
+      {providers.length > 0 && (
         <div className="flex flex-col gap-3">
-          <Button
-            variant="default"
-            size="lg"
-            className="w-full"
-            disabled={pending}
-            onClick={() => {
-              setPending(true);
-              setError(undefined);
-              const callbackURL = new URL(window.location.href);
-              callbackURL.searchParams.delete("error");
-              callbackURL.searchParams.delete("error_description");
-              void auth.signIn
-                .social({
-                  provider: "oidc",
-                  callbackURL: callbackURL.href,
-                  errorCallbackURL: `${window.location.origin}/login`,
-                })
-                .then((result) => {
-                  if (result.error) throw new Error(result.error.message);
-                })
-                .catch((cause) => {
-                  setError(cause);
-                  setPending(false);
-                });
-            }}
-          >
-            {pending ? <Spinner /> : null}
-            {t("shell.auth.signInWith", { provider: provider.name })}
-          </Button>
+          {providers.map((provider, index) => (
+            <Button
+              key={provider.id}
+              variant={index === 0 ? "default" : "outline"}
+              size="lg"
+              className="w-full"
+              disabled={pending}
+              onClick={() => socialSignIn(provider.id)}
+            >
+              {leaving === provider.id ? <Spinner /> : null}
+              {t("shell.auth.signInWith", { provider: provider.name })}
+            </Button>
+          ))}
           {emailEnabled && !showEmail && (
             <Button
               variant="outline"
@@ -176,12 +326,7 @@ export function Login() {
         </div>
       )}
       {showEmail && (
-        <form
-          onSubmit={(event) => {
-            void submit(event);
-          }}
-          className="flex flex-col"
-        >
+        <form onSubmit={submit} className="flex flex-col">
           {setup && (
             <>
               <Input
@@ -207,6 +352,8 @@ export function Login() {
             type="email"
             autoComplete="username"
             required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             disabled={pending}
             autoFocus
           />
@@ -224,7 +371,7 @@ export function Login() {
             type="submit"
             size="lg"
             className="mt-2 w-full"
-            variant={provider && !setup ? "outline" : "default"}
+            variant={providers.length && !setup ? "outline" : "default"}
             disabled={pending}
           >
             {pending ? <Spinner /> : null}
@@ -234,6 +381,34 @@ export function Login() {
                 ? t("shell.auth.createAccount")
                 : t("shell.auth.signIn")}
           </Button>
+          {emailCodes && (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <Button
+                variant="link"
+                size="sm"
+                className="px-0"
+                disabled={pending}
+                onClick={() => {
+                  setError(undefined);
+                  setFlow("code");
+                }}
+              >
+                {t("common.signIn.emailCode")}
+              </Button>
+              <Button
+                variant="link"
+                size="sm"
+                className="px-0"
+                disabled={pending}
+                onClick={() => {
+                  setError(undefined);
+                  setFlow("reset");
+                }}
+              >
+                {t("common.signIn.forgot")}
+              </Button>
+            </div>
+          )}
         </form>
       )}
     </AuthScreen>

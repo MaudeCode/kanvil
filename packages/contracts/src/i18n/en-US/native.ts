@@ -208,7 +208,7 @@ export default {
     },
     oidc: {
       linked: "Account linked",
-      explanation: "Link this account before signing in with your identity provider.",
+      explanation: "Link this account before signing in with this provider.",
       // {{provider}} is the identity provider's configured name.
       link: "Link {{provider}}",
     },
