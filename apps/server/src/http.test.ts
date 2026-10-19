@@ -424,6 +424,27 @@ describe("HTTP, realtime, and MCP", () => {
       (await fixture.database.pool.query("SELECT id FROM apikey WHERE name = $1", [name])).rowCount,
     ).toBe(1);
   });
+  it("keeps a finite credential default and creates a key without expiry only when asked", async () => {
+    const project = await newProject();
+    const create = async (expiry: { expiresIn?: number | null }) => {
+      const response = await request("/api/v1/credentials", {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          name: "Expiry consumer",
+          projectIds: [project.id],
+          scopes: ["read"],
+          ...expiry,
+        }),
+      });
+      expect(response.status).toBe(201);
+      return z.object({ expiresAt: z.string().nullable() }).parse(await response.json());
+    };
+    const fallback = await create({});
+    expect(fallback.expiresAt).not.toBeNull();
+    expect(Number(new Date(fallback.expiresAt ?? 0)) - Date.now()).toBeGreaterThan(89 * 86400000);
+    expect((await create({ expiresIn: null })).expiresAt).toBeNull();
+  });
   it("provides an abortable parsed event consumer with processed checkpoints", async () => {
     const project = await newProject(),
       controller = new AbortController();

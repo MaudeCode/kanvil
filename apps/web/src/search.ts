@@ -10,8 +10,28 @@ export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
 export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 export const ticketGroupingSchema = z.enum(["status", "none"]);
 export type TicketGrouping = z.output<typeof ticketGroupingSchema>;
+// Ticket list columns a person can show or hide, in table order.
+export const ticketColumnLabels = {
+  key: "Ticket",
+  labels: "Labels",
+  scopes: "Scopes",
+  status: "Status",
+  priority: "Priority",
+  difficulty: "Difficulty",
+  kind: "Kind",
+  assigneeId: "Assignee",
+  dueAt: "Due",
+  createdAt: "Created",
+  updatedAt: "Updated",
+};
 
-export const accountSections = ["account", "appearance", "credentials", "notifications"] as const;
+export const accountSections = [
+  "account",
+  "appearance",
+  "preferences",
+  "credentials",
+  "notifications",
+] as const;
 export const adminSections = [
   "general",
   "storage",
