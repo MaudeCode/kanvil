@@ -155,6 +155,7 @@ export const families: readonly Family[] = [
       "apps/server/src/authentication-policy.test.ts": 3,
       "apps/server/src/blob-storage.test.ts": 1,
       "apps/server/src/calendar.test.ts": 3,
+      "apps/server/src/cli/client.integration.test.ts": 2,
       "apps/server/src/consumers.test.ts": 2,
       "apps/server/src/custom-fields.test.ts": 7,
       "apps/server/src/domain.test.ts": 33,
@@ -199,8 +200,8 @@ export const families: readonly Family[] = [
     layer: "unit",
     boundaries: ["process"],
     property:
-      "Runs the npm publishing script as a process against a stand-in npm on PATH, so its exit codes and the commands it issues are the real ones.",
-    cases: { "scripts/publish-npm.test.ts": 1 },
+      "Runs the npm publisher against a stand-in npm and the CLI dispatcher as processes, proving actual command dispatch and exit codes.",
+    cases: { "scripts/publish-npm.test.ts": 1, "scripts/kanvil.test.ts": 1 },
   },
   {
     name: "RabbitMQ wakeups",

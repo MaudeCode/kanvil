@@ -77,6 +77,10 @@ Commit each ticket mutation and its durable event together. Use PostgreSQL notif
 
 Deliver reference consumers and contract tests within Kanvil. External applications are responsible for adopting these interfaces.
 
+## Command-line client
+
+The installed `kanvil` executable provides namespaced task, project, workspace, comment and claim commands through the typed client. Private named profiles bind scoped API credentials to server/project targets; JSON/stdin input, stable JSON output and exit codes support scripts. Version checks, retry identities and destructive confirmations stay explicit. Existing service commands retain their behavior. See [the CLI guide](cli.md). Interactive device OAuth is outside the initial CLI scope.
+
 ## MCP
 
 - Authenticated HTTP MCP endpoint using the official SDK.
