@@ -48,6 +48,32 @@ const bigTicket = (index: number) => ({
 });
 
 describe("agent write contracts", () => {
+  it("preserves omitted time-entry patch fields and rejects server-owned values", () => {
+    const subject = {
+      projectId: "project",
+      ticketId: "ticket",
+      timeEntryId: "10000000-0000-4000-8000-000000000001",
+      expectedVersion: 1,
+    };
+    expect(operations.update_time_entry.input.parse({ ...subject, note: "Observed" })).toEqual({
+      ...subject,
+      note: "Observed",
+    });
+    expect(operations.update_time_entry.input.parse({ ...subject, endAt: null })).toEqual({
+      ...subject,
+      endAt: null,
+    });
+    expect(() => operations.update_time_entry.input.parse(subject)).toThrow();
+    for (const field of ["actorId", "durationMs", "version"])
+      expect(() =>
+        operations.create_time_entry.input.parse({
+          projectId: "project",
+          ticketId: "ticket",
+          startAt: "2026-10-01T09:00:00.000Z",
+          [field]: 1,
+        }),
+      ).toThrow();
+  });
   it("shares relationship choices without changing legacy mutation receipt payloads", () => {
     const legacy = {
       projectId: "p",

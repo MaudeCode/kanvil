@@ -27,6 +27,7 @@ import {
   workspaceLabels,
   relations,
   resources,
+  timeEntries,
   stagedUploads,
   subscriptions,
   ticketAliases,
@@ -927,7 +928,7 @@ export const ticketHandlers: Pick<
         .returning(),
     );
     // Everything that belongs to the ticket follows it; its earlier activity stays as recorded.
-    for (const table of [comments, attachments, evidence, resources, subscriptions])
+    for (const table of [comments, attachments, evidence, resources, subscriptions, timeEntries])
       await ctx.db
         .update(table)
         .set({ projectId: row.projectId })

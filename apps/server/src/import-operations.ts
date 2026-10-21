@@ -48,6 +48,7 @@ import {
   resources,
   subscriptions,
   tickets,
+  timeEntries,
   workspaceLabels,
   workspaceMembers,
 } from "./schema.ts";
@@ -129,6 +130,11 @@ async function exportBundle(ctx: Context) {
   const tally = async (column: AnyColumn) =>
     one(await ctx.db.select({ count: count() }).from(column.table).where(inProject(column))).count;
   const omitted = [
+    {
+      content: "time entries",
+      count: await tally(timeEntries.ticketId),
+      reason: "Observed time entries stay with the source ticket and are not imported.",
+    },
     {
       content: "attachments",
       count: await tally(attachments.ticketId),

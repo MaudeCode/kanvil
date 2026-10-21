@@ -211,6 +211,11 @@ export default {
     data_center: "Data Center o Server",
   },
   event: {
+    time_entry: {
+      created: "Registrazione del tempo creata",
+      updated: "Registrazione del tempo aggiornata",
+      deleted: "Registrazione del tempo eliminata",
+    },
     label: {
       created: "Etichetta creata",
       updated: "Etichetta aggiornata",
@@ -294,6 +299,7 @@ export default {
       invalid_origin: "Questa origine non è consentita.",
       not_found: "Questo elemento non è stato trovato o non è visibile per questo account.",
       version_conflict: "Modificato dopo il caricamento. Ricarica e riprova.",
+      time_entry_conflict: "Questo utente ha già una registrazione del tempo in corso sul ticket.",
       claim_conflict: "Un altro esecutore ha in carico questo ticket.",
       idempotency_conflict: "Questa richiesta è già stata usata per un’altra modifica.",
       project_archived: "Ripristina il progetto archiviato prima di modificarlo.",

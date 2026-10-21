@@ -201,6 +201,11 @@ export default {
     data_center: "Data Center 或 Server",
   },
   event: {
+    time_entry: {
+      created: "已创建时间记录",
+      updated: "已更新时间记录",
+      deleted: "已删除时间记录",
+    },
     label: { created: "标签已创建", updated: "标签已更新", deleted: "标签已删除" },
     workflow: {
       created: "工作流状态已添加",
@@ -264,6 +269,7 @@ export default {
       invalid_origin: "不允许此来源。",
       not_found: "未找到此项，或你无权查看。",
       version_conflict: "加载后此内容已被更改。请重新加载后重试。",
+      time_entry_conflict: "此用户在该工单上已有进行中的时间记录。",
       claim_conflict: "另一个执行者已认领此工单。",
       idempotency_conflict: "此请求已用于另一项更改。",
       project_archived: "请先恢复已归档的项目再进行更改。",

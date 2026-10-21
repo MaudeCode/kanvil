@@ -210,6 +210,11 @@ export default {
     data_center: "Data Center of Server",
   },
   event: {
+    time_entry: {
+      created: "Tijdregistratie aangemaakt",
+      updated: "Tijdregistratie bijgewerkt",
+      deleted: "Tijdregistratie verwijderd",
+    },
     label: {
       created: "Label aangemaakt",
       updated: "Label bijgewerkt",
@@ -291,6 +296,7 @@ export default {
       not_found: "Dit item is niet gevonden of je mag het niet zien.",
       version_conflict:
         "Dit is gewijzigd sinds je het hebt geladen. Laad opnieuw en probeer het nog eens.",
+      time_entry_conflict: "Deze gebruiker heeft al een lopende tijdregistratie op het ticket.",
       claim_conflict: "Een andere worker heeft dit ticket geclaimd.",
       idempotency_conflict: "Dit verzoek is al voor een andere wijziging gebruikt.",
       project_archived: "Herstel het gearchiveerde project voordat je het wijzigt.",

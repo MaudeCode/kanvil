@@ -208,6 +208,11 @@ export default {
     data_center: "Data Center hoặc Server",
   },
   event: {
+    time_entry: {
+      created: "Đã tạo bản ghi thời gian",
+      updated: "Đã cập nhật bản ghi thời gian",
+      deleted: "Đã xóa bản ghi thời gian",
+    },
     label: { created: "Đã tạo nhãn", updated: "Đã cập nhật nhãn", deleted: "Đã xóa nhãn" },
     workflow: {
       created: "Đã thêm trạng thái quy trình",
@@ -284,6 +289,7 @@ export default {
       invalid_origin: "Nguồn gốc này không được phép.",
       not_found: "Không tìm thấy mục này hoặc bạn không có quyền xem.",
       version_conflict: "Mục này đã thay đổi kể từ khi tải. Tải lại và thử lại.",
+      time_entry_conflict: "Người dùng này đã có một bản ghi thời gian đang chạy trên phiếu.",
       claim_conflict: "Một tiến trình khác đang giữ phiếu này.",
       idempotency_conflict: "Yêu cầu này đã được dùng cho một thay đổi khác.",
       project_archived: "Khôi phục dự án đã lưu trữ trước khi thay đổi.",

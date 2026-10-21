@@ -72,6 +72,28 @@ One transaction publishes `ticket.moved_away` to the source with `ticketId: null
 
 `resolve_ticket` (`GET /api/v1/tickets/resolve?ticketId=...`) finds a ticket by ID, current key, or earlier key across every project the caller can read, archived tickets included, and returns `{ ticket, project }` with the project's `id`, `key`, and `name`. Clients use it to follow a link whose project no longer holds the ticket. `search_tickets` and `search_workspace` also match earlier keys.
 
+### Observed time entries
+
+Time entries record human-observed data supplied by an authorized caller. They do not estimate model effort. The same registry operations serve HTTP, MCP tools, and `api.call` on web and native; no timer UI is included.
+
+| Operation           | Method and path under `/api/v1`                                              |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `create_time_entry` | `POST /projects/{projectId}/tickets/{ticketId}/time-entries`                 |
+| `list_time_entries` | `GET /projects/{projectId}/tickets/{ticketId}/time-entries`                  |
+| `get_time_entry`    | `GET /projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}`    |
+| `update_time_entry` | `PATCH /projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}`  |
+| `delete_time_entry` | `DELETE /projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}` |
+
+Creation takes `startAt`, an ISO UTC timestamp, optional `endAt` and `note` up to 20,000 characters. Timestamps are stored at millisecond precision. Omitted or null `endAt` means running. The response includes stable `id`, `projectId`, `ticketId`, original `actorId`, `startAt`, `endAt`, `note`, `version`, `createdAt`, `updatedAt`, and `durationMs`. Duration is the server-derived end minus start in milliseconds, or null for a running entry; it does not grow on reads. Equal timestamps give zero duration. An end before the start returns `400 validation_error`. Duration, attribution, and other server-owned fields cannot be supplied by clients.
+
+Listing returns `{ items, total }`, newest creation first, with an ID tie-breaker and the usual bounded `limit`/`offset`. Reading needs project read access. Creating needs `ticket.write` and a `write` credential scope; editing and deletion also require the original author or `project.manage`. Credentials attribute entries to their account, so two credentials for one account share the same running-entry limit. Machine writes honor the ticket's claim through optional `claimId`.
+
+Updates take `expectedVersion` and at least one of `startAt`, `endAt`, or `note`. An omitted field stays unchanged; null `endAt` reopens the entry. Deletion takes `expectedVersion` too. A stale version returns `409 version_conflict`. At most one running entry exists per actor and ticket, including concurrent creates or reopening an ended entry; a conflict returns `409 time_entry_conflict`. Ended entries may overlap. No clock, billing, or capacity policy is inferred from the observed ranges.
+
+All three writes accept `requestId`. Reuse it with identical arguments after an interrupted or lost response, including after deletion; the persisted receipt returns the original result without another mutation or event. Reusing it for different arguments returns `409 idempotency_conflict`. Each committed change atomically publishes `time_entry.created`, `time_entry.updated`, or `time_entry.deleted` with `timeEntryId` and `version`. The event actor is the editor; the entry keeps its original actor. These entries have their own versions and do not increment the ticket version.
+
+Entries follow ticket moves with unchanged IDs, attribution, and versions. Every read, write, and receipt replay checks the ticket in its current project, so the old project cannot disclose entries after a move or deletion. Entry deletion and ticket, project, or workspace deletion remove the rows; prior activity and private mutation receipts follow the existing history and receipt policy. Account deletion keeps the original actor ID under the `Deleted account` tombstone and retains ended and running entries. An administrator can close a retained running entry. Public project links never expose time entries. Ticket duplication and the version-1 ticket export/import bundle do not copy them; export reports their count in `completeness.omitted`. Database backup and restoration retain them.
+
 ### Workflow states
 
 Each project has named workflow states. Every state maps to one of the six canonical statuses (`backlog`, `todo`, `in_progress`, `in_review`, `done`, `cancelled`), its category. A ticket stores one state, `stateId`. Its `status` is that state's category, kept equal by the database, so every rule that reads `status` reads the category: open and closed counts (`done` and `cancelled` close work), readiness (a ticket must be in a To do state), finished dependencies, filters, `sort: "status"` (category, then the state's place), claims, notifications, and calendar feeds. New projects and projects upgraded from earlier versions start with one state per category, whose `slug` is the category name.

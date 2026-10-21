@@ -206,6 +206,11 @@ export default {
     data_center: "Data CenterまたはServer",
   },
   event: {
+    time_entry: {
+      created: "時間記録を作成しました",
+      updated: "時間記録を更新しました",
+      deleted: "時間記録を削除しました",
+    },
     label: { created: "ラベルを作成", updated: "ラベルを更新", deleted: "ラベルを削除" },
     workflow: {
       created: "ワークフローの状態を追加",
@@ -281,6 +286,7 @@ export default {
       invalid_origin: "このオリジンは許可されていません。",
       not_found: "この項目は見つからないか、閲覧する権限がありません。",
       version_conflict: "読み込み後に変更されました。再読み込みしてやり直してください。",
+      time_entry_conflict: "このユーザーには、このチケットで実行中の時間記録がすでにあります。",
       claim_conflict: "別のワーカーがこのチケットを引き受けています。",
       idempotency_conflict: "このリクエストはすでに別の変更に使用されています。",
       project_archived: "変更する前にアーカイブ済みのプロジェクトを復元してください。",

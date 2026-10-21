@@ -92,6 +92,17 @@ describe("account deletion", () => {
     await parsed(
       request(`${tickets}/${ticket.id}/comments`, "POST", { body: "Signed note" }, personCookie),
     );
+    const timeEntry = await parsed(
+      request(
+        `${tickets}/${ticket.id}/time-entries`,
+        "POST",
+        {
+          startAt: "2026-10-01T09:00:00.000Z",
+          endAt: "2026-10-01T09:01:00.000Z",
+        },
+        personCookie,
+      ),
+    );
     await parsed(
       request(
         `${tickets}/${ticket.id}/evidence`,
@@ -199,6 +210,9 @@ describe("account deletion", () => {
     expect(tombstone?.deletedAt).toBeInstanceOf(Date);
 
     // The shared history keeps its author, and clients learn the author is a deleted account.
+    expect(
+      await (await request(`${tickets}/${ticket.id}/time-entries/${timeEntry.id}`)).json(),
+    ).toMatchObject({ actorId: person.id, durationMs: 60_000 });
     const kept = await request(`${tickets}/${ticket.id}`);
     expect(await kept.json()).toMatchObject({ ticket: { createdBy: person.id } });
     expect(await (await request(`${tickets}/${ticket.id}/comments`)).json()).toMatchObject({
