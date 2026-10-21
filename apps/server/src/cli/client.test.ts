@@ -189,6 +189,11 @@ test("stable failure codes and messages exclude echoed secrets, payloads and tra
     expect(result.stderr).toContain('"code":"denied"');
     expect(result.stderr).not.toContain("private-token-default");
   }
+  const malformed = await h.run(["workspace", "list"], "", async () =>
+    Response.json({ wrong: "server output" }),
+  );
+  expect(malformed.code).toBe(1);
+  expect(JSON.parse(malformed.stderr)).toMatchObject({ error: { code: "invalid_response" } });
   const network = await h.run(["workspace", "list"], "", async () => {
     throw new TypeError("private-token-default");
   });

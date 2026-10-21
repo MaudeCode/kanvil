@@ -279,7 +279,12 @@ export async function runClient(
           signal: AbortSignal.timeout(30_000),
         }),
     });
-    output(await api.call(command, parsed));
+    const result = await api.call(command, parsed).catch((error: unknown) => {
+      if (error instanceof z.ZodError)
+        throw new ApiError(502, "invalid_response", "Invalid server response.");
+      throw error;
+    });
+    output(result);
     return 0;
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 0;
