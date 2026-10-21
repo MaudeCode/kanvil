@@ -210,6 +210,11 @@ export default {
     data_center: "Data Center veya Server",
   },
   event: {
+    time_entry: {
+      created: "Zaman kaydı oluşturuldu",
+      updated: "Zaman kaydı güncellendi",
+      deleted: "Zaman kaydı silindi",
+    },
     label: {
       created: "Etiket oluşturuldu",
       updated: "Etiket güncellendi",
@@ -292,6 +297,7 @@ export default {
       invalid_origin: "Bu kaynağa izin verilmiyor.",
       not_found: "Bu öğe bulunamadı veya görme yetkiniz yok.",
       version_conflict: "Yüklediğinizden beri bu değişti. Yeniden yükleyip tekrar deneyin.",
+      time_entry_conflict: "Bu kullanıcının bu bilette zaten devam eden bir zaman kaydı var.",
       claim_conflict: "Bu talebi başka bir çalışan üstlenmiş.",
       idempotency_conflict: "Bu istek başka bir değişiklik için zaten kullanıldı.",
       project_archived: "Değiştirmeden önce arşivlenmiş projeyi geri yükleyin.",

@@ -213,6 +213,11 @@ export default {
     data_center: "Data Center oder Server",
   },
   event: {
+    time_entry: {
+      created: "Zeiteintrag erstellt",
+      updated: "Zeiteintrag aktualisiert",
+      deleted: "Zeiteintrag gelöscht",
+    },
     label: { created: "Label erstellt", updated: "Label aktualisiert", deleted: "Label gelöscht" },
     workflow: {
       created: "Workflow-Zustand hinzugefügt",
@@ -290,6 +295,7 @@ export default {
       not_found: "Dieses Element wurde nicht gefunden oder ist für Sie nicht sichtbar.",
       version_conflict:
         "Dies wurde seit dem Laden geändert. Laden Sie neu und versuchen Sie es erneut.",
+      time_entry_conflict: "Für diesen Akteur läuft bereits ein Zeiteintrag für dieses Ticket.",
       claim_conflict: "Ein anderer Worker hat dieses Ticket übernommen.",
       idempotency_conflict: "Diese Anfrage wurde bereits für eine andere Änderung verwendet.",
       project_archived: "Stellen Sie das archivierte Projekt wieder her, bevor Sie es ändern.",

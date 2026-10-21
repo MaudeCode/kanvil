@@ -209,6 +209,11 @@ export default {
     data_center: "Data Center या Server",
   },
   event: {
+    time_entry: {
+      created: "समय प्रविष्टि बनाई गई",
+      updated: "समय प्रविष्टि अपडेट की गई",
+      deleted: "समय प्रविष्टि हटाई गई",
+    },
     label: { created: "लेबल बनाया गया", updated: "लेबल अपडेट हुआ", deleted: "लेबल हटाया गया" },
     workflow: {
       created: "वर्कफ़्लो स्थिति जोड़ी गई",
@@ -284,6 +289,7 @@ export default {
       invalid_origin: "इस ऑरिजिन की अनुमति नहीं है।",
       not_found: "यह आइटम नहीं मिला या आप इसे नहीं देख सकते।",
       version_conflict: "लोड करने के बाद यह बदल गया है। फिर से लोड करें और दोबारा प्रयास करें।",
+      time_entry_conflict: "इस उपयोगकर्ता की इस टिकट पर पहले से एक चालू समय प्रविष्टि है।",
       claim_conflict: "इस टिकट पर किसी अन्य वर्कर का दावा है।",
       idempotency_conflict: "यह अनुरोध पहले ही किसी अन्य परिवर्तन के लिए उपयोग हो चुका है।",
       project_archived: "बदलने से पहले संग्रहित प्रोजेक्ट को पुनर्स्थापित करें।",

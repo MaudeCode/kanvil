@@ -62,6 +62,7 @@ import { lifecycleHandlers } from "./project-lifecycle.ts";
 import { labelHandlers } from "./label-operations.ts";
 import { ticketHandlers } from "./ticket-operations.ts";
 import { collaborationHandlers } from "./collaboration-operations.ts";
+import { timeEntryHandlers } from "./time-entry-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
 import { calendarHandlers } from "./calendar-operations.ts";
 import { invitationHandlers } from "./invitation-operations.ts";
@@ -669,6 +670,7 @@ export function createDomain(
     ...labelHandlers,
     ...ticketHandlers,
     ...collaborationHandlers,
+    ...timeEntryHandlers,
     ...deliveryHandlers,
     ...calendarHandlers,
     ...invitationHandlers,
@@ -835,6 +837,14 @@ export function createDomain(
         return parseOutput(name, receipt.result);
       const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission);
       if (receipt) {
+        // Time-entry receipts must not disclose a moved or deleted ticket through its old project.
+        if (
+          (name === "create_time_entry" ||
+            name === "update_time_entry" ||
+            name === "delete_time_entry") &&
+          "ticketId" in input
+        )
+          await getTicket(ctx, input.ticketId);
         const prior = parseOutput(name, receipt.result);
         // Creation has no input subject ID, so its stored result must also be authorized on replay.
         if (name === "create_project")

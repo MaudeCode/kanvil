@@ -6,6 +6,7 @@ import {
   attachmentLimit,
   attachmentPath,
   ticketSchema,
+  timeEntrySchema,
   snapshotSchema,
   type ChangeEvent,
 } from "@kanvil/contracts";
@@ -635,6 +636,139 @@ describe("HTTP, realtime, and MCP", () => {
     expect(
       await client().call("list_resources", { projectId: project.id, ticketId: ticket.id }),
     ).toEqual([]);
+  });
+  it("records observed time ranges through the ticket HTTP API", async () => {
+    const project = await newProject(),
+      ticket = await client().call("create_ticket", {
+        projectId: project.id,
+        title: "Observed work",
+      });
+    const response = await request(
+      `/api/v1/projects/${project.id}/tickets/${ticket.id}/time-entries`,
+      {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          startAt: "2026-10-01T09:00:00.000Z",
+          endAt: "2026-10-01T09:01:30.250Z",
+        }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ticketId: ticket.id,
+      version: 1,
+      durationMs: 90_250,
+      startAt: "2026-10-01T09:00:00.000Z",
+      endAt: "2026-10-01T09:01:30.250Z",
+    });
+    let interrupted = false;
+    const api = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: sessionHeaders,
+      fetch: async (input, init) => {
+        const result = await application.app.fetch(new Request(input, init));
+        if (!interrupted && init?.method === "POST") {
+          interrupted = true;
+          throw new TypeError("Lost response after commit");
+        }
+        return result;
+      },
+    });
+    const subject = { projectId: project.id, ticketId: ticket.id };
+    const running = await api.call("create_time_entry", {
+      ...subject,
+      startAt: "2026-10-01T10:00:00.000Z",
+    });
+    expect(running).toMatchObject({ endAt: null, durationMs: null, version: 1 });
+    expect((await api.call("list_time_entries", subject)).total).toBe(2);
+    const ended = await api.call("update_time_entry", {
+      ...subject,
+      timeEntryId: running.id,
+      expectedVersion: 1,
+      endAt: "2026-10-01T10:00:20.000Z",
+    });
+    expect(ended.durationMs).toBe(20_000);
+    const token = await credential(project.id);
+    const sdk = new Client({ name: "kanvil-time-entry-test", version: "1.0.0" });
+    await sdk.connect(
+      new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+        fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+      }),
+    );
+    try {
+      const tools = await sdk.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining([
+          "create_time_entry",
+          "get_time_entry",
+          "list_time_entries",
+          "update_time_entry",
+          "delete_time_entry",
+        ]),
+      );
+      const created = z.object({ result: timeEntrySchema }).parse(
+        (
+          await sdk.callTool({
+            name: "create_time_entry",
+            arguments: { ...subject, startAt: "2026-10-01T11:00:00.000Z" },
+          })
+        ).structuredContent,
+      ).result;
+      expect(created.durationMs).toBeNull();
+      expect(
+        (
+          await sdk.callTool({
+            name: "update_time_entry",
+            arguments: {
+              ...subject,
+              timeEntryId: created.id,
+              expectedVersion: 1,
+              endAt: "2026-10-01T11:00:30.000Z",
+            },
+          })
+        ).structuredContent,
+      ).toMatchObject({
+        result: { id: created.id, version: 2, durationMs: 30_000, actorId: created.actorId },
+      });
+      expect(
+        (
+          await sdk.callTool({
+            name: "get_time_entry",
+            arguments: { ...subject, timeEntryId: created.id },
+          })
+        ).structuredContent,
+      ).toMatchObject({ result: { version: 2, durationMs: 30_000 } });
+      expect(
+        (await sdk.callTool({ name: "list_time_entries", arguments: subject })).structuredContent,
+      ).toMatchObject({ result: { total: 3 } });
+      expect(
+        (
+          await sdk.callTool({
+            name: "delete_time_entry",
+            arguments: { ...subject, timeEntryId: created.id, expectedVersion: 2 },
+          })
+        ).structuredContent,
+      ).toEqual({ result: { ok: true } });
+    } finally {
+      await sdk.close();
+    }
+    const readToken = await credential(project.id, ["read"]);
+    expect(
+      (
+        await request(`/api/v1/projects/${project.id}/tickets/${ticket.id}/time-entries`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${readToken.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ startAt: "2026-10-01T12:00:00.000Z" }),
+        })
+      ).status,
+    ).toBe(403);
+    await api.call("delete_time_entry", {
+      ...subject,
+      timeEntryId: running.id,
+      expectedVersion: 2,
+    });
   });
   it("keeps binary content transactional and protects downloads and deletion", async () => {
     const project = await newProject(),

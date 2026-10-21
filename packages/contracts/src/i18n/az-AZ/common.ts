@@ -214,6 +214,11 @@ export default {
     data_center: "Data Center və ya Server",
   },
   event: {
+    time_entry: {
+      created: "Vaxt qeydi yaradıldı",
+      updated: "Vaxt qeydi yeniləndi",
+      deleted: "Vaxt qeydi silindi",
+    },
     label: { created: "Etiket yaradıldı", updated: "Etiket yeniləndi", deleted: "Etiket silindi" },
     workflow: {
       created: "İş axını vəziyyəti əlavə edildi",
@@ -289,6 +294,7 @@ export default {
       invalid_origin: "Bu mənbəyə icazə verilmir.",
       not_found: "Bu element tapılmadı və ya ona baxmaq icazəniz yoxdur.",
       version_conflict: "Yükləndikdən sonra dəyişdirilib. Yenidən yükləyib təkrar cəhd edin.",
+      time_entry_conflict: "Bu istifadəçinin tapşırıqda artıq davam edən vaxt qeydi var.",
       claim_conflict: "Bu tiket başqa işçidədir.",
       idempotency_conflict: "Bu sorğu artıq başqa dəyişiklik üçün istifadə edilib.",
       project_archived: "Dəyişməzdən əvvəl arxivləşdirilmiş layihəni bərpa edin.",

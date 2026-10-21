@@ -52,6 +52,7 @@ Validate PocketID mobile login and MCP client authentication early. These checks
 - Typed project custom fields (text, number, date, checkbox, select, and multi-select) that administrators define, order, and edit with required rules and defaults. Definitions are versioned and server-validated; removing a used option needs an explicit destination for its values, so nothing is erased silently.
 - Parent/child relationships, blockers, related tickets, and duplicate references.
 - Comments, activity history, subscriptions, duplication, archiving, and deletion behavior.
+- Human-observed ticket time entries through HTTP, MCP, and the typed client, with explicit start/end timestamps, server-derived duration, versioned edits, original attribution, and one running entry per actor and ticket. Timer UI, billing, capacity reporting, and agent-effort estimates stay outside this capability.
 - Versioned JSON export of a project's tickets and a previewed import into a new project that resumes after interruption without duplicates and notifies no one.
 - Read-only Linear, Jira (Cloud and Data Center), Trello, Plane, PLANKA, and Kaneo import sources that translate a team, project, or board into the same bundle and disclose what Kanvil cannot hold.
 - Workspace search across projects, tickets, comments, and activity with a results page; any-of and none-of property filters shared by lists, search, and saved views; sorting, pagination, and bulk edits.

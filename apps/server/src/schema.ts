@@ -535,6 +535,32 @@ export const evidence = pgTable("evidence", {
   note: text("note").notNull(),
   createdAt: time("created_at"),
 });
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    actorId: actor(),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }),
+    note: text("note").notNull().default(""),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [
+    index("time_entry_ticket").on(table.ticketId, table.createdAt, table.id),
+    uniqueIndex("time_entry_running")
+      .on(table.ticketId, table.actorId)
+      .where(sql`${table.endAt} IS NULL`),
+    check("time_entry_range", sql`${table.endAt} IS NULL OR ${table.endAt} >= ${table.startAt}`),
+  ],
+);
 export const resources = pgTable(
   "resources",
   {

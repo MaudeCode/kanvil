@@ -205,6 +205,11 @@ export default {
     data_center: "Data Center atau Server",
   },
   event: {
+    time_entry: {
+      created: "Entri waktu dibuat",
+      updated: "Entri waktu diperbarui",
+      deleted: "Entri waktu dihapus",
+    },
     label: { created: "Label dibuat", updated: "Label diperbarui", deleted: "Label dihapus" },
     workflow: {
       created: "Status alur kerja ditambahkan",
@@ -280,6 +285,7 @@ export default {
       invalid_origin: "Origin ini tidak diizinkan.",
       not_found: "Item ini tidak ditemukan atau tidak dapat Anda lihat.",
       version_conflict: "Ini telah berubah sejak Anda memuatnya. Muat ulang dan coba lagi.",
+      time_entry_conflict: "Pengguna ini sudah memiliki entri waktu yang berjalan pada tiket.",
       claim_conflict: "Pekerja lain memegang tiket ini.",
       idempotency_conflict: "Permintaan ini sudah digunakan untuk perubahan lain.",
       project_archived: "Pulihkan proyek yang diarsipkan sebelum mengubahnya.",

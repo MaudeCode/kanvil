@@ -219,6 +219,11 @@ export default {
     data_center: "Data Center lub Server",
   },
   event: {
+    time_entry: {
+      created: "Utworzono wpis czasu",
+      updated: "Zaktualizowano wpis czasu",
+      deleted: "Usunięto wpis czasu",
+    },
     label: {
       created: "Etykieta utworzona",
       updated: "Etykieta zaktualizowana",
@@ -303,6 +308,7 @@ export default {
       invalid_origin: "To źródło nie jest dozwolone.",
       not_found: "Nie znaleziono tego elementu lub nie masz do niego dostępu.",
       version_conflict: "To zmieniło się od czasu wczytania. Odśwież i spróbuj ponownie.",
+      time_entry_conflict: "Ten użytkownik ma już aktywny wpis czasu w tym zgłoszeniu.",
       claim_conflict: "To zadanie jest przejęte przez innego wykonawcę.",
       idempotency_conflict: "To żądanie zostało już użyte dla innej zmiany.",
       project_archived: "Przywróć zarchiwizowany projekt, zanim go zmienisz.",

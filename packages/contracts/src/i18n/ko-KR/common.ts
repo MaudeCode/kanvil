@@ -202,6 +202,11 @@ export default {
     data_center: "Data Center 또는 Server",
   },
   event: {
+    time_entry: {
+      created: "시간 기록 생성됨",
+      updated: "시간 기록 업데이트됨",
+      deleted: "시간 기록 삭제됨",
+    },
     label: { created: "레이블 생성됨", updated: "레이블 업데이트됨", deleted: "레이블 삭제됨" },
     workflow: {
       created: "워크플로 상태 추가됨",
@@ -265,6 +270,7 @@ export default {
       invalid_origin: "허용되지 않은 출처입니다.",
       not_found: "이 항목을 찾을 수 없거나 볼 권한이 없습니다.",
       version_conflict: "불러온 후 변경되었습니다. 새로고침하고 다시 시도하세요.",
+      time_entry_conflict: "이 사용자는 이 티켓에 이미 진행 중인 시간 기록이 있습니다.",
       claim_conflict: "다른 워커가 이 티켓을 선점하고 있습니다.",
       idempotency_conflict: "이 요청은 이미 다른 변경에 사용되었습니다.",
       project_archived: "변경하기 전에 보관된 프로젝트를 복원하세요.",

@@ -832,6 +832,22 @@ export const evidenceSchema = evidenceFields.extend({
   actorId: z.string(),
   createdAt: timestamp,
 });
+// Observed timestamps, never an estimate of agent effort. Running entries have no duration.
+export const timeEntryFields = z.object({
+  startAt: timestamp,
+  endAt: timestamp.nullable().default(null),
+  note: z.string().max(20_000).default(""),
+});
+export const timeEntrySchema = timeEntryFields.extend({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  ticketId: z.uuid(),
+  actorId: z.string(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
 // Editable links on a ticket. Unlike evidence, they carry no reported outcome and can change.
 const resourceTitle = z.string().trim().max(200);
 export const resourceFields = z.object({ url: httpUrl, title: resourceTitle.default("") });
@@ -1425,6 +1441,9 @@ export const namedEvents = [
   "attachment.created",
   "attachment.deleted",
   "evidence.added",
+  "time_entry.created",
+  "time_entry.updated",
+  "time_entry.deleted",
   "resource.added",
   "resource.updated",
   "resource.removed",
@@ -2952,6 +2971,72 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/evidence",
     "write",
     "Attach evidence with its commit and provenance.",
+  ),
+  list_time_entries: op(
+    ticketInput.extend(pagination),
+    page(timeEntrySchema),
+    "GET",
+    "/projects/{projectId}/tickets/{ticketId}/time-entries",
+    "read",
+    "List observed time entries, newest first. Running entries have null endAt and durationMs.",
+  ),
+  get_time_entry: op(
+    ticketInput.extend({ timeEntryId: z.uuid() }),
+    timeEntrySchema,
+    "GET",
+    "/projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}",
+    "read",
+    "Read one attributed time entry within its current ticket and project.",
+  ),
+  create_time_entry: op(
+    ticketInput
+      .extend({ ...mutation, ...timeEntryFields.shape, claimId: z.uuid().optional() })
+      .strict(),
+    timeEntrySchema,
+    "POST",
+    "/projects/{projectId}/tickets/{ticketId}/time-entries",
+    "write",
+    "Record observed startAt and optional endAt timestamps. Duration is derived in milliseconds; at most one running entry per actor and ticket. Reuse requestId after interruption.",
+  ),
+  update_time_entry: op(
+    ticketInput
+      .extend({
+        ...mutation,
+        timeEntryId: z.uuid(),
+        expectedVersion: version,
+        claimId: z.uuid().optional(),
+        startAt: timeEntryFields.shape.startAt.optional(),
+        endAt: timeEntryFields.shape.endAt.unwrap().optional(),
+        note: timeEntryFields.shape.note.unwrap().optional(),
+      })
+      .strict()
+      .refine(
+        (input) =>
+          input.startAt !== undefined || input.endAt !== undefined || input.note !== undefined,
+        {
+          message: "Change the start, end, or note",
+        },
+      ),
+    timeEntrySchema,
+    "PATCH",
+    "/projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}",
+    "write",
+    "Edit your own time entry at its current version; project administrators may edit any. Omitting endAt keeps it, null reopens it. Original actor attribution never changes.",
+  ),
+  delete_time_entry: op(
+    ticketInput
+      .extend({
+        ...mutation,
+        timeEntryId: z.uuid(),
+        expectedVersion: version,
+        claimId: z.uuid().optional(),
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/projects/{projectId}/tickets/{ticketId}/time-entries/{timeEntryId}",
+    "write",
+    "Delete your own time entry at its current version; project administrators may delete any. Reuse requestId when retrying.",
   ),
   list_resources: op(
     ticketInput,

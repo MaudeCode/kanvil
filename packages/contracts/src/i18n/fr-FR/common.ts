@@ -217,6 +217,11 @@ export default {
     data_center: "Data Center ou Server",
   },
   event: {
+    time_entry: {
+      created: "Entrée de temps créée",
+      updated: "Entrée de temps mise à jour",
+      deleted: "Entrée de temps supprimée",
+    },
     label: {
       created: "Étiquette créée",
       updated: "Étiquette modifiée",
@@ -293,6 +298,7 @@ export default {
       invalid_origin: "Cette origine n’est pas autorisée.",
       not_found: "Cet élément est introuvable ou vous n’y avez pas accès.",
       version_conflict: "Cet élément a changé depuis son chargement. Rechargez et réessayez.",
+      time_entry_conflict: "Cet utilisateur a déjà une entrée de temps en cours sur ce ticket.",
       claim_conflict: "Un autre exécutant a pris en charge ce ticket.",
       idempotency_conflict: "Cette requête a déjà servi à une autre modification.",
       project_archived: "Restaurez le projet archivé avant de le modifier.",

@@ -201,6 +201,11 @@ export default {
     data_center: "Data Center 或 Server",
   },
   event: {
+    time_entry: {
+      created: "已建立時間紀錄",
+      updated: "已更新時間紀錄",
+      deleted: "已刪除時間紀錄",
+    },
     label: { created: "標籤已建立", updated: "標籤已更新", deleted: "標籤已刪除" },
     workflow: {
       created: "工作流程狀態已新增",
@@ -264,6 +269,7 @@ export default {
       invalid_origin: "不允許此來源。",
       not_found: "找不到此項目，或您無權檢視。",
       version_conflict: "載入後此內容已變更。請重新載入後再試一次。",
+      time_entry_conflict: "此使用者在此工單上已有進行中的時間紀錄。",
       claim_conflict: "另一個執行者已認領此工單。",
       idempotency_conflict: "此要求已用於另一項變更。",
       project_archived: "請先還原已封存的專案再進行變更。",

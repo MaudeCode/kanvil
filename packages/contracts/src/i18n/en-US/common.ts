@@ -205,6 +205,11 @@ export default {
     data_center: "Data Center or Server",
   },
   event: {
+    time_entry: {
+      created: "Time entry created",
+      updated: "Time entry updated",
+      deleted: "Time entry deleted",
+    },
     label: { created: "Label created", updated: "Label updated", deleted: "Label deleted" },
     workflow: {
       created: "Workflow state added",
@@ -270,6 +275,7 @@ export default {
       invalid_origin: "This origin is not allowed.",
       not_found: "This item was not found or is not yours to see.",
       version_conflict: "This changed since you loaded it. Reload and try again.",
+      time_entry_conflict: "This actor already has a running entry on the ticket.",
       claim_conflict: "Another worker holds this ticket.",
       idempotency_conflict: "This request was already used for another change.",
       project_archived: "Restore the archived project before changing it.",
