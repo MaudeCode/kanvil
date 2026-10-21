@@ -40,6 +40,7 @@ try {
   const cli = join(directory, "node_modules/.bin/kanvil");
   const options = { cwd: directory };
   assert.match((await exec(cli, ["--help"], options)).stdout, /Usage: kanvil/);
+  assert.match((await exec(cli, ["task", "--help"], options)).stdout, /task create/);
   const metadata = z
     .object({ version: z.string() })
     .parse(JSON.parse(await readFile("package.json", "utf8")));
@@ -129,6 +130,109 @@ try {
     expectedVersion,
     "Settings must report the packaged version",
   );
+  const projectResponse = await fetch(`${base}/api/v1/projects`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      Origin: "https://kanvil.example.test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ key: "CLI", name: "Installed CLI" }),
+  });
+  assert.equal(projectResponse.status, 200);
+  const project = z.object({ id: z.string() }).parse(await projectResponse.json());
+  const credentialResponse = await fetch(`${base}/api/v1/credentials`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      Origin: "https://kanvil.example.test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "Installed CLI",
+      projectIds: [project.id],
+      scopes: ["read", "write"],
+    }),
+  });
+  assert.equal(credentialResponse.status, 201);
+  const credential = z.object({ key: z.string() }).parse(await credentialResponse.json());
+  const clientConfig = join(directory, "client.json");
+  const configured = exec(
+    cli,
+    [
+      "profile",
+      "set",
+      "default",
+      "--config",
+      clientConfig,
+      "--server",
+      base,
+      "--project",
+      project.id,
+      "--token-stdin",
+    ],
+    options,
+  );
+  configured.child.stdin?.end(credential.key);
+  const configuredOutput = await configured;
+  assert(!configuredOutput.stdout.includes(credential.key));
+  assert.equal((await stat(clientConfig)).mode & 0o777, 0o600);
+  const created = z
+    .object({ key: z.string(), version: z.number() })
+    .parse(
+      JSON.parse(
+        (
+          await exec(
+            cli,
+            ["task", "create", "--config", clientConfig, "--title", "Installed task", "--json"],
+            options,
+          )
+        ).stdout,
+      ),
+    );
+  const edited = exec(
+    cli,
+    ["task", "update", created.key, "--config", clientConfig, "--input", "-", "--json"],
+    options,
+  );
+  edited.child.stdin?.end(
+    JSON.stringify({ expectedVersion: created.version, changes: { title: "Edited from stdin" } }),
+  );
+  assert.equal(
+    z.object({ title: z.string() }).parse(JSON.parse((await edited).stdout)).title,
+    "Edited from stdin",
+  );
+  await assert.rejects(
+    exec(
+      cli,
+      [
+        "task",
+        "update",
+        created.key,
+        "--config",
+        clientConfig,
+        "--expected-version",
+        String(created.version),
+        "--changes",
+        '{"title":"Stale"}',
+      ],
+      options,
+    ),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === 5,
+  );
+  // Exercise the existing recovery command against only this smoke test's owner.
+  const recovery = exec(cli, ["recover", "--email", "package@example.test"], options);
+  recovery.child.stdin?.end("Replacement package password 42!\n");
+  assert.match((await recovery).stdout, /Local password replaced/);
+  const recovered = await fetch(`${base}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "https://kanvil.example.test" },
+    body: JSON.stringify({
+      email: "package@example.test",
+      password: "Replacement package password 42!",
+    }),
+  });
+  assert.equal(recovered.status, 200);
   server.kill("SIGTERM");
   await exited;
   server = undefined;

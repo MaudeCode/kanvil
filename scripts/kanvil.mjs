@@ -8,8 +8,10 @@ if (command === "--version") {
   );
 } else if (command === "--help") {
   console.info(
-    "Usage: kanvil [start | configure --production https://kanvil.example.com | migrate | recover --email admin@example.com]\nReads .env from the current directory. Requires Node 24 and PostgreSQL 18.",
+    "Usage: kanvil [start | configure --production https://kanvil.example.com | migrate | recover --email admin@example.com]\nClient: kanvil <task | project | workspace | comment | claim | profile> --help\nReads .env from the current directory. Requires Node 24 and PostgreSQL 18.",
   );
+} else if (["task", "project", "workspace", "comment", "claim", "profile"].includes(command)) {
+  await import(new URL("../apps/server/dist/client.mjs", import.meta.url));
 } else {
   const entries = {
     start: "index",
