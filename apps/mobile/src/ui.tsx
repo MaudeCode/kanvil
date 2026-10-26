@@ -1680,6 +1680,8 @@ export function List<T>({
       keyboardShouldPersistTaps="handled"
       contentInsetAdjustmentBehavior="automatic"
       {...props}
+      // Recycled rows memoize data; renderer state also owns selection and active styling.
+      extraData={props.extraData ?? props.renderItem}
       refreshing={refreshing}
       {...(onRefresh
         ? {
