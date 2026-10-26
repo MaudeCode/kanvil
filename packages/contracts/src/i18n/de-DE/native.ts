@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Gelesen",
+  "navigation.recentProjects": "Zuletzt verwendete Projekte",
   "navigation.switchProject": "Arbeitsbereich oder Projekt wechseln",
   labelValue: "{{label}}: {{value}}",
   ui: {

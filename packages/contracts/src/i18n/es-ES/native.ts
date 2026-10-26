@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Leída",
+  "navigation.recentProjects": "Proyectos recientes",
   "navigation.switchProject": "Cambiar espacio de trabajo o proyecto",
   labelValue: "{{label}}: {{value}}",
   ui: {

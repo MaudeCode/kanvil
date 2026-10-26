@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Dibaca",
+  "navigation.recentProjects": "Proyek terbaru",
   "navigation.switchProject": "Ganti ruang kerja atau proyek",
   labelValue: "{{label}}: {{value}}",
   ui: {

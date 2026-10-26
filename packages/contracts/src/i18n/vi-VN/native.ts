@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Đã đọc",
+  "navigation.recentProjects": "Dự án gần đây",
   "navigation.switchProject": "Chuyển không gian làm việc hoặc dự án",
   labelValue: "{{label}}: {{value}}",
   ui: {

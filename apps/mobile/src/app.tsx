@@ -41,6 +41,7 @@ import {
   useIdentity,
   useLive,
   WorkspaceProvider,
+  ClockProvider,
   useWorkspace,
   useAllProjects,
 } from "./data.tsx";
@@ -79,7 +80,7 @@ import {
   Administration,
   ImportProject,
 } from "./management.tsx";
-import { t } from "@kanvil/contracts/i18n";
+import { formatNumber, t } from "@kanvil/contracts/i18n";
 
 const Stack = createNativeStackNavigator<Routes>();
 const Tabs = createNativeBottomTabNavigator<TabRoutes>();
@@ -539,9 +540,11 @@ function PrivateWorkspace({
           },
         }}
       >
-        <WorkspaceProvider>
-          <Navigation onDisconnect={onDisconnect} contexts={contexts} />
-        </WorkspaceProvider>
+        <ClockProvider>
+          <WorkspaceProvider>
+            <Navigation onDisconnect={onDisconnect} contexts={contexts} />
+          </WorkspaceProvider>
+        </ClockProvider>
       </PersistQueryClientProvider>
     </Identity>
   );
@@ -587,10 +590,11 @@ function Navigation({
       (item) => item.id === projectId || item.key === projectId?.toUpperCase(),
     );
     if (project) {
+      contexts.touch(project.id);
       setCurrentProjectId(project.id);
       if (project.workspaceId !== activeWorkspace?.id) selectWorkspace(project.workspaceId);
     }
-  }, [projects.data, activeWorkspace?.id, selectWorkspace, navigationRef]);
+  }, [projects.data, activeWorkspace?.id, selectWorkspace, navigationRef, contexts]);
   useEffect(followRoute, [followRoute]);
   const switchDestination = useCallback(
     (projectId?: string, settings = false) => {
@@ -601,6 +605,7 @@ function Navigation({
       const current = projects.data?.find(
         (item) => item.id === currentId || item.key === currentId?.toUpperCase(),
       );
+      if (projectId) contexts.touch(projectId);
       if (projectId && !settings && current?.id === projectId) {
         setPicker(false);
         return;
@@ -873,6 +878,17 @@ function BrowsingStack({
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   const workspace = useWorkspace(),
     color = usePalette();
+  const { api } = useConnection(),
+    projects = useAllProjects();
+  const notifications = useQuery(api.notifications());
+  const allowed = new Set(
+    projects.data
+      ?.filter((project) => project.workspaceId === workspace.active?.id)
+      .map((project) => project.id),
+  );
+  const unread =
+    notifications.data?.filter((entry) => !entry.readAt && allowed.has(entry.event.projectId))
+      .length ?? 0;
   if (workspace.pending) return <Loading />;
   return (
     <Tabs.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: color.accent }}>
@@ -898,6 +914,7 @@ function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
         name="Inbox"
         options={{
           title: t("native.screen.inbox"),
+          ...(unread ? { tabBarBadge: formatNumber(unread) } : {}),
           tabBarIcon: { type: "sfSymbol", name: "tray" },
         }}
       >

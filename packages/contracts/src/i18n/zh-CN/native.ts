@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "已读",
+  "navigation.recentProjects": "最近的项目",
   "navigation.switchProject": "切换工作区或项目",
   labelValue: "{{label}}：{{value}}",
   ui: {

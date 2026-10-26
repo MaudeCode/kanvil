@@ -1,7 +1,7 @@
 import { useDeferredValue, useState } from "react";
 import { View, useColorScheme } from "react-native";
 import { SvgXml } from "react-native-svg";
-import { labelColor, projectIconColors, type Project } from "@kanvil/contracts";
+import { projectIconColors, type Project } from "@kanvil/contracts";
 import { nativeAccentColor } from "@kanvil/contracts/colors";
 import { t } from "@kanvil/contracts/i18n";
 import { useOperation } from "./data.tsx";
@@ -10,7 +10,7 @@ import { AccountImage } from "./image.tsx";
 import { ProjectIcon, useIconLibrary } from "./project-icon.tsx";
 import {
   Button,
-  Choice,
+  ColorChoice,
   ErrorNotice,
   Field,
   List,
@@ -145,16 +145,12 @@ function IconGallery({ project, onSaved }: { project: Project; onSaved: () => vo
           onChangeText={setQuery}
           autoCorrect={false}
         />
-        <Choice
+        <ColorChoice
+          presetsOnly
           label={t("settings.icon.color")}
           value={color}
-          options={projectIconColors.map((value) => ({
-            value,
-            label: t(`settings.color.${value}`),
-          }))}
           onChange={(value) => {
-            const parsed = labelColor.parse(value);
-            const preset = projectIconColors.find((item) => item === parsed);
+            const preset = projectIconColors.find((item) => item === value);
             if (preset) setColor(preset);
           }}
         />

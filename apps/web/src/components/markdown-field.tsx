@@ -1,3 +1,4 @@
+import { markdownIcons } from "@kanvil/contracts/icons";
 import {
   lazy,
   Suspense,
@@ -49,16 +50,18 @@ import { cn } from "@/lib/utils";
 // The visual editor and its grammars load the first time someone opens the Visual tab.
 const VisualEditor = lazy(() => import("./visual-editor.tsx"));
 
-export const formatIcons: Record<MarkdownFormat, LucideIcon> = {
+const markdownGlyphs = {
   heading: Heading,
   bold: Bold,
   italic: Italic,
   link: Link,
-  bullets: List,
-  numbers: ListOrdered,
-  tasks: ListChecks,
-  code: SquareCode,
+  list: List,
+  "list-ordered": ListOrdered,
+  "list-checks": ListChecks,
+  "square-code": SquareCode,
 };
+export const formatIcon = (format: MarkdownFormat): LucideIcon =>
+  markdownGlyphs[markdownIcons[format]];
 // Stores a file the person dropped, pasted, or picked, and returns the address Markdown embeds.
 export type InlineUpload = (
   file: File,
@@ -245,7 +248,7 @@ export function FormatToolbar({
     >
       {markdownFormats.map((format, index) => {
         const spec = formats[format],
-          Icon = formatIcons[format];
+          Icon = formatIcon(format);
         return (
           <IconButton
             key={format}

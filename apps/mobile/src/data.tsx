@@ -181,3 +181,30 @@ export function useLive() {
   }, [api, cache]);
   return state;
 }
+
+// A grouped list must finish its bounded fetches before treating section counts as final.
+export function useFetchRemaining(
+  result: {
+    hasNextPage: boolean;
+    isFetchingNextPage: boolean;
+    isError: boolean;
+    fetchNextPage: () => Promise<unknown>;
+  },
+  enabled = true,
+) {
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = result;
+  useEffect(() => {
+    if (enabled && hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage();
+  }, [enabled, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+}
+
+const CurrentTime = createContext(0);
+export const useNow = () => useContext(CurrentTime);
+export function ClockProvider({ children }: { children: ReactNode }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  return <CurrentTime value={now}>{children}</CurrentTime>;
+}

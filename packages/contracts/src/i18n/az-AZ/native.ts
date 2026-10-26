@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Oxunub",
+  "navigation.recentProjects": "Son layihələr",
   "navigation.switchProject": "İş sahəsini və ya layihəni dəyiş",
   labelValue: "{{label}}: {{value}}",
   ui: {

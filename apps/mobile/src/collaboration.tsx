@@ -10,7 +10,7 @@ import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
 import { memberName, type Ticket, type Output } from "@kanvil/contracts";
-import { useConnection, useIdentity, useOperation } from "./data.tsx";
+import { useConnection, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Body,
   Button,
@@ -23,6 +23,8 @@ import {
   Row,
   Status,
   styles,
+  Pager,
+  MarkdownField,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -187,7 +189,9 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     identity = useIdentity(),
     [offset, setOffset] = useState(0),
     [body, setBody] = useState(""),
-    [error, setError] = useState<unknown>();
+    [error, setError] = useState<unknown>(),
+    [replying, setReplying] = useState(false);
+  const access = useProjectAccess(ticket.projectId);
   const key = `${prefix}:${identity.id}:comment:${ticket.id}`;
   const comments = useQuery(
       api.query("list_comments", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
@@ -209,43 +213,52 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}
-      <View style={styles.actions}>
-        <Button
-          title={t("native.discussion.previous")}
-          disabled={!offset}
-          onPress={() => setOffset(Math.max(0, offset - 50))}
-        />
-        <Button
-          title={t("native.discussion.next")}
-          disabled={offset + 50 >= (comments.data?.total ?? 0)}
-          onPress={() => setOffset(offset + 50)}
-        />
-      </View>
-      <Field
-        label={t("native.discussion.field")}
-        value={body}
-        onChangeText={(value) => {
-          setBody(value);
-          void AsyncStorage.setItem(key, value).catch(setError);
-        }}
-        multiline
-        maxLength={50000}
+      <Pager
+        offset={offset}
+        total={comments.data?.total}
+        limit={50}
+        noun={t("native.discussion.title")}
+        onChange={setOffset}
       />
-      <ErrorNotice error={error ?? comments.error ?? add.error} />
-      <Button
+      {access.canWrite && (
+        <Button title={t("native.discussion.submit")} onPress={() => setReplying(true)} />
+      )}
+      {body.trim() && (
+        <Body muted small>
+          {t("detail.editor.savedLocally")}
+        </Body>
+      )}
+      <Sheet
         title={t("native.discussion.submit")}
-        primary
-        disabled={!body.trim() || add.isPending}
-        onPress={() => {
-          void add
-            .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
-            .then(async () => {
-              setBody("");
-              await AsyncStorage.removeItem(key);
-            })
-            .catch(setError);
-        }}
-      />
+        open={replying}
+        onClose={() => setReplying(false)}
+      >
+        <MarkdownField
+          label={t("detail.discussion.comment")}
+          value={body}
+          onChangeText={(value) => {
+            setBody(value);
+            void AsyncStorage.setItem(key, value).catch(setError);
+          }}
+          maxLength={50000}
+        />
+        <ErrorNotice error={error ?? comments.error ?? add.error} />
+        <Button
+          title={t("native.discussion.submit")}
+          primary
+          disabled={!body.trim() || add.isPending}
+          onPress={() => {
+            void add
+              .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
+              .then(async () => {
+                setBody("");
+                await AsyncStorage.removeItem(key);
+                setReplying(false);
+              })
+              .catch(setError);
+          }}
+        />
+      </Sheet>
     </Section>
   );
 }

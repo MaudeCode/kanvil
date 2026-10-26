@@ -1,4 +1,7 @@
-import type { NativeStackHeaderItemButton } from "@react-navigation/native-stack";
+import type {
+  NativeStackHeaderItemButton,
+  NativeStackHeaderItemMenu,
+} from "@react-navigation/native-stack";
 import { Button, type ColorValue } from "react-native";
 
 export type HeaderAction = Pick<NativeStackHeaderItemButton, "onPress" | "disabled"> & {
@@ -32,16 +35,50 @@ export function createHeaderAction(
   onPress: () => void,
   icon: NonNullable<NativeStackHeaderItemButton["icon"]>,
   disabled = false,
+  policy: Pick<NativeStackHeaderItemButton, "visibilityPriority" | "identifier" | "variant"> = {},
 ): NativeStackHeaderItemButton {
-  return { type: "button", label: title, accessibilityLabel: title, icon, onPress, disabled };
+  return {
+    type: "button",
+    label: title,
+    accessibilityLabel: title,
+    icon,
+    onPress,
+    disabled,
+    ...(policy.visibilityPriority ? { sharesBackground: false } : {}),
+    ...policy,
+  };
+}
+
+// Menus need their own semantic symbol; UIKit reserves ellipsis for system overflow.
+export function createHeaderMenu(
+  title: string,
+  icon: NonNullable<NativeStackHeaderItemMenu["icon"]>,
+  items: NativeStackHeaderItemMenu["menu"]["items"],
+  policy: Pick<NativeStackHeaderItemMenu, "visibilityPriority" | "identifier"> = {},
+): NativeStackHeaderItemMenu {
+  return {
+    type: "menu",
+    label: title,
+    accessibilityLabel: title,
+    icon,
+    menu: { items },
+    sharesBackground: false,
+    visibilityPriority: "low",
+    ...policy,
+  };
 }
 
 // All browsing headers share the same picker, including headers that replace Back for a Split.
 export function projectHeaderItems(showPicker: () => void, title: string, back?: HeaderAction) {
   return [
     ...(back
-      ? [createHeaderAction(back.title, back.onPress, { type: "sfSymbol", name: "chevron.left" })]
+      ? [
+          createHeaderAction(back.title, back.onPress, {
+            type: "sfSymbol",
+            name: "chevron.backward",
+          }),
+        ]
       : []),
-    createHeaderAction(title, showPicker, { type: "sfSymbol", name: "square.stack.3d.up" }),
+    createHeaderAction(title, showPicker, { type: "sfSymbol", name: "folder" }),
   ];
 }

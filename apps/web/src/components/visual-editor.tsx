@@ -31,7 +31,7 @@ import {
   FormatToolbar,
   SuggestionList,
   droppedFiles,
-  formatIcons,
+  formatIcon,
   matchMembers,
   memberOption,
   useFileInsert,
@@ -260,7 +260,7 @@ function VisualEditorBody({
     ...(["heading", "bullets", "numbers", "tasks", "code"] as const).map((format) => ({
       key: format,
       label: formats[format].label,
-      icon: formatIcons[format],
+      icon: formatIcon(format),
       run: (current: Editor) => {
         toggles[format](current.chain().focus()).run();
       },

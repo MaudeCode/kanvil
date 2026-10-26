@@ -1,6 +1,8 @@
+import type { ScrollView } from "react-native";
+import { ProjectIcon } from "./project-icon.tsx";
+import { labelOptions } from "./ticket-values.tsx";
 import { TicketProperties } from "./ticket-properties.tsx";
-import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { useEffect, useState, useRef, type ComponentRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
 import { type Ticket, capabilitiesOf } from "@kanvil/contracts";
@@ -27,13 +29,14 @@ import {
   ErrorNotice,
   Field,
   Loading,
-  Markdown,
   Screen,
-  styles,
+  Section,
+  Sheet,
   DateField,
   CustomFieldInput,
   MarkdownField,
   TicketPicker,
+  TicketTags,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -71,10 +74,11 @@ function Editor({
     identity = useIdentity();
   const key = `${prefix}:${identity.id}:draft:${ticket?.projectId ?? initialProjectId}:${ticket?.id ?? "new"}`;
   const [initialTicket] = useState(ticket);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [draft, setDraft] = useState(() => createTicketDraft(ticket)),
     [ready, setReady] = useState(false),
     [error, setError] = useState<unknown>(),
-    [preview, setPreview] = useState(false);
+    [discarding, setDiscarding] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const [labels, setLabels] = useState(draft.fields.labels.join(", ")),
     [scopesText, setScopesText] = useState(draft.fields.scopes.join(", "));
@@ -84,7 +88,7 @@ function Editor({
   const projects = useAllProjects(),
     access = useProjectAccess(projectId);
   const customFields = useQuery(api.query("list_custom_fields", { projectId }));
-  const catalog = useQuery(api.query("list_ticket_labels", { projectId }));
+  const catalog = useQuery(api.query("list_project_labels", { projectId }));
   useEffect(() => {
     let mounted = true;
     void AsyncStorage.getItem(key)
@@ -144,6 +148,7 @@ function Editor({
           projectId,
           uploads: [],
         });
+        scroll.current?.scrollTo({ y: 0, animated: true });
       } else onSaved(result);
     } catch (cause) {
       setError(cause);
@@ -153,18 +158,23 @@ function Editor({
   const fields = draft.fields,
     stale = !!ticket && ticket.version !== draft.version;
   return (
-    <Screen form>
+    <Screen form scrollRef={scroll}>
       {!ticket && (
         <Choice
           label={t("ticket.project.label")}
           value={projectId}
+          compact
           options={(projects.data ?? [])
             .filter(
               (project) =>
                 !project.archivedAt &&
                 (identity.admin || capabilitiesOf(project).includes("ticket.write")),
             )
-            .map((project) => ({ value: project.id, label: project.name }))}
+            .map((project) => ({
+              value: project.id,
+              label: project.name,
+              leading: <ProjectIcon project={project} size={18} />,
+            }))}
           onChange={(next) => {
             change({
               ...draft,
@@ -199,12 +209,16 @@ function Editor({
       <ErrorNotice error={error ?? create.error ?? update.error} />
       <Field
         label={t("native.editor.title")}
+        labelHidden
+        variant="title"
+        placeholder={t("native.editor.title")}
         value={fields.title}
         onChangeText={(value) => set("title", value)}
         maxLength={500}
         multiline
       />
       <TicketProperties
+        compact
         projectId={projectId}
         value={fields}
         onChange={(changes) => change({ ...draft, fields: { ...draft.fields, ...changes } })}
@@ -214,7 +228,12 @@ function Editor({
         label={t("ticket.tags.labels")}
         value=""
         selected={draft.fields.labels}
-        options={(catalog.data ?? []).map((label) => ({ value: label.name, label: label.name }))}
+        summary={
+          draft.fields.labels.length ? (
+            <TicketTags projectId={projectId} tags={draft.fields.labels} limit={2} />
+          ) : undefined
+        }
+        options={labelOptions(catalog.data ?? [])}
         onChange={() => {}}
         onToggle={(label) => {
           const next = draft.fields.labels.includes(label)
@@ -224,82 +243,111 @@ function Editor({
           setLabels(next.join(", "));
         }}
       />
-      <Field
-        label={t("native.editor.scopes")}
-        value={scopesText}
-        onChangeText={(value) => {
-          setScopesText(value);
-          set("scopes", splitTags(value));
-        }}
+      <Body muted small>
+        {t("detail.editor.savedLocally")}
+      </Body>
+      <MarkdownField
+        label={t("native.detail.description")}
+        value={fields.description}
+        onChangeText={(value) => set("description", value)}
+        maxLength={100000}
       />
-      <Button
-        title={preview ? t("native.editor.editMarkdown") : t("native.editor.previewMarkdown")}
-        onPress={() => setPreview(!preview)}
-      />
-      {preview ? (
-        <>
-          <Markdown>{fields.description}</Markdown>
-          <Markdown>{fields.acceptanceCriteria}</Markdown>
-        </>
-      ) : (
-        <>
-          <MarkdownField
-            label={t("native.editor.description")}
-            value={fields.description}
-            onChangeText={(value) => set("description", value)}
-            maxLength={100000}
-          />
-          <MarkdownField
-            label={t("native.editor.acceptanceCriteria")}
-            value={fields.acceptanceCriteria}
-            onChangeText={(value) => set("acceptanceCriteria", value)}
-            maxLength={50000}
-          />
-        </>
-      )}
-      <TicketPicker
-        label={t("detail.field.parentTicket")}
-        projectId={projectId}
-        value={fields.parentId}
-        {...(ticket ? { excludeId: ticket.id } : {})}
-        onChange={(value) => set("parentId", value)}
-      />
-      <DateField
-        label={t("ticket.date.start")}
-        value={fields.startAt}
-        dayBoundary="start"
-        bounds={{ to: fields.dueAt }}
-        onChange={(value) => set("startAt", value)}
-      />
-      <DateField
-        label={t("ticket.date.due")}
-        value={fields.dueAt}
-        dayBoundary="end"
-        bounds={{ from: fields.startAt }}
-        onChange={(value) => set("dueAt", value)}
-      />
-      {customFields.data?.map((field) => (
-        <CustomFieldInput
-          key={field.id}
-          field={field}
-          value={fields.customFields[field.id]}
-          onChange={(value) => set("customFields", { ...fields.customFields, [field.id]: value })}
+      <Section
+        title={t("native.detail.acceptanceCriteria")}
+        collapsible
+        initiallyOpen={!!fields.acceptanceCriteria}
+      >
+        <MarkdownField
+          label={t("native.detail.acceptanceCriteria")}
+          value={fields.acceptanceCriteria}
+          onChangeText={(value) => set("acceptanceCriteria", value)}
+          maxLength={50000}
         />
-      ))}
-      <Check
-        label={t("native.editor.automationReady")}
-        checked={fields.automationReady}
-        onChange={(value) => set("automationReady", value)}
-      />
-      <Field
-        label={t("native.editor.holdReason")}
-        value={fields.holdReason ?? ""}
-        onChangeText={(value) => set("holdReason", value || null)}
-        maxLength={2000}
-      />
-      <View style={styles.actions}>
-        <Body muted>{t("native.editor.draftSaved")}</Body>
-      </View>
+      </Section>
+      <Section
+        title={t("detail.editor.moreProperties")}
+        collapsible
+        summary={
+          <Body muted small>
+            {[
+              fields.parentId ? t("detail.field.parentTicket") : "",
+              fields.startAt ? t("ticket.date.start") : "",
+              fields.dueAt ? t("ticket.date.due") : "",
+              fields.scopes.length ? fields.scopes.join(", ") : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Body>
+        }
+      >
+        <Field
+          label={t("native.editor.scopes")}
+          value={scopesText}
+          onChangeText={(value) => {
+            setScopesText(value);
+            set("scopes", splitTags(value));
+          }}
+        />
+        <TicketPicker
+          label={t("detail.field.parentTicket")}
+          projectId={projectId}
+          value={fields.parentId}
+          {...(ticket ? { excludeId: ticket.id } : {})}
+          onChange={(value) => set("parentId", value)}
+        />
+        <DateField
+          label={t("ticket.date.start")}
+          value={fields.startAt}
+          dayBoundary="start"
+          bounds={{ to: fields.dueAt }}
+          onChange={(value) => set("startAt", value)}
+        />
+        <DateField
+          label={t("ticket.date.due")}
+          value={fields.dueAt}
+          dayBoundary="end"
+          bounds={{ from: fields.startAt }}
+          onChange={(value) => set("dueAt", value)}
+        />
+        {customFields.data?.map((field) => (
+          <CustomFieldInput
+            key={field.id}
+            field={field}
+            value={fields.customFields[field.id]}
+            onChange={(value) => set("customFields", { ...fields.customFields, [field.id]: value })}
+          />
+        ))}
+        <Check
+          label={t("native.editor.automationReady")}
+          checked={fields.automationReady}
+          onChange={(value) => set("automationReady", value)}
+        />
+        <Field
+          label={t("native.editor.holdReason")}
+          value={fields.holdReason ?? ""}
+          onChangeText={(value) => set("holdReason", value || null)}
+          maxLength={2000}
+        />
+      </Section>
+      <Button title={t("detail.editor.discardDraft")} danger onPress={() => setDiscarding(true)} />
+      <Sheet
+        title={t("detail.editor.discardDraft")}
+        open={discarding}
+        onClose={() => setDiscarding(false)}
+      >
+        <Button
+          title={t("detail.editor.discardDraft")}
+          danger
+          onPress={() => {
+            const next = createTicketDraft(ticket);
+            change(next);
+            setLabels(next.fields.labels.join(", "));
+            setScopesText(next.fields.scopes.join(", "));
+            setDiscarding(false);
+          }}
+        />
+      </Sheet>
+
       <Button
         title={t("native.editor.save")}
         primary

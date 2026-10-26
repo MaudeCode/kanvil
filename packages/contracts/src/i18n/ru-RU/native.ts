@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "Прочитано",
+  "navigation.recentProjects": "Недавние проекты",
   "navigation.switchProject": "Сменить рабочее пространство или проект",
   labelValue: "{{label}}: {{value}}",
   ui: {

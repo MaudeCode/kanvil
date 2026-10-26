@@ -1,20 +1,12 @@
 import { AccountImage } from "./image.tsx";
 import { View, useColorScheme } from "react-native";
 import { SvgXml } from "react-native-svg";
-import { useQuery } from "@tanstack/react-query";
 import { nativeAccentColor } from "@kanvil/contracts/colors";
-import { loadProjectIcons } from "@kanvil/contracts/icons";
 import type { Project } from "@kanvil/contracts";
-import { usePalette } from "./ui.tsx";
+import { useNativePalette as usePalette } from "./theme.ts";
 
-export const useIconLibrary = (enabled = true) =>
-  useQuery({
-    queryKey: ["project-icon-library"],
-    queryFn: loadProjectIcons,
-    enabled,
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+import { useIconLibrary } from "./icon-library.ts";
+export { useIconLibrary } from "./icon-library.ts";
 export function ProjectIcon({
   project,
   size = 30,

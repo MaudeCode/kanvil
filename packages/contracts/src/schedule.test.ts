@@ -1,3 +1,4 @@
+import { dueWindow } from "./schedule.ts";
 import { expect, it } from "vite-plus/test";
 import { addCalendarDays, scheduleWindow, shiftAnchor, ticketSpan } from "./schedule.ts";
 it("keeps month steps valid at month ends and across a leap year", () => {
@@ -25,4 +26,14 @@ it("keeps a due-only ticket on one day and excludes undated tickets", () => {
   const span = ticketSpan({ startAt: null, dueAt: "2026-10-25T12:00:00Z" });
   expect(span?.start).toEqual(span?.end);
   expect(ticketSpan({ startAt: null, dueAt: null })).toBeNull();
+});
+
+it("groups due work consistently at the rolling window boundaries and leaves undated work separate", () => {
+  const now = Date.parse("2026-10-26T12:00:00Z");
+  expect(dueWindow({ dueAt: null }, now)).toBe("none");
+  expect(
+    [-1, 0, 86399999, 86400000, 7 * 86400000].map((offset) =>
+      dueWindow({ dueAt: new Date(now + offset).toISOString() }, now),
+    ),
+  ).toEqual(["overdue", "today", "today", "week", "later"]);
 });

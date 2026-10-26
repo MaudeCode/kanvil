@@ -1,11 +1,15 @@
-import { useDeferredValue, useLayoutEffect, useState, useEffect } from "react";
+import { dueWindows, dueWindow, dueWindowLabel } from "@kanvil/contracts/schedule";
+import { createHeaderMenu } from "./navigation-actions.tsx";
+import { sectionEntries } from "./ticket-sections.ts";
+import { ProjectIcon } from "./project-icon.tsx";
+import { useDeferredValue, useLayoutEffect, useState, useEffect, useMemo } from "react";
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { searchResultTypes } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
-import { useHeaderSearch, useProjectNavigation } from "./navigation.ts";
-import { useConnection, useWorkspace } from "./data.tsx";
+import { useHeaderSearch, useSectionDisclosure, useProjectNavigation } from "./navigation.ts";
+import { useConnection, useWorkspace, useAllProjects, useFetchRemaining, useNow } from "./data.tsx";
 import {
   Body,
   Choice,
@@ -18,6 +22,7 @@ import {
   RemovableSummary,
   WorkspaceScope,
   nativeHeaderOptions,
+  Heading,
 } from "./ui.tsx";
 import { TicketRow } from "./ui.tsx";
 
@@ -36,15 +41,49 @@ export function MyWork() {
   const { api } = useConnection(),
     workspace = useWorkspace(),
     navigation = useNavigation();
-  const [query, setQuery] = useWorkspaceSearch("work");
+  const [query, setQuery] = useWorkspaceSearch("work"),
+    [byProject, setByProject] = useState(false);
+  const { collapsed, onQuery, changeCollapsed } = useSectionDisclosure(
+    query,
+    setQuery,
+    undefined,
+    `${workspace.active?.id}:${byProject ? "project" : "due"}`,
+  );
+  const projects = useAllProjects();
   const {
     options: searchOptions,
     setText: changeQuery,
     searching,
-  } = useHeaderSearch(query, setQuery, t("native.tickets.searchPlaceholder"));
+  } = useHeaderSearch(query, onQuery, t("native.tickets.searchPlaceholder"));
   useLayoutEffect(
-    () => navigation.setOptions(nativeHeaderOptions({ headerSearchBarOptions: searchOptions })),
-    [navigation, searchOptions],
+    () =>
+      navigation.setOptions(
+        nativeHeaderOptions({
+          headerSearchBarOptions: searchOptions,
+          unstable_headerRightItems: () => [
+            createHeaderMenu(
+              t("ticket.display.groupBy"),
+              { type: "sfSymbol", name: "rectangle.3.group" },
+              [
+                {
+                  type: "action",
+                  label: t("ticket.display.dueDate"),
+                  state: byProject ? "off" : "on",
+                  onPress: () => setByProject(false),
+                },
+                {
+                  type: "action",
+                  label: t("ticket.project.label"),
+                  state: byProject ? "on" : "off",
+                  onPress: () => setByProject(true),
+                },
+              ],
+              { visibilityPriority: "default", identifier: "work-grouping" },
+            ),
+          ],
+        }),
+      ),
+    [navigation, searchOptions, byProject],
   );
   const q = useDeferredValue(query);
   const input = { workspaceId: workspace.active?.id, q, sort: "due" as const, limit: 50 };
@@ -58,6 +97,24 @@ export function MyWork() {
     },
     enabled: !!workspace.active,
   });
+  useFetchRemaining(work, !!workspace.active);
+  const rows = useMemo(() => work.data?.pages.flatMap((page) => page.items) ?? [], [work.data]);
+  const now = useNow();
+  const sections = byProject
+    ? [...new Set(rows.map((ticket) => ticket.projectId))].map((id) => ({
+        id,
+        name:
+          projects.data?.find((project) => project.id === id)?.name ?? t("ticket.project.label"),
+        tickets: rows.filter((ticket) => ticket.projectId === id),
+      }))
+    : [...dueWindows.map(([id]) => id), "none" as const]
+        .map((id) => ({
+          id,
+          name: dueWindowLabel(id),
+          tickets: rows.filter((ticket) => dueWindow(ticket, now) === id),
+        }))
+        .filter((group) => group.tickets.length);
+  const entries = sectionEntries(sections, collapsed, !!query.trim());
   return (
     <Screen scroll={false}>
       <WorkspaceScope />
@@ -73,7 +130,7 @@ export function MyWork() {
         <Loading />
       ) : (
         <List
-          data={work.data?.pages.flatMap((page) => page.items) ?? []}
+          data={entries}
           keyExtractor={(item) => item.id}
           onRefresh={() => {
             void work.refetch();
@@ -89,14 +146,56 @@ export function MyWork() {
               </Body>
             </View>
           }
-          renderItem={({ item }) => (
-            <TicketRow
-              ticket={item}
-              onPress={() =>
-                navigation.navigate("Ticket", { projectId: item.projectId, ticketId: item.id })
-              }
-            />
-          )}
+          ListFooterComponent={work.hasNextPage ? <Loading /> : undefined}
+          renderItem={({ item }) =>
+            "ticket" in item ? (
+              <TicketRow
+                showProject
+                ticket={item.ticket}
+                onPress={() =>
+                  navigation.navigate("Ticket", {
+                    projectId: item.ticket.projectId,
+                    ticketId: item.ticket.id,
+                  })
+                }
+              />
+            ) : (
+              <Heading
+                compact
+                disclosure={{
+                  expanded: !collapsed.has(item.sectionId),
+                  count: item.count,
+                  label: t(
+                    collapsed.has(item.sectionId)
+                      ? "ticket.list.expandSection"
+                      : "ticket.list.collapseSection",
+                    { section: item.heading },
+                  ),
+                  leading:
+                    byProject && projects.data?.find((project) => project.id === item.sectionId) ? (
+                      <ProjectIcon
+                        project={
+                          projects.data.find((project) => project.id === item.sectionId) ?? {
+                            iconName: null,
+                            iconColor: "default",
+                            image: null,
+                          }
+                        }
+                        size={16}
+                      />
+                    ) : undefined,
+                  onPress: () => {
+                    const next = new Set(collapsed);
+                    if (next.has(item.sectionId)) next.delete(item.sectionId);
+                    else next.add(item.sectionId);
+                    changeCollapsed(next);
+                  },
+                }}
+              >
+                {item.heading}
+              </Heading>
+            )
+          }
         />
       )}
     </Screen>
@@ -162,21 +261,34 @@ export function Search() {
               <Body muted>{t("shell.search.noResults", { query: q })}</Body>
             </View>
           }
-          renderItem={({ item }) => (
-            <Row
-              title={item.title}
-              overline={item.ticket?.key ?? t(`shell.search.tab.${item.type}`)}
-              caption={item.excerpt}
-              onPress={() => {
-                if (item.ticket)
+          renderItem={({ item }) =>
+            item.type === "ticket" && item.ticket ? (
+              <TicketRow
+                showProject
+                ticket={{ ...item.ticket, projectId: item.project.id }}
+                onPress={() =>
                   navigation.navigate("Ticket", {
                     projectId: item.project.id,
-                    ticketId: item.ticket.id,
-                  });
-                else selectProject(item.project.id);
-              }}
-            />
-          )}
+                    ticketId: item.ticket?.id ?? item.id,
+                  })
+                }
+              />
+            ) : (
+              <Row
+                title={item.title}
+                overline={item.ticket?.key ?? t(`shell.search.tab.${item.type}`)}
+                caption={item.excerpt}
+                onPress={() => {
+                  if (item.ticket)
+                    navigation.navigate("Ticket", {
+                      projectId: item.project.id,
+                      ticketId: item.ticket.id,
+                    });
+                  else selectProject(item.project.id);
+                }}
+              />
+            )
+          }
         />
       )}
     </Screen>

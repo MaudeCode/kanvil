@@ -1,15 +1,13 @@
 import {
-  difficultyLabels,
   formatCustomFieldValue,
   formatTimestamp,
-  kindLabels,
   readinessReasonText,
   ApiError,
 } from "@kanvil/contracts";
 import { formatDate, t } from "@kanvil/contracts/i18n";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useEffect, useLayoutEffect, useState } from "react";
-import { Alert, Share, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -28,11 +26,13 @@ import {
   Status,
   styles,
   usePalette,
-  priorityText,
+  PropertyValue,
+  TicketTags,
 } from "./ui.tsx";
 import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
 import type { ScreenProps, Routes } from "./navigation.ts";
+import { TicketProperties, propertyChanges } from "./ticket-properties.tsx";
 import { TicketActions } from "./ticket-actions.tsx";
 
 const day = (value: string) => formatDate(value, { dateStyle: "medium" });
@@ -65,7 +65,7 @@ export function TicketContent({
   onUnavailable?: () => void;
 }) {
   const navigation = useNavigation<NativeStackNavigationProp<Routes>>();
-  const { api, baseUrl } = useConnection(),
+  const { api } = useConnection(),
     color = usePalette();
   const access = useProjectAccess(projectId);
   const result = useQuery(api.query("get_ticket", { projectId, ticketId }));
@@ -74,6 +74,7 @@ export function TicketContent({
       onUnavailable?.();
   }, [preview, result.error, onUnavailable]);
   const fields = useQuery(api.query("list_custom_fields", { projectId }));
+  const update = useOperation("update_ticket");
   const release = useOperation("release_claim"),
     recover = useOperation("recover_claim");
   const [recovering, setRecovering] = useState(false),
@@ -91,24 +92,25 @@ export function TicketContent({
                   t("common.action.edit"),
                   () => navigation.navigate("Edit", { projectId, ticketId }),
                   { type: "sfSymbol", name: "square.and.pencil" },
+                  false,
+                  { visibilityPriority: "high", identifier: "ticket-edit" },
                 ),
               ]
             : []),
           createHeaderAction(
-            t("native.detail.share"),
-            () => {
-              void Share.share({ message: `${baseUrl}/projects/${projectId}/tickets/${ticketId}` });
+            t("ticket.selection.more"),
+            () => setActions(true),
+            {
+              type: "sfSymbol",
+              name: "ticket",
             },
-            { type: "sfSymbol", name: "square.and.arrow.up" },
+            false,
+            { visibilityPriority: "low", identifier: "ticket-actions" },
           ),
-          createHeaderAction(t("ticket.selection.more"), () => setActions(true), {
-            type: "sfSymbol",
-            name: "ellipsis",
-          }),
         ],
       }),
     );
-  }, [preview, navigation, projectId, ticketId, result.data?.ticket.key, baseUrl, access.canWrite]);
+  }, [preview, navigation, projectId, ticketId, result.data?.ticket.key, access.canWrite]);
   if (result.isPending) return <Loading />;
   if (!result.data) return <ErrorNotice error={result.error} />;
   const { ticket, readiness, claim, canReleaseClaim } = result.data;
@@ -125,40 +127,47 @@ export function TicketContent({
         selectable
         style={{
           color: color.foreground,
-          fontSize: 29,
+          fontSize: 26,
           fontWeight: "600",
-          lineHeight: 37,
+          lineHeight: 34,
           letterSpacing: -0.6,
         }}
       >
         {ticket.title}
       </Text>
-      <View style={styles.actions}>
-        <Status ticket={ticket} />
+      {access.canWrite ? (
+        <TicketProperties
+          compact
+          projectId={projectId}
+          value={ticket}
+          disabled={update.isPending}
+          onChange={(changes) =>
+            update.mutate({
+              projectId,
+              ticketId: ticket.id,
+              expectedVersion: ticket.version,
+              changes: propertyChanges(changes),
+            })
+          }
+        />
+      ) : (
+        <View style={styles.actions}>
+          <Status ticket={ticket} />
+          <PropertyValue projectId={projectId} property="priority" value={ticket.priority} />
+          <PropertyValue projectId={projectId} property="kind" value={ticket.kind} />
+          <PropertyValue projectId={projectId} property="difficulty" value={ticket.difficulty} />
+          <PropertyValue projectId={projectId} property="assignee" value={ticket.assigneeId} />
+        </View>
+      )}
+      {(ticket.startAt || ticket.dueAt) && (
         <Body muted small>
-          {priorityText(ticket.priority)}
-        </Body>
-        <Body muted small>
-          {kindLabels[ticket.kind]}
-        </Body>
-        <Body muted small>
-          {ticket.difficulty
-            ? difficultyLabels[ticket.difficulty]
-            : t("native.ticket.noDifficulty")}
-        </Body>
-        {(ticket.startAt || ticket.dueAt) && (
-          <Body muted small>
-            {scheduleText(ticket)}
-          </Body>
-        )}
-      </View>
-      {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
-      {ticket.labels.length > 0 && (
-        <Body muted small>
-          {ticket.labels.map((label) => `#${label}`).join(" ")}
+          {scheduleText(ticket)}
         </Body>
       )}
-      <ErrorNotice error={result.error ?? release.error} />
+      {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
+      <TicketTags projectId={projectId} tags={ticket.labels} />
+      <TicketTags projectId={projectId} tags={ticket.scopes} kind="scope" />
+      <ErrorNotice error={result.error ?? release.error ?? update.error} />
       <Section title={t("native.detail.description")}>
         <Markdown>{ticket.description || t("native.detail.noDescription")}</Markdown>
       </Section>
@@ -179,7 +188,16 @@ export function TicketContent({
           ))}
         </Section>
       )}
-      <Section title={t("native.readiness.title")}>
+      <Section
+        title={t("native.readiness.title")}
+        collapsible
+        initiallyOpen={!!claim}
+        summary={
+          <Body muted small>
+            {readiness.ready ? t("native.readiness.ready") : t("native.readiness.notReady")}
+          </Body>
+        }
+      >
         <Body>
           {readiness.ready ? t("native.readiness.ready") : t("native.readiness.notReady")}
         </Body>

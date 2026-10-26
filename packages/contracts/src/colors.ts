@@ -1,3 +1,5 @@
+import { ticketSymbols } from "./icons.ts";
+import type { Ticket } from "./index.ts";
 import { isPresetColor, type LabelColor } from "./index.ts";
 import { t } from "./i18n/index.ts";
 // One preset table, with CSS and native representations of each accent.
@@ -43,4 +45,16 @@ export function nativeAccentColor(
 ) {
   if (!isPresetColor(value)) return value;
   return accents[value][mode] ?? (value === "gray" ? palette.muted : palette.accent);
+}
+
+// A custom workflow tint overrides its category, identically in symbols and schedule bars.
+export function nativeStatusColor(
+  status: Ticket["status"],
+  tint: LabelColor | undefined,
+  mode: "light" | "dark",
+  palette: { accent: string; muted: string; warning: string; success: string },
+) {
+  return tint && tint !== "default"
+    ? nativeAccentColor(tint, mode, palette)
+    : palette[ticketSymbols.status[status].tone];
 }

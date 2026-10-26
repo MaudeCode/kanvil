@@ -19,8 +19,11 @@ import {
 } from "@kanvil/contracts";
 import { useConnection, useIdentity, useProjects, useWorkspace, useAllProjects } from "./data.tsx";
 import { accountSections, settingsSectionLabel } from "@kanvil/contracts/navigation";
+import { ProjectIcon } from "./project-icon.tsx";
+import { UserAvatar } from "./ticket-values.tsx";
+import { useProjectNavigation } from "./navigation.ts";
 import { AppearanceSettings, CredentialsSettings, ProfileSettings } from "./account-settings.tsx";
-import { createHeaderAction } from "./navigation-actions.tsx";
+import { createHeaderAction, createHeaderMenu } from "./navigation-actions.tsx";
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
 import { DeliverySettings } from "./delivery-settings.tsx";
 import {
@@ -47,6 +50,8 @@ import {
   Heading,
   Section,
   Sheet,
+  TicketGlyph,
+  usePalette,
 } from "./ui.tsx";
 
 export function Inbox() {
@@ -54,7 +59,8 @@ export function Inbox() {
     cache = useQueryClient(),
     navigation = useNavigation(),
     workspace = useWorkspace(),
-    projects = useAllProjects();
+    projects = useAllProjects(),
+    color = usePalette();
   const [view, setView] = useState<"unread" | "mentions" | "all">("unread"),
     [focused, setFocused] = useState<string>();
   const items = useQuery(api.notifications());
@@ -105,33 +111,36 @@ export function Inbox() {
               }),
             { type: "sfSymbol", name: "checkmark.circle" },
             action.isPending || !visible.some((item) => !item.readAt),
+            { visibilityPriority: "default", identifier: "inbox-read-all" },
           ),
-          {
-            type: "menu",
-            label: t("shell.page.inbox"),
-            accessibilityLabel: t("ticket.filter.filters"),
-            icon: { type: "sfSymbol", name: "line.3.horizontal.decrease" },
-            menu: {
-              items: [
-                ...(["unread", "mentions", "all"] as const).map((value) => ({
-                  type: "action" as const,
-                  label: t(`shell.inbox.${value}`),
-                  state: value === view ? ("on" as const) : ("off" as const),
-                  onPress: () => setView(value),
-                })),
-                {
-                  type: "action",
-                  label: t("shell.inbox.clearRead"),
-                  onPress: () =>
-                    mutate({
-                      ids: scoped.filter((item) => item.readAt).map((item) => item.id),
-                      dismiss: true,
-                    }),
-                  disabled: action.isPending,
-                },
-              ],
-            },
-          },
+          createHeaderMenu(
+            t("ticket.filter.filters"),
+            { type: "sfSymbol", name: "line.3.horizontal.decrease" },
+            [
+              {
+                type: "action",
+                label: t("shell.settingsNav.section.notifications"),
+                onPress: () => navigation.navigate("AccountSettings", { section: "notifications" }),
+              },
+              ...(["unread", "mentions", "all"] as const).map((value) => ({
+                type: "action" as const,
+                label: t(`shell.inbox.${value}`),
+                state: value === view ? ("on" as const) : ("off" as const),
+                onPress: () => setView(value),
+              })),
+              {
+                type: "action",
+                label: t("shell.inbox.clearRead"),
+                onPress: () =>
+                  mutate({
+                    ids: scoped.filter((item) => item.readAt).map((item) => item.id),
+                    dismiss: true,
+                  }),
+                disabled: action.isPending,
+              },
+            ],
+            { identifier: "inbox-options", visibilityPriority: "low" },
+          ),
         ],
       }),
     );
@@ -140,6 +149,26 @@ export function Inbox() {
   return (
     <Screen scroll={false}>
       <WorkspaceScope />
+      <View style={{ paddingHorizontal: 20, paddingVertical: 6 }}>
+        <Choice
+          inline
+          label={t("shell.page.inbox")}
+          value={view}
+          options={["unread", "mentions", "all"].map((value) => ({
+            value,
+            label: t(
+              value === "unread"
+                ? "shell.inbox.unread"
+                : value === "mentions"
+                  ? "shell.inbox.mentions"
+                  : "shell.inbox.all",
+            ),
+          }))}
+          onChange={(value) =>
+            setView(value === "mentions" ? "mentions" : value === "all" ? "all" : "unread")
+          }
+        />
+      </View>
       <ErrorNotice error={items.error ?? action.error} />
       {items.isPending || projects.isPending ? (
         <Loading />
@@ -165,6 +194,16 @@ export function Inbox() {
           renderItem={({ item }) => (
             <Row
               title={formatEvent(item.event, true)}
+              leading={
+                <TicketGlyph
+                  name={item.readAt ? "circle-check" : "circle-dot"}
+                  color={item.readAt ? color.muted : color.accent}
+                />
+              }
+              accessibilityLabel={t("native.labelValue", {
+                label: t(item.readAt ? "native.inbox.read" : "shell.inbox.unread"),
+                value: formatEvent(item.event, true),
+              })}
               caption={formatTimestamp(item.event.createdAt)}
               onLongPress={() => setFocused(item.id)}
               onPress={() => {
@@ -386,7 +425,13 @@ export function Settings({
     workspace = useWorkspace(),
     projects = useProjects(),
     navigation = useNavigation();
+  const { currentProjectId } = useProjectNavigation();
   const activeSection = accountSections.find((value) => value === section);
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: activeSection ? settingsSectionLabel(activeSection) : t("native.screen.settings"),
+    });
+  }, [navigation, activeSection]);
   const [current, setCurrent] = useState(""),
     [next, setNext] = useState(""),
     [confirm, setConfirm] = useState(""),
@@ -457,17 +502,20 @@ export function Settings({
       <Screen>
         <Row
           title={identity.name}
+          leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
           caption={identity.email}
           onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
         />
         <Section title={t("shell.settingsNav.account")}>
-          {accountSections.map((value) => (
-            <Row
-              key={value}
-              title={settingsSectionLabel(value)}
-              onPress={() => navigation.navigate("AccountSettings", { section: value })}
-            />
-          ))}
+          {accountSections
+            .filter((value) => value !== "account")
+            .map((value) => (
+              <Row
+                key={value}
+                title={settingsSectionLabel(value)}
+                onPress={() => navigation.navigate("AccountSettings", { section: value })}
+              />
+            ))}
         </Section>
         {workspace.active && (
           <Section title={workspace.active.name}>
@@ -481,14 +529,21 @@ export function Settings({
           </Section>
         )}
         <Section title={t("shell.page.projects")}>
-          {projects.data?.map((project) => (
-            <Row
-              key={project.id}
-              title={project.name}
-              caption={project.key}
-              onPress={() => navigation.navigate("ProjectSettings", { projectId: project.id })}
-            />
-          ))}
+          <Choice
+            label={t("shell.settingsNav.projectSettings")}
+            value={
+              projects.data?.some((project) => project.id === currentProjectId)
+                ? (currentProjectId ?? "")
+                : ""
+            }
+            emptyLabel={t("ticket.tagInput.choose", { label: t("ticket.project.label") })}
+            options={(projects.data ?? []).map((project) => ({
+              value: project.id,
+              label: project.name,
+              leading: <ProjectIcon project={project} size={20} />,
+            }))}
+            onChange={(projectId) => navigation.navigate("ProjectSettings", { projectId })}
+          />
         </Section>
         {identity.admin && (
           <Row

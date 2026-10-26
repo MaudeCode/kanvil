@@ -1,3 +1,4 @@
+import { ticketSymbols } from "./icons.ts";
 import { authenticationPolicySchema } from "./instance.ts";
 import type { palettes } from "./theme.ts";
 import { z } from "zod";
@@ -103,12 +104,12 @@ export const stagedUploadLifetime = 86_400_000;
 export const stateLabels = labelTable(states, (value) => t(`common.status.${value}`));
 export const priorityLabels = labelTable(priorities, (value) => t(`common.priority.${value}`));
 export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
-  backlog: "muted",
-  todo: "foreground",
-  in_progress: "warning",
-  in_review: "accent",
-  done: "success",
-  cancelled: "muted",
+  backlog: ticketSymbols.status.backlog.tone,
+  todo: ticketSymbols.status.todo.tone,
+  in_progress: ticketSymbols.status.in_progress.tone,
+  in_review: ticketSymbols.status.in_review.tone,
+  done: ticketSymbols.status.done.tone,
+  cancelled: ticketSymbols.status.cancelled.tone,
 };
 
 const id = z.string().min(1).max(80);

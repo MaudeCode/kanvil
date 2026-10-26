@@ -28,6 +28,7 @@ import {
   Sheet,
   styles,
   Row,
+  Pager,
 } from "./ui.tsx";
 
 export function Attachments({ ticket }: { ticket: Ticket }) {
@@ -100,7 +101,7 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
     }
   }
   return (
-    <Section title={t("native.attachments.title")}>
+    <Section title={t("native.attachments.title")} collapsible count={attachments.data?.length}>
       {attachments.data?.map((item) => (
         <View key={item.id} style={{ gap: 8 }}>
           <Button
@@ -161,7 +162,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
     ),
     add = useOperation("add_evidence");
   return (
-    <Section title={t("native.evidence.title")}>
+    <Section title={t("native.evidence.title")} collapsible count={items.data?.length}>
       <Body muted>{t("native.evidence.explanation")}</Body>
       {items.data?.map((item) => (
         <View key={item.id} style={{ gap: 8, paddingVertical: 10 }}>
@@ -266,7 +267,7 @@ export function Links({ ticket }: { ticket: Ticket }) {
     [url, setUrl] = useState("");
   const pending = add.isPending || update.isPending || remove.isPending;
   return (
-    <Section title={t("detail.link.heading")}>
+    <Section title={t("detail.link.heading")} collapsible count={items.data?.length}>
       <ErrorNotice error={items.error ?? remove.error} />
       {items.data?.map((item) => (
         <View key={item.id} style={{ gap: 8 }}>
@@ -376,7 +377,7 @@ export function Activity({ ticket }: { ticket: Ticket }) {
     api.query("list_activity", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
   );
   return (
-    <Section title={t("native.activity.title")}>
+    <Section title={t("native.activity.title")} collapsible count={events.data?.total}>
       <ErrorNotice error={events.error} />
       {events.data?.items.map((event) => (
         <View key={event.id}>
@@ -384,18 +385,13 @@ export function Activity({ ticket }: { ticket: Ticket }) {
           <Body muted>{formatTimestamp(event.createdAt)}</Body>
         </View>
       ))}
-      <View style={styles.actions}>
-        <Button
-          title={t("native.activity.previous")}
-          disabled={!offset}
-          onPress={() => setOffset(Math.max(0, offset - 50))}
-        />
-        <Button
-          title={t("native.activity.next")}
-          disabled={offset + 50 >= (events.data?.total ?? 0)}
-          onPress={() => setOffset(offset + 50)}
-        />
-      </View>
+      <Pager
+        offset={offset}
+        total={events.data?.total}
+        limit={50}
+        noun={t("native.activity.title")}
+        onChange={setOffset}
+      />
     </Section>
   );
 }

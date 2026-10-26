@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "읽음",
+  "navigation.recentProjects": "최근 프로젝트",
   "navigation.switchProject": "워크스페이스 또는 프로젝트 전환",
   labelValue: "{{label}}: {{value}}",
   ui: {

@@ -60,6 +60,18 @@ export function createProjectContexts() {
   let cleared = false;
   return {
     get: (projectId: string) => entries.get(projectId),
+    recent: () =>
+      [...entries.keys()].reduceRight<string[]>((result, id) => {
+        result.push(id);
+        return result;
+      }, []),
+    touch(projectId: string) {
+      if (!cleared) {
+        const entry = entries.get(projectId) ?? {};
+        entries.delete(projectId);
+        entries.set(projectId, entry);
+      }
+    },
     save(projectId: string, patch: Partial<ProjectContext>) {
       if (!cleared) entries.set(projectId, { ...entries.get(projectId), ...patch });
     },
@@ -88,6 +100,44 @@ export function useProjectNavigation() {
   const value = useContext(ProjectNavigation);
   if (!value) throw new Error("Project navigation is unavailable");
   return value;
+}
+
+// Search has temporary disclosure choices; clearing it restores the ordinary work list.
+export function useSectionDisclosure(
+  query: string,
+  setQuery: (value: string) => void,
+  initial: Partial<Record<string, string[]>> = {},
+  scope = "default",
+) {
+  const [normal, setNormal] = useState(() =>
+    Object.fromEntries(Object.entries(initial).map(([key, ids]) => [key, new Set(ids)])),
+  );
+  const normalCollapsed = useMemo(() => normal[scope] ?? new Set<string>(), [normal, scope]);
+  const [search, setSearch] = useState<{ query: string; scope: string; ids: Set<string> }>({
+    query: "",
+    scope,
+    ids: new Set(),
+  });
+  const collapsed = query.trim()
+    ? search.query === query && search.scope === scope
+      ? search.ids
+      : new Set<string>()
+    : normalCollapsed;
+  const onQuery = useCallback(
+    (value: string) => {
+      setQuery(value);
+      setSearch({ query: value, scope, ids: new Set() });
+    },
+    [setQuery, scope],
+  );
+  const changeCollapsed = useCallback(
+    (ids: Set<string>) => {
+      if (query.trim()) setSearch({ query, scope, ids });
+      else setNormal((previous) => ({ ...previous, [scope]: ids }));
+    },
+    [query, scope],
+  );
+  return { normalCollapsed, collapsed, onQuery, changeCollapsed };
 }
 
 // Local searches share the system's collapsed search button, including Duo rail placement.

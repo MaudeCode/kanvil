@@ -59,9 +59,18 @@ import {
   createHeaderFallback,
   type HeaderAction,
 } from "./navigation-actions.tsx";
+import { markdownIcons } from "@kanvil/contracts/icons";
+import { ProjectIcon } from "./project-icon.tsx";
+import {
+  PropertyValue,
+  TicketTag,
+  TicketGlyph,
+  useTicketCatalog,
+  propertyDescription,
+} from "./ticket-values.tsx";
+export { PropertyValue, TicketGlyph, UserAvatar } from "./ticket-values.tsx";
 import { useNativePalette } from "./theme.ts";
 import { AccountImage } from "./image.tsx";
-import { nativeAccentColor } from "@kanvil/contracts/colors";
 import {
   formats,
   markdownFormats,
@@ -74,27 +83,18 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Renderer, useMarkdown } from "react-native-marked";
 import { brandMark } from "@kanvil/contracts/theme";
 import { useQuery } from "@tanstack/react-query";
-import { useConnection, useWorkspace } from "./data.tsx";
+import { useConnection, useWorkspace, useAllProjects, useNow } from "./data.tsx";
 import { useProjectNavigation } from "./navigation.ts";
 import {
   errorMessage,
   mentionScheme,
-  priorityLabels,
-  stateLabels,
-  stateTones,
+  isPresetColor,
+  projectIconColors,
   type Ticket,
-  presentWorkflow,
-  difficultyLabels,
   type CustomField,
   type CustomFieldValue,
 } from "@kanvil/contracts";
-import { activeLocale, formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
-// "High priority"; no priority reads as itself rather than "No priority priority".
-export const priorityText = (priority: Ticket["priority"]) =>
-  priority === "none"
-    ? priorityLabels.none
-    : t("native.ticket.priority", { priority: priorityLabels[priority] });
-
+import { activeLocale, formatDate, formatNumber, formatList, t } from "@kanvil/contracts/i18n";
 // Shared UI glyphs decorate controls whose text already provides their accessible name.
 function DecorativeIcon(props: ComponentProps<typeof Ionicons>) {
   return (
@@ -106,7 +106,6 @@ function DecorativeIcon(props: ComponentProps<typeof Ionicons>) {
     />
   );
 }
-
 export const usePalette = useNativePalette;
 type SheetRoutes = { Hidden: undefined; Sheet: undefined };
 const SheetStack = createNativeStackNavigator<SheetRoutes>();
@@ -114,6 +113,7 @@ type ButtonAction = HeaderAction;
 const FormAction = createContext<((action: ButtonAction | undefined) => void) | null>(null);
 const ImageSurface = createContext(false);
 const InsetsConsumed = createContext(false);
+const PaddedContent = createContext(false);
 
 const ViewportContext = createContext<{
   bounds: { width: number; height: number };
@@ -342,6 +342,8 @@ export function Button({
   compact = false,
   plain = false,
   disclosure = false,
+  leading,
+  dismissKeyboard = true,
 }: {
   title: string;
   onPress: () => void;
@@ -352,6 +354,8 @@ export function Button({
   compact?: boolean;
   plain?: boolean;
   disclosure?: boolean;
+  leading?: ReactNode;
+  dismissKeyboard?: boolean;
 }) {
   const color = usePalette();
   const formAction = useContext(FormAction);
@@ -367,30 +371,35 @@ export function Button({
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ disabled }}
       onPress={() => {
-        Keyboard.dismiss();
+        if (dismissKeyboard) Keyboard.dismiss();
         onPress();
       }}
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,
         {
-          borderColor: plain ? "transparent" : primary ? color.accent : color.line,
-          backgroundColor: plain ? "transparent" : primary ? color.accent : color.background,
-          opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+          borderWidth: primary || compact ? StyleSheet.hairlineWidth : 0,
+          borderColor: primary ? color.accent : color.line,
+          backgroundColor: primary ? color.accent : pressed ? color.accentSurface : "transparent",
+          alignItems: primary ? "center" : "flex-start",
+          opacity: disabled ? 0.45 : 1,
+          paddingHorizontal: primary ? 16 : 0,
         },
         compact && { paddingHorizontal: 10, paddingVertical: 8 },
-        disclosure && { flexDirection: "row", justifyContent: "space-between" },
+        !!(disclosure || leading) && { flexDirection: "row", alignItems: "center", gap: 6 },
+        disclosure && { justifyContent: "space-between" },
       ]}
     >
+      {leading}
       <Text
         style={{
           color: danger
             ? color.danger
             : primary
               ? color.accentForeground
-              : plain
-                ? color.accent
-                : color.foreground,
+              : compact
+                ? color.foreground
+                : color.accent,
           fontWeight: primary || plain ? "600" : "500",
           fontSize: 15,
           flexShrink: 1,
@@ -402,22 +411,57 @@ export function Button({
     </Pressable>
   );
 }
-export function Field({ label, ...props }: ComponentProps<typeof TextInput> & { label: string }) {
-  const color = usePalette();
+export function Field({
+  label,
+  variant = "standard",
+  labelHidden = false,
+  ...props
+}: ComponentProps<typeof TextInput> & {
+  label: string;
+  variant?: "standard" | "title";
+  labelHidden?: boolean;
+}) {
+  const color = usePalette(),
+    [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
+      {!labelHidden && <Text style={[styles.label, { color: color.muted }]}>{label}</Text>}
       <TextInput
         autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
         autoCorrect={!props.secureTextEntry}
         {...props}
         accessibilityLabel={label}
+        onFocus={(event) => {
+          setFocused(true);
+          props.onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setFocused(false);
+          props.onBlur?.(event);
+        }}
         placeholderTextColor={color.muted}
         keyboardAppearance={useColorScheme() === "dark" ? "dark" : "light"}
         style={[
           styles.input,
-          { color: color.foreground, borderColor: color.line, backgroundColor: color.background },
-          props.multiline && { minHeight: 110, textAlignVertical: "top" },
+          {
+            color: color.foreground,
+            borderColor: focused ? color.accent : color.line,
+            backgroundColor: color.background,
+          },
+          props.multiline && {
+            minHeight: variant === "title" ? 56 : 110,
+            textAlignVertical: "top",
+          },
+          variant === "title" && {
+            paddingHorizontal: 0,
+            paddingVertical: 8,
+            borderWidth: 0,
+            backgroundColor: "transparent",
+            fontSize: 23,
+            lineHeight: 30,
+            fontWeight: "600",
+            letterSpacing: -0.4,
+          },
           props.style,
         ]}
       />
@@ -437,7 +481,8 @@ export function MarkdownField({
 }) {
   const input = useRef<ComponentRef<typeof TextInput>>(null),
     color = usePalette();
-  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [selection, setSelection] = useState({ start: 0, end: 0 }),
+    [preview, setPreview] = useState(false);
   function apply(format: MarkdownFormat) {
     const edit = formatMarkdown(value, selection.start, selection.end, format);
     onChangeText(value.slice(0, edit.from) + edit.text + value.slice(edit.to));
@@ -445,33 +490,59 @@ export function MarkdownField({
     input.current?.focus();
   }
   return (
-    <View style={{ gap: 8 }}>
-      <ScrollView
-        horizontal
-        keyboardShouldPersistTaps="always"
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 12 }}
+    <View style={{ gap: 6 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
       >
-        {markdownFormats.map((format) => (
-          <SystemButton
-            key={format}
-            title={formats[format].label}
-            color={color.accent}
-            disabled={format === "link" && selection.start === selection.end}
-            onPress={() => apply(format)}
-          />
-        ))}
-      </ScrollView>
-      <Field
-        ref={input}
-        label={label}
-        value={value}
-        onChangeText={onChangeText}
-        multiline
-        selection={selection}
-        onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-        {...(maxLength ? { maxLength } : {})}
-      />
+        <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
+        <Button
+          compact
+          plain
+          title={preview ? t("detail.markdown.write") : t("detail.markdown.preview")}
+          onPress={() => setPreview((previous) => !previous)}
+        />
+      </View>
+      {!preview && (
+        <ScrollView
+          horizontal
+          keyboardShouldPersistTaps="always"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 12 }}
+        >
+          {markdownFormats.map((format) => (
+            <Button
+              compact
+              dismissKeyboard={false}
+              key={format}
+              title=""
+              accessibilityLabel={formats[format].label}
+              leading={<TicketGlyph name={markdownIcons[format]} color={color.muted} />}
+              disabled={format === "link" && selection.start === selection.end}
+              onPress={() => apply(format)}
+            />
+          ))}
+        </ScrollView>
+      )}
+      {preview ? (
+        <Markdown>{value}</Markdown>
+      ) : (
+        <Field
+          ref={input}
+          label={label}
+          labelHidden
+          value={value}
+          onChangeText={onChangeText}
+          multiline
+          selection={selection}
+          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+          {...(maxLength ? { maxLength } : {})}
+        />
+      )}
     </View>
   );
 }
@@ -645,6 +716,7 @@ export function Sheet({
                             submit.onPress,
                             { type: "sfSymbol", name: "checkmark" },
                             submit.disabled,
+                            { visibilityPriority: "high", identifier: "sheet-submit" },
                           ),
                           variant: "done",
                         },
@@ -677,15 +749,21 @@ export function Choice({
   onToggle,
   emptyLabel = t("ticket.field.noValue"),
   disabled = false,
+  compact = false,
+  summary,
+  inline = false,
 }: {
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; leading?: ReactNode }[];
   onChange: (value: string) => void;
   selected?: string[];
   onToggle?: (value: string) => void;
   emptyLabel?: string;
   disabled?: boolean;
+  compact?: boolean;
+  summary?: ReactNode;
+  inline?: boolean;
 }) {
   const color = usePalette(),
     [open, setOpen] = useState(false),
@@ -695,64 +773,140 @@ export function Choice({
         .filter((option) => selected.includes(option.value))
         .map((option) => option.label)
         .join(", ") || emptyLabel
-    : (options.find((option) => option.value === value)?.label ?? value);
-  return (
-    <View style={styles.field}>
-      <Row
-        compact
-        title={label}
-        disabled={disabled}
-        accessibilityLabel={t("native.labelValue", { label, value: current })}
-        onPress={() => {
-          setQuery("");
-          setOpen(true);
-        }}
-        trailing={
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center", maxWidth: "56%" }}>
-            <Text style={{ color: color.muted, fontSize: 15, flexShrink: 1 }}>
-              {selected && selected.length > 1
-                ? t("ticket.selection.selected", { count: selected.length })
-                : current}
-            </Text>
-            <DecorativeIcon name="chevron-down" color={color.muted} size={14} accessible={false} />
-          </View>
-        }
-      />
-      <Sheet title={label} open={open} onClose={() => setOpen(false)}>
-        {options.length > 7 && (
-          <Field
-            label={t("ticket.property.search", { label })}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-            autoCorrect={false}
-          />
+    : (options.find((option) => option.value === value)?.label ?? (value || emptyLabel));
+  const choices = (
+    <>
+      {options.length > 7 && (
+        <Field
+          label={t("ticket.property.search", { label })}
+          value={query}
+          onChangeText={setQuery}
+          autoFocus
+          autoCorrect={false}
+        />
+      )}
+      {options
+        .filter((option) => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+        .map((option) =>
+          selected ? (
+            <Check
+              key={option.value}
+              label={option.label}
+              checked={selected.includes(option.value)}
+              leading={option.leading}
+              onChange={() => onToggle?.(option.value)}
+            />
+          ) : (
+            <Row
+              key={option.value}
+              title={option.label}
+              leading={option.leading}
+              accessibilityLabel={t("native.labelValue", { label, value: option.label })}
+              selected={option.value === value}
+              trailing={option.value === value ? undefined : <View />}
+              onPress={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            />
+          ),
         )}
-        {options
-          .filter((option) => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-          .map((option) =>
-            selected ? (
-              <Check
-                key={option.value}
-                label={option.label}
-                checked={selected.includes(option.value)}
-                onChange={() => onToggle?.(option.value)}
+    </>
+  );
+  return (
+    <View style={[styles.field, compact && { maxWidth: "100%", alignSelf: "flex-start" }]}>
+      {compact ? (
+        <Button
+          compact
+          title={current}
+          disabled={disabled}
+          leading={options.find((option) => option.value === value)?.leading}
+          accessibilityLabel={t("native.labelValue", { label, value: current })}
+          onPress={() => {
+            setQuery("");
+            setOpen(true);
+          }}
+        />
+      ) : (
+        <Row
+          compact
+          title={label}
+          disabled={disabled}
+          accessibilityLabel={t("native.labelValue", { label, value: current })}
+          onPress={() => {
+            setQuery("");
+            setOpen(true);
+          }}
+          trailing={
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", maxWidth: "56%" }}>
+              {options.find((option) => option.value === value)?.leading}
+              {summary ?? (
+                <Text style={{ color: color.muted, fontSize: 15, flexShrink: 1 }}>
+                  {selected && selected.length > 1
+                    ? t("ticket.selection.selected", { count: selected.length })
+                    : current}
+                </Text>
+              )}
+              <DecorativeIcon
+                name="chevron-down"
+                color={color.muted}
+                size={14}
+                accessible={false}
               />
-            ) : (
-              <Row
-                key={option.value}
-                title={option.label}
-                selected={option.value === value}
-                trailing={option.value === value ? undefined : <View />}
-                onPress={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              />
-            ),
-          )}
-      </Sheet>
+            </View>
+          }
+        />
+      )}
+      {inline ? (
+        open && <View>{choices}</View>
+      ) : (
+        <Sheet title={label} open={open} onClose={() => setOpen(false)}>
+          {choices}
+        </Sheet>
+      )}
     </View>
+  );
+}
+// Icon, workflow and label editors share color names, actual swatches and custom color entry.
+export function ColorChoice({
+  label,
+  value,
+  onChange,
+  presetsOnly = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  presetsOnly?: boolean;
+}) {
+  const custom = !isPresetColor(value);
+  return (
+    <>
+      <Choice
+        label={label}
+        value={custom ? "custom" : value}
+        onChange={(next) => onChange(next === "custom" ? "#" : next)}
+        options={[
+          ...projectIconColors.map((tone) => ({
+            value: tone,
+            label: t(`settings.color.${tone}`),
+            leading: <TicketTag tag={tone} color={tone} indicatorOnly />,
+          })),
+          ...(presetsOnly ? [] : [{ value: "custom", label: t("settings.color.custom") }]),
+        ]}
+      />
+      {custom && !presetsOnly && (
+        <Field
+          label={t("settings.color.custom")}
+          value={value}
+          onChangeText={onChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={7}
+          placeholder="#3458c5"
+        />
+      )}
+    </>
   );
 }
 export function Check({
@@ -760,11 +914,13 @@ export function Check({
   checked,
   onChange,
   disabled = false,
+  leading,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
+  leading?: ReactNode;
 }) {
   const color = usePalette();
   return (
@@ -781,6 +937,7 @@ export function Check({
         size={24}
         color={checked ? color.accent : color.muted}
       />
+      {leading}
       <Text style={{ color: color.foreground, flex: 1, fontSize: 15, lineHeight: 22 }}>
         {label}
       </Text>
@@ -976,19 +1133,31 @@ export function Heading({
   children,
   compact = false,
   disclosure,
+  leading,
+  count,
 }: {
   children: ReactNode;
   compact?: boolean;
-  disclosure?: { expanded: boolean; count: number; label: string; onPress: () => void };
+  leading?: ReactNode;
+  count?: number;
+  disclosure?: {
+    expanded: boolean;
+    count?: number;
+    countLabel?: string;
+    leading?: ReactNode;
+    label: string;
+    onPress: () => void;
+  };
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    padded = useContext(PaddedContent);
   const title = (
     <Text
       accessibilityRole="header"
       style={[
         styles.heading,
-        { color: compact ? color.muted : color.foreground },
-        compact && { fontSize: 14, letterSpacing: 0, fontWeight: "600" },
+        { color: compact && !disclosure ? color.muted : color.foreground },
+        compact && { fontSize: 13, lineHeight: 20, letterSpacing: 0, fontWeight: "600" },
       ]}
     >
       {children}
@@ -999,18 +1168,34 @@ export function Heading({
       accessibilityRole="button"
       accessibilityLabel={disclosure.label}
       accessibilityState={{ expanded: disclosure.expanded }}
-      accessibilityValue={{ text: t("ticket.list.count", { count: disclosure.count }) }}
+      {...(disclosure.count === undefined
+        ? {}
+        : {
+            accessibilityValue: {
+              text: disclosure.countLabel ?? t("ticket.list.count", { count: disclosure.count }),
+            },
+          })}
       onPress={disclosure.onPress}
       style={({ pressed }) => ({
         minHeight: 44,
-        paddingHorizontal: 20,
+        paddingHorizontal: padded ? 0 : 20,
         paddingVertical: 10,
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-        backgroundColor: pressed ? color.accentSurface : color.background,
+        backgroundColor: pressed ? color.accentSurface : "transparent",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: color.line,
       })}
     >
+      {disclosure.leading}
+      <View style={{ flexShrink: 1, minWidth: 0 }}>{title}</View>
+      {disclosure.count !== undefined && (
+        <Text style={{ color: color.muted, fontSize: 12, fontVariant: ["tabular-nums"] }}>
+          {formatNumber(disclosure.count)}
+        </Text>
+      )}
+      <View style={{ flex: 1 }} />
       <DecorativeIcon
         name={
           disclosure.expanded
@@ -1023,28 +1208,65 @@ export function Heading({
         color={color.muted}
         accessible={false}
       />
-      <View style={{ flex: 1 }}>{title}</View>
-      <Text style={{ color: color.muted, fontSize: 12, fontVariant: ["tabular-nums"] }}>
-        {formatNumber(disclosure.count)}
-      </Text>
     </Pressable>
+  ) : leading || count !== undefined ? (
+    <View
+      accessible
+      accessibilityRole="header"
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}
+    >
+      {leading}
+      <View style={{ flex: 1 }}>{title}</View>
+      {count !== undefined && (
+        <Text style={{ color: color.muted, fontSize: 12 }}>{formatNumber(count)}</Text>
+      )}
+    </View>
   ) : (
     title
   );
 }
-export function Section({ title, children }: { title: string; children: ReactNode }) {
-  const color = usePalette();
+export function Section({
+  title,
+  children,
+  collapsible = false,
+  initiallyOpen = false,
+  summary,
+  count,
+}: {
+  title: string;
+  children: ReactNode;
+  count?: number | undefined;
+  collapsible?: boolean;
+  initiallyOpen?: boolean;
+  summary?: ReactNode;
+}) {
+  const color = usePalette(),
+    [expanded, setExpanded] = useState(initiallyOpen);
   return (
     <View
       style={{
         borderTopWidth: StyleSheet.hairlineWidth,
         borderColor: color.line,
-        paddingVertical: 20,
-        gap: 8,
+        paddingVertical: 14,
+        gap: 10,
       }}
     >
-      <Heading compact>{title}</Heading>
-      {children}
+      <Heading
+        compact
+        {...(collapsible
+          ? {
+              disclosure: {
+                expanded,
+                ...(count === undefined ? {} : { count, countLabel: formatNumber(count) }),
+                label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", { label: title }),
+                onPress: () => setExpanded((value) => !value),
+              },
+            }
+          : {})}
+      >
+        {title}
+      </Heading>
+      {!collapsible || expanded ? children : summary}
     </View>
   );
 }
@@ -1056,6 +1278,7 @@ export function Screen({
   background,
   safeArea = true,
   allowDivision = false,
+  scrollRef,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -1064,6 +1287,7 @@ export function Screen({
   background?: string | null;
   safeArea?: boolean;
   allowDivision?: boolean;
+  scrollRef?: ComponentProps<typeof ScrollView>["ref"];
 }) {
   const color = usePalette();
   const navigation = useContext(NavigationContext);
@@ -1074,22 +1298,27 @@ export function Screen({
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
         <ContentArea enabled={!!navigation && safeArea} allowDivision={allowDivision}>
-          {scroll ? (
-            <Scroll
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              contentContainerStyle={{
-                padding: 22,
-                paddingBottom: 48,
-                gap: 16,
-                ...(!navigation ? { width: "100%", maxWidth: 560, alignSelf: "center" } : {}),
-              }}
-            >
-              {children}
-            </Scroll>
-          ) : (
-            children
-          )}
+          <PaddedContent value={scroll}>
+            {scroll ? (
+              <Scroll
+                ref={scrollRef}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                contentContainerStyle={{
+                  padding: 22,
+                  paddingBottom: 48,
+                  gap: 16,
+                  width: "100%",
+                  maxWidth: navigation ? 720 : 560,
+                  alignSelf: "center",
+                }}
+              >
+                {children}
+              </Scroll>
+            ) : (
+              children
+            )}
+          </PaddedContent>
         </ContentArea>
       </View>
     </ImageSurface>
@@ -1122,6 +1351,7 @@ function NativeForm({ children }: { children: ReactNode }) {
                   submit.onPress,
                   { type: "sfSymbol", name: "checkmark" },
                   submit.disabled,
+                  { visibilityPriority: "high", identifier: "form-submit" },
                 ),
                 variant: "done",
               },
@@ -1144,6 +1374,7 @@ export function Pager({
   onChange: (offset: number) => void;
   noun: string;
 }) {
+  if (!offset && (total === undefined || total <= limit)) return null;
   return (
     <View
       style={{
@@ -1224,7 +1455,8 @@ export function Row({
   style?: StyleProp<ViewStyle>;
 }) {
   const color = usePalette();
-  const imageSurface = useContext(ImageSurface);
+  const imageSurface = useContext(ImageSurface),
+    padded = useContext(PaddedContent);
   return (
     <Pressable
       accessibilityRole="button"
@@ -1244,8 +1476,8 @@ export function Row({
           flexDirection: "row",
           alignItems: "center",
           minHeight: 44,
-          paddingVertical: compact || dense ? 12 : 18,
-          paddingHorizontal: compact ? 0 : 20,
+          paddingVertical: compact || dense ? 12 : 14,
+          paddingHorizontal: compact || padded ? 0 : 20,
           gap: 12,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderColor: color.line,
@@ -1262,7 +1494,7 @@ export function Row({
       ]}
     >
       {leading}
-      <View style={{ flex: 1, minWidth: 0, gap: dense ? 4 : 8 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
         {overline && (
           <Text
             style={{
@@ -1278,8 +1510,8 @@ export function Row({
         <Text
           style={{
             color: color.foreground,
-            fontSize: compact ? 15 : dense ? 16 : 17,
-            fontWeight: dense ? "500" : "600",
+            fontSize: compact ? 15 : 16,
+            fontWeight: "500",
             lineHeight: dense ? 23 : 25,
             letterSpacing: -0.2,
           }}
@@ -1312,55 +1544,266 @@ export function TicketRow({
   active = false,
   showStatus = true,
   selecting = false,
+  showProject = false,
 }: {
-  ticket: Ticket;
+  ticket: Pick<Ticket, "id" | "projectId" | "key" | "title" | "status"> & Partial<Ticket>;
   onPress: () => void;
   onLongPress?: (() => void) | undefined;
   selected?: boolean | undefined;
   active?: boolean;
   showStatus?: boolean;
   selecting?: boolean;
+  showProject?: boolean;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    projects = useAllProjects(),
+    now = useNow();
+  const project = showProject
+    ? projects.data?.find((item) => item.id === ticket.projectId)
+    : undefined;
+  const overdue =
+    !!ticket.dueAt &&
+    new Date(ticket.dueAt).getTime() < now &&
+    !["done", "cancelled"].includes(ticket.status);
+  const catalog = useTicketCatalog(ticket.projectId, ticket.stateId, ticket.assigneeId);
+  const spoken = formatList([
+    ticket.key,
+    ticket.title,
+    propertyDescription(
+      { property: "status", value: ticket.status, stateId: ticket.stateId },
+      catalog,
+    ),
+    ...(ticket.priority === undefined
+      ? []
+      : [propertyDescription({ property: "priority", value: ticket.priority }, catalog)]),
+    ...(ticket.kind === undefined
+      ? []
+      : [propertyDescription({ property: "kind", value: ticket.kind }, catalog)]),
+    ...(ticket.difficulty === undefined
+      ? []
+      : [propertyDescription({ property: "difficulty", value: ticket.difficulty }, catalog)]),
+    ...(ticket.assigneeId === undefined
+      ? []
+      : [propertyDescription({ property: "assignee", value: ticket.assigneeId }, catalog)]),
+    ...(ticket.labels?.length
+      ? [
+          t("ticket.tags.summary", {
+            label: t("ticket.tags.labels"),
+            tags: formatList(ticket.labels),
+          }),
+        ]
+      : []),
+    ...(ticket.scopes?.length
+      ? [
+          t("ticket.tags.summary", {
+            label: t("ticket.tags.scopes"),
+            tags: formatList(ticket.scopes),
+          }),
+        ]
+      : []),
+    ...(ticket.dueAt ? [t("native.ticket.due", { date: formatDate(ticket.dueAt) })] : []),
+  ]);
   return (
     <Row
       title={ticket.title}
+      accessibilityLabel={spoken}
       dense
       active={active}
+      leading={
+        !showStatus ? (
+          <View style={{ alignSelf: "flex-start", paddingTop: 3 }}>
+            <PropertyValue
+              projectId={ticket.projectId}
+              property="status"
+              value={ticket.status}
+              stateId={ticket.stateId ?? null}
+              iconOnly
+            />
+          </View>
+        ) : undefined
+      }
       trailing={
         selecting ? (
           <DecorativeIcon
             name={selected ? "checkmark-circle" : "ellipse-outline"}
             size={22}
             color={selected ? color.accent : color.muted}
-            accessible={false}
           />
         ) : (
-          <View />
+          false
         )
       }
       metadata={
-        <>
-          <Body muted small>
-            {ticket.key}
-          </Body>
-          {showStatus && <Status ticket={ticket} />}
-          {ticket.priority !== "none" && (
+        <View style={{ gap: 6, width: "100%" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              alignItems: "center",
+              columnGap: 10,
+              rowGap: 4,
+            }}
+          >
+            {project && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <ProjectIcon project={project} size={14} />
+                <Body muted small>
+                  {project.name}
+                </Body>
+              </View>
+            )}
             <Body muted small>
-              {priorityText(ticket.priority)}
+              {ticket.key}
             </Body>
+            {showStatus && (
+              <PropertyValue
+                projectId={ticket.projectId}
+                property="status"
+                value={ticket.status}
+                stateId={ticket.stateId ?? null}
+                iconOnly
+              />
+            )}
+            {ticket.priority !== undefined && (
+              <PropertyValue
+                projectId={ticket.projectId}
+                property="priority"
+                value={ticket.priority}
+                iconOnly
+              />
+            )}
+            {ticket.kind !== undefined && (
+              <PropertyValue
+                projectId={ticket.projectId}
+                property="kind"
+                value={ticket.kind}
+                iconOnly
+              />
+            )}
+            {ticket.difficulty !== undefined && (
+              <PropertyValue
+                projectId={ticket.projectId}
+                property="difficulty"
+                value={ticket.difficulty}
+                iconOnly
+              />
+            )}
+            {ticket.assigneeId !== undefined && (
+              <PropertyValue
+                projectId={ticket.projectId}
+                property="assignee"
+                value={ticket.assigneeId ?? null}
+                iconOnly
+              />
+            )}
+          </View>
+          {(ticket.dueAt || ticket.startAt) && (
+            <View
+              accessible
+              accessibilityLabel={
+                ticket.dueAt
+                  ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
+                  : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
+              }
+              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            >
+              <TicketGlyph
+                name="calendar-clock"
+                color={overdue ? color.danger : color.muted}
+                size={14}
+              />
+              <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
+                {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </Text>
+            </View>
           )}
-          {ticket.difficulty && (
-            <Body muted small>
-              {difficultyLabels[ticket.difficulty]}
-            </Body>
-          )}
-        </>
+          <TicketTags
+            projectId={ticket.projectId}
+            tags={ticket.labels ?? []}
+            limit={2}
+            onExpand={onPress}
+          />
+          <TicketTags
+            projectId={ticket.projectId}
+            tags={ticket.scopes ?? []}
+            kind="scope"
+            limit={1}
+            onExpand={onPress}
+          />
+        </View>
       }
       onPress={onPress}
       onLongPress={onLongPress}
       selected={selected}
     />
+  );
+}
+
+// Detail shows every tag. Compact rows show a preview; opening the row reveals the full set.
+export function TicketTags({
+  projectId,
+  tags,
+  kind = "label",
+  limit = tags.length,
+  onExpand,
+}: {
+  projectId: string;
+  tags: string[];
+  kind?: "label" | "scope";
+  limit?: number;
+  onExpand?: () => void;
+}) {
+  const { api } = useConnection();
+  const catalog = useQuery({
+    ...api.query("list_project_labels", { projectId }),
+    enabled: kind === "label" && tags.length > 0,
+  });
+  const color = usePalette();
+  if (!tags.length) return null;
+  const content = (
+    <View
+      accessible
+      accessibilityLabel={t("ticket.tags.summary", {
+        label: t(kind === "label" ? "ticket.tags.labels" : "ticket.tags.scopes"),
+        tags: formatList(tags),
+      })}
+      style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5 }}
+    >
+      {tags.slice(0, limit).map((tag) => (
+        <TicketTag
+          key={tag}
+          tag={tag}
+          kind={kind}
+          color={catalog.data?.find((label) => label.name === tag)?.color ?? "gray"}
+        />
+      ))}
+      {tags.length > limit && (
+        <Text
+          style={{ color: color.muted, fontSize: 12 }}
+        >{`+${formatNumber(tags.length - limit)}`}</Text>
+      )}
+    </View>
+  );
+  return tags.length > limit && onExpand ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t("ticket.tags.summary", {
+        label: t(kind === "label" ? "ticket.tags.labels" : "ticket.tags.scopes"),
+        tags: formatList(tags),
+      })}
+      onPress={(event) => {
+        event.stopPropagation();
+        onExpand();
+      }}
+      style={{ minHeight: 44, justifyContent: "center" }}
+    >
+      {content}
+    </Pressable>
+  ) : (
+    content
   );
 }
 
@@ -1415,32 +1858,15 @@ export function WorkspaceScope() {
     />
   );
 }
-// A ticket's workflow state, tinted by its category. Older servers show the canonical status.
+// Compatibility entrypoint for relationships and schedules, using the common property renderer.
 export function Status({ ticket }: { ticket: Pick<Ticket, "projectId" | "status" | "stateId"> }) {
-  const color = usePalette(),
-    { api } = useConnection();
-  const workflow = useQuery({
-    ...api.query("list_workflow_states", { projectId: ticket.projectId }),
-    select: presentWorkflow,
-    enabled: !!ticket.stateId,
-  });
-  const name = workflow.data?.find((state) => state.id === ticket.stateId)?.name;
-  const stateColor = workflow.data?.find((state) => state.id === ticket.stateId)?.color;
-  const mode = useColorScheme() === "dark" ? "dark" : "light";
   return (
-    <Text
-      style={{
-        color:
-          stateColor && stateColor !== "default"
-            ? nativeAccentColor(stateColor, mode, color)
-            : color[stateTones[ticket.status]],
-        fontSize: 13,
-        fontWeight: "500",
-        lineHeight: 20,
-      }}
-    >
-      ● {name ?? stateLabels[ticket.status]}
-    </Text>
+    <PropertyValue
+      projectId={ticket.projectId}
+      property="status"
+      value={ticket.status}
+      stateId={ticket.stateId}
+    />
   );
 }
 // A mention has nothing to open, so it reads as emphasized "@Name" text instead of a link.
@@ -1470,14 +1896,22 @@ export function Markdown({ children }: { children: string }) {
     colorScheme: colorScheme === "dark" ? "dark" : "light",
     theme,
     renderer: markdownRenderer,
+    styles: {
+      text: { fontSize: 16, lineHeight: 24 },
+      h1: { fontSize: 22, lineHeight: 29 },
+      h2: { fontSize: 20, lineHeight: 27 },
+      h3: { fontSize: 18, lineHeight: 25 },
+      h4: { fontSize: 16, lineHeight: 23 },
+    },
   });
   return <View>{elements}</View>;
 }
 export const styles = StyleSheet.create({
   button: {
     minHeight: 44,
-    borderWidth: 1,
-    borderRadius: 10,
+    minWidth: 44,
+    borderWidth: 0,
+    borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     alignItems: "center",
@@ -1485,7 +1919,13 @@ export const styles = StyleSheet.create({
   },
   field: { gap: 8 },
   label: { fontSize: 13, fontWeight: "500" },
-  input: { borderWidth: 1, borderRadius: 10, padding: 14, minHeight: 48, fontSize: 16 },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    padding: 14,
+    minHeight: 48,
+    fontSize: 16,
+  },
   heading: { fontSize: 21, fontWeight: "600", letterSpacing: -0.4 },
   check: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: 10 },
   modal: { flex: 1, justifyContent: "flex-end" },

@@ -39,6 +39,8 @@ import {
   Row,
   Section,
   Sheet,
+  TicketGlyph,
+  usePalette,
 } from "./ui.tsx";
 
 export function CalendarFeeds({ projectId, canManage }: { projectId: string; canManage: boolean }) {
@@ -185,7 +187,9 @@ function DeliveryStatus({ target }: { target: Pick<NotificationChannel, "paused"
 
 // Account channels and project destinations have one editor, as on the web.
 export function DeliverySettings({ projectId }: { projectId?: string }) {
-  const { api } = useConnection();
+  const { api } = useConnection(),
+    color = usePalette();
+  const [acting, setActing] = useState<NotificationChannel | ProjectDestination>();
   const list = useQuery<(NotificationChannel | ProjectDestination)[]>({
     ...(projectId
       ? api.query("list_project_destinations", { projectId })
@@ -225,12 +229,19 @@ export function DeliverySettings({ projectId }: { projectId?: string }) {
         style: "destructive",
         onPress: () => {
           if (projectId)
-            deleteDestination.mutate({
-              projectId,
-              destinationId: target.id,
-              expectedVersion: target.version,
-            });
-          else deleteChannel.mutate({ channelId: target.id, expectedVersion: target.version });
+            deleteDestination.mutate(
+              {
+                projectId,
+                destinationId: target.id,
+                expectedVersion: target.version,
+              },
+              { onSuccess: () => setActing(undefined) },
+            );
+          else
+            deleteChannel.mutate(
+              { channelId: target.id, expectedVersion: target.version },
+              { onSuccess: () => setActing(undefined) },
+            );
         },
       },
     ]);
@@ -252,42 +263,55 @@ export function DeliverySettings({ projectId }: { projectId?: string }) {
         <Loading />
       ) : (
         list.data?.map((target) => (
-          <View key={target.id} style={{ gap: 8 }}>
-            <Row
-              title={target.name}
-              caption={deliveryKindLabels[target.kind]}
-              onPress={() => setEditing(target)}
-            />
-            <DeliveryStatus target={target} />
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Row
+            key={target.id}
+            title={target.name}
+            caption={deliveryKindLabels[target.kind]}
+            metadata={<DeliveryStatus target={target} />}
+            onPress={() => setEditing(target)}
+            onLongPress={() => setActing(target)}
+            trailing={
               <Button
                 compact
-                title={t("admin.delivery.sendTest", { name: target.name })}
-                disabled={testChannel.isPending || testDestination.isPending}
-                onPress={() => {
-                  if (projectId) testDestination.mutate({ projectId, destinationId: target.id });
-                  else testChannel.mutate({ channelId: target.id });
-                }}
+                title=""
+                accessibilityLabel={t("ticket.selection.more")}
+                leading={<TicketGlyph name="settings-2" color={color.muted} />}
+                onPress={() => setActing(target)}
               />
-              <Button
-                compact
-                title={target.paused ? t("admin.delivery.resume") : t("admin.delivery.pause")}
-                onPress={() => pause(target)}
-              />
-              <Button
-                compact
-                title={t("admin.delivery.disconnect")}
-                danger
-                onPress={() => remove(target)}
-              />
-            </View>
-          </View>
+            }
+          />
         ))
       )}
       <Button
         title={projectId ? t("admin.delivery.addDestination") : t("admin.delivery.addChannel")}
         onPress={() => setEditing(null)}
       />
+      <Sheet
+        title={acting?.name ?? t("ticket.selection.more")}
+        open={!!acting}
+        onClose={() => setActing(undefined)}
+      >
+        {acting && (
+          <>
+            <Button
+              title={t("admin.delivery.sendTest", { name: acting.name })}
+              disabled={testChannel.isPending || testDestination.isPending}
+              onPress={() => {
+                if (projectId) testDestination.mutate({ projectId, destinationId: acting.id });
+                else testChannel.mutate({ channelId: acting.id });
+              }}
+            />
+            <Button
+              title={acting.paused ? t("admin.delivery.resume") : t("admin.delivery.pause")}
+              onPress={() => {
+                pause(acting);
+                setActing(undefined);
+              }}
+            />
+            <Button danger title={t("admin.delivery.disconnect")} onPress={() => remove(acting)} />
+          </>
+        )}
+      </Sheet>
       <Sheet
         title={projectId ? t("admin.delivery.editDestination") : t("admin.delivery.editChannel")}
         open={editing !== undefined}

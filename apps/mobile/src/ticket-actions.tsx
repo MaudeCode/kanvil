@@ -1,3 +1,4 @@
+import { labelOptions } from "./ticket-values.tsx";
 import { useState } from "react";
 import { Alert, Share } from "react-native";
 import { StackActions } from "@react-navigation/native";
@@ -13,7 +14,7 @@ import {
   useProjectAccess,
 } from "./data.tsx";
 import { useAppNavigation } from "./navigation.ts";
-import { TicketProperties, type PropertyFields } from "./ticket-properties.tsx";
+import { TicketProperties, propertyChanges, type PropertyFields } from "./ticket-properties.tsx";
 import {
   Body,
   Button,
@@ -32,12 +33,14 @@ export function TicketActions({
   onClose,
   onSelect,
   detail = false,
+  showOpen = !detail,
   order,
 }: {
   ticket: Ticket;
   onClose: () => void;
   onSelect?: () => void;
   detail?: boolean;
+  showOpen?: boolean;
   order?: Ticket[];
 }) {
   const { api, baseUrl } = useConnection(),
@@ -54,13 +57,12 @@ export function TicketActions({
   const [relocating, setRelocating] = useState(false);
   const pending = update.isPending || duplicate.isPending || remove.isPending || move.isPending;
   function change(fields: PropertyFields) {
-    const { stateId, ...rest } = fields;
     void update
       .mutateAsync({
         projectId: ticket.projectId,
         ticketId: ticket.id,
         expectedVersion: ticket.version,
-        changes: { ...rest, ...(stateId ? { stateId } : {}) },
+        changes: propertyChanges(fields),
       })
       .then(onClose)
       .catch(() => {});
@@ -92,7 +94,7 @@ export function TicketActions({
   if (relocating) return <Relocation ticket={ticket} detail={detail} onSaved={onClose} />;
   return (
     <>
-      {!detail && (
+      {showOpen && (
         <Button
           title={t("ticket.menu.open")}
           onPress={() => {
@@ -120,6 +122,7 @@ export function TicketActions({
             }}
           />
           <TicketProperties
+            compact
             projectId={ticket.projectId}
             value={ticket}
             onChange={change}
@@ -355,7 +358,7 @@ export function BulkProperties({
   onChange: (change: Input<"update_ticket">["changes"]) => Promise<unknown>;
 }) {
   const { api } = useConnection();
-  const labels = useQuery(api.query("list_ticket_labels", { projectId })),
+  const labels = useQuery(api.query("list_project_labels", { projectId })),
     customFields = useQuery(api.query("list_custom_fields", { projectId }));
   const [fields, setFields] = useState<Input<"update_ticket">["changes"]>({}),
     [pending, setPending] = useState(false),
@@ -417,7 +420,7 @@ export function BulkProperties({
                 ? t("ticket.field.mixed")
                 : t("ticket.field.noValue")
             }
-            options={(labels.data ?? []).map((label) => ({ value: label.name, label: label.name }))}
+            options={labelOptions(labels.data ?? [])}
             onChange={() => {}}
             onToggle={(value) =>
               setFields((previous) => ({

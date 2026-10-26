@@ -22,8 +22,8 @@ export function ticketSections<T extends Pick<Ticket, "id" | "status" | "stateId
   return groups.map((group) => ({ ...group, tickets: buckets.get(group.id) ?? [] }));
 }
 
-export function sectionEntries<T extends Pick<Ticket, "id" | "status" | "stateId">>(
-  sections: ReturnType<typeof ticketSections<T>>,
+export function sectionEntries<T extends Pick<Ticket, "id">>(
+  sections: readonly { id: string; name: string; tickets: readonly T[] }[],
   collapsed: ReadonlySet<string>,
   searching: boolean,
 ): (

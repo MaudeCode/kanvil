@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "既読",
+  "navigation.recentProjects": "最近のプロジェクト",
   "navigation.switchProject": "ワークスペースまたはプロジェクトを切り替え",
   labelValue: "{{label}}: {{value}}",
   ui: {

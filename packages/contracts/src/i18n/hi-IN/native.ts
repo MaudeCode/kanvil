@@ -1,4 +1,6 @@
 export default {
+  "inbox.read": "पढ़ा गया",
+  "navigation.recentProjects": "हाल के प्रोजेक्ट",
   "navigation.switchProject": "कार्यस्थान या प्रोजेक्ट बदलें",
   labelValue: "{{label}}: {{value}}",
   ui: {

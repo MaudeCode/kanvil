@@ -1,5 +1,6 @@
+import { createHeaderMenu } from "./navigation-actions.tsx";
 import { parseCustomFieldDraft } from "@kanvil/contracts/drafts";
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState, useMemo } from "react";
 import { Alert, Share, View } from "react-native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -12,7 +13,6 @@ import {
   roleLabels,
   roles,
   labelColor,
-  projectIconColors,
   customFieldTypes,
   customFieldTypeLabels,
   states,
@@ -23,6 +23,7 @@ import {
   type CustomField,
   type CustomFieldValue,
 } from "@kanvil/contracts";
+import { TicketTag } from "./ticket-values.tsx";
 import { t } from "@kanvil/contracts/i18n";
 import {
   projectSections,
@@ -52,6 +53,8 @@ import {
   Section,
   Sheet,
   CustomFieldInput,
+  ColorChoice,
+  PropertyValue,
 } from "./ui.tsx";
 import { useProjectNavigation, type ScreenProps } from "./navigation.ts";
 import { IntegrationSettings, CalendarFeeds } from "./delivery-settings.tsx";
@@ -66,27 +69,24 @@ export function useSettingsSection(
   sections: readonly SettingsSection[],
   initial?: string,
 ) {
-  const [section, setSection] = useState<SettingsSection>(
-    sections.find((value) => value === initial) ?? sections[0] ?? "general",
-  );
+  const [requested, setSection] = useState(initial);
+  const section = sections.find((value) => value === requested) ?? sections[0] ?? "general";
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
+        title: settingsSectionLabel(section),
         unstable_headerRightItems: () => [
-          {
-            type: "menu",
-            label: t("settings.layout.section"),
-            accessibilityLabel: t("settings.layout.section"),
-            icon: { type: "sfSymbol", name: "list.bullet" },
-            menu: {
-              items: sections.map((value) => ({
-                type: "action",
-                label: settingsSectionLabel(value),
-                state: value === section ? "on" : "off",
-                onPress: () => setSection(value),
-              })),
-            },
-          },
+          createHeaderMenu(
+            t("settings.layout.section"),
+            { type: "sfSymbol", name: "list.bullet" },
+            sections.map((value) => ({
+              type: "action",
+              label: settingsSectionLabel(value),
+              state: value === section ? "on" : "off",
+              onPress: () => setSection(value),
+            })),
+            { identifier: "settings-sections", visibilityPriority: "default" },
+          ),
         ],
       }),
     );
@@ -857,7 +857,13 @@ function Labels({
         <Row
           key={item.id}
           title={item.name}
-          caption={item.color}
+          leading={
+            <TicketTag
+              tag={item.name}
+              color={labelColor.safeParse(item.color).success ? item.color : "gray"}
+              indicatorOnly
+            />
+          }
           onPress={() => {
             if (canManage) {
               setName(item.name);
@@ -884,21 +890,17 @@ function Labels({
           if (!pending) setEditing(undefined);
         }}
       >
+        <TicketTag
+          tag={name || t("settings.layout.name")}
+          color={labelColor.safeParse(color).success ? color : "gray"}
+        />
         <Field
           label={t("settings.layout.name")}
           value={name}
           onChangeText={setName}
           maxLength={40}
         />
-        <Choice
-          label={t("settings.labels.color")}
-          value={color}
-          onChange={setColor}
-          options={projectIconColors.map((value) => ({
-            value,
-            label: t(`settings.color.${value}`),
-          }))}
-        />
+        <ColorChoice label={t("settings.labels.color")} value={color} onChange={setColor} />
         <ErrorNotice
           error={
             createProject.error ??
@@ -912,7 +914,7 @@ function Labels({
         <Button
           title={t("common.action.save")}
           primary
-          disabled={!name.trim() || pending}
+          disabled={!name.trim() || !labelColor.safeParse(color).success || pending}
           onPress={() => {
             const parsedColor = labelColor.parse(color);
             const promise = projectId
@@ -981,7 +983,17 @@ export function ProjectSettings({ route, navigation }: ScreenProps<"ProjectSetti
     projects = useAllProjects(),
     access = useProjectAccess(projectId),
     { api } = useConnection();
-  const section = useSettingsSection(navigation, projectSections, route.params.section);
+  const allowedSections = useMemo(
+    () =>
+      projectSections.filter(
+        (value) =>
+          (value !== "integrations" && value !== "calendar") ||
+          (value === "integrations" && access.canManage) ||
+          (value === "calendar" && access.canShare),
+      ),
+    [access.canManage, access.canShare],
+  );
+  const section = useSettingsSection(navigation, allowedSections, route.params.section);
   const result = useQuery(api.query("get_project", { projectId }));
   const update = useOperation("update_project"),
     project = result.data;
@@ -1191,7 +1203,7 @@ function ProjectLifecycle({
     }
   }
   return (
-    <Section title={t("shell.settingsNav.section.general")}>
+    <Section title={t("ticket.selection.more")} collapsible>
       <Button
         title={t("settings.lifecycle.export")}
         onPress={() => {
@@ -1339,6 +1351,15 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
           <Row
             title={item.name}
             caption={stateLabels[item.category]}
+            leading={
+              <PropertyValue
+                projectId={projectId}
+                property="status"
+                value={item.category}
+                stateId={item.id}
+                iconOnly
+              />
+            }
             onPress={() => {
               if (canManage) {
                 setEditing(item);
@@ -1350,34 +1371,27 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
             }}
           />
           {canManage && (
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Button
-                title={t("settings.moveUp")}
-                compact
-                disabled={update.isPending || item.position === 0}
-                onPress={() =>
-                  update.mutate({
-                    projectId,
-                    stateId: item.id,
-                    expectedVersion: item.version,
-                    position: Math.max(0, item.position - 1),
-                  })
-                }
-              />
-              <Button
-                title={t("settings.moveDown")}
-                compact
-                disabled={update.isPending}
-                onPress={() =>
-                  update.mutate({
-                    projectId,
-                    stateId: item.id,
-                    expectedVersion: item.version,
-                    position: item.position + 1,
-                  })
-                }
-              />
-            </View>
+            <ReorderActions
+              name={item.name}
+              upDisabled={update.isPending || item.position === 0}
+              downDisabled={update.isPending}
+              onUp={() =>
+                update.mutate({
+                  projectId,
+                  stateId: item.id,
+                  expectedVersion: item.version,
+                  position: Math.max(0, item.position - 1),
+                })
+              }
+              onDown={() =>
+                update.mutate({
+                  projectId,
+                  stateId: item.id,
+                  expectedVersion: item.version,
+                  position: item.position + 1,
+                })
+              }
+            />
           )}
         </View>
       ))}
@@ -1414,20 +1428,12 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
             if (next) setCategory(next);
           }}
         />
-        <Choice
-          label={t("settings.workflow.color")}
-          value={color}
-          onChange={setColor}
-          options={projectIconColors.map((value) => ({
-            value,
-            label: t(`settings.color.${value}`),
-          }))}
-        />
+        <ColorChoice label={t("settings.workflow.color")} value={color} onChange={setColor} />
         <ErrorNotice error={create.error ?? update.error ?? remove.error} />
         <Button
           title={t("common.action.save")}
           primary
-          disabled={!name.trim() || pending}
+          disabled={!name.trim() || !labelColor.safeParse(color).success || pending}
           onPress={() => {
             const fields = { name, category, color: labelColor.parse(color) };
             void (
@@ -1496,12 +1502,11 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
 function FieldSettings({ projectId, canManage }: { projectId: string; canManage: boolean }) {
   const { api } = useConnection(),
     fields = useQuery(api.query("list_custom_fields", { projectId }));
-  const [editing, setEditing] = useState<CustomField | null | undefined>();
-  const remove = useOperation("delete_custom_field"),
-    move = useOperation("move_custom_field");
+  const [editing, setEditing] = useState<Output<"list_custom_fields">[number] | null | undefined>();
+  const move = useOperation("move_custom_field");
   return (
     <Section title={t("settings.fields.title")}>
-      <ErrorNotice error={fields.error ?? remove.error ?? move.error} />
+      <ErrorNotice error={fields.error ?? move.error} />
       {fields.data?.map((field, index, all) => (
         <View key={field.id}>
           <Row
@@ -1512,63 +1517,31 @@ function FieldSettings({ projectId, canManage }: { projectId: string; canManage:
             }}
           />
           {canManage && (
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Button
-                title={t("settings.moveUp")}
-                compact
-                disabled={index === 0 || move.isPending}
-                onPress={() => {
-                  const before = all[index - 1]?.id;
-                  if (before)
-                    move.mutate({
-                      projectId,
-                      fieldId: field.id,
-                      expectedVersion: field.version,
-                      before,
-                    });
-                }}
-              />
-              <Button
-                title={t("settings.moveDown")}
-                compact
-                disabled={index === all.length - 1 || move.isPending}
-                onPress={() => {
-                  const after = all[index + 1]?.id;
-                  if (after)
-                    move.mutate({
-                      projectId,
-                      fieldId: field.id,
-                      expectedVersion: field.version,
-                      after,
-                    });
-                }}
-              />
-              <Button
-                title={t("common.action.delete")}
-                danger
-                compact
-                disabled={remove.isPending}
-                onPress={() =>
-                  Alert.alert(
-                    t("settings.fields.deleteNamed", { name: field.name }),
-                    t("settings.fields.deleteUsed", { count: field.count }),
-                    [
-                      { text: t("common.action.cancel"), style: "cancel" },
-                      {
-                        text: t("common.action.confirm"),
-                        style: "destructive",
-                        onPress: () =>
-                          remove.mutate({
-                            projectId,
-                            fieldId: field.id,
-                            expectedVersion: field.version,
-                          }),
-                      },
-                    ],
-                  )
-                }
-              />
-            </View>
+            <ReorderActions
+              name={field.name}
+              upDisabled={index === 0 || move.isPending}
+              downDisabled={index === all.length - 1 || move.isPending}
+              onUp={() => {
+                const before = all[index - 1]?.id;
+                if (before)
+                  move.mutate({
+                    projectId,
+                    fieldId: field.id,
+                    expectedVersion: field.version,
+                    before,
+                  });
+              }}
+              onDown={() => {
+                const after = all[index + 1]?.id;
+                if (after)
+                  move.mutate({
+                    projectId,
+                    fieldId: field.id,
+                    expectedVersion: field.version,
+                    after,
+                  });
+              }}
+            />
           )}
         </View>
       ))}
@@ -1597,7 +1570,7 @@ function FieldDefinition({
   onSaved,
 }: {
   projectId: string;
-  field: CustomField | null;
+  field: Output<"list_custom_fields">[number] | null;
   onSaved: () => void;
 }) {
   const [name, setName] = useState(field?.name ?? ""),
@@ -1611,8 +1584,9 @@ function FieldDefinition({
   const [reassign, setReassign] = useState<Record<string, string | null>>({}),
     [error, setError] = useState<unknown>();
   const create = useOperation("create_custom_field"),
-    update = useOperation("update_custom_field");
-  const pending = create.isPending || update.isPending;
+    update = useOperation("update_custom_field"),
+    remove = useOperation("delete_custom_field");
+  const pending = create.isPending || update.isPending || remove.isPending;
   return (
     <>
       <Field label={t("settings.fields.name")} value={name} onChangeText={setName} maxLength={60} />
@@ -1699,7 +1673,7 @@ function FieldDefinition({
         value={defaultValue}
         onChange={setDefaultValue}
       />
-      <ErrorNotice error={error ?? create.error ?? update.error} />
+      <ErrorNotice error={error ?? create.error ?? update.error ?? remove.error} />
       <Button
         title={t("common.action.save")}
         primary
@@ -1732,6 +1706,70 @@ function FieldDefinition({
           }
         }}
       />
+      {field && (
+        <Button
+          title={t("common.action.delete")}
+          danger
+          disabled={pending}
+          onPress={() =>
+            Alert.alert(
+              t("settings.fields.deleteNamed", { name: field.name }),
+              t("settings.fields.deleteUsed", { count: field.count }),
+              [
+                { text: t("common.action.cancel"), style: "cancel" },
+                {
+                  text: t("common.action.confirm"),
+                  style: "destructive",
+                  onPress: () => {
+                    void remove
+                      .mutateAsync({
+                        projectId,
+                        fieldId: field.id,
+                        expectedVersion: field.version,
+                      })
+                      .then(onSaved)
+                      .catch(() => {});
+                  },
+                },
+              ],
+            )
+          }
+        />
+      )}
     </>
+  );
+}
+
+// Workflow and custom-field order share the same compact controls and complete accessible names.
+function ReorderActions({
+  name,
+  upDisabled,
+  downDisabled,
+  onUp,
+  onDown,
+}: {
+  name: string;
+  upDisabled: boolean;
+  downDisabled: boolean;
+  onUp: () => void;
+  onDown: () => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", gap: 8 }}>
+      <Button
+        compact
+        title={t("shell.move.up.menu")}
+        accessibilityLabel={t("settings.moveUp", { name })}
+        disabled={upDisabled}
+        onPress={onUp}
+      />
+      <Button
+        compact
+        title={t("shell.move.down.menu")}
+        accessibilityLabel={t("settings.moveDown", { name })}
+        disabled={downDisabled}
+        onPress={onDown}
+      />
+    </View>
   );
 }

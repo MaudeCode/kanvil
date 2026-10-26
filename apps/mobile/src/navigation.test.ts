@@ -83,3 +83,16 @@ it("retains collection disclosure choices and workspace searches only within the
   contexts.saveSearch("workspace-a", "work", "late");
   expect(contexts.search("workspace-a", "work")).toBe("");
 });
+
+it("recent project order does not discard browsing state or revive a signed-out account", () => {
+  const contexts = createProjectContexts();
+  contexts.save("one", { query: "important" });
+  contexts.touch("one");
+  contexts.touch("two");
+  contexts.touch("one");
+  expect(contexts.recent()).toEqual(["one", "two"]);
+  expect(contexts.get("one")?.query).toBe("important");
+  contexts.clear();
+  contexts.touch("one");
+  expect(contexts.recent()).toEqual([]);
+});

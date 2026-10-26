@@ -1,3 +1,5 @@
+import { dueFilterLabels } from "./index.ts";
+import { t } from "./i18n/index.ts";
 import type { Ticket } from "./index.ts";
 import type { TicketLayout } from "./navigation.ts";
 export type ScheduleLayout = Exclude<TicketLayout, "list">;
@@ -57,3 +59,18 @@ function calendarOrdinal(value: Date) {
   date.setUTCHours(0, 0, 0, 0);
   return date.getTime() / 86400000;
 }
+
+// The work queue uses the same rolling due windows on both platforms.
+export const dueWindows = [
+  ["overdue", 0],
+  ["today", 86400000],
+  ["week", 7 * 86400000],
+  ["later", Infinity],
+] as const;
+export function dueWindow(ticket: Pick<Ticket, "dueAt">, now: number) {
+  if (!ticket.dueAt) return "none";
+  const left = new Date(ticket.dueAt).getTime() - now;
+  return dueWindows.find(([, within]) => left < within)?.[0] ?? "later";
+}
+export const dueWindowLabel = (id: (typeof dueWindows)[number][0] | "none") =>
+  id === "later" ? t("ticket.list.later") : dueFilterLabels[id];
