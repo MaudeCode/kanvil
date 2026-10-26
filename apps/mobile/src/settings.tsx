@@ -212,9 +212,13 @@ export function Inbox() {
                   " · ",
                 ),
               })}
-              caption={[formatEvent(item.event), formatRelativeTime(item.event.createdAt)].join(
-                " · ",
-              )}
+              caption={[
+                typeof item.event.data.key === "string" ? item.event.data.key : "",
+                formatEvent(item.event),
+                formatRelativeTime(item.event.createdAt),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               onLongPress={() => setFocused(item.id)}
               onPress={() => {
                 mutate({ ids: [item.id], read: true });

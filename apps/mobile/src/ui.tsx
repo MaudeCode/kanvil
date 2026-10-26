@@ -273,6 +273,7 @@ function HeaderItemsFallback({ items }: { items: NativeStackHeaderItem[] }) {
         <Row
           key={`${index}:${item.label}`}
           title={item.label}
+          interaction={item.state === undefined ? "action" : "choice"}
           {...(item.description ? { caption: item.description } : {})}
           disabled={item.disabled ?? false}
           selected={item.state === "on"}
@@ -305,6 +306,7 @@ function HeaderItemsFallback({ items }: { items: NativeStackHeaderItem[] }) {
             <Row
               key={`${index}:${item.label}`}
               title={item.label}
+              interaction="action"
               disabled={item.disabled ?? false}
               onPress={() => {
                 setOpen(false);
@@ -321,11 +323,14 @@ export function Menu({
   title,
   items,
   children,
+  fill = false,
 }: {
   title: string;
   items: NativeStackHeaderItemMenu["menu"]["items"];
   children: ReactNode;
+  fill?: boolean;
 }) {
+  const [width, setWidth] = useState(0);
   const handlers = new Map<string, () => void>();
   function actions(entries: NativeStackHeaderItemMenu["menu"]["items"], prefix = ""): MenuAction[] {
     return entries.map((item, index) => {
@@ -350,14 +355,25 @@ export function Menu({
       };
     });
   }
-  return (
+  const menu = (
     <MenuView
       title={title}
       actions={actions(items)}
       onPressAction={({ nativeEvent }) => handlers.get(nativeEvent.event)?.()}
     >
-      {children}
+      {fill ? <View style={{ width }}>{children}</View> : children}
     </MenuView>
+  );
+  // SwiftUI measures menu labels intrinsically; form rows take their measured RN container width.
+  return fill ? (
+    <View
+      style={{ alignSelf: "stretch", minHeight: 44 }}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
+      {width > 0 && menu}
+    </View>
+  ) : (
+    menu
   );
 }
 
@@ -1004,7 +1020,7 @@ export function Choice({
   return (
     <View style={[styles.field, compact && { maxWidth: "100%", alignSelf: "flex-start" }]}>
       {anchored && !disabled ? (
-        <Menu title={label} items={items}>
+        <Menu title={label} items={items} fill={!compact}>
           {trigger}
         </Menu>
       ) : (

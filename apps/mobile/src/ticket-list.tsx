@@ -1064,7 +1064,7 @@ function TicketFilters({
   const members = useQuery(api.query("list_members", { projectId })),
     labels = useQuery(api.query("list_project_labels", { projectId })),
     fields = useQuery(api.query("list_custom_fields", { projectId }));
-  const [added, setAdded] = useState<FilterField[]>([]);
+  const [added, setAdded] = useState<Partial<Record<FilterField, "any" | "none">>>({});
   const [error, setError] = useState<unknown>();
   function change(next: unknown) {
     const parsed = ticketFilter.safeParse(next);
@@ -1114,8 +1114,7 @@ function TicketFilters({
         (["any", "none"] as const)
           .filter(
             (operator) =>
-              filterList(value[filterKey(field, operator)]).length > 0 ||
-              (operator === "any" && added.includes(field)),
+              filterList(value[filterKey(field, operator)]).length > 0 || added[field] === operator,
           )
           .map((operator) => {
             const key = filterKey(field, operator),
@@ -1136,6 +1135,10 @@ function TicketFilters({
                   ]}
                   onChange={(next) => {
                     if (next === operator) return;
+                    setAdded((previous) => ({
+                      ...previous,
+                      [field]: next === "none" ? "none" : "any",
+                    }));
                     const other = filterKey(field, next === "none" ? "none" : "any");
                     change({
                       ...value,
@@ -1173,7 +1176,11 @@ function TicketFilters({
                   leading={<TicketGlyph name="x" color={color.muted} />}
                   onPress={() => {
                     change({ ...value, [key]: undefined });
-                    setAdded((previous) => previous.filter((item) => item !== field));
+                    setAdded((previous) => {
+                      const next = { ...previous };
+                      delete next[field];
+                      return next;
+                    });
                   }}
                 />
               </View>
@@ -1186,13 +1193,11 @@ function TicketFilters({
         value=""
         emptyLabel={t("ticket.filter.add")}
         options={filterFieldNames
-          .filter(
-            (field) => !added.includes(field) && !filterList(value[filterKey(field, "any")]).length,
-          )
+          .filter((field) => !added[field] && !filterList(value[filterKey(field, "any")]).length)
           .map((field) => ({ value: field, label: filterFieldLabels[field] }))}
         onChange={(next) => {
           const field = filterFieldNames.find((item) => item === next);
-          if (field) setAdded((previous) => [...previous, field]);
+          if (field) setAdded((previous) => ({ ...previous, [field]: "any" }));
         }}
       />
       <Choice
@@ -1233,7 +1238,13 @@ function TicketFilters({
         ]}
         onChange={(archived) => onChange(ticketFilter.parse({ ...value, archived }))}
       />
-      <Button title={t("ticket.filter.reset")} onPress={() => onChange(ticketFilter.parse({}))} />
+      <Button
+        title={t("ticket.filter.reset")}
+        onPress={() => {
+          setAdded({});
+          onChange(ticketFilter.parse({}));
+        }}
+      />
     </>
   );
 }
