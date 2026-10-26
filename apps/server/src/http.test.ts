@@ -75,10 +75,10 @@ describe("HTTP, realtime, and MCP", () => {
   afterAll(async () => {
     await fixture?.close();
   });
-  const client = () =>
+  const client = (key?: string) =>
     createClient({
       baseUrl: fixture.config.KANVIL_URL,
-      headers: sessionHeaders,
+      headers: key ? () => ({ Authorization: `Bearer ${key}` }) : sessionHeaders,
       fetch: async (input, init) => application.app.fetch(new Request(input, init)),
     });
   const listedProjects = async (query = "") =>
@@ -537,6 +537,158 @@ describe("HTTP, realtime, and MCP", () => {
     await expect(machine(readOnly.key).call("list_projects", {})).rejects.toMatchObject({
       code: "account_disabled",
     });
+  });
+  it("applies deployment claim lease caps through HTTP clients and MCP", async () => {
+    const api = client(),
+      project = await newProject();
+    const token = await credential(project.id, ["read", "claim"]);
+    const claimApi = client(token.key);
+    for (const maximum of [86400, 172800, 60]) {
+      if (maximum !== 86400) {
+        await application.close();
+        application = await createApplication(fixture.database, {
+          ...fixture.config,
+          KANVIL_CLAIM_MAX_LEASE_SECONDS: maximum,
+        });
+      }
+      const ticket = await api.call("create_ticket", {
+        projectId: project.id,
+        title: "Lease cap",
+        description: "Exercise runtime claim policy",
+        acceptanceCriteria: "Both transports honor the configured cap",
+        difficulty: "med",
+        automationReady: true,
+      });
+      const input = { projectId: project.id, ticketId: ticket.id };
+      await expect(
+        claimApi.call("claim_ticket", {
+          ...input,
+          expectedVersion: 1,
+          workerId: "http-worker",
+          leaseSeconds: maximum + 1,
+        }),
+      ).rejects.toMatchObject({ code: "validation_error" });
+      const claim = await claimApi.call("claim_ticket", {
+        ...input,
+        expectedVersion: 1,
+        workerId: "http-worker",
+        leaseSeconds: maximum,
+      });
+      const sdk = new Client({ name: "claim-cap-test", version: "1.0.0" });
+      const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+        fetch: async (requestInput, init) => application.app.fetch(new Request(requestInput, init)),
+      });
+      try {
+        await sdk.connect(transport);
+        const args = { ...input, claimId: claim.id };
+        expect(
+          (
+            await sdk.callTool({
+              name: "renew_claim",
+              arguments: { ...args, leaseSeconds: maximum + 1 },
+            })
+          ).isError,
+        ).toBe(true);
+        const renewed = await sdk.callTool({
+          name: "renew_claim",
+          arguments: { ...args, leaseSeconds: maximum },
+        });
+        expect(renewed.isError).not.toBe(true);
+        expect(renewed.structuredContent).toMatchObject({ result: { id: claim.id } });
+      } finally {
+        await sdk.close();
+      }
+    }
+  });
+  it("lets administrators cancel a revoked worker's live claim and fence its old claim ID", async () => {
+    const api = client(),
+      project = await newProject();
+    const token = await credential(project.id),
+      worker = client(token.key);
+    const ticket = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Revoked worker",
+      description: "Recover stopped ownership after credential revocation",
+      acceptanceCriteria: "A live lease cannot strand the project after revocation",
+      difficulty: "med",
+      automationReady: true,
+    });
+    const input = { projectId: project.id, ticketId: ticket.id };
+    const claim = await worker.call("claim_ticket", {
+      ...input,
+      expectedVersion: 1,
+      workerId: "revoked-worker",
+      leaseSeconds: 86400,
+    });
+    expect(
+      (
+        await request(`/api/v1/credentials/${token.id}`, {
+          method: "DELETE",
+          headers: sessionHeaders(),
+        })
+      ).status,
+    ).toBe(200);
+    await expect(worker.call("renew_claim", { ...input, claimId: claim.id })).rejects.toMatchObject(
+      { status: 401 },
+    );
+    const recover = {
+      claimId: claim.id,
+      reason: "Revoked credential and confirmed the worker stopped",
+      confirmedStopped: true as const,
+    };
+    await expect(api.call("recover_claim", { ...input, ...recover })).rejects.toMatchObject({
+      code: "claim_not_expired",
+    });
+    const cancellation = await request(
+      `/api/v1/projects/${project.id}/tickets/${ticket.id}/claim/recover`,
+      {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          ...recover,
+          cancelActive: true,
+          reschedule: true,
+          expectedVersion: 2,
+        }),
+      },
+    );
+    expect(cancellation.status, await cancellation.clone().text()).toBe(200);
+    expect(await cancellation.json()).toEqual({ ok: true });
+    const recovered = await api.call("get_ticket", input);
+    expect(recovered.claim).toBeNull();
+    expect(recovered.ticket).toMatchObject({ status: "todo", version: 3 });
+    expect((await api.call("get_project_impact", { projectId: project.id })).blockers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "claim_conflict" })]),
+    );
+    expect((await api.call("list_activity", input)).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claim.recovered",
+          data: expect.objectContaining({
+            claimId: claim.id,
+            cancelActive: true,
+            confirmedStopped: true,
+          }),
+        }),
+      ]),
+    );
+    const replacementToken = await credential(project.id),
+      replacementWorker = client(replacementToken.key);
+    const replacement = await replacementWorker.call("claim_ticket", {
+      ...input,
+      expectedVersion: 3,
+      workerId: "replacement",
+    });
+    expect(replacement.id).not.toBe(claim.id);
+    await expect(
+      replacementWorker.call("update_ticket", {
+        ...input,
+        expectedVersion: 4,
+        claimId: claim.id,
+        changes: { title: "Stale ownership" },
+      }),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
   });
   it.each([false, true])(
     "disables API-key rate limits for existing and new keys across HTTP and MCP, global=%s",

@@ -4,6 +4,7 @@ import { accessibleProjectRows } from "./project-access.ts";
 import { and, asc, eq, gt, inArray, isNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
 import {
   closedStates,
+  defaultClaimMaxLeaseSeconds,
   eventCategories,
   ApiError,
   operations,
@@ -113,6 +114,7 @@ export interface Context {
   importRun?: string;
   // Trackers an import reads; see adapters/import-sources.ts.
   sources: ImportSources;
+  claimMaxLeaseSeconds: number;
   // What a write read from another tracker before the write lock; see `sourceReads`.
   read?: unknown;
 }
@@ -254,6 +256,7 @@ const baseContext = (db: Context["db"], actor: Actor): Context => ({
   secrets: noSecrets,
   publicUrl: "http://localhost",
   sources: noSources,
+  claimMaxLeaseSeconds: defaultClaimMaxLeaseSeconds,
 });
 // Public reads hold no identity, scope, or project grant: nothing they reach can authorize by actor.
 const publicActor: Actor = {
@@ -660,6 +663,7 @@ export function createDomain(
     publicUrl?: string;
     mail?: ((message: MailMessage) => Promise<void>) | undefined;
     sources?: ImportSources;
+    claimMaxLeaseSeconds?: number;
   } = {},
 ) {
   const handlers: Handlers = {
@@ -728,6 +732,8 @@ export function createDomain(
     if (services.secrets) ctx.secrets = services.secrets;
     if (services.publicUrl) ctx.publicUrl = services.publicUrl;
     if (services.sources) ctx.sources = services.sources;
+    if (services.claimMaxLeaseSeconds !== undefined)
+      ctx.claimMaxLeaseSeconds = services.claimMaxLeaseSeconds;
     return ctx;
   };
   // Serializing writes is deliberate for a small self-hosted install: it also gives replay cursors commit order.

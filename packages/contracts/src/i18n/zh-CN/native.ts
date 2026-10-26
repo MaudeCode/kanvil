@@ -112,7 +112,7 @@ export default {
     },
     recover: {
       action: "收回已过期的认领",
-      explanation: "只有项目管理员可以收回已过期的认领。请先确认执行者已停止。",
+      explanation: "请先确认执行者已停止。",
       reason: "收回原因",
       confirm: "执行者已停止 · 收回",
     },

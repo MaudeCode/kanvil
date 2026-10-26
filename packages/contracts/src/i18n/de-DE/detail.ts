@@ -62,8 +62,7 @@ export default {
     release: "Meine Übernahme freigeben",
     releaseDescription: "Übernahme freigeben, nachdem Ihr Worker nicht mehr schreibt?",
     recover: "Abgelaufene Übernahme wiederherstellen",
-    recoverHelp:
-      "Die Wiederherstellung erfordert Administratorzugriff auf das Projekt und eine abgelaufene Übernahme. Stoppen Sie zuerst den Worker.",
+    recoverHelp: "Bestätigen Sie zuerst, dass der Worker gestoppt hat.",
     reason: "Grund der Wiederherstellung",
     confirmed: "Ich habe bestätigt, dass der Worker gestoppt hat",
     submit: "Übernahme wiederherstellen",

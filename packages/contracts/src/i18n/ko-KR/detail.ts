@@ -62,8 +62,7 @@ export default {
     release: "내 선점 해제",
     releaseDescription: "워커의 쓰기가 중지된 후 소유권을 해제할까요?",
     recover: "만료된 선점 회수",
-    recoverHelp:
-      "회수하려면 프로젝트 관리자 권한과 만료된 선점이 필요합니다. 먼저 워커를 중지하세요.",
+    recoverHelp: "먼저 워커가 중지되었는지 확인하세요.",
     reason: "회수 사유",
     confirmed: "워커가 중지되었음을 확인했습니다",
     submit: "소유권 회수",

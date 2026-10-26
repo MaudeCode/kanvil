@@ -112,8 +112,7 @@ export default {
     },
     recover: {
       action: "Recupera presa in carico scaduta",
-      explanation:
-        "Solo un amministratore del progetto può recuperare una presa in carico scaduta. Verifica prima che l’esecutore si sia fermato.",
+      explanation: "Verifica prima che l’esecutore si sia fermato.",
       reason: "Motivo del recupero",
       confirm: "Esecutore fermo · recupera",
     },

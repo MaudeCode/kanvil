@@ -119,8 +119,7 @@ export default {
     },
     recover: {
       action: "Recover expired claim",
-      explanation:
-        "Only a project administrator can recover an expired claim. Confirm the worker has stopped first.",
+      explanation: "Confirm the worker has stopped first.",
       reason: "Recovery reason",
       confirm: "Worker stopped · recover",
     },

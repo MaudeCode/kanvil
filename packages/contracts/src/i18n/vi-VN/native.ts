@@ -113,8 +113,7 @@ export default {
     },
     recover: {
       action: "Thu hồi việc nhận đã hết hạn",
-      explanation:
-        "Chỉ quản trị viên dự án mới có thể thu hồi việc nhận đã hết hạn. Hãy xác nhận tiến trình đã dừng trước.",
+      explanation: "Hãy xác nhận tiến trình đã dừng trước.",
       reason: "Lý do thu hồi",
       confirm: "Tiến trình đã dừng · thu hồi",
     },

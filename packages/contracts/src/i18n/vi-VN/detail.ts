@@ -62,8 +62,7 @@ export default {
     release: "Trả lại việc đã nhận",
     releaseDescription: "Trả lại quyền sở hữu sau khi tiến trình của bạn đã ngừng ghi?",
     recover: "Thu hồi việc nhận đã hết hạn",
-    recoverHelp:
-      "Thu hồi cần quyền quản trị viên dự án và việc nhận đã hết hạn. Hãy dừng tiến trình trước.",
+    recoverHelp: "Hãy xác nhận tiến trình đã dừng trước.",
     reason: "Lý do thu hồi",
     confirmed: "Tôi đã xác nhận tiến trình đã dừng",
     submit: "Thu hồi quyền sở hữu",

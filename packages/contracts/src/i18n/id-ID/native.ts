@@ -112,8 +112,7 @@ export default {
     },
     recover: {
       action: "Pulihkan klaim kedaluwarsa",
-      explanation:
-        "Hanya administrator proyek yang dapat memulihkan klaim kedaluwarsa. Pastikan pekerja sudah berhenti terlebih dahulu.",
+      explanation: "Pastikan pekerja sudah berhenti terlebih dahulu.",
       reason: "Alasan pemulihan",
       confirm: "Pekerja berhenti · pulihkan",
     },

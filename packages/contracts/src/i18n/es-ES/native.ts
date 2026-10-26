@@ -112,8 +112,7 @@ export default {
     },
     recover: {
       action: "Recuperar reserva caducada",
-      explanation:
-        "Solo un administrador del proyecto puede recuperar una reserva caducada. Confirme primero que el ejecutor se ha detenido.",
+      explanation: "Confirme primero que el ejecutor se ha detenido.",
       reason: "Motivo de la recuperación",
       confirm: "Ejecutor detenido · recuperar",
     },

@@ -112,8 +112,7 @@ export default {
     },
     recover: {
       action: "Recuperar reserva expirada",
-      explanation:
-        "Somente um administrador do projeto pode recuperar uma reserva expirada. Confirme primeiro que o executor parou.",
+      explanation: "Confirme primeiro que o executor parou.",
       reason: "Motivo da recuperação",
       confirm: "Executor parado · recuperar",
     },

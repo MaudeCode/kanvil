@@ -1553,6 +1553,235 @@ describe("ticket operations on PostgreSQL", () => {
         .readiness.ready,
     ).toBe(true);
   });
+  it.each([86400, 1800, 172800, 60])(
+    "enforces the configured claim lease cap for acquisition and renewal: %s",
+    async (maximum) => {
+      const configured = createDomain(fixture.database, { claimMaxLeaseSeconds: maximum });
+      const current = await ticket();
+      const worker = await domain.actor(owner.id, {
+        ownerId: "lease-policy-worker",
+        scopes: ["read", "claim"],
+      });
+      const input = { projectId: project.id, ticketId: current.id };
+      const acquire = { ...input, expectedVersion: 1, workerId: "lease-policy-worker" };
+      await expect(
+        configured.execute("claim_ticket", { ...acquire, leaseSeconds: maximum + 1 }, worker),
+      ).rejects.toMatchObject({ code: "validation_error" });
+      const started = Date.now();
+      const claim = await configured.execute(
+        "claim_ticket",
+        { ...acquire, leaseSeconds: maximum },
+        worker,
+      );
+      expect(new Date(claim.expiresAt).getTime()).toBeGreaterThanOrEqual(started + maximum * 1000);
+      const renew = { ...input, claimId: claim.id };
+      await expect(
+        configured.execute("renew_claim", { ...renew, leaseSeconds: maximum + 1 }, worker),
+      ).rejects.toMatchObject({ code: "validation_error" });
+      const renewed = await configured.execute(
+        "renew_claim",
+        { ...renew, leaseSeconds: maximum },
+        worker,
+      );
+      expect(new Date(renewed.expiresAt).getTime()).toBeGreaterThanOrEqual(
+        started + maximum * 1000,
+      );
+      const defaultStart = Date.now();
+      const boundedDefault = await configured.execute("renew_claim", renew, worker);
+      expect(new Date(boundedDefault.expiresAt).getTime()).toBeGreaterThanOrEqual(
+        defaultStart + Math.min(300, maximum) * 1000,
+      );
+      expect(new Date(boundedDefault.expiresAt).getTime()).toBeLessThanOrEqual(
+        Date.now() + Math.min(300, maximum) * 1000,
+      );
+      await configured.execute("release_claim", renew, worker);
+      const reset = await domain.execute(
+        "update_ticket",
+        { ...input, expectedVersion: 2, changes: { status: "todo" } },
+        owner,
+      );
+      const omitted = await configured.execute(
+        "claim_ticket",
+        { ...acquire, expectedVersion: reset.version },
+        worker,
+      );
+      expect(new Date(omitted.expiresAt).getTime()).toBeLessThanOrEqual(
+        Date.now() + Math.min(300, maximum) * 1000,
+      );
+    },
+  );
+  it("lets claim-authorized writers recover expired ownership without administrator access", async () => {
+    const current = await ticket();
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const worker = await domain.actor(writer.id, {
+      ownerId: "recovery-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const input = { projectId: project.id, ticketId: current.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "old-worker" },
+      owner,
+    );
+    const recovery = {
+      ...input,
+      claimId: claim.id,
+      reason: "Confirmed the old worker has stopped",
+      confirmedStopped: true as const,
+    };
+    await expect(domain.execute("recover_claim", recovery, worker)).rejects.toMatchObject({
+      code: "claim_not_expired",
+    });
+    await fixture.database.pool.query(
+      "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+      [claim.id],
+    );
+    const withoutClaimScope = await domain.actor(writer.id, {
+      ownerId: "no-claim",
+      scopes: ["read", "write"],
+    });
+    await expect(
+      domain.execute("recover_claim", recovery, withoutClaimScope),
+    ).rejects.toMatchObject({ code: "insufficient_scope" });
+    await expect(domain.execute("recover_claim", recovery, outsider)).rejects.toMatchObject({
+      status: 404,
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    await expect(domain.execute("recover_claim", recovery, worker)).rejects.toMatchObject({
+      status: 403,
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    await expect(
+      domain.execute("recover_claim", { ...recovery, confirmedStopped: false }, worker),
+    ).rejects.toThrow("confirmedStopped");
+    const requestId = crypto.randomUUID();
+    expect(await domain.execute("recover_claim", { ...recovery, requestId }, worker)).toEqual({
+      ok: true,
+    });
+    expect(await domain.execute("recover_claim", { ...recovery, requestId }, worker)).toEqual({
+      ok: true,
+    });
+    const read = await domain.execute("get_ticket", input, owner);
+    expect(read.claim).toBeNull();
+    expect(read.ticket.status).toBe("in_progress");
+    await expect(
+      domain.execute("renew_claim", { ...input, claimId: claim.id }, owner),
+    ).rejects.toMatchObject({ status: 404 });
+    const activity = await domain.execute("list_activity", input, owner);
+    expect(activity.items.filter((event) => event.type === "claim.recovered")).toHaveLength(1);
+    await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: 2, changes: { status: "todo" } },
+      owner,
+    );
+    const replacement = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 3, workerId: "replacement" },
+      worker,
+    );
+    expect(replacement.id).not.toBe(claim.id);
+    await expect(
+      domain.execute(
+        "update_ticket",
+        { ...input, expectedVersion: 4, claimId: claim.id, changes: { title: "Stale owner" } },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await expect(
+      domain.execute("renew_claim", { ...input, claimId: claim.id }, worker),
+    ).rejects.toMatchObject({ status: 404 });
+    await fixture.database.pool.query(
+      "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+      [replacement.id],
+    );
+    const reschedule = { ...recovery, claimId: replacement.id, reschedule: true };
+    await expect(domain.execute("recover_claim", reschedule, worker)).rejects.toThrow(
+      "expectedVersion",
+    );
+    await expect(
+      domain.execute("recover_claim", { ...reschedule, expectedVersion: 3 }, worker),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    expect((await domain.execute("get_ticket", input, owner)).claim?.id).toBe(replacement.id);
+    const claimOnly = await domain.actor(writer.id, {
+      ownerId: worker.ownerId,
+      scopes: ["read", "claim"],
+    });
+    await domain.execute("recover_claim", { ...reschedule, expectedVersion: 4 }, claimOnly);
+    const rescheduled = await domain.execute("get_ticket", input, claimOnly);
+    expect(rescheduled.claim).toBeNull();
+    expect(rescheduled.ticket).toMatchObject({ status: "todo", version: 5 });
+    expect((await domain.execute("list_activity", input, claimOnly)).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "ticket.updated",
+          data: expect.objectContaining({ version: 5, changedFields: ["status", "stateId"] }),
+        }),
+        expect.objectContaining({
+          type: "claim.recovered",
+          data: expect.objectContaining({ claimId: replacement.id, confirmedStopped: true }),
+        }),
+      ]),
+    );
+    const resumed = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 5, workerId: "resumed-worker" },
+      claimOnly,
+    );
+    expect(resumed.id).not.toBe(replacement.id);
+    await expect(
+      domain.execute("renew_claim", { ...input, claimId: replacement.id }, worker),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  it("requires scoped project management to cancel live ownership", async () => {
+    const ticketRow = await ticket();
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const input = { projectId: project.id, ticketId: ticketRow.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "stopped-worker", leaseSeconds: 86400 },
+      owner,
+    );
+    const recover = {
+      ...input,
+      claimId: claim.id,
+      reason: "Confirmed the old worker has stopped",
+      confirmedStopped: true as const,
+      cancelActive: true,
+    };
+    const writerWithAdminScope = await domain.actor(writer.id, {
+      ownerId: "writer-key",
+      scopes: ["read", "claim", "admin"],
+    });
+    const adminWithoutAdminScope = await domain.actor(owner.id, {
+      ownerId: "limited-admin-key",
+      scopes: ["read", "claim"],
+    });
+    for (const denied of [writerWithAdminScope, adminWithoutAdminScope])
+      await expect(domain.execute("recover_claim", recover, denied)).rejects.toMatchObject({
+        code: "forbidden",
+      });
+    expect((await domain.execute("get_ticket", input, owner)).claim?.id).toBe(claim.id);
+    expect(await domain.execute("recover_claim", recover, owner)).toEqual({ ok: true });
+    const recovered = await domain.execute("get_ticket", input, owner);
+    expect(recovered.claim).toBeNull();
+    expect(recovered.ticket).toMatchObject({ status: "in_progress", version: 2 });
+  });
   it("coordinates competing workers and fences old ownership after recovery", async () => {
     const current = await ticket();
     const workers = [

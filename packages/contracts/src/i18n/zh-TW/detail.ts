@@ -62,7 +62,7 @@ export default {
     release: "釋出我的認領",
     releaseDescription: "確認執行者已停止寫入後釋出擁有權？",
     recover: "收回已過期的認領",
-    recoverHelp: "收回認領需要專案管理員權限，且認領必須已過期。請先停止執行者。",
+    recoverHelp: "請先確認執行者已停止。",
     reason: "收回原因",
     confirmed: "我已確認執行者已停止",
     submit: "收回擁有權",

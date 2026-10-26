@@ -62,8 +62,7 @@ export default {
     release: "Liberar minha reserva",
     releaseDescription: "Liberar a propriedade depois que o executor parou de escrever?",
     recover: "Recuperar reserva expirada",
-    recoverHelp:
-      "A recuperação exige acesso de administrador do projeto e uma reserva expirada. Pare o executor primeiro.",
+    recoverHelp: "Confirme primeiro que o executor parou.",
     reason: "Motivo da recuperação",
     confirmed: "Confirmei que o executor parou",
     submit: "Recuperar propriedade",

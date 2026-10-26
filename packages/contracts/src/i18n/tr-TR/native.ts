@@ -113,8 +113,7 @@ export default {
     },
     recover: {
       action: "Süresi dolmuş üstlenmeyi geri al",
-      explanation:
-        "Süresi dolmuş bir üstlenmeyi yalnızca proje yöneticisi geri alabilir. Önce çalışanın durduğunu doğrulayın.",
+      explanation: "Önce çalışanın durduğunu doğrulayın.",
       reason: "Geri alma nedeni",
       confirm: "Çalışan durdu · geri al",
     },

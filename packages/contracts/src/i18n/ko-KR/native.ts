@@ -112,8 +112,7 @@ export default {
     },
     recover: {
       action: "만료된 선점 회수",
-      explanation:
-        "프로젝트 관리자만 만료된 선점을 회수할 수 있습니다. 먼저 워커가 중지되었는지 확인하세요.",
+      explanation: "먼저 워커가 중지되었는지 확인하세요.",
       reason: "회수 사유",
       confirm: "워커 중지됨 · 회수",
     },

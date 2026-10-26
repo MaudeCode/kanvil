@@ -198,6 +198,27 @@ describe("agent write contracts", () => {
       operations.list_tickets.input.safeParse({ projectId: "p", limit: 1_000_000 }).success,
     ).toBe(false);
   });
+  it("leaves claim duration policy to the server and grants recovery through claim scope", () => {
+    const input = {
+      projectId: "p",
+      ticketId: "t",
+      workerId: "worker",
+      expectedVersion: 1,
+      claimId: "10000000-0000-4000-8000-000000000000",
+    };
+    for (const leaseSeconds of [86400, 172800]) {
+      const { claimId, ...acquire } = input;
+      expect(operations.claim_ticket.input.parse({ ...acquire, leaseSeconds }).leaseSeconds).toBe(
+        leaseSeconds,
+      );
+      expect(
+        operations.renew_claim.input.parse({ projectId: "p", ticketId: "t", claimId, leaseSeconds })
+          .leaseSeconds,
+      ).toBe(leaseSeconds);
+    }
+    expect(operations.recover_claim.scope).toBe("claim");
+    expect(operationPermission("recover_claim")).toBe("ticket.write");
+  });
   it("requires explicit stopped-worker confirmation to recover ownership", () => {
     expect(
       operations.recover_claim.input.safeParse({
@@ -207,6 +228,23 @@ describe("agent write contracts", () => {
         reason: "Worker process has stopped",
       }).success,
     ).toBe(false);
+  });
+  it("requires a current version only for explicitly rescheduled recovery", () => {
+    const input = {
+      projectId: "p",
+      ticketId: "t",
+      claimId: "10000000-0000-4000-8000-000000000000",
+      reason: "Worker process has stopped",
+      confirmedStopped: true,
+    };
+    expect(operations.recover_claim.input.safeParse({ ...input, reschedule: true }).success).toBe(
+      false,
+    );
+    expect(
+      operations.recover_claim.input.safeParse({ ...input, reschedule: true, expectedVersion: 2 })
+        .success,
+    ).toBe(true);
+    expect(operations.recover_claim.input.safeParse(input).success).toBe(true);
   });
   it("rejects executable evidence URLs", () => {
     expect(

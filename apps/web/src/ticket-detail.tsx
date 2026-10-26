@@ -454,7 +454,7 @@ export function TicketDetail({
                 claim={claim}
                 canRelease={canReleaseClaim}
                 canRecover={
-                  access.canAdmin &&
+                  access.canWrite &&
                   readiness.reasons.some((reason) => reason.code === "claim_recovery_required")
                 }
               />

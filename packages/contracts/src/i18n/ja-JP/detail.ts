@@ -62,8 +62,7 @@ export default {
     release: "自分の引き受けを解除",
     releaseDescription: "ワーカーの書き込みが停止した後に所有権を解除しますか？",
     recover: "期限切れの引き受けを回収",
-    recoverHelp:
-      "回収にはプロジェクト管理者のアクセス権と期限切れの引き受けが必要です。先にワーカーを停止してください。",
+    recoverHelp: "先にワーカーが停止したことを確認してください。",
     reason: "回収の理由",
     confirmed: "ワーカーが停止したことを確認しました",
     submit: "所有権を回収",

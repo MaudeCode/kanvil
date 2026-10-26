@@ -70,8 +70,7 @@ export default {
     release: "Release my claim",
     releaseDescription: "Release ownership after your worker has stopped writing?",
     recover: "Recover expired claim",
-    recoverHelp:
-      "Recovery requires project administrator access and an expired claim. Stop the worker first.",
+    recoverHelp: "Confirm the worker has stopped first.",
     reason: "Recovery reason",
     confirmed: "I have confirmed the worker has stopped",
     submit: "Recover ownership",

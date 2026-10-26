@@ -12,7 +12,11 @@ it.each([
   ["RABBITMQ_EXCHANGE", "amq.reserved"],
   ["RABBITMQ_URL", "https://example.test"],
   ["KANVIL_API_KEY_RATE_LIMIT_ENABLED", "off"],
-])("rejects invalid deployment %s at startup", (key, value) => {
+  ...["29", "1.5", "invalid", "Infinity", "2147483648", ""].map((value) => [
+    "KANVIL_CLAIM_MAX_LEASE_SECONDS",
+    value,
+  ]),
+])("rejects invalid deployment %s at startup: %s", (key, value) => {
   expect(() => readConfig({ ...base, [key]: value })).toThrow();
 });
 it("keeps API-key rate limits enabled unless explicitly disabled", () => {
@@ -64,4 +68,13 @@ it("requires each OAuth app's client ID and secret together", () => {
   expect(
     readConfig({ ...base, GOOGLE_CLIENT_ID: "fixture-client", GOOGLE_CLIENT_SECRET: "fixture" }),
   ).toMatchObject({ GOOGLE_CLIENT_ID: "fixture-client" });
+});
+
+it("defaults the configurable claim lease cap to 24 hours", () => {
+  expect(readConfig(base).KANVIL_CLAIM_MAX_LEASE_SECONDS).toBe(86400);
+  for (const seconds of [30, 1800, 172800])
+    expect(
+      readConfig({ ...base, KANVIL_CLAIM_MAX_LEASE_SECONDS: String(seconds) })
+        .KANVIL_CLAIM_MAX_LEASE_SECONDS,
+    ).toBe(seconds);
 });
