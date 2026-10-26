@@ -91,7 +91,9 @@ location / {
 
 Keep `KANVIL_URL` equal to the public HTTPS origin. Add `KANVIL_TRUSTED_ORIGINS` only for additional browser clients you explicitly operate. Web, API, MCP, login, consent, and realtime use the same application origin. No separate message broker or search service is required.
 
-Signed-in sessions and MCP OAuth clients may make `KANVIL_SESSION_WRITE_LIMIT` write requests per minute (120 by default) before receiving `429 rate_limited`; API keys are limited separately by the authentication layer. The counter is per application process.
+Signed-in sessions and MCP OAuth clients may make `KANVIL_SESSION_WRITE_LIMIT` write requests per minute (120 by default) before receiving `429 rate_limited`. This counter is per application process.
+
+API keys have a separate limit of 600 requests per minute per key across HTTP and MCP. Set `KANVIL_API_KEY_RATE_LIMIT_ENABLED=false` in `.env` and restart the server (with Compose, `docker compose up -d app`) to disable that limit for every existing and new API key. Restore `true` to enforce it again. This setting does not change session, MCP OAuth, or sign-in limits, and key expiration, revocation, scopes, and account permissions still apply.
 
 ## PocketID / OIDC
 

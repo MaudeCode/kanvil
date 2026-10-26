@@ -49,6 +49,10 @@ const envSchema = z
     DISCORD_CLIENT_ID: optionalEnv(z.string().min(1)),
     DISCORD_CLIENT_SECRET: optionalEnv(z.string().min(1)),
     KANVIL_SESSION_WRITE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(120),
+    KANVIL_API_KEY_RATE_LIMIT_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
     KANVIL_PUSH_ENABLED: z
       .enum(["true", "false"])
       .default("false")

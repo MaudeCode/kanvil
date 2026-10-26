@@ -538,6 +538,58 @@ describe("HTTP, realtime, and MCP", () => {
       code: "account_disabled",
     });
   });
+  it.each([false, true])(
+    "disables API-key rate limits for existing and new keys across HTTP and MCP, global=%s",
+    async (global) => {
+      const project = await newProject(),
+        existing = await credential(global ? null : project.id);
+      const read = (key: string) =>
+        request("/api/v1/projects", { headers: { Authorization: `Bearer ${key}` } });
+      const limit = async (id: string) => {
+        await fixture.database.pool.query(
+          "UPDATE apikey SET rate_limit_max = 1, request_count = 0 WHERE id = $1",
+          [id],
+        );
+      };
+      await limit(existing.id);
+      expect((await read(existing.key)).status).toBe(200);
+      expect((await read(existing.key)).status).toBe(401);
+
+      await application.close();
+      application = await createApplication(fixture.database, {
+        ...fixture.config,
+        KANVIL_API_KEY_RATE_LIMIT_ENABLED: false,
+      });
+      const created = await credential(global ? null : project.id);
+      await limit(created.id);
+      for (const token of [existing, created]) {
+        expect((await read(token.key)).status).toBe(200);
+        expect((await read(token.key)).status).toBe(200);
+        const sdk = new Client({ name: "unlimited-key-test", version: "1.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+          requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+          fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+        });
+        try {
+          await sdk.connect(transport);
+          const result = await sdk.callTool({ name: "list_projects", arguments: {} });
+          expect(result.isError).not.toBe(true);
+        } finally {
+          await sdk.close();
+        }
+      }
+      await request(`/api/v1/credentials/${existing.id}`, {
+        method: "DELETE",
+        headers: sessionHeaders(),
+      });
+      expect((await read(existing.key)).status).toBe(401);
+
+      await application.close();
+      application = await createApplication(fixture.database, fixture.config);
+      expect((await read(created.key)).status).toBe(200);
+      expect((await read(created.key)).status).toBe(401);
+    },
+  );
   it("never treats missing or malformed credential project metadata as global access", async () => {
     const project = await newProject(),
       token = await credential(project.id);

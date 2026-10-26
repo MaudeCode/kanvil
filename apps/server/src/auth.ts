@@ -241,6 +241,7 @@ export function createAuth(database: Database, config: Config) {
         defaultPrefix: "kv_",
         enableMetadata: true,
         maximumNameLength: 100,
+        rateLimit: { enabled: config.KANVIL_API_KEY_RATE_LIMIT_ENABLED },
         keyExpiration: { minExpiresIn: 1 / 24, maxExpiresIn: 365 },
       }),
       expo(),
