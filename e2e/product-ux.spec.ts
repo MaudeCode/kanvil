@@ -617,7 +617,9 @@ test("long ticket drafts have growing document fields, an expanded view, and rea
   await expect(editor.getByRole("heading", { name: "Scenario 18", exact: true })).toBeAttached();
   await editor.getByRole("tab", { name: "Write", exact: true }).click();
   await page.getByRole("button", { name: "Expand composer", exact: true }).click();
-  expect((await dialog.boundingBox())?.width).toBeGreaterThan(normal?.width ?? 0);
+  await expect
+    .poll(async () => (await dialog.boundingBox())?.width)
+    .toBeGreaterThan(normal?.width ?? 0);
   await expect(description).toHaveValue(body);
   await page.getByRole("button", { name: "Restore composer size", exact: true }).click();
   await expect(description).toHaveValue(body);
