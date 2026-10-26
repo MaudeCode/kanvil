@@ -3,6 +3,7 @@ FROM node:24.22.0-bookworm-slim AS build
 WORKDIR /source
 RUN npm install --global pnpm@12.11.2
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version ./
+COPY patches ./patches
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
@@ -12,7 +13,8 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 ARG KANVIL_VERSION
 RUN pnpm build
-RUN pnpm --filter @kanvil/server deploy --prod --no-optional --legacy /runtime/server
+# The server deployment excludes native packages and their workspace patch.
+RUN pnpm --config.allow-unused-patches=true --filter @kanvil/server deploy --prod --no-optional --legacy /runtime/server
 
 FROM node:24.22.0-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=5180

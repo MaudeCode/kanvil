@@ -1,3 +1,4 @@
+import { noCredentials, sourceFields, type Credentials } from "@kanvil/contracts/configuration";
 import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -7,8 +8,6 @@ import {
   importProviders,
   importSourceSchema,
   importStatusLabels,
-  jiraEditionLabels,
-  plankaSignInLabels,
   ticketExportSchema,
   ticketImportSchema,
   type ImportProvider,
@@ -120,93 +119,6 @@ const sourceKinds = ["file", ...importProviders] as const;
 const sourceKindLabels = (kind: SourceKind) =>
   kind === "file" ? t("admin.import.exportFile") : importProviderDefinitions[kind].label;
 // Everything a connection form can ask for; each source sends the fields it shows.
-const noCredentials = {
-  edition: "cloud",
-  signIn: "password",
-  baseUrl: "",
-  workspace: "",
-  email: "",
-  username: "",
-  password: "",
-  apiKey: "",
-  token: "",
-};
-type Credentials = typeof noCredentials;
-type SourceField = {
-  name: keyof Credentials;
-  label: string;
-  type?: "url" | "email" | "password";
-  placeholder?: string;
-  // A choice between these values instead of text.
-  choices?: Record<string, string>;
-};
-const site = (placeholder: string): SourceField => ({
-  name: "baseUrl",
-  label: t("admin.import.siteUrl"),
-  type: "url",
-  placeholder,
-});
-// The connection fields each source asks for, in order; some depend on an earlier choice.
-const sourceFields: Record<ImportProvider, (credentials: Credentials) => SourceField[]> = {
-  linear: () => [{ name: "token", label: t("admin.import.apiKey"), type: "password" }],
-  jira: ({ edition }) => [
-    { name: "edition", label: t("admin.import.jiraEdition"), choices: jiraEditionLabels },
-    site(edition === "cloud" ? "https://example.atlassian.net" : "https://jira.example.com"),
-    ...(edition === "cloud"
-      ? [
-          {
-            name: "email",
-            label: t("admin.import.accountEmail"),
-            type: "email",
-          } satisfies SourceField,
-          {
-            name: "token",
-            label: t("admin.import.apiToken"),
-            type: "password",
-          } satisfies SourceField,
-        ]
-      : [
-          {
-            name: "token",
-            label: t("admin.import.personalToken"),
-            type: "password",
-          } satisfies SourceField,
-        ]),
-  ],
-  trello: () => [
-    { name: "apiKey", label: t("admin.import.apiKey"), type: "password" },
-    { name: "token", label: t("admin.import.token"), type: "password" },
-  ],
-  plane: () => [
-    { ...site("https://api.plane.so"), label: t("admin.import.apiUrl") },
-    { name: "workspace", label: t("admin.import.workspaceSlug"), placeholder: "my-team" },
-    { name: "token", label: t("admin.import.apiToken"), type: "password" },
-  ],
-  planka: ({ signIn }) => [
-    site("https://planka.example.com"),
-    { name: "signIn", label: t("admin.import.signInWith"), choices: plankaSignInLabels },
-    ...(signIn === "password"
-      ? [
-          { name: "username", label: t("admin.import.username") } satisfies SourceField,
-          {
-            name: "password",
-            label: t("admin.import.password"),
-            type: "password",
-          } satisfies SourceField,
-        ]
-      : [
-          {
-            name: "token",
-            label: t("admin.import.apiKey"),
-            type: "password",
-          } satisfies SourceField,
-        ]),
-  ],
-  kaneo: () => [
-    site("https://kaneo.example.com"),
-    { name: "token", label: t("admin.import.apiKey"), type: "password" },
-  ],
-};
 // A source prefix when it is a valid one, otherwise a prefix suggested from the name.
 const keyFrom = (key: string, name: string) =>
   /^[A-Z][A-Z0-9]{1,9}$/.test(key) ? key : suggestKey(name);

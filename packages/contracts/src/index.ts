@@ -1331,6 +1331,23 @@ export function remoteKindLabel(kind: (typeof remoteKinds)[number], provider: st
   const host = Object.values(repositoryProviderDefinitions).find((item) => item.label === provider);
   return kind === "pull_request" && host ? host.change : remoteKindLabels[kind];
 }
+const remoteStates = ["open", "closed", "merged", "draft", "active", "deleted"] as const;
+export function resourceRemoteLabel({
+  remoteKind,
+  remoteState,
+  provider,
+}: Pick<z.output<typeof resourceSchema>, "remoteKind" | "remoteState" | "provider">) {
+  if (!remoteState) return t("detail.link.stateUnknown");
+  // A state this release has no wording for shows as the host reported it.
+  const known = remoteStates.find((value) => value === remoteState),
+    state = known
+      ? t(`detail.link.remoteState.${known}`)
+      : remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
+  return remoteKind
+    ? t("detail.link.remote", { kind: remoteKindLabel(remoteKind, provider), state })
+    : state;
+}
+
 export const repositorySecretFields = ["token", "webhookSecret"] as const;
 // Slash-separated path segments; each provider's handler checks how many it takes.
 const repositoryName = z

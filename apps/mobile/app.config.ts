@@ -14,13 +14,13 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "2",
+    buildNumber: "3",
     supportsTablet: true,
     infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
   },
   android: {
     package: "com.maudecode.kanvil",
-    versionCode: 2,
+    versionCode: 3,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       monochromeImage: "./assets/adaptive-icon.png",
@@ -28,6 +28,7 @@ const config: ExpoConfig = {
     },
   },
   plugins: [
+    "./plugins/with-native-split.cjs",
     "expo-secure-store",
     "expo-document-picker",
     [
@@ -45,7 +46,6 @@ const config: ExpoConfig = {
       },
     ],
     "expo-font",
-    ["expo-build-properties", { ios: { enableSceneSupport: true } }],
   ],
 };
 export default config;

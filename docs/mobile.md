@@ -1,6 +1,6 @@
 # Native app
 
-Kanvil uses Expo SDK 57 with its compatible React Native and React versions. Web and native use the same contracts, ticket defaults, draft format, API client, and realtime recovery. Controls and navigation use their platform's renderer; the web DOM controls cannot provide native inputs, navigation, or document pickers.
+Kanvil uses Expo SDK 58 with its compatible React Native and React versions. Web and native use the same contracts, ticket defaults, draft format, API client, settings catalogs, themes, Markdown editing commands, schedule calculations, and realtime recovery. Controls and navigation use their platform's renderer; the web DOM controls cannot provide native inputs, navigation, or document pickers.
 
 ## Development
 
@@ -15,7 +15,15 @@ pnpm --filter @kanvil/mobile android
 
 Enter your server's origin in the app. An iOS simulator can reach the host through `http://localhost:5180`; a phone needs your reachable HTTPS address. Release builds require HTTPS. Local development allows HTTP. The server must expose its auth and API endpoints at the origin's root.
 
-Native projects are generated from `app.config.ts` and its Expo plugins. Keep `ios/` and `android/` untracked. Expo's `enableSceneSupport` option is enabled for SDK 57 builds using Xcode 27; this uses Expo's scene lifecycle implementation. See the [Expo lifecycle guide](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md).
+Native projects are generated from `app.config.ts` and its Expo plugins. Keep `ios/` and `android/` untracked. SDK 58 enables Expo's scene lifecycle by default. Use Xcode 27.1 or newer for iPhone Duo support; see [Expo's Duo guidance](https://expo.dev/blog/supporting-iphone-duo).
+
+## Navigation and capabilities
+
+Home, My work, Inbox, Search, and Settings use the native tab controller. Workspace selection and page actions use native navigation-bar items and menus on iOS, allowing UIKit to place them in the Duo rail. Android renders the same action descriptions through shared header controls and sheets. Form sheets put Cancel/Close and the primary action in their native bars. The signed-out surface paints the entire window, including the rail's safe area.
+
+Ticket lists provide workflow sections, filters, saved views, planning, bulk edits, and List/Board/Calendar/Timeline layouts. List previews and calendar details use a native split controller on iOS 26+, with both panes kept mounted during collapse; other platforms use the shared adaptive layout. `with-native-split.cjs` enables the installed Screens library's native split implementation during prebuild. The pinned Screens patch realizes columns when a nested host attaches after its initial mounting transaction. Keep the patch and build flag together until a compatible upstream release incorporates that lifecycle fix.
+
+Native settings expose account/profile security, appearance and custom themes, API credentials, notification rules and delivery channels, workspace membership/roles/labels, project workflow/custom fields/access/lifecycle, tracker imports, repositories, and calendar feeds. Instance administrators also have user, workspace, storage, search, event-broker, and authentication settings. The server remains responsible for permissions, validation, version checks, and destructive-operation blockers.
 
 ## Sessions and cached data
 
@@ -44,6 +52,8 @@ pnpm --filter @kanvil/mobile export
 Export checks both iOS and Android JavaScript bundles. It does not replace native compilation or device validation. Build and simulator results are recorded separately from physical-device and store-release validation. Signing and App Store publication are separate release actions.
 
 Initial simulator validation includes native owner/project/ticket creation, Markdown rendering, authenticated realtime, deep links, session restoration, persisted drafts across termination, and a concurrent server update preventing an overwrite. Switching between cached ticket deep links kept each comment draft with its original ticket.
+
+The navigation overhaul was compiled with Xcode 27.1 and exercised against the disposable HTTPS fixture on iPhone Duo (iOS 27.1) and a standard iPhone (iOS 27.0). Checks included native tabs and bar menus, workspace switching, project creation, list/detail collapse, an unsaved edit retained across folding and then saved into both panes, sign-out/in, and consecutive project-settings saves verified against the server's version. Login background samples match the rail in both appearances on the open and closed Duo. Web regression tests and desktop/390px visual checks cover the extracted shared code. These simulator checks do not establish physical-Duo behavior or real push delivery.
 
 An ad-hoc-signed iOS Release app was also compiled with Xcode 27.1 and run on iOS 27 with Metro stopped. It rejected HTTP, signed in through a verified HTTPS fixture, showed complete parent/child/relationship titles, explicitly linked PocketID, and signed out/in through the system browser to the same workspace. The provider used its login-code flow after a virtual passkey enrollment. Local password login remained available. Cached reading and cold startup after the backend stopped were checked separately.
 

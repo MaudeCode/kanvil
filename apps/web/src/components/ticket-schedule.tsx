@@ -1,17 +1,10 @@
 import {
   addDays,
-  addMonths,
   differenceInCalendarDays,
-  endOfMonth,
-  endOfWeek,
   format,
   isSameDay,
   isSameMonth,
-  startOfDay,
-  startOfMonth,
   startOfToday,
-  startOfWeek,
-  type Day,
 } from "date-fns";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -20,34 +13,16 @@ import { dateFormat, t } from "@kanvil/contracts/i18n";
 import { Button, EmptyState, IconButton, statusColor } from "../ui.tsx";
 import { TicketLink } from "./ticket-link.tsx";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import type { TicketLayout } from "../search.ts";
 import { cn } from "@/lib/utils";
 
-export type ScheduleLayout = Exclude<TicketLayout, "list">;
-// The timeline shows six weeks and moves two at a time, so each step keeps context on screen.
-const timelineDays = 42,
-  timelineStep = 14,
-  visibleEntries = 3;
-// The days a layout shows around the anchor day: [from, to), local midnights.
-export function scheduleWindow(layout: ScheduleLayout, anchor: Date, weekStartsOn: Day) {
-  if (layout === "calendar") {
-    const from = startOfWeek(startOfMonth(anchor), { weekStartsOn });
-    return { from, to: addDays(startOfDay(endOfWeek(endOfMonth(anchor), { weekStartsOn })), 1) };
-  }
-  const from = startOfWeek(anchor, { weekStartsOn });
-  return { from, to: addDays(from, timelineDays) };
-}
-export const shiftAnchor = (layout: ScheduleLayout, anchor: Date, direction: 1 | -1) =>
-  layout === "calendar" ? addMonths(anchor, direction) : addDays(anchor, direction * timelineStep);
-// The one scheduled-date rule both views and the server share: a ticket runs from its start (or
-// due) day through its due (or start) day; undated tickets have no span.
-export function ticketSpan(ticket: Pick<Ticket, "startAt" | "dueAt">) {
-  const first = ticket.startAt ?? ticket.dueAt,
-    last = ticket.dueAt ?? ticket.startAt;
-  return first && last
-    ? { start: startOfDay(new Date(first)), end: startOfDay(new Date(last)) }
-    : null;
-}
+import {
+  scheduleWindow,
+  shiftAnchor,
+  ticketSpan,
+  type ScheduleLayout,
+} from "@kanvil/contracts/schedule";
+export { scheduleWindow, shiftAnchor, ticketSpan };
+const visibleEntries = 3;
 // Read at render, so month and weekday names follow the interface language.
 const longDay = () => dateFormat({ dateStyle: "full" }),
   mediumDay = () => dateFormat({ dateStyle: "medium" }),

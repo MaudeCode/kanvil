@@ -1,8 +1,28 @@
-import { Button } from "./ui.tsx";
+import type { NativeStackHeaderItemButton } from "@react-navigation/native-stack";
+import { Button, type ColorValue } from "react-native";
 
-// Native-stack renders header actions outside the screen's route context.
-export function createHeaderAction(title: string, onPress: () => void) {
-  return function HeaderAction() {
-    return <Button title={title} onPress={onPress} compact plain />;
+export type HeaderAction = Pick<NativeStackHeaderItemButton, "onPress" | "disabled"> & {
+  title: string;
+};
+export function createHeaderFallback(action: HeaderAction | undefined, color: ColorValue) {
+  return function HeaderButton() {
+    return action ? (
+      <Button
+        title={action.title}
+        onPress={action.onPress}
+        disabled={action.disabled}
+        color={color}
+      />
+    ) : null;
   };
+}
+
+// System bar items can move into Duo's rail; custom React header views cannot.
+export function createHeaderAction(
+  title: string,
+  onPress: () => void,
+  icon: NonNullable<NativeStackHeaderItemButton["icon"]>,
+  disabled = false,
+): NativeStackHeaderItemButton {
+  return { type: "button", label: title, accessibilityLabel: title, icon, onPress, disabled };
 }

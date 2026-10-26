@@ -12,10 +12,11 @@ import {
   evidenceFields,
   evidenceKindLabels,
   evidenceOutcomeLabels,
+  resourceRemoteLabel,
   type Ticket,
   type Output,
 } from "@kanvil/contracts";
-import { useConnection, useOperation } from "./data.tsx";
+import { useConnection, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Body,
   Button,
@@ -26,9 +27,11 @@ import {
   Section,
   Sheet,
   styles,
+  Row,
 } from "./ui.tsx";
 
 export function Attachments({ ticket }: { ticket: Ticket }) {
+  const access = useProjectAccess(ticket.projectId);
   const connection = useConnection(),
     { api } = connection;
   const attachments = useQuery(
@@ -110,35 +113,40 @@ export function Attachments({ ticket }: { ticket: Ticket }) {
               void open(item);
             }}
           />
-          <Button
-            title={t("native.attachments.remove", { name: item.name })}
-            disabled={remove.isPending}
-            onPress={() =>
-              Alert.alert(t("native.attachments.removeTitle"), item.name, [
-                { text: t("common.action.cancel"), style: "cancel" },
-                {
-                  text: t("common.action.remove"),
-                  style: "destructive",
-                  onPress: () =>
-                    remove.mutate({ projectId: ticket.projectId, attachmentId: item.id }),
-                },
-              ])
-            }
-          />
+          {access.canWrite && (
+            <Button
+              title={t("native.attachments.remove", { name: item.name })}
+              disabled={remove.isPending}
+              onPress={() =>
+                Alert.alert(t("native.attachments.removeTitle"), item.name, [
+                  { text: t("common.action.cancel"), style: "cancel" },
+                  {
+                    text: t("common.action.remove"),
+                    style: "destructive",
+                    onPress: () =>
+                      remove.mutate({ projectId: ticket.projectId, attachmentId: item.id }),
+                  },
+                ])
+              }
+            />
+          )}
         </View>
       ))}
       <ErrorNotice error={error ?? attachments.error ?? remove.error} />
-      <Button
-        title={pending ? t("native.attachments.working") : t("native.attachments.add")}
-        disabled={pending}
-        onPress={() => {
-          void choose();
-        }}
-      />
+      {access.canWrite && (
+        <Button
+          title={pending ? t("native.attachments.working") : t("native.attachments.add")}
+          disabled={pending}
+          onPress={() => {
+            void choose();
+          }}
+        />
+      )}
     </Section>
   );
 }
 export function Evidence({ ticket }: { ticket: Ticket }) {
+  const access = useProjectAccess(ticket.projectId);
   const { api } = useConnection(),
     [open, setOpen] = useState(false),
     [title, setTitle] = useState(""),
@@ -170,7 +178,7 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
           <Markdown>{item.note}</Markdown>
         </View>
       ))}
-      <Button title={t("native.evidence.add")} onPress={() => setOpen(true)} />
+      {access.canWrite && <Button title={t("native.evidence.add")} onPress={() => setOpen(true)} />}
       <ErrorNotice error={items.error ?? error} />
       <Sheet title={t("native.evidence.add")} open={open} onClose={() => setOpen(false)}>
         <Field
@@ -237,6 +245,123 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
                 note,
               })
               .then(() => setOpen(false))
+              .catch(() => {});
+          }}
+        />
+      </Sheet>
+    </Section>
+  );
+}
+export function Links({ ticket }: { ticket: Ticket }) {
+  const { api } = useConnection(),
+    access = useProjectAccess(ticket.projectId);
+  const items = useQuery(
+    api.query("list_resources", { projectId: ticket.projectId, ticketId: ticket.id }),
+  );
+  const add = useOperation("add_resource"),
+    update = useOperation("update_resource"),
+    remove = useOperation("delete_resource");
+  const [editing, setEditing] = useState<Output<"list_resources">[number] | null | undefined>(),
+    [title, setTitle] = useState(""),
+    [url, setUrl] = useState("");
+  const pending = add.isPending || update.isPending || remove.isPending;
+  return (
+    <Section title={t("detail.link.heading")}>
+      <ErrorNotice error={items.error ?? remove.error} />
+      {items.data?.map((item) => (
+        <View key={item.id} style={{ gap: 8 }}>
+          <Row
+            title={item.title || item.url}
+            caption={resourceRemoteLabel(item)}
+            onPress={() => {
+              void Linking.openURL(item.url);
+            }}
+          />
+          {access.canWrite && (
+            <View style={styles.actions}>
+              <Button
+                compact
+                title={t("detail.link.edit")}
+                onPress={() => {
+                  setEditing(item);
+                  setTitle(item.title);
+                  setUrl(item.url);
+                }}
+              />
+              <Button
+                compact
+                title={t("detail.link.remove")}
+                danger
+                disabled={pending}
+                onPress={() =>
+                  Alert.alert(t("detail.link.remove"), item.title || item.url, [
+                    { text: t("common.action.cancel"), style: "cancel" },
+                    {
+                      text: t("common.action.remove"),
+                      style: "destructive",
+                      onPress: () =>
+                        remove.mutate({
+                          projectId: ticket.projectId,
+                          resourceId: item.id,
+                          expectedVersion: item.version,
+                        }),
+                    },
+                  ])
+                }
+              />
+            </View>
+          )}
+        </View>
+      ))}
+      {access.canWrite && (
+        <Button
+          title={t("detail.link.add")}
+          onPress={() => {
+            setEditing(null);
+            setTitle("");
+            setUrl("");
+          }}
+        />
+      )}
+      <Sheet
+        title={t("detail.link.edit")}
+        open={editing !== undefined}
+        onClose={() => {
+          if (!pending) setEditing(undefined);
+        }}
+      >
+        <Field
+          label={t("detail.field.title")}
+          value={title}
+          onChangeText={setTitle}
+          maxLength={200}
+        />
+        <Field
+          label={t("detail.field.url")}
+          value={url}
+          onChangeText={setUrl}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+        />
+        <ErrorNotice error={add.error ?? update.error} />
+        <Button
+          title={t("detail.link.save")}
+          primary
+          disabled={!url || pending}
+          onPress={() => {
+            void (
+              editing
+                ? update.mutateAsync({
+                    projectId: ticket.projectId,
+                    resourceId: editing.id,
+                    expectedVersion: editing.version,
+                    title,
+                    url,
+                  })
+                : add.mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, title, url })
+            )
+              .then(() => setEditing(undefined))
               .catch(() => {});
           }}
         />

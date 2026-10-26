@@ -1,3 +1,4 @@
+import { loadProjectIcons } from "@kanvil/contracts/icons";
 import { accentColorClasses } from "../lib/accent-colors.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react/offline";
@@ -7,7 +8,7 @@ import { cn } from "@/lib/utils";
 export function useIconLibrary(enabled = true) {
   return useQuery({
     queryKey: ["project-icon-library"],
-    queryFn: async () => (await import("@iconify-json/lucide")).icons,
+    queryFn: loadProjectIcons,
     enabled,
     staleTime: Infinity,
     gcTime: Infinity,

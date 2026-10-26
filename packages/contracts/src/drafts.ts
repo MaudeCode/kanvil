@@ -1,5 +1,35 @@
 import { z } from "zod";
-import { dueDate, operations, states, ticketFields, type Ticket } from "./index.ts";
+import {
+  customFieldValueSchema,
+  dueDate,
+  operations,
+  states,
+  ticketFields,
+  type Ticket,
+  type CustomField,
+  type CustomFieldValue,
+} from "./index.ts";
+
+// Numeric text stays intact while typing (including '-' and a trailing decimal point).
+// Only form submission converts it to the strict stored-value contract.
+export function parseCustomFieldDraft(
+  field: Pick<CustomField, "type" | "options">,
+  value: CustomFieldValue | null,
+) {
+  const normalized =
+    field.type === "number" && typeof value === "string"
+      ? value.trim()
+        ? Number(value)
+        : null
+      : value;
+  return customFieldValueSchema(field).parse(normalized);
+}
+// A mixed selection must not present its first ticket's value as everyone's.
+export function sharedTicketValue<T>(selected: Ticket[], read: (ticket: Ticket) => T) {
+  const [first, ...rest] = selected.map(read),
+    key = JSON.stringify(first);
+  return { value: first!, mixed: rest.some((value) => JSON.stringify(value) !== key) };
+}
 
 export const ticketDefaults = operations.create_ticket.input
   .omit({ projectId: true, requestId: true, uploads: true })

@@ -1,5 +1,13 @@
 import { z } from "zod";
 import {
+  accountSections,
+  adminSections,
+  workspaceSections,
+  projectSections,
+  ticketLayouts,
+} from "@kanvil/contracts/navigation";
+export { accountSections, adminSections, workspaceSections, projectSections };
+import {
   filterKey,
   filterList,
   searchResultTypes,
@@ -75,7 +83,7 @@ export const ticketLabelDisplaySchema = z.enum(["compact", "all"]);
 export type TicketLabelDisplay = z.output<typeof ticketLabelDisplaySchema>;
 export const ticketGroupingSchema = z.enum(["status", "none"]);
 // Project lists render as a table, a board of status lanes, a month calendar, or a timeline.
-export const ticketLayoutSchema = z.enum(["list", "board", "calendar", "timeline"]);
+export const ticketLayoutSchema = z.enum(ticketLayouts);
 export type TicketLayout = z.output<typeof ticketLayoutSchema>;
 // My work spans projects, so it groups by due date or project instead of status.
 export const workGroupingSchema = z.enum(["due", "project", "none"]);
@@ -104,22 +112,6 @@ export const ticketColumnLabels = labelTable(
 // A custom field's list column; its visibility is kept with the built-in columns.
 export const customFieldColumn = (fieldId: string) => `field:${fieldId}`;
 
-export const accountSections = [
-  "account",
-  "appearance",
-  "preferences",
-  "credentials",
-  "notifications",
-] as const;
-export const adminSections = [
-  "general",
-  "storage",
-  "search",
-  "events",
-  "users",
-  "workspaces",
-  "authentication",
-] as const;
 export const authSearchSchema = z.object({
   error: z.string().optional().catch(undefined),
 });
@@ -130,16 +122,6 @@ export const adminSearchSchema = z.object({
   section: z.enum(adminSections).catch("general").default("general"),
 });
 
-export const workspaceSections = ["general", "members", "roles", "labels"] as const;
-export const projectSections = [
-  "general",
-  "members",
-  "workflow",
-  "labels",
-  "fields",
-  "integrations",
-  "calendar",
-] as const;
 export const groupSettingsSearchSchema = z.object({
   section: z.enum(workspaceSections).catch("general").default("general"),
 });

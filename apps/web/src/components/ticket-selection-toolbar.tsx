@@ -1,3 +1,4 @@
+import { sharedTicketValue as shared } from "@kanvil/contracts/drafts";
 import { useState } from "react";
 import { Archive, ArchiveRestore, Ellipsis, ListTodo, Rows3, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -30,14 +31,6 @@ import {
   type TicketChange,
 } from "./ticket-property.tsx";
 import { DatePicker, endOfDay } from "./date-picker.tsx";
-
-// The first row's value only when every selected ticket shares it, so a mixed selection never
-// shows one row's value as everyone's.
-function shared<T>(selected: Ticket[], read: (ticket: Ticket) => T) {
-  const [first, ...rest] = selected.map(read),
-    key = JSON.stringify(first);
-  return { value: first!, mixed: rest.some((value) => JSON.stringify(value) !== key) };
-}
 
 // Narrow screens keep only the icons; each control's accessible name still says what it edits.
 const wideText = "max-sm:hidden";

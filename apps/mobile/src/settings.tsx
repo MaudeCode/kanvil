@@ -6,13 +6,23 @@ import {
   t,
   type LocalePreference,
 } from "@kanvil/contracts/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import { infoSchema } from "@kanvil/contracts";
-import { useConnection, useIdentity } from "./data.tsx";
+import {
+  infoSchema,
+  notificationCategories,
+  notificationCategoryLabels,
+  reminderUnits,
+  reminderUnitSchema,
+} from "@kanvil/contracts";
+import { useConnection, useIdentity, useProjects, useWorkspace, useAllProjects } from "./data.tsx";
+import { accountSections, settingsSectionLabel } from "@kanvil/contracts/navigation";
+import { AppearanceSettings, CredentialsSettings, ProfileSettings } from "./account-settings.tsx";
+import { createHeaderAction } from "./navigation-actions.tsx";
+import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
+import { DeliverySettings } from "./delivery-settings.tsx";
 import {
   devicePushToken,
   disableDevicePush,
@@ -22,6 +32,7 @@ import {
 } from "./push.tsx";
 import { savedLocalePreference, setLocalePreference } from "./locale.tsx";
 import {
+  nativeHeaderOptions,
   Body,
   List,
   Button,
@@ -32,39 +43,107 @@ import {
   Loading,
   Row,
   Screen,
+  Heading,
   Section,
+  Sheet,
 } from "./ui.tsx";
 
 export function Inbox() {
   const { api } = useConnection(),
     cache = useQueryClient(),
     navigation = useNavigation(),
-    [error, setError] = useState<unknown>();
-  const notifications = api.notifications(),
-    items = useQuery(notifications);
-  async function read() {
-    const ids = items.data?.filter((item) => !item.readAt).map((item) => item.id);
-    if (!ids?.length) return;
-    await api.markNotifications({ ids });
-    await cache.invalidateQueries({ queryKey: notifications.queryKey });
-  }
+    workspace = useWorkspace(),
+    projects = useAllProjects();
+  const [view, setView] = useState<"unread" | "mentions" | "all">("unread"),
+    [focused, setFocused] = useState<string>();
+  const items = useQuery(api.notifications());
+  const scoped = useMemo(() => {
+    const allowed = new Set(
+      projects.data
+        ?.filter((project) => project.workspaceId === workspace.active?.id)
+        .map((project) => project.id),
+    );
+    return (items.data ?? []).filter((item) => allowed.has(item.event.projectId));
+  }, [items.data, projects.data, workspace.active?.id]);
+  const visible = useMemo(
+    () =>
+      scoped.filter((item) =>
+        view === "unread" ? !item.readAt : view === "mentions" ? item.category === "mention" : true,
+      ),
+    [scoped, view],
+  );
+  const action = useMutation({
+    mutationFn: async ({
+      ids,
+      read,
+      dismiss,
+    }: {
+      ids: string[];
+      read?: boolean;
+      dismiss?: boolean;
+    }) => {
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const batch = ids.slice(offset, offset + 100);
+        if (dismiss) await api.dismissNotifications({ ids: batch });
+        else await api.markNotifications({ ids: batch, ...(read !== undefined ? { read } : {}) });
+      }
+    },
+    onSuccess: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
+  });
+  const mutate = action.mutate;
+  useLayoutEffect(() => {
+    navigation.setOptions(
+      nativeHeaderOptions({
+        unstable_headerRightItems: (): NativeStackHeaderItem[] => [
+          createHeaderAction(
+            t("shell.inbox.markAllRead"),
+            () =>
+              mutate({
+                ids: visible.filter((item) => !item.readAt).map((item) => item.id),
+                read: true,
+              }),
+            { type: "sfSymbol", name: "checkmark.circle" },
+            action.isPending || !visible.some((item) => !item.readAt),
+          ),
+          {
+            type: "menu",
+            label: t("shell.page.inbox"),
+            accessibilityLabel: t("ticket.filter.filters"),
+            icon: { type: "sfSymbol", name: "line.3.horizontal.decrease" },
+            menu: {
+              items: [
+                ...(["unread", "mentions", "all"] as const).map((value) => ({
+                  type: "action" as const,
+                  label: t(`shell.inbox.${value}`),
+                  state: value === view ? ("on" as const) : ("off" as const),
+                  onPress: () => setView(value),
+                })),
+                {
+                  type: "action",
+                  label: t("shell.inbox.clearRead"),
+                  onPress: () =>
+                    mutate({
+                      ids: scoped.filter((item) => item.readAt).map((item) => item.id),
+                      dismiss: true,
+                    }),
+                  disabled: action.isPending,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+  }, [navigation, visible, view, mutate, action.isPending, scoped]);
+  const target = items.data?.find((item) => item.id === focused);
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 16 }}>
-        <Button
-          title={t("native.inbox.markAllRead")}
-          disabled={!items.data?.some((item) => !item.readAt)}
-          onPress={() => {
-            void read().catch(setError);
-          }}
-        />
-        <ErrorNotice error={error ?? items.error} />
-      </View>
-      {items.isPending ? (
+      <ErrorNotice error={items.error ?? action.error} />
+      {items.isPending || projects.isPending ? (
         <Loading />
       ) : (
         <List
-          data={items.data ?? []}
+          data={visible}
           keyExtractor={(item) => item.id}
           onRefresh={() => {
             void items.refetch();
@@ -72,28 +151,61 @@ export function Inbox() {
           refreshing={items.isRefetching}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>{t("native.inbox.empty")}</Body>
+              <Body muted>
+                {view === "unread"
+                  ? t("shell.inbox.noUnread")
+                  : view === "mentions"
+                    ? t("shell.inbox.noMentions")
+                    : t("shell.inbox.noNotifications")}
+              </Body>
             </View>
           }
           renderItem={({ item }) => (
             <Row
-              title={`${item.readAt ? "" : "● "}${formatEvent(item.event, true)}`}
+              title={formatEvent(item.event, true)}
               caption={formatTimestamp(item.event.createdAt)}
+              onLongPress={() => setFocused(item.id)}
               onPress={() => {
+                mutate({ ids: [item.id], read: true });
                 if (item.event.ticketId)
                   navigation.navigate("Ticket", {
                     projectId: item.event.projectId,
                     ticketId: item.event.ticketId,
                   });
+                else setFocused(item.id);
               }}
             />
           )}
         />
       )}
+      <Sheet title={t("shell.page.inbox")} open={!!target} onClose={() => setFocused(undefined)}>
+        {target && (
+          <>
+            <Button
+              title={target.readAt ? t("shell.inbox.markUnread") : t("shell.inbox.markRead")}
+              disabled={action.isPending}
+              onPress={() => {
+                mutate({ ids: [target.id], read: !target.readAt });
+                setFocused(undefined);
+              }}
+            />
+            <Button
+              title={t("shell.inbox.dismiss")}
+              danger
+              disabled={action.isPending}
+              onPress={() => {
+                mutate({ ids: [target.id], dismiss: true });
+                setFocused(undefined);
+              }}
+            />
+          </>
+        )}
+      </Sheet>
     </Screen>
   );
 }
 function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) {
+  const [reminderOpen, setReminderOpen] = useState(false);
   const connection = useConnection(),
     { api } = connection,
     identity = useIdentity(),
@@ -144,7 +256,11 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
         <>
           <Check
             label={t("native.notifications.push")}
-            checked={update.isPending ? (update.variables.push ?? false) : preferences.data.push}
+            checked={
+              update.isPending
+                ? (update.variables.push ?? preferences.data.push)
+                : preferences.data.push
+            }
             disabled={update.isPending || registration.isPending}
             onChange={(push) => update.mutate({ inApp: preferences.data?.inApp ?? true, push })}
           />
@@ -163,16 +279,115 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
           )}
         </>
       )}
+      {preferences.data && (
+        <>
+          <Section title={t("settings.notifications.categories")}>
+            {notificationCategories.map((category) => (
+              <Check
+                key={category}
+                label={t("settings.notifications.categorySwitch", {
+                  label: notificationCategoryLabels[category],
+                })}
+                checked={
+                  update.isPending
+                    ? (update.variables.categories?.[category] ??
+                      preferences.data.categories[category])
+                    : preferences.data.categories[category]
+                }
+                disabled={update.isPending}
+                onChange={(enabled) =>
+                  update.mutate({
+                    inApp: preferences.data?.inApp ?? true,
+                    categories: { [category]: enabled },
+                  })
+                }
+              />
+            ))}
+          </Section>
+          <Button
+            title={t("settings.notifications.reminder")}
+            onPress={() => setReminderOpen(true)}
+          />
+          <Sheet
+            title={t("settings.notifications.reminder")}
+            open={reminderOpen}
+            onClose={() => {
+              if (!update.isPending) setReminderOpen(false);
+            }}
+          >
+            <ReminderPreference
+              initial={preferences.data.reminderLead}
+              onSave={async (reminderLead) => {
+                await update.mutateAsync({ inApp: preferences.data?.inApp ?? true, reminderLead });
+                setReminderOpen(false);
+              }}
+            />
+          </Sheet>
+        </>
+      )}
     </Section>
   );
 }
-export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
+function ReminderPreference({
+  initial,
+  onSave,
+}: {
+  initial: { amount: number; unit: (typeof reminderUnits)[number] };
+  onSave: (value: { amount: number; unit: (typeof reminderUnits)[number] }) => Promise<void>;
+}) {
+  const [amount, setAmount] = useState(String(initial.amount)),
+    [unit, setUnit] = useState(initial.unit),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState<unknown>();
+  return (
+    <>
+      <Field
+        label={t("settings.notifications.reminderAmount")}
+        value={amount}
+        onChangeText={setAmount}
+        keyboardType="number-pad"
+      />
+      <Choice
+        label={t("settings.notifications.reminderUnit")}
+        value={unit}
+        options={reminderUnits.map((value) => ({
+          value,
+          label: t(`settings.notifications.unit.${value}`),
+        }))}
+        onChange={(value) => setUnit(reminderUnitSchema.parse(value))}
+      />
+      <ErrorNotice error={error} />
+      <Button
+        title={t("common.action.save")}
+        primary
+        disabled={!/^\d+$/.test(amount) || Number(amount) < 1 || Number(amount) > 999 || pending}
+        onPress={() => {
+          setPending(true);
+          void onSave({ amount: Number(amount), unit })
+            .catch(setError)
+            .finally(() => setPending(false));
+        }}
+      />
+    </>
+  );
+}
+export function Settings({
+  onDisconnect,
+  section,
+}: {
+  onDisconnect: () => Promise<void>;
+  section?: string;
+}) {
   const connection = useConnection(),
-    { api, auth, baseUrl, prefix } = connection,
+    { api, auth, baseUrl } = connection,
     identity = useIdentity(),
-    cache = useQueryClient();
+    workspace = useWorkspace(),
+    projects = useProjects(),
+    navigation = useNavigation();
+  const activeSection = accountSections.find((value) => value === section);
   const [current, setCurrent] = useState(""),
     [next, setNext] = useState(""),
+    [confirm, setConfirm] = useState(""),
     [error, setError] = useState<unknown>(),
     [pending, setPending] = useState(false),
     [message, setMessage] = useState(""),
@@ -192,6 +407,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
   });
   const accounts = useQuery({
     queryKey: ["accounts"],
+    enabled: activeSection === "account",
     queryFn: async () => {
       const result = await auth.listAccounts();
       if (result.error) throw new Error(result.error.message);
@@ -201,24 +417,15 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
   async function logout(disconnect = false) {
     setError(undefined);
     setPending(true);
-    // Clear the query cache before Better Auth unmounts this account's provider.
-    cache.clear();
     try {
+      await identity.clearPrivateData();
       const result = await auth.signOut();
       if (result.error) throw new Error(result.error.message);
+      await forgetDevicePush(connection, identity.id);
+      if (disconnect) await onDisconnect();
     } catch (cause) {
       setError(cause);
     } finally {
-      try {
-        await forgetDevicePush(connection, identity.id);
-        const keys = await AsyncStorage.getAllKeys();
-        await AsyncStorage.removeMany(
-          keys.filter((key) => key.startsWith(`${prefix}:${identity.id}:`)),
-        );
-        if (disconnect) await onDisconnect();
-      } catch (cause) {
-        setError(cause);
-      }
       setPending(false);
     }
   }
@@ -226,6 +433,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
     setError(undefined);
     setPending(true);
     try {
+      if (next !== confirm) throw new Error(t("settings.account.passwordMismatch"));
       const result = await auth.changePassword({
         currentPassword: current,
         newPassword: next,
@@ -234,6 +442,7 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       if (result.error) throw new Error(result.error.message);
       setCurrent("");
       setNext("");
+      setConfirm("");
       setMessage(t("native.settings.password.updated"));
     } catch (cause) {
       setError(cause);
@@ -241,109 +450,178 @@ export function Settings({ onDisconnect }: { onDisconnect: () => Promise<void> }
       setPending(false);
     }
   }
+  if (!activeSection)
+    return (
+      <Screen>
+        <Row
+          title={identity.name}
+          caption={identity.email}
+          onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
+        />
+        <Section title={t("shell.settingsNav.account")}>
+          {accountSections.map((value) => (
+            <Row
+              key={value}
+              title={settingsSectionLabel(value)}
+              onPress={() => navigation.navigate("AccountSettings", { section: value })}
+            />
+          ))}
+        </Section>
+        {workspace.active && (
+          <Section title={workspace.active.name}>
+            <Row
+              title={t("shell.workspace.settings")}
+              onPress={() => {
+                if (workspace.active)
+                  navigation.navigate("WorkspaceSettings", { workspaceId: workspace.active.id });
+              }}
+            />
+          </Section>
+        )}
+        <Section title={t("shell.page.projects")}>
+          {projects.data?.map((project) => (
+            <Row
+              key={project.id}
+              title={project.name}
+              caption={project.key}
+              onPress={() => navigation.navigate("ProjectSettings", { projectId: project.id })}
+            />
+          ))}
+        </Section>
+        {identity.admin && (
+          <Row
+            title={t("shell.settingsNav.administration")}
+            onPress={() => navigation.navigate("Administration", {})}
+          />
+        )}
+        <Section title={baseUrl}>
+          <Button
+            title={t("native.settings.signOut.action")}
+            disabled={pending}
+            onPress={() =>
+              Alert.alert(
+                t("native.settings.signOut.title"),
+                t("native.settings.signOut.message"),
+                [
+                  { text: t("common.action.cancel"), style: "cancel" },
+                  {
+                    text: t("native.settings.signOut.action"),
+                    onPress: () => {
+                      void logout();
+                    },
+                  },
+                ],
+              )
+            }
+          />
+          <Button
+            title={t("native.server.change")}
+            disabled={pending}
+            onPress={() =>
+              Alert.alert(
+                t("native.settings.changeServer.title"),
+                t("native.settings.changeServer.message"),
+                [
+                  { text: t("common.action.cancel"), style: "cancel" },
+                  {
+                    text: t("native.server.change"),
+                    onPress: () => {
+                      void logout(true);
+                    },
+                  },
+                ],
+              )
+            }
+          />
+          <ErrorNotice error={error} />
+        </Section>
+      </Screen>
+    );
   return (
     <Screen>
-      <Body>{identity.name}</Body>
-      <Body muted>{identity.email}</Body>
-      <Body muted>{baseUrl}</Body>
+      <Heading>{settingsSectionLabel(activeSection)}</Heading>
       <ErrorNotice error={error} />
       {message && <Body>{message}</Body>}
-      <Choice
-        label={t("common.language.label")}
-        value={language}
-        options={[
-          { value: "system", label: t("common.language.system") },
-          ...locales.map((locale) => ({ value: locale, label: localeDetails[locale].name })),
-        ]}
-        onChange={(value) => {
-          const choice = localePreference.parse(value);
-          setLanguage(choice);
-          setError(undefined);
-          void setLocalePreference(choice).catch(setError);
-        }}
-      />
-      <Section title={t("native.settings.password.title")}>
-        <Field
-          label={t("native.settings.password.current")}
-          value={current}
-          onChangeText={setCurrent}
-          secureTextEntry
-          autoComplete="current-password"
-        />
-        <Field
-          label={t("native.settings.password.new")}
-          value={next}
-          onChangeText={setNext}
-          secureTextEntry
-          autoComplete="new-password"
-        />
-        <Button
-          title={t("native.settings.password.change")}
-          disabled={pending || !current || next.length < 12}
-          onPress={() => {
-            void changePassword();
+      {activeSection === "account" && (
+        <>
+          <ProfileSettings onDeleted={() => logout()} />
+          <Section title={t("native.settings.password.title")}>
+            <Field
+              label={t("native.settings.password.current")}
+              value={current}
+              onChangeText={setCurrent}
+              secureTextEntry
+              autoComplete="current-password"
+            />
+            <Field
+              label={t("native.settings.password.new")}
+              value={next}
+              onChangeText={setNext}
+              secureTextEntry
+              autoComplete="new-password"
+            />
+            <Field
+              label={t("settings.account.confirmPassword")}
+              value={confirm}
+              onChangeText={setConfirm}
+              secureTextEntry
+              autoComplete="new-password"
+            />
+            <Button
+              title={t("native.settings.password.change")}
+              disabled={pending || !current || next.length < 12 || next !== confirm}
+              onPress={() => {
+                void changePassword();
+              }}
+            />
+          </Section>
+          {info.data?.providers.map((provider) => (
+            <Section key={provider.id} title={provider.name}>
+              {accounts.data?.some((account) => account.providerId === provider.id) ? (
+                <Body>{t("native.settings.oidc.linked")}</Body>
+              ) : (
+                <Button
+                  title={t("native.settings.oidc.link", { provider: provider.name })}
+                  onPress={() => {
+                    void auth
+                      .linkSocial({ provider: provider.id, callbackURL: "kanvil://auth/callback" })
+                      .then(async (result) => {
+                        if (result.error) throw new Error(result.error.message);
+                        await accounts.refetch();
+                      })
+                      .catch(setError);
+                  }}
+                />
+              )}
+              <ErrorNotice error={accounts.error} />
+            </Section>
+          ))}
+        </>
+      )}
+      {activeSection === "appearance" && <AppearanceSettings />}
+      {activeSection === "preferences" && (
+        <Choice
+          label={t("common.language.label")}
+          value={language}
+          options={[
+            { value: "system", label: t("common.language.system") },
+            ...locales.map((locale) => ({ value: locale, label: localeDetails[locale].name })),
+          ]}
+          onChange={(value) => {
+            const choice = localePreference.parse(value);
+            setLanguage(choice);
+            setError(undefined);
+            void setLocalePreference(choice).catch(setError);
           }}
         />
-      </Section>
-      {info.data?.providers.map((provider) => (
-        <Section key={provider.id} title={provider.name}>
-          {accounts.data?.some((account) => account.providerId === provider.id) ? (
-            <Body>{t("native.settings.oidc.linked")}</Body>
-          ) : (
-            <>
-              <Body>{t("native.settings.oidc.explanation")}</Body>
-              <Button
-                title={t("native.settings.oidc.link", { provider: provider.name })}
-                onPress={() => {
-                  void auth
-                    .linkSocial({ provider: provider.id, callbackURL: "kanvil://auth/callback" })
-                    .then(async (result) => {
-                      if (result.error) throw new Error(result.error.message);
-                      await accounts.refetch();
-                    })
-                    .catch(setError);
-                }}
-              />
-            </>
-          )}
-          <ErrorNotice error={accounts.error} />
-        </Section>
-      ))}
-      <NotificationPreferences pushAvailable={info.data?.push ?? false} />
-      <Button
-        title={t("native.settings.signOut.action")}
-        disabled={pending}
-        onPress={() =>
-          Alert.alert(t("native.settings.signOut.title"), t("native.settings.signOut.message"), [
-            { text: t("common.action.cancel"), style: "cancel" },
-            {
-              text: t("native.settings.signOut.action"),
-              onPress: () => {
-                void logout();
-              },
-            },
-          ])
-        }
-      />
-      <Button
-        title={t("native.server.change")}
-        disabled={pending}
-        onPress={() =>
-          Alert.alert(
-            t("native.settings.changeServer.title"),
-            t("native.settings.changeServer.message"),
-            [
-              { text: t("common.action.cancel"), style: "cancel" },
-              {
-                text: t("native.server.change"),
-                onPress: () => {
-                  void logout(true);
-                },
-              },
-            ],
-          )
-        }
-      />
+      )}
+      {activeSection === "credentials" && <CredentialsSettings />}
+      {activeSection === "notifications" && (
+        <>
+          <NotificationPreferences pushAvailable={info.data?.push ?? false} />
+          <DeliverySettings />
+        </>
+      )}
     </Screen>
   );
 }

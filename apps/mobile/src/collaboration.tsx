@@ -31,7 +31,7 @@ export function Relations({
   navigation,
 }: {
   ticket: Ticket;
-  navigation: ScreenProps<"Ticket">["navigation"];
+  navigation: Pick<ScreenProps<"Ticket">["navigation"], "navigate" | "push">;
 }) {
   const { api } = useConnection(),
     [open, setOpen] = useState(false),

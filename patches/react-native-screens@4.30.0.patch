@@ -1,0 +1,16 @@
+diff --git a/ios/gamma/split/RNSSplitHostComponentView.mm b/ios/gamma/split/RNSSplitHostComponentView.mm
+index e2d5259add5d8ad00b1acdde27cd013e70ce6013..a72a73818433cb3157c484df95a28862a3faabda 100644
+--- a/ios/gamma/split/RNSSplitHostComponentView.mm
++++ b/ios/gamma/split/RNSSplitHostComponentView.mm
+@@ -129,6 +129,11 @@ - (void)didMoveToWindow
+     [RNSContainerHelpers addChildViewController:_controller
+                        toViewControllerManaging:self.reactSuperview
+                               withContainerView:self];
++    // A nested host can enter the window after its first mounting transaction. Its controller
++    // did not exist for that transaction's callbacks, so realize the already-mounted columns.
++    [_controller setNeedsUpdateOfChildViewControllers];
++    [_controller reactMountingTransactionDidMount];
++    _hasModifiedReactSubviewsInCurrentTransaction = false;
+   }
+ }
+ 
