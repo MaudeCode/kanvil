@@ -70,6 +70,8 @@ export default {
     saved: "个人资料已保存",
   },
   credentials: {
+    global: "全局",
+    globalDescription: "访问账户有权访问的所有项目和工作区，包括将来获得的访问权限。",
     title: "API 密钥",
     description: "为脚本、集成和智能体提供可随时撤销的访问权限。",
     create: "创建 API 密钥",
@@ -124,8 +126,8 @@ export default {
       },
       claim: { name: "认领工作", description: "认领、续期和释放工单所有权。" },
       admin: {
-        name: "管理项目",
-        description: "在角色允许的范围内更改项目设置和成员。",
+        name: "管理项目和工作区",
+        description: "在角色允许的范围内更改项目和工作区的设置及成员。",
       },
     },
     expiry: {

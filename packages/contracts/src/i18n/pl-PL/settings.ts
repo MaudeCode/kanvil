@@ -78,6 +78,9 @@ export default {
   },
   // Personal API keys.
   credentials: {
+    global: "Globalny",
+    globalDescription:
+      "Dostęp do wszystkich projektów i obszarów roboczych konta, także tych udostępnionych w przyszłości.",
     title: "Klucze API",
     description: "Połącz skrypty, integracje i agentów z dostępem, który można odwołać.",
     create: "Utwórz klucz API",
@@ -137,8 +140,9 @@ export default {
         description: "Przejmowanie, odnawianie i zwalnianie własności zadań.",
       },
       admin: {
-        name: "Zarządzanie projektami",
-        description: "Zmiana ustawień i członkostwa projektów, o ile pozwala na to rola.",
+        name: "Zarządzaj projektami i obszarami roboczymi",
+        description:
+          "Zmieniaj ustawienia i członkostwo projektów i obszarów roboczych w granicach uprawnień swojej roli.",
       },
     },
     // Key lifetimes; 90 days is the default.

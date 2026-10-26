@@ -70,6 +70,8 @@ export default {
     saved: "個人資料已儲存",
   },
   credentials: {
+    global: "全域",
+    globalDescription: "存取帳戶有權存取的所有專案和工作區，包括日後取得的存取權限。",
     title: "API 金鑰",
     description: "為指令碼、整合和代理程式提供可隨時撤銷的存取權。",
     create: "建立 API 金鑰",
@@ -124,8 +126,8 @@ export default {
       },
       claim: { name: "認領工作", description: "認領、續期和釋出工單擁有權。" },
       admin: {
-        name: "管理專案",
-        description: "在您的角色允許範圍內變更專案設定和成員。",
+        name: "管理專案和工作區",
+        description: "在角色允許的範圍內變更專案和工作區的設定及成員。",
       },
     },
     expiry: {

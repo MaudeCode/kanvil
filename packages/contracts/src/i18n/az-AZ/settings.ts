@@ -70,6 +70,9 @@ export default {
     saved: "Profil yadda saxlanıldı",
   },
   credentials: {
+    global: "Qlobal",
+    globalDescription:
+      "Hesabınızın indi və gələcəkdə giriş əldə etdiyi bütün layihələrə və iş məkanlarına giriş.",
     title: "API açarları",
     description: "Skriptləri, inteqrasiyaları və agentləri ləğv edə biləcəyiniz girişlə qoşun.",
     create: "API açarı yarat",
@@ -129,8 +132,9 @@ export default {
         description: "Tiket sahibliyini götürmək, yeniləmək və buraxmaq.",
       },
       admin: {
-        name: "Layihələri idarə etmək",
-        description: "Rolunuzun icazə verdiyi yerdə layihə parametrlərini və üzvlüyü dəyişmək.",
+        name: "Layihələri və iş məkanlarını idarə et",
+        description:
+          "Rolunuzun icazə verdiyi layihə və iş məkanı parametrlərini və üzvlükləri dəyişin.",
       },
     },
     expiry: {

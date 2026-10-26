@@ -78,6 +78,9 @@ export default {
   },
   // Personal API keys.
   credentials: {
+    global: "Global",
+    globalDescription:
+      "Access every project and workspace your account can access, including future access.",
     title: "API keys",
     description: "Connect scripts, integrations, and agents with access you can revoke.",
     create: "Create API key",
@@ -134,8 +137,9 @@ export default {
       },
       claim: { name: "Claim work", description: "Claim, renew, and release ticket ownership." },
       admin: {
-        name: "Manage projects",
-        description: "Change project settings and membership where your role allows it.",
+        name: "Manage projects and workspaces",
+        description:
+          "Change project and workspace settings and membership where your role allows it.",
       },
     },
     // Key lifetimes; 90 days is the default.

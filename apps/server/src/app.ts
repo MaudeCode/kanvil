@@ -413,7 +413,7 @@ export async function createApplication(
     if (identity.machine) fail(403, "forbidden", "Use a signed-in account to manage credentials");
     const input = credentialInput.parse(await c.req.json()),
       allowed = await domain.accessibleProjects(identity);
-    if (input.projectIds.some((id) => !allowed.some((row) => row.id === id)))
+    if (input.projectIds?.some((id) => !allowed.some((row) => row.id === id)))
       fail(403, "forbidden", "Choose projects you can access");
     const key = await auth.api.createApiKey({
       body: {

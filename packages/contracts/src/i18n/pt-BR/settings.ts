@@ -70,6 +70,9 @@ export default {
     saved: "Perfil salvo",
   },
   credentials: {
+    global: "Global",
+    globalDescription:
+      "Acesse todos os projetos e espaços de trabalho disponíveis para sua conta, incluindo acessos futuros.",
     title: "Chaves de API",
     description: "Conecte scripts, integrações e agentes com acesso que pode ser revogado.",
     create: "Criar chave de API",
@@ -129,8 +132,9 @@ export default {
         description: "Reservar, renovar e liberar a propriedade de tickets.",
       },
       admin: {
-        name: "Gerenciar projetos",
-        description: "Alterar configurações e membros de projetos quando a função permitir.",
+        name: "Gerenciar projetos e espaços de trabalho",
+        description:
+          "Altere configurações e membros de projetos e espaços de trabalho onde sua função permitir.",
       },
     },
     expiry: {

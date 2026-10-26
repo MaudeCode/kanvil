@@ -1,10 +1,10 @@
 import { useId, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { Check as CheckIcon, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 import {
   credentialInput,
+  credentialProjectsSchema,
   credentialsSchema,
   createdCredentialSchema,
   okSchema,
@@ -69,9 +69,9 @@ function accessOf(credential: z.infer<typeof credentialsSchema>[number]) {
     permissions:
       z.object({ kanvil: z.array(z.enum(scopes)) }).safeParse(parseJSON(credential.permissions))
         .data?.kanvil ?? [],
-    projectIds:
-      z.object({ projectIds: z.array(z.string()) }).safeParse(parseJSON(credential.metadata)).data
-        ?.projectIds ?? [],
+    projectIds: (
+      credentialProjectsSchema.safeParse(parseJSON(credential.metadata)).data ?? { projectIds: [] }
+    ).projectIds,
   };
 }
 export function Credentials() {
@@ -125,7 +125,7 @@ export function Credentials() {
             {credentials.data.map((credential) => {
               const access = accessOf(credential),
                 expired = !!credential.expiresAt && new Date(credential.expiresAt).getTime() <= now;
-              const projectNames = access.projectIds.map(
+              const projectNames = access.projectIds?.map(
                 (id) =>
                   projects.data?.find((project) => project.id === id)?.name ??
                   t("settings.credentials.unavailableProject"),
@@ -168,7 +168,9 @@ export function Credentials() {
                     data-label={t("settings.credentials.projects")}
                     className="max-w-64 whitespace-normal"
                   >
-                    {formatList(projectNames) || t("settings.credentials.noProjects")}
+                    {access.projectIds === null
+                      ? t("settings.credentials.global")
+                      : formatList(projectNames ?? []) || t("settings.credentials.noProjects")}
                   </TableCell>
                   <TableCell
                     data-label={t("settings.credentials.expires")}
@@ -327,6 +329,7 @@ function CreateKey({
   const [projectIds, setProjectIds] = useState<string[]>(
       projects.length === 1 && projects[0] ? [projects[0].id] : [],
     ),
+    [global, setGlobal] = useState(false),
     [permissions, setPermissions] = useState<(typeof scopes)[number][]>(["read"]),
     [expiresAt, setExpiresAt] = useState(() => {
       const expiry = new Date();
@@ -353,7 +356,7 @@ function CreateKey({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: formText(new FormData(event.currentTarget), "name"),
-            projectIds,
+            projectIds: global ? null : projectIds,
             scopes: permissions,
             expiresIn:
               expiry === "never"
@@ -371,13 +374,6 @@ function CreateKey({
     }
   }
   if (loading) return <Loading />;
-  if (!projects.length)
-    return (
-      <EmptyState title={t("settings.credentials.noProjectTitle")} className="py-8">
-        <p>{t("settings.credentials.noProjectDescription")}</p>
-        <Button render={<Link to="/" />}>{t("settings.credentials.goToProjects")}</Button>
-      </EmptyState>
-    );
   return (
     <form
       onSubmit={(event) => {
@@ -395,7 +391,13 @@ function CreateKey({
         />
         <FieldSet className="gap-2">
           <FieldLegend variant="label">{t("settings.credentials.projectAccess")}</FieldLegend>
-          {projects.length > 6 && (
+          <Check
+            label={t("settings.credentials.global")}
+            description={t("settings.credentials.globalDescription")}
+            checked={global}
+            onCheckedChange={setGlobal}
+          />
+          {!global && projects.length > 6 && (
             <SearchField
               label={t("settings.credentials.findProject")}
               value={query}
@@ -403,30 +405,35 @@ function CreateKey({
               className="mb-2"
             />
           )}
-          <div className="max-h-44 overflow-y-auto rounded-md border px-3 py-1">
-            {matches.map((project) => (
-              <Check
-                key={project.id}
-                label={project.name}
-                description={t("settings.credentials.projectDescription", {
-                  key: project.key,
-                  workspace:
-                    workspaceNames.get(project.workspaceId) ?? t("settings.credentials.workspace"),
-                })}
-                checked={projectIds.includes(project.id)}
-                onCheckedChange={(checked) =>
-                  setProjectIds((current) =>
-                    checked ? [...current, project.id] : current.filter((id) => id !== project.id),
-                  )
-                }
-              />
-            ))}
-            {matches.length === 0 && (
-              <p className="my-4 text-sm text-muted-foreground">
-                {t("settings.credentials.noMatches")}
-              </p>
-            )}
-          </div>
+          {!global && (
+            <div className="max-h-44 overflow-y-auto px-3 py-1">
+              {matches.map((project) => (
+                <Check
+                  key={project.id}
+                  label={project.name}
+                  description={t("settings.credentials.projectDescription", {
+                    key: project.key,
+                    workspace:
+                      workspaceNames.get(project.workspaceId) ??
+                      t("settings.credentials.workspace"),
+                  })}
+                  checked={projectIds.includes(project.id)}
+                  onCheckedChange={(checked) =>
+                    setProjectIds((current) =>
+                      checked
+                        ? [...current, project.id]
+                        : current.filter((id) => id !== project.id),
+                    )
+                  }
+                />
+              ))}
+              {matches.length === 0 && (
+                <p className="my-4 text-sm text-muted-foreground">
+                  {t("settings.credentials.noMatches")}
+                </p>
+              )}
+            </div>
+          )}
           <FieldDescription>{t("settings.credentials.roleLimit")}</FieldDescription>
         </FieldSet>
         <Select
@@ -495,7 +502,7 @@ function CreateKey({
           pending={pending}
           submitLabel={t("settings.credentials.create")}
           pendingLabel={t("settings.credentials.creating")}
-          submitDisabled={!projectIds.length || !permissions.length}
+          submitDisabled={(!global && !projectIds.length) || !permissions.length}
           onCancel={onCancel}
         />
       </FieldSet>

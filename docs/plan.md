@@ -38,7 +38,7 @@ Pin the latest stable compatible releases during implementation. Reuse existing 
 - Account deletion by the person or an instance administrator after a reviewed impact summary, a recent sign-in, and a typed email: it removes every way to sign in or act as the account and its personal details, and keeps shared history attributed to a `Deleted account` tombstone.
 - Expiring, revocable email invitations to a workspace or selected projects, accepted once by the account with the invited address; they never open registration.
 - Secure mobile session storage and tested browser-to-app authentication callbacks.
-- Revocable credentials with project and operation scopes for unattended consumers.
+- Revocable project-scoped or global account-following credentials with operation scopes for unattended consumers.
 - Authenticated and permission-filtered HTTP, realtime, attachment, and MCP access.
 
 Validate PocketID mobile login and MCP client authentication early. These checks are implementation work owned by the agent; user input is needed only when essential access or credentials are unavailable.
