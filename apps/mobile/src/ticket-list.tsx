@@ -49,6 +49,7 @@ import {
   List,
   Loading,
   Screen,
+  Scroll,
   Section,
   Sheet,
   TicketRow,
@@ -472,7 +473,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : pending ? (
       <Loading />
     ) : layout === "board" ? (
-      <ScrollView horizontal contentContainerStyle={{ gap: 18, padding: 18 }}>
+      <Scroll horizontal contentContainerStyle={{ gap: 18, padding: 18 }}>
         {(workflow.data?.length
           ? workflow.data
           : states.map((status) => ({ id: status, name: stateLabels[status], category: status }))
@@ -502,7 +503,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
             </ScrollView>
           </View>
         ))}
-      </ScrollView>
+      </Scroll>
     ) : (
       <List
         data={entries}

@@ -1,7 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Platform, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   calendarDay,
   addCalendarDays,
@@ -9,7 +8,7 @@ import {
   ticketSpan,
   calendarDistance,
 } from "@kanvil/contracts/schedule";
-import { activeLocale, formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
+import { formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
 import type { Ticket } from "@kanvil/contracts";
 import {
   nativeHeaderOptions,
@@ -21,6 +20,10 @@ import {
   Row,
   Status,
   TicketRow,
+  NativeDatePicker,
+  DateField,
+  Screen,
+  Scroll,
   usePalette,
 } from "./ui.tsx";
 import { SplitView } from "./split-view.tsx";
@@ -53,18 +56,19 @@ export function TicketSchedule({
     setSelected(date);
     onAnchor(date);
   };
-  const spans = useMemo(
-    () =>
-      tickets
-        .flatMap((ticket) => {
-          const span = ticketSpan(ticket);
-          return span && span.end >= range.from && span.start < range.to
-            ? [{ ticket, ...span }]
-            : [];
-        })
-        .toSorted((a, b) => a.start.getTime() - b.start.getTime()),
-    [tickets, range],
-  );
+  const selectDay = (date: Date) => {
+    moveAnchor(calendarDay(date));
+    setShowDay(true);
+  };
+  const spans = useMemo(() => {
+    const entries = tickets.flatMap((ticket) => {
+      const span = ticketSpan(ticket);
+      return span && span.end >= range.from && span.start < range.to ? [{ ticket, ...span }] : [];
+    });
+    // This derived array is private; Hermes does not provide Array.toSorted.
+    entries.sort((a, b) => a.start.getTime() - b.start.getTime());
+    return entries;
+  }, [tickets, range]);
   const dayTickets = spans
     .filter((span) => span.start <= selected && span.end >= selected)
     .map((span) => span.ticket);
@@ -133,7 +137,7 @@ export function TicketSchedule({
     const columnWidth = 34,
       chartWidth = days.length * columnWidth;
     return (
-      <ScrollView>
+      <Scroll>
         {controls}
         {loading ? (
           <Loading />
@@ -195,14 +199,14 @@ export function TicketSchedule({
             <Body muted>{t("ticket.schedule.emptyWeeks")}</Body>
           </View>
         )}
-      </ScrollView>
+      </Scroll>
     );
   }
   return (
     <SplitView
       secondaryActive={showDay}
       primary={
-        <ScrollView>
+        <Screen>
           <View style={{ padding: 16 }}>
             <Button
               compact
@@ -214,35 +218,43 @@ export function TicketSchedule({
               }}
             />
           </View>
-          <DateTimePicker
-            mode="date"
-            display={Platform.OS === "ios" ? "inline" : "default"}
-            locale={activeLocale()}
-            value={selected}
-            onChange={(event, date) => {
-              if (event.type === "set" && date) {
-                const day = calendarDay(date);
-                setSelected(day);
-                onAnchor(day);
-                setShowDay(true);
-              }
-            }}
-          />
-        </ScrollView>
+          {Platform.OS === "ios" ? (
+            <NativeDatePicker
+              value={selected}
+              onChange={(event, date) => {
+                if (event.type === "set" && date) {
+                  selectDay(date);
+                }
+              }}
+            />
+          ) : (
+            <DateField
+              label={t("ticket.schedule.calendar")}
+              value={selected.toISOString()}
+              dayBoundary="start"
+              clearable={false}
+              onChange={(value) => {
+                if (value) selectDay(new Date(value));
+              }}
+            />
+          )}
+        </Screen>
       }
       secondary={
-        <View style={{ flex: 1 }}>
-          <View style={{ padding: 20 }}>
-            <Heading>{formatDate(selected, { dateStyle: "full" })}</Heading>
-            <Body muted small>
-              {t("ticket.list.scheduledCount", { count: dayTickets.length })}
-            </Body>
-          </View>
+        <Screen scroll={false}>
           {loading ? (
             <Loading />
           ) : (
             <List
               data={dayTickets}
+              ListHeaderComponent={
+                <View style={{ padding: 20 }}>
+                  <Heading>{formatDate(selected, { dateStyle: "full" })}</Heading>
+                  <Body muted small>
+                    {t("ticket.list.scheduledCount", { count: dayTickets.length })}
+                  </Body>
+                </View>
+              }
               keyExtractor={(ticket) => ticket.id}
               ListEmptyComponent={
                 <View style={{ padding: 20 }}>
@@ -252,7 +264,7 @@ export function TicketSchedule({
               renderItem={({ item }) => <TicketRow ticket={item} onPress={() => onOpen(item)} />}
             />
           )}
-        </View>
+        </Screen>
       }
     />
   );

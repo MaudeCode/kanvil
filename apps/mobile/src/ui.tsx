@@ -77,7 +77,7 @@ import {
   type CustomField,
   type CustomFieldValue,
 } from "@kanvil/contracts";
-import { formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
+import { activeLocale, formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
 // "High priority"; no priority reads as itself rather than "No priority priority".
 export const priorityText = (priority: Ticket["priority"]) =>
   priority === "none"
@@ -615,18 +615,37 @@ export function Check({
   );
 }
 // Date and custom-field editors extend the same Choice/Field/Check controls used by forms.
+export function NativeDatePicker(
+  props: Pick<
+    ComponentProps<typeof DateTimePicker>,
+    "value" | "minimumDate" | "maximumDate" | "timeZoneName" | "onChange"
+  >,
+) {
+  return (
+    <DateTimePicker
+      {...props}
+      mode="date"
+      display={Platform.OS === "ios" ? "inline" : "default"}
+      locale={activeLocale()}
+      accentColor={usePalette().accent}
+      style={Platform.OS === "ios" ? { height: 360, alignSelf: "stretch" } : undefined}
+    />
+  );
+}
 export function DateField({
   label,
   value,
   onChange,
   dayBoundary,
   bounds,
+  clearable = true,
 }: {
   label: string;
   value: string | null;
   onChange: (value: string | null) => void;
   dayBoundary?: "start" | "end";
   bounds?: { from?: string | null; to?: string | null };
+  clearable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [today] = useState(() => new Date());
@@ -648,9 +667,7 @@ export function DateField({
         onPress={() => setOpen(true)}
       />
       <Sheet title={label} open={open} onClose={() => setOpen(false)}>
-        <DateTimePicker
-          mode="date"
-          display={Platform.OS === "ios" ? "inline" : "default"}
+        <NativeDatePicker
           {...(!dayBoundary ? { timeZoneName: "UTC" } : {})}
           value={value ? new Date(dayBoundary ? value : `${value}T12:00:00Z`) : today}
           {...(bounds?.from ? { minimumDate: new Date(bounds.from) } : {})}
@@ -670,13 +687,15 @@ export function DateField({
             if (Platform.OS === "android") setOpen(false);
           }}
         />
-        <Button
-          title={t("ticket.date.clear", { label })}
-          onPress={() => {
-            onChange(null);
-            setOpen(false);
-          }}
-        />
+        {clearable && (
+          <Button
+            title={t("ticket.date.clear", { label })}
+            onPress={() => {
+              onChange(null);
+              setOpen(false);
+            }}
+          />
+        )}
       </Sheet>
     </View>
   );
@@ -836,9 +855,7 @@ export function Screen({
         )}
         <SafeAreaView edges={navigation && safeArea ? ["left", "right"] : []} style={{ flex: 1 }}>
           {scroll ? (
-            <ScrollView
-              contentInsetAdjustmentBehavior="automatic"
-              automaticallyAdjustKeyboardInsets
+            <Scroll
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               contentContainerStyle={{
@@ -849,7 +866,7 @@ export function Screen({
               }}
             >
               {children}
-            </ScrollView>
+            </Scroll>
           ) : (
             children
           )}
@@ -858,6 +875,16 @@ export function Screen({
     </ImageSurface>
   );
   return form ? <NativeForm>{content}</NativeForm> : content;
+}
+// Screen's scrolling primitive also serves layouts that own their scrolling content.
+export function Scroll(props: ComponentProps<typeof ScrollView>) {
+  return (
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      automaticallyAdjustKeyboardInsets
+      {...props}
+    />
+  );
 }
 function NativeForm({ children }: { children: ReactNode }) {
   const navigation = useNavigation(),
