@@ -706,20 +706,37 @@ function Roles({
     <Section title={t("shell.settingsNav.section.roles")}>
       <ErrorNotice error={all.error} />
       {all.data?.map((item) => (
-        <Row
+        <Section
           key={item.id}
           title={item.name}
-          caption={item.permissions
-            .map((permission) => permissionLabels[permission].label)
-            .join(", ")}
-          onPress={() => {
-            if (canManage && !item.seeded) {
-              setEditing(item);
-              setName(item.name);
-              setSelected(item.permissions);
-            }
-          }}
-        />
+          collapsible
+          count={item.permissions.length}
+          countLabel={t("ticket.list.sectionCount", {
+            n: item.permissions.length,
+            section: t("settings.roles.actions"),
+          })}
+        >
+          {item.seeded && (
+            <Body muted small>
+              {t("settings.roles.builtIn")}
+            </Body>
+          )}
+          {item.permissions.map((permission) => (
+            <Body key={permission} small>
+              {permissionLabels[permission].label}
+            </Body>
+          ))}
+          {canManage && !item.seeded && (
+            <Button
+              title={t("common.action.edit")}
+              onPress={() => {
+                setEditing(item);
+                setName(item.name);
+                setSelected(item.permissions);
+              }}
+            />
+          )}
+        </Section>
       ))}
       {canManage && (
         <Button

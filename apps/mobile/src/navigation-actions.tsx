@@ -56,7 +56,7 @@ export function createHeaderMenu(
   title: string,
   icon: NonNullable<NativeStackHeaderItemMenu["icon"]>,
   items: NativeStackHeaderItemMenu["menu"]["items"],
-  policy: Pick<NativeStackHeaderItemMenu, "visibilityPriority" | "identifier"> = {},
+  policy: Pick<NativeStackHeaderItemMenu, "visibilityPriority" | "identifier" | "badge"> = {},
 ): NativeStackHeaderItemMenu {
   return {
     type: "menu",

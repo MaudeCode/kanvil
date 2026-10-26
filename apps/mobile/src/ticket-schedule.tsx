@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import {
   I18nManager,
   Pressable,
@@ -50,6 +50,7 @@ export function TicketSchedule({
   range,
   onAnchor,
   loading,
+  header,
 }: {
   projectId: string;
   layout: "calendar" | "timeline";
@@ -59,6 +60,7 @@ export function TicketSchedule({
   range: { from: Date; to: Date };
   onAnchor: (date: Date) => void;
   loading: boolean;
+  header?: ReactNode;
 }) {
   const navigation = useNavigation(),
     { showPicker } = useProjectNavigation(),
@@ -130,21 +132,31 @@ export function TicketSchedule({
       );
   }, [navigation, showDay, splitState, showPicker]);
   const controls = (
-    <View style={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6 }}>
-      <Heading compact>
-        {layout === "calendar"
-          ? formatDate(anchor, { month: "long", year: "numeric" })
-          : t("ticket.schedule.range", {
-              from: formatDate(range.from),
-              to: formatDate(addCalendarDays(range.to, -1)),
-            })}
-      </Heading>
+    <View
+      style={{
+        paddingHorizontal: 16,
+        paddingVertical: 4,
+        gap: 4,
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+      }}
+    >
+      <View style={{ flexGrow: 1, flexShrink: 1 }}>
+        <Heading compact>
+          {layout === "calendar"
+            ? formatDate(anchor, { month: "long", year: "numeric" })
+            : t("ticket.schedule.range", {
+                from: formatDate(range.from),
+                to: formatDate(addCalendarDays(range.to, -1)),
+              })}
+        </Heading>
+      </View>
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
+          gap: 0,
         }}
       >
         <Button
@@ -190,6 +202,7 @@ export function TicketSchedule({
       identityWidth = Math.min(280, Math.max(160, viewport.bounds.width * 0.6));
     return (
       <Scroll>
+        {header}
         {controls}
         {loading ? (
           <Loading />
@@ -319,6 +332,7 @@ export function TicketSchedule({
       primary={
         <Screen scroll={false}>
           <Scroll>
+            {header}
             {controls}
             <CalendarMonth
               anchor={anchor}

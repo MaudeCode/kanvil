@@ -96,3 +96,23 @@ it("recent project order does not discard browsing state or revive a signed-out 
   contexts.touch("one");
   expect(contexts.recent()).toEqual([]);
 });
+
+it("focuses a requested native search after its control mounts, after restoring its query", () => {
+  const handle = createSearchBarHandle("retained"),
+    calls: string[] = [];
+  handle.focus();
+  expect(calls).toEqual([]);
+  handle.ref.current = {
+    focus() {
+      calls.push("focus");
+    },
+    blur() {},
+    clearText() {},
+    cancelSearch() {},
+    toggleCancelButton() {},
+    setText(value: string) {
+      calls.push(value);
+    },
+  };
+  expect(calls).toEqual(["retained", "focus"]);
+});

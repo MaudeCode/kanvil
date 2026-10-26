@@ -157,6 +157,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     options: searchOptions,
     setText: changeQuery,
     searching,
+    open: openSearch,
   } = useHeaderSearch(query, onQuery, t("native.tickets.searchPlaceholder"));
 
   const save = useOperation("save_view"),
@@ -315,6 +316,16 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       ),
     [deleteTickets, projectId, versions, selection.size, title],
   );
+  const filterCount =
+    ticketPredicates(filters).length +
+    (filters.archived !== "exclude" ? 1 : 0) +
+    (filters.due ? 1 : 0) +
+    (filters.parentId ? 1 : 0);
+  const filtered = !!query.trim() || filterCount > 0;
+  const clearFilters = () => {
+    setFilters(ticketFilter.parse({}));
+    navigation.setParams({ viewId: "" });
+  };
   const viewItems = useMemo<NativeStackHeaderItemMenu["menu"]["items"]>(
     () => [
       {
@@ -403,7 +414,36 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         label: "",
         inline: true,
         items: [
-          { type: "action", label: t("ticket.filter.filters"), onPress: () => setFiltering(true) },
+          {
+            type: "action",
+            label: query.trim()
+              ? t("ticket.filter.searchChip", { query })
+              : t("ticket.filter.searchTickets"),
+            icon: { type: "sfSymbol", name: "magnifyingglass" },
+            onPress: openSearch,
+          },
+          ...(query.trim()
+            ? [
+                {
+                  type: "action" as const,
+                  label: t("shell.app.clearSearch"),
+                  onPress: () => changeQuery(""),
+                },
+              ]
+            : []),
+          {
+            type: "action",
+            label: t("shell.settingsNav.projectSettings"),
+            onPress: () =>
+              navigation.navigate("ProjectSettings", { projectId, section: "general" }),
+          },
+          {
+            type: "action",
+            label: filterCount
+              ? t("ticket.filter.filtersActive", { active: filterCount })
+              : t("ticket.filter.filters"),
+            onPress: () => setFiltering(true),
+          },
           {
             type: "action",
             label: t("native.tickets.select"),
@@ -442,6 +482,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       access.canWrite,
       changeCollapsed,
       sections,
+      query,
+      openSearch,
+      filterCount,
+      projectId,
     ],
   );
   const headerItems = useMemo<NativeStackHeaderItem[]>(
@@ -548,6 +592,9 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                     viewItems,
                     {
                       identifier: "ticket-views",
+                      ...(filterCount || query.trim()
+                        ? { badge: { value: filterCount + (query.trim() ? 1 : 0) } }
+                        : {}),
                       visibilityPriority: searching ? "low" : "default",
                     },
                   ),
@@ -571,6 +618,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       selecting,
       searching,
       viewItems,
+      query,
+      filterCount,
     ],
   );
   useLayoutEffect(() => {
@@ -623,16 +672,6 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     selectedTicket,
   ]);
   const entries = sectionEntries(sections, collapsed, !!query.trim());
-  const filterCount =
-    ticketPredicates(filters).length +
-    (filters.archived !== "exclude" ? 1 : 0) +
-    (filters.due ? 1 : 0) +
-    (filters.parentId ? 1 : 0);
-  const filtered = !!query.trim() || filterCount > 0;
-  const clearFilters = () => {
-    setFilters(ticketFilter.parse({}));
-    navigation.setParams({ viewId: "" });
-  };
   const open = (ticket: Ticket) => {
     if (selecting) toggle(ticket);
     else if (split) {
@@ -642,6 +681,75 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   };
   const refresh = () =>
     planning ? Promise.all([backlog.refetch(), archived.refetch()]) : tickets.refetch();
+  const collectionHeader = (
+    <>
+      {!(split && splitState.collapsed && splitState.secondaryVisible) && (
+        <>
+          {!selecting && (
+            <ContextBar>
+              <Menu title={t("ticket.list.views")} items={viewItems}>
+                <Button
+                  compact
+                  plain
+                  title={
+                    views.data?.find((view) => view.id === route.params.viewId)?.name ??
+                    (planning
+                      ? t("ticket.list.planningLink")
+                      : layout === "calendar" || layout === "timeline"
+                        ? t(`ticket.schedule.${layout}`)
+                        : t(`ticket.display.${layout}`))
+                  }
+                  leading={<TicketGlyph name="panels-top-left" color={color.accent} />}
+                  onPress={() => {}}
+                />
+              </Menu>
+              <Button
+                compact
+                plain
+                title={
+                  filterCount
+                    ? t("ticket.list.sectionCount", {
+                        n: filterCount,
+                        section: t("ticket.filter.filters"),
+                      })
+                    : t("ticket.filter.filters")
+                }
+                leading={
+                  <TicketGlyph
+                    name="list-filter"
+                    color={filterCount ? color.accent : color.muted}
+                  />
+                }
+                onPress={() => setFiltering(true)}
+              />
+            </ContextBar>
+          )}
+          {!searching && (
+            <RemovableSummary
+              label={t("shell.app.clearSearch")}
+              value={query}
+              onClear={() => changeQuery("")}
+            />
+          )}
+          {(filterCount > 0 || route.params.viewId) && (
+            <RemovableSummary
+              icon="filter-outline"
+              value={
+                views.data?.find((view) => view.id === route.params.viewId)?.name ??
+                t("ticket.list.sectionCount", {
+                  n: filterCount,
+                  section: t("ticket.filter.filters"),
+                })
+              }
+              label={t("ticket.filter.clear")}
+              onClear={clearFilters}
+            />
+          )}
+        </>
+      )}
+      <ErrorNotice error={views.error ?? listError} />
+    </>
+  );
   const collectionView =
     layout === "calendar" || layout === "timeline" ? (
       <TicketSchedule
@@ -652,39 +760,49 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         onAnchor={setAnchor}
         loading={pending}
         tickets={rows}
+        header={collectionHeader}
         onOpen={(ticket) => navigation.navigate("Ticket", { projectId, ticketId: ticket.id })}
       />
     ) : pending ? (
-      <Loading />
+      <Scroll>
+        {collectionHeader}
+        <Loading />
+      </Scroll>
     ) : listError && !rows.length ? (
-      <View style={{ padding: 24 }}>
-        <Button plain title={t("ticket.list.retry")} onPress={refresh} />
-      </View>
+      <Scroll>
+        {collectionHeader}
+        <View style={{ padding: 16 }}>
+          <Button plain title={t("ticket.list.retry")} onPress={refresh} />
+        </View>
+      </Scroll>
     ) : !rows.length ? (
-      <View style={{ padding: 24, gap: 12 }}>
-        <Body muted>
-          {t(
-            filtered
-              ? "ticket.list.emptyFiltered"
-              : planning
-                ? "ticket.list.emptyPlanning"
-                : "ticket.list.emptyProject",
+      <Scroll>
+        {collectionHeader}
+        <View style={{ padding: 16, gap: 12 }}>
+          <Body muted>
+            {t(
+              filtered
+                ? "ticket.list.emptyFiltered"
+                : planning
+                  ? "ticket.list.emptyPlanning"
+                  : "ticket.list.emptyProject",
+            )}
+          </Body>
+          {query.trim() && (
+            <Button plain title={t("shell.app.clearSearch")} onPress={() => changeQuery("")} />
           )}
-        </Body>
-        {query.trim() && (
-          <Button plain title={t("shell.app.clearSearch")} onPress={() => changeQuery("")} />
-        )}
-        {filterCount > 0 && (
-          <Button plain title={t("ticket.filter.clear")} onPress={clearFilters} />
-        )}
-        {!filtered && access.canWrite && (
-          <Button
-            plain
-            title={t("ticket.list.createFirst")}
-            onPress={() => navigation.navigate("Edit", { projectId })}
-          />
-        )}
-      </View>
+          {filterCount > 0 && (
+            <Button plain title={t("ticket.filter.clear")} onPress={clearFilters} />
+          )}
+          {!filtered && access.canWrite && (
+            <Button
+              plain
+              title={t("ticket.list.createFirst")}
+              onPress={() => navigation.navigate("Edit", { projectId })}
+            />
+          )}
+        </View>
+      </Scroll>
     ) : layout === "board" ? (
       <Scroll
         horizontal
@@ -736,7 +854,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : (
       <List
         data={entries}
-        initialScrollOffset={initial?.scrollOffset ?? 0}
+        ListHeaderComponent={collectionHeader}
+        {...(initial?.scrollOffset === undefined
+          ? {}
+          : { initialScrollOffset: initial.scrollOffset })}
         onScroll={(event) => {
           if (isFocused)
             contexts.save(projectId, { scrollOffset: event.nativeEvent.contentOffset.y });
@@ -805,84 +926,19 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         }
       />
     );
-  const primaryContent = (
-    <View style={{ flex: 1 }}>
-      {!(split && splitState.collapsed && splitState.secondaryVisible) && (
-        <>
-          {!selecting && (
-            <ContextBar>
-              <Menu title={t("ticket.list.views")} items={viewItems}>
-                <Button
-                  compact
-                  plain
-                  title={
-                    views.data?.find((view) => view.id === route.params.viewId)?.name ??
-                    (planning
-                      ? t("ticket.list.planningLink")
-                      : layout === "calendar" || layout === "timeline"
-                        ? t(`ticket.schedule.${layout}`)
-                        : t(`ticket.display.${layout}`))
-                  }
-                  leading={<TicketGlyph name="panels-top-left" color={color.accent} />}
-                  onPress={() => {}}
-                />
-              </Menu>
-              <Button
-                compact
-                plain
-                title={
-                  filterCount
-                    ? t("ticket.list.sectionCount", {
-                        n: filterCount,
-                        section: t("ticket.filter.filters"),
-                      })
-                    : t("ticket.filter.filters")
-                }
-                leading={
-                  <TicketGlyph
-                    name="list-filter"
-                    color={filterCount ? color.accent : color.muted}
-                  />
-                }
-                onPress={() => setFiltering(true)}
-              />
-            </ContextBar>
-          )}
-          {!searching && (
-            <RemovableSummary
-              label={t("shell.app.clearSearch")}
-              value={query}
-              onClear={() => changeQuery("")}
-            />
-          )}
-          {(filterCount > 0 || route.params.viewId) && (
-            <RemovableSummary
-              icon="filter-outline"
-              value={
-                views.data?.find((view) => view.id === route.params.viewId)?.name ??
-                t("ticket.list.sectionCount", {
-                  n: filterCount,
-                  section: t("ticket.filter.filters"),
-                })
-              }
-              label={t("ticket.filter.clear")}
-              onClear={clearFilters}
-            />
-          )}
-        </>
-      )}
-      {collectionView}
-    </View>
-  );
+  const primaryContent = collectionView;
   return (
     <Screen
       scroll={false}
+      scrollInsets={
+        (layout === "list" && (!split || splitState.collapsed)) ||
+        layout === "timeline" ||
+        (split && splitState.collapsed && splitState.secondaryVisible)
+      }
       allowDivision={split || layout === "calendar"}
       background={project?.background ?? null}
     >
-      <ErrorNotice
-        error={error ?? bulk.error ?? remove.error ?? deleteView.error ?? views.error ?? listError}
-      />
+      <ErrorNotice error={error ?? bulk.error ?? remove.error ?? deleteView.error} />
       {split ? (
         <SplitView
           primary={primaryContent}

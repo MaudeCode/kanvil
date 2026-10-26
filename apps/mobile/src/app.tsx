@@ -14,7 +14,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createPrivatePersister } from "./private-cache.ts";
+import { createPrivatePersister, shouldPersistQuery } from "./private-cache.ts";
 import { restoreAppearance } from "./theme.ts";
 import { z } from "zod";
 import {
@@ -536,8 +536,7 @@ function PrivateWorkspace({
           buster: `kanvil-v2:${user.role ?? "user"}`,
           dehydrateOptions: {
             shouldDehydrateMutation: () => false,
-            shouldDehydrateQuery: (query) =>
-              query.state.status === "success" && query.queryKey[0] === "kanvil",
+            shouldDehydrateQuery: shouldPersistQuery,
           },
         }}
       >

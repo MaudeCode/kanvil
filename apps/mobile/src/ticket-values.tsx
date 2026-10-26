@@ -293,11 +293,13 @@ export function TicketTag({
   color: labelColor = "gray",
   kind = "label",
   indicatorOnly = false,
+  onLayout,
 }: {
   tag: string;
   color?: LabelColor;
   kind?: "label" | "scope";
   indicatorOnly?: boolean;
+  onLayout?: ComponentProps<typeof View>["onLayout"];
 }) {
   const color = useNativePalette(),
     mode = useColorScheme() === "dark" ? "dark" : "light";
@@ -315,6 +317,7 @@ export function TicketTag({
     );
   return (
     <View
+      onLayout={onLayout}
       style={{
         maxWidth: "100%",
         flexDirection: "row",

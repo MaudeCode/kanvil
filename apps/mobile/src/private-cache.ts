@@ -1,4 +1,17 @@
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { ApiError } from "@kanvil/contracts";
+import type { Query } from "@tanstack/react-query";
+
+export function shouldPersistQuery(query: Query) {
+  if (query.queryKey[0] !== "kanvil" || query.state.data === undefined) return false;
+  const { status, error } = query.state;
+  // A failed background read retains its last successful data in memory. Keep that
+  // snapshot across offline relaunches too, but never retain rejected access.
+  return (
+    status === "success" ||
+    (status === "error" && (!(error instanceof ApiError) || error.status >= 500))
+  );
+}
 
 // Native counterpart of web's private persister: AsyncStorage writes can still be in flight
 // when sign-out unmounts the account. Pause first and drain them before removing private data.

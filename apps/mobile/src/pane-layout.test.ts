@@ -57,3 +57,11 @@ it("keeps ordinary forms and pickers on a usable facet without constraining flat
     ]),
   ).toEqual({ x: 0, y: 0, width: 430, height: 587 });
 });
+
+it("fits compact metadata by measured width rather than a fixed tag count", async () => {
+  const { inlineItemCount } = await import("./pane-layout.ts");
+  expect(inlineItemCount([25, 35, 30, 40, 45], 210, 20)).toBe(5);
+  expect(inlineItemCount([25, 35, 30, 40, 45], 150, 20)).toBe(3);
+  expect(inlineItemCount([260, 35], 150, 20)).toBe(1);
+  expect(inlineItemCount([25], 0, 20)).toBe(0);
+});

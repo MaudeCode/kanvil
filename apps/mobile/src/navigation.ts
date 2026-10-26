@@ -3,7 +3,15 @@ import type {
   NativeStackScreenProps,
 } from "@react-navigation/native-stack";
 import type { NavigatorScreenParams } from "@react-navigation/native";
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { TicketLayout } from "@kanvil/contracts/navigation";
 import type { SearchBarCommands, SearchBarProps } from "react-native-screens";
 import type { Input } from "@kanvil/contracts";
@@ -157,30 +165,50 @@ export function useSectionDisclosure(
   return { normalCollapsed, collapsed, onQuery, changeCollapsed };
 }
 
-// Local searches share the system's collapsed search button, including Duo rail placement.
+// Local search is requested from native actions and collapses with its owning scroller.
 export function useHeaderSearch(
   query: string,
   onChange: (value: string) => void,
   placeholder: string,
 ) {
   const [handle] = useState(() => createSearchBarHandle(query));
-  const [searching, setSearching] = useState(false);
+  const [searching, setSearching] = useState(false),
+    [visible, setVisible] = useState(false),
+    focused = useRef(false);
   useLayoutEffect(() => handle.updateText(query), [handle, query]);
+  useLayoutEffect(() => {
+    if (!visible) return undefined;
+    // UIKit attaches the search controller after the navigation options commit.
+    // A ref can exist before its search field is able to become first responder.
+    const frame = requestAnimationFrame(() => handle.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [visible, handle]);
   const options = useMemo<SearchBarProps>(
     () => ({
       ref: handle.ref,
-      placement: "integratedButton",
+      placement: "stacked",
       hideWhenScrolling: true,
       hideNavigationBar: false,
       autoCapitalize: "none",
+      autoFocus: true,
       placeholder,
       onChangeText: (event) => onChange(event.nativeEvent.text),
-      onFocus: () => setSearching(true),
-      onBlur: () => setSearching(false),
+      onFocus: () => {
+        focused.current = true;
+        setSearching(true);
+      },
+      onBlur: () => {
+        setSearching(false);
+        if (focused.current) {
+          focused.current = false;
+          setVisible(false);
+        }
+      },
       onCancelButtonPress: () => {
         handle.ref.current?.setText("");
         onChange("");
         setSearching(false);
+        setVisible(false);
       },
     }),
     [handle, onChange, placeholder],
@@ -192,7 +220,11 @@ export function useHeaderSearch(
     },
     [handle, onChange],
   );
-  return { options, setText, searching };
+  const open = useCallback(() => {
+    handle.focus();
+    setVisible(true);
+  }, [handle]);
+  return { options: visible ? options : undefined, setText, searching, open };
 }
 
 declare global {
@@ -206,8 +238,13 @@ declare global {
 export function createSearchBarHandle(initialText: string) {
   let text = initialText,
     commands: SearchBarCommands | null = null,
-    initialized = false;
+    initialized = false,
+    focusRequested = false;
   return {
+    focus() {
+      if (commands) commands.focus();
+      else focusRequested = true;
+    },
     ref: {
       get current() {
         return commands;
@@ -219,6 +256,10 @@ export function createSearchBarHandle(initialText: string) {
         if (next && !initialized) {
           initialized = true;
           next.setText(text);
+        }
+        if (next && focusRequested) {
+          focusRequested = false;
+          next.focus();
         }
         if (!next)
           queueMicrotask(() => {

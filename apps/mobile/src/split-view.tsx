@@ -25,22 +25,29 @@ function Panes({ primary, secondary, secondaryActive, onChange }: SplitProps) {
   useEffect(() => {
     onChange?.({ collapsed, secondaryVisible: secondaryActive });
   }, [collapsed, secondaryActive, onChange]);
+  const first = (
+    <ViewportPane
+      key="primary"
+      rect={layout.primary}
+      viewportWidth={bounds.width}
+      visible={!collapsed || !secondaryActive}
+    >
+      {primary}
+    </ViewportPane>
+  );
+  const second = (
+    <ViewportPane
+      key="secondary"
+      rect={layout.secondary}
+      viewportWidth={bounds.width}
+      visible={!collapsed || secondaryActive}
+    >
+      {secondary}
+    </ViewportPane>
+  );
   return (
     <View style={{ flex: 1 }}>
-      <ViewportPane
-        rect={layout.primary}
-        viewportWidth={bounds.width}
-        visible={!collapsed || !secondaryActive}
-      >
-        {primary}
-      </ViewportPane>
-      <ViewportPane
-        rect={layout.secondary}
-        viewportWidth={bounds.width}
-        visible={!collapsed || secondaryActive}
-      >
-        {secondary}
-      </ViewportPane>
+      {collapsed && secondaryActive ? [second, first] : [first, second]}
     </View>
   );
 }

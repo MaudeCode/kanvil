@@ -6,12 +6,15 @@ import { useDeferredValue, useLayoutEffect, useState, useEffect, useMemo } from 
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { searchResultTypes } from "@kanvil/contracts";
+import { searchResultTypes, type SearchResult } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { useHeaderSearch, useSectionDisclosure, useProjectNavigation } from "./navigation.ts";
 import { useConnection, useWorkspace, useAllProjects, useFetchRemaining, useNow } from "./data.tsx";
 import {
   Body,
+  Button,
+  Markdown,
+  Sheet,
   Choice,
   ErrorNotice,
   Field,
@@ -54,6 +57,7 @@ export function MyWork() {
     options: searchOptions,
     setText: changeQuery,
     searching,
+    open: openSearch,
   } = useHeaderSearch(query, onQuery, t("native.tickets.searchPlaceholder"));
   useLayoutEffect(
     () =>
@@ -62,9 +66,17 @@ export function MyWork() {
           headerSearchBarOptions: searchOptions,
           unstable_headerRightItems: () => [
             createHeaderMenu(
-              t("ticket.display.groupBy"),
+              t("ticket.list.views"),
               { type: "sfSymbol", name: "rectangle.3.group" },
               [
+                {
+                  type: "action",
+                  label: query.trim()
+                    ? t("ticket.filter.searchChip", { query })
+                    : t("ticket.filter.searchTickets"),
+                  icon: { type: "sfSymbol", name: "magnifyingglass" },
+                  onPress: openSearch,
+                },
                 {
                   type: "action",
                   label: t("ticket.display.dueDate"),
@@ -78,12 +90,16 @@ export function MyWork() {
                   onPress: () => setByProject(true),
                 },
               ],
-              { visibilityPriority: "default", identifier: "work-grouping" },
+              {
+                visibilityPriority: "default",
+                identifier: "work-grouping",
+                ...(query.trim() ? { badge: { value: 1 } } : {}),
+              },
             ),
           ],
         }),
       ),
-    [navigation, searchOptions, byProject],
+    [navigation, searchOptions, byProject, openSearch, query],
   );
   const q = useDeferredValue(query);
   const input = { workspaceId: workspace.active?.id, q, sort: "due" as const, limit: 50 };
@@ -116,85 +132,92 @@ export function MyWork() {
         .filter((group) => group.tickets.length);
   const entries = sectionEntries(sections, collapsed, !!query.trim());
   return (
-    <Screen scroll={false}>
-      <WorkspaceScope />
-      {!searching && (
-        <RemovableSummary
-          label={t("shell.app.clearSearch")}
-          value={query}
-          onClear={() => changeQuery("")}
-        />
-      )}
-      <ErrorNotice error={work.error ?? workspace.error} />
-      {work.isLoading ? (
-        <Loading />
-      ) : (
-        <List
-          data={entries}
-          keyExtractor={(item) => item.id}
-          onRefresh={() => work.refetch()}
-          onEndReached={() => {
-            if (work.hasNextPage && !work.isFetchingNextPage) void work.fetchNextPage();
-          }}
-          ListEmptyComponent={
+    <Screen
+      scroll={false}
+      scrollInsets
+      header={
+        <>
+          <WorkspaceScope />
+          {!searching && (
+            <RemovableSummary
+              label={t("shell.app.clearSearch")}
+              value={query}
+              onClear={() => changeQuery("")}
+            />
+          )}
+          <ErrorNotice error={work.error ?? workspace.error} />
+        </>
+      }
+    >
+      <List
+        data={entries}
+        keyExtractor={(item) => item.id}
+        onRefresh={() => work.refetch()}
+        onEndReached={() => {
+          if (work.hasNextPage && !work.isFetchingNextPage) void work.fetchNextPage();
+        }}
+        ListEmptyComponent={
+          work.isLoading ? (
+            <Loading />
+          ) : (
             <View style={{ padding: 20 }}>
               <Body muted>
                 {t(query.trim() ? "ticket.list.emptyFiltered" : "shell.app.noAssigned")}
               </Body>
             </View>
-          }
-          ListFooterComponent={work.hasNextPage ? <Loading /> : undefined}
-          renderItem={({ item }) =>
-            "ticket" in item ? (
-              <TicketRow
-                showProject
-                ticket={item.ticket}
-                onPress={() =>
-                  navigation.navigate("Ticket", {
-                    projectId: item.ticket.projectId,
-                    ticketId: item.ticket.id,
-                  })
-                }
-              />
-            ) : (
-              <Heading
-                compact
-                disclosure={{
-                  expanded: !collapsed.has(item.sectionId),
-                  count: item.count,
-                  label: t(
-                    collapsed.has(item.sectionId)
-                      ? "ticket.list.expandSection"
-                      : "ticket.list.collapseSection",
-                    { section: item.heading },
-                  ),
-                  leading:
-                    byProject && projects.data?.find((project) => project.id === item.sectionId) ? (
-                      <ProjectIcon
-                        project={
-                          projects.data.find((project) => project.id === item.sectionId) ?? {
-                            iconName: null,
-                            iconColor: "default",
-                            image: null,
-                          }
+          )
+        }
+        ListFooterComponent={work.hasNextPage ? <Loading /> : undefined}
+        renderItem={({ item }) =>
+          "ticket" in item ? (
+            <TicketRow
+              showProject
+              ticket={item.ticket}
+              onPress={() =>
+                navigation.navigate("Ticket", {
+                  projectId: item.ticket.projectId,
+                  ticketId: item.ticket.id,
+                })
+              }
+            />
+          ) : (
+            <Heading
+              compact
+              disclosure={{
+                expanded: !collapsed.has(item.sectionId),
+                count: item.count,
+                label: t(
+                  collapsed.has(item.sectionId)
+                    ? "ticket.list.expandSection"
+                    : "ticket.list.collapseSection",
+                  { section: item.heading },
+                ),
+                leading:
+                  byProject && projects.data?.find((project) => project.id === item.sectionId) ? (
+                    <ProjectIcon
+                      project={
+                        projects.data.find((project) => project.id === item.sectionId) ?? {
+                          iconName: null,
+                          iconColor: "default",
+                          image: null,
                         }
-                        size={16}
-                      />
-                    ) : undefined,
-                  onPress: () => {
-                    const next = new Set(collapsed);
-                    if (next.has(item.sectionId)) next.delete(item.sectionId);
-                    else next.add(item.sectionId);
-                    changeCollapsed(next);
-                  },
-                }}
-              >
-                {item.heading}
-              </Heading>
-            )
-          }
-        />
-      )}
+                      }
+                      size={16}
+                    />
+                  ) : undefined,
+                onPress: () => {
+                  const next = new Set(collapsed);
+                  if (next.has(item.sectionId)) next.delete(item.sectionId);
+                  else next.add(item.sectionId);
+                  changeCollapsed(next);
+                },
+              }}
+            >
+              {item.heading}
+            </Heading>
+          )
+        }
+      />
     </Screen>
   );
 }
@@ -206,6 +229,13 @@ export function Search() {
     navigation = useNavigation();
   const [query, setQuery] = useWorkspaceSearch("search");
   const [type, setType] = useState<(typeof searchResultTypes)[number] | undefined>();
+  const [preview, setPreview] = useState<SearchResult>();
+  function openResult(item: SearchResult) {
+    setPreview(undefined);
+    if (item.ticket)
+      navigation.navigate("Ticket", { projectId: item.project.id, ticketId: item.ticket.id });
+    else selectProject(item.project.id);
+  }
   const q = useDeferredValue(query.trim());
   const input = { workspaceId: workspace.active?.id, q, type, limit: 50 };
   const results = useInfiniteQuery({
@@ -219,75 +249,92 @@ export function Search() {
     enabled: !!q && !!workspace.active,
   });
   return (
-    <Screen scroll={false}>
-      <WorkspaceScope>
-        <Choice
-          label={t("shell.page.search")}
-          compact
-          value={type ?? "all"}
-          options={[
-            { value: "all", label: t("shell.search.tab.all") },
-            ...searchResultTypes.map((value) => ({ value, label: t(`shell.search.tab.${value}`) })),
-          ]}
-          onChange={(value) => setType(searchResultTypes.find((item) => item === value))}
-        />
-      </WorkspaceScope>
-      <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
-        <Field
-          label={t("shell.search.field")}
-          labelHidden
-          variant="search"
-          placeholder={t("shell.search.placeholder")}
-          value={query}
-          onChangeText={setQuery}
-          returnKeyType="search"
-        />
-        <ErrorNotice error={results.error} />
-      </View>
-      {!q ? null : results.isLoading ? (
-        <Loading />
-      ) : (
-        <List
-          data={results.data?.pages.flatMap((page) => page.items) ?? []}
-          keyExtractor={(item) => `${item.type}:${item.id}`}
-          onEndReached={() => {
-            if (results.hasNextPage && !results.isFetchingNextPage) void results.fetchNextPage();
-          }}
-          ListEmptyComponent={
+    <Screen
+      scroll={false}
+      scrollInsets
+      header={
+        <>
+          <WorkspaceScope>
+            <Choice
+              label={t("shell.page.search")}
+              compact
+              value={type ?? "all"}
+              options={[
+                { value: "all", label: t("shell.search.tab.all") },
+                ...searchResultTypes.map((value) => ({
+                  value,
+                  label: t(`shell.search.tab.${value}`),
+                })),
+              ]}
+              onChange={(value) => setType(searchResultTypes.find((item) => item === value))}
+            />
+          </WorkspaceScope>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
+            <Field
+              label={t("shell.search.field")}
+              labelHidden
+              variant="search"
+              placeholder={t("shell.search.placeholder")}
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+            />
+            <ErrorNotice error={results.error} />
+          </View>
+        </>
+      }
+    >
+      <List
+        data={results.data?.pages.flatMap((page) => page.items) ?? []}
+        keyExtractor={(item) => `${item.type}:${item.id}`}
+        onEndReached={() => {
+          if (results.hasNextPage && !results.isFetchingNextPage) void results.fetchNextPage();
+        }}
+        ListEmptyComponent={
+          !q ? null : results.isLoading ? (
+            <Loading />
+          ) : (
             <View style={{ padding: 20 }}>
               <Body muted>{t("shell.search.noResults", { query: q })}</Body>
             </View>
-          }
-          renderItem={({ item }) =>
-            item.type === "ticket" && item.ticket ? (
-              <TicketRow
-                showProject
-                ticket={{ ...item.ticket, projectId: item.project.id }}
-                onPress={() =>
-                  navigation.navigate("Ticket", {
-                    projectId: item.project.id,
-                    ticketId: item.ticket?.id ?? item.id,
-                  })
-                }
-              />
-            ) : (
-              <Row
-                title={item.title}
-                overline={item.ticket?.key ?? t(`shell.search.tab.${item.type}`)}
-                caption={item.excerpt}
-                onPress={() => {
-                  if (item.ticket)
-                    navigation.navigate("Ticket", {
-                      projectId: item.project.id,
-                      ticketId: item.ticket.id,
-                    });
-                  else selectProject(item.project.id);
-                }}
-              />
-            )
-          }
-        />
-      )}
+          )
+        }
+        renderItem={({ item }) =>
+          item.type === "ticket" && item.ticket ? (
+            <TicketRow
+              showProject
+              ticket={{ ...item.ticket, projectId: item.project.id }}
+              onPress={() => openResult(item)}
+            />
+          ) : (
+            <Row
+              title={item.title}
+              overline={item.ticket?.key ?? t(`shell.search.tab.${item.type}`)}
+              {...(item.type === "comment" ? { caption: item.excerpt, captionLines: 2 } : {})}
+              onPress={() => (item.type === "comment" ? setPreview(item) : openResult(item))}
+              onLongPress={() =>
+                item.type === "project" ? selectProject(item.project.id, true) : setPreview(item)
+              }
+            />
+          )
+        }
+      />
+      <Sheet title={t("shell.page.search")} open={!!preview} onClose={() => setPreview(undefined)}>
+        {preview && (
+          <>
+            <Heading>
+              {preview.ticket
+                ? t("native.labelValue", { label: preview.ticket.key, value: preview.title })
+                : preview.title}
+            </Heading>
+            <Markdown>{preview.excerpt}</Markdown>
+            <Button
+              title={preview.ticket ? t("ticket.menu.open") : preview.project.name}
+              onPress={() => openResult(preview)}
+            />
+          </>
+        )}
+      </Sheet>
     </Screen>
   );
 }

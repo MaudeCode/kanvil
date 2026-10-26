@@ -1,11 +1,14 @@
 import { MenuView, type MenuAction } from "@expo/ui/community/menu";
 import { nativeMenuSymbol } from "./native-menu-symbols.ts";
 import SegmentedControl from "@expo/ui/community/segmented-control";
+import { inlineItemCount } from "./pane-layout.ts";
 import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
 import {
   lazy,
   Suspense,
+  createElement,
+  isValidElement,
   createContext,
   useCallback,
   useContext,
@@ -33,6 +36,7 @@ import {
   TextInput,
   View,
   useColorScheme,
+  useWindowDimensions,
   type ViewStyle,
   type StyleProp,
 } from "react-native";
@@ -121,6 +125,17 @@ const FormAction = createContext<((action: ButtonAction | undefined) => void) | 
 const ImageSurface = createContext(false);
 const InsetsConsumed = createContext(false);
 const PaddedContent = createContext(false);
+const ScrollingHeader = createContext<ReactNode>(null);
+const scrollInsetsDefaults: Pick<
+  ComponentProps<typeof ScrollView>,
+  | "contentInsetAdjustmentBehavior"
+  | "automaticallyAdjustKeyboardInsets"
+  | "automaticallyAdjustsScrollIndicatorInsets"
+> = {
+  contentInsetAdjustmentBehavior: "automatic",
+  automaticallyAdjustKeyboardInsets: true,
+  automaticallyAdjustsScrollIndicatorInsets: true,
+};
 
 const ViewportContext = createContext<{
   bounds: { width: number; height: number };
@@ -222,16 +237,24 @@ function ContentArea({
   children,
   enabled = true,
   allowDivision,
+  scrollInsets,
 }: {
   children: ReactNode;
   enabled?: boolean;
   allowDivision: boolean;
+  scrollInsets: boolean;
 }) {
   const consumed = useContext(InsetsConsumed);
   return (
     <SafeAreaProvider style={{ flex: 1 }}>
       <SafeAreaView
-        edges={enabled && !consumed ? ["left", "right", "top", "bottom"] : []}
+        edges={
+          enabled && !consumed
+            ? scrollInsets
+              ? ["left", "right"]
+              : ["left", "right", "top", "bottom"]
+            : []
+        }
         style={{ flex: 1 }}
       >
         <InsetsConsumed value={consumed || enabled}>
@@ -1463,10 +1486,12 @@ export function Section({
   initiallyOpen = false,
   summary,
   count,
+  countLabel,
 }: {
   title: string;
   children: ReactNode;
   count?: number | undefined;
+  countLabel?: string;
   collapsible?: boolean;
   initiallyOpen?: boolean;
   summary?: ReactNode;
@@ -1485,7 +1510,9 @@ export function Section({
           ? {
               disclosure: {
                 expanded,
-                ...(count === undefined ? {} : { count, countLabel: formatNumber(count) }),
+                ...(count === undefined
+                  ? {}
+                  : { count, countLabel: countLabel ?? formatNumber(count) }),
                 label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", { label: title }),
                 onPress: () => setExpanded((value) => !value),
               },
@@ -1507,6 +1534,8 @@ export function Screen({
   safeArea = true,
   allowDivision = false,
   scrollRef,
+  header,
+  scrollInsets = scroll,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -1516,54 +1545,79 @@ export function Screen({
   safeArea?: boolean;
   allowDivision?: boolean;
   scrollRef?: ComponentProps<typeof ScrollView>["ref"];
+  header?: ReactNode;
+  scrollInsets?: boolean;
 }) {
   const color = usePalette(),
     live = useContext(LiveStatus),
     boundary = !useContext(InsetsConsumed);
-  const navigation = useContext(NavigationContext);
+  const navigation = useContext(NavigationContext),
+    inheritedHeader = useContext(ScrollingHeader);
+  const ios = Platform.OS === "ios",
+    modern = ios && Number.parseInt(String(Platform.Version), 10) >= 26;
+  const nativeScroll = !!navigation && ios && scrollInsets && !background;
+  useLayoutEffect(() => {
+    if (!navigation || !boundary || !ios) return;
+    navigation.setOptions(
+      nativeHeaderOptions({
+        headerTransparent: nativeScroll,
+        headerStyle: { backgroundColor: nativeScroll ? "transparent" : color.surface },
+        headerBlurEffect: nativeScroll && !modern ? "systemMaterial" : "none",
+        ...(modern ? { scrollEdgeEffects: { top: "soft", bottom: "soft" } } : {}),
+      }),
+    );
+  }, [navigation, boundary, ios, nativeScroll, modern, color.surface]);
+  const status =
+    boundary && (live === "offline" || live === "signedOut") ? (
+      <View style={{ paddingHorizontal: 16, paddingVertical: 6 }} accessibilityLiveRegion="polite">
+        <Body small muted>
+          {t(`native.connection.${live}`)}
+        </Body>
+      </View>
+    ) : null;
+  const top =
+    status || header || (!boundary && inheritedHeader) ? (
+      <>
+        {!boundary && inheritedHeader}
+        {status}
+        {header}
+      </>
+    ) : null;
   const content = (
     <ImageSurface value={!!background}>
       <View style={[{ flex: 1, backgroundColor: color.surface }, style]}>
         {background && (
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
-        <ContentArea enabled={!!navigation && safeArea} allowDivision={allowDivision}>
-          {boundary && (live === "offline" || live === "signedOut") && (
-            <View
-              accessibilityLiveRegion="polite"
-              style={{
-                paddingHorizontal: 20,
-                paddingVertical: 6,
-                backgroundColor: color.background,
-              }}
-            >
-              <Body small muted>
-                {t(`native.connection.${live}`)}
-              </Body>
-            </View>
-          )}
-          <PaddedContent value={scroll}>
-            {scroll ? (
-              <Scroll
-                ref={scrollRef}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                contentContainerStyle={{
-                  paddingHorizontal: 16,
-                  paddingTop: 12,
-                  paddingBottom: 40,
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: navigation ? 720 : 560,
-                  alignSelf: "center",
-                }}
-              >
-                {children}
-              </Scroll>
-            ) : (
-              children
-            )}
-          </PaddedContent>
+        <ContentArea
+          enabled={!!navigation && safeArea}
+          allowDivision={allowDivision}
+          scrollInsets={nativeScroll}
+        >
+          <ScrollingHeader value={top}>
+            <PaddedContent value={scroll}>
+              {scroll ? (
+                <Scroll
+                  ref={scrollRef}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  contentContainerStyle={{
+                    paddingHorizontal: 16,
+                    paddingTop: 12,
+                    paddingBottom: 40,
+                    gap: 12,
+                    width: "100%",
+                    maxWidth: navigation ? 720 : 560,
+                    alignSelf: "center",
+                  }}
+                >
+                  {children}
+                </Scroll>
+              ) : (
+                children
+              )}
+            </PaddedContent>
+          </ScrollingHeader>
         </ContentArea>
       </View>
     </ImageSurface>
@@ -1571,13 +1625,15 @@ export function Screen({
   return form ? <NativeForm>{content}</NativeForm> : content;
 }
 // Screen's scrolling primitive also serves layouts that own their scrolling content.
-export function Scroll(props: ComponentProps<typeof ScrollView>) {
+export function Scroll({ children, ...props }: ComponentProps<typeof ScrollView>) {
+  const header = useContext(ScrollingHeader);
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      automaticallyAdjustKeyboardInsets
-      {...props}
-    />
+    <ScrollView {...scrollInsetsDefaults} {...props}>
+      <ScrollingHeader value={props.horizontal ? header : null}>
+        {!props.horizontal && header}
+        {children}
+      </ScrollingHeader>
+    </ScrollView>
   );
 }
 function NativeForm({ children }: { children: ReactNode }) {
@@ -1661,7 +1717,17 @@ export function List<T>({
 }: Omit<LegendListProps<T>, "onRefresh" | "refreshing"> & {
   onRefresh?: () => Promise<unknown>;
 }) {
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false),
+    header = useContext(ScrollingHeader);
+  const original = props.ListHeaderComponent;
+  const listHeader = header ? (
+    <>
+      {header}
+      {isValidElement(original) ? original : original ? createElement(original) : null}
+    </>
+  ) : (
+    original
+  );
   async function refresh() {
     if (!onRefresh || refreshing) return;
     setRefreshing(true);
@@ -1674,23 +1740,26 @@ export function List<T>({
     }
   }
   return (
-    <LegendList
-      recycleItems
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-      contentInsetAdjustmentBehavior="automatic"
-      {...props}
-      // Recycled rows memoize data; renderer state also owns selection and active styling.
-      extraData={props.extraData ?? props.renderItem}
-      refreshing={refreshing}
-      {...(onRefresh
-        ? {
-            onRefresh: () => {
-              void refresh();
-            },
-          }
-        : {})}
-    />
+    <ScrollingHeader value={null}>
+      <LegendList
+        recycleItems
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        {...scrollInsetsDefaults}
+        {...props}
+        ListHeaderComponent={listHeader}
+        // Recycled rows memoize data; renderer state also owns selection and active styling.
+        extraData={props.extraData ?? props.renderItem}
+        refreshing={refreshing}
+        {...(onRefresh
+          ? {
+              onRefresh: () => {
+                void refresh();
+              },
+            }
+          : {})}
+      />
+    </ScrollingHeader>
   );
 }
 export function Row({
@@ -1711,6 +1780,7 @@ export function Row({
   style,
   interaction = "navigate",
   emphasized = false,
+  captionLines,
 }: {
   title: string;
   caption?: string;
@@ -1729,6 +1799,7 @@ export function Row({
   style?: StyleProp<ViewStyle>;
   interaction?: "navigate" | "choice" | "action" | "content";
   emphasized?: boolean;
+  captionLines?: number;
 }) {
   const color = usePalette();
   const imageSurface = useContext(ImageSurface),
@@ -1797,7 +1868,12 @@ export function Row({
           {title}
         </Text>
         {caption && (
-          <Text style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}>{caption}</Text>
+          <Text
+            numberOfLines={captionLines}
+            style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}
+          >
+            {caption}
+          </Text>
         )}
         {metadata && <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>}
       </View>
@@ -1824,7 +1900,7 @@ export function TicketRow({
   showStatus = true,
   selecting = false,
   showProject = false,
-  density = "standard",
+  density = "compact",
 }: {
   ticket: Pick<Ticket, "id" | "projectId" | "key" | "title" | "status"> & Partial<Ticket>;
   onPress: () => void;
@@ -1834,7 +1910,7 @@ export function TicketRow({
   showStatus?: boolean;
   selecting?: boolean;
   showProject?: boolean;
-  density?: "standard" | "schedule";
+  density?: "standard" | "compact" | "schedule";
 }) {
   const schedule = density === "schedule";
   const color = usePalette(),
@@ -1917,7 +1993,7 @@ export function TicketRow({
         )
       }
       metadata={
-        <View style={{ gap: schedule ? 4 : 6, width: "100%" }}>
+        <View style={{ gap: 4, width: "100%" }}>
           <View
             style={{
               flexDirection: "row",
@@ -1947,7 +2023,7 @@ export function TicketRow({
                 iconOnly
               />
             )}
-            {ticket.priority !== undefined && (
+            {ticket.priority !== undefined && ticket.priority !== "none" && (
               <PropertyValue
                 projectId={ticket.projectId}
                 property="priority"
@@ -1963,7 +2039,7 @@ export function TicketRow({
                 iconOnly
               />
             )}
-            {!schedule && ticket.difficulty !== undefined && (
+            {density === "standard" && ticket.difficulty && (
               <PropertyValue
                 projectId={ticket.projectId}
                 property="difficulty"
@@ -1971,7 +2047,7 @@ export function TicketRow({
                 iconOnly
               />
             )}
-            {ticket.assigneeId !== undefined && (
+            {ticket.assigneeId && (
               <PropertyValue
                 projectId={ticket.projectId}
                 property="assignee"
@@ -1979,34 +2055,35 @@ export function TicketRow({
                 iconOnly
               />
             )}
+            {!schedule && (ticket.dueAt || ticket.startAt) && (
+              <View
+                accessible
+                accessibilityLabel={
+                  ticket.dueAt
+                    ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
+                    : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
+                }
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
+                <TicketGlyph
+                  name="calendar-clock"
+                  color={overdue ? color.danger : color.muted}
+                  size={14}
+                />
+                <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
+                  {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </Text>
+              </View>
+            )}
           </View>
-          {!schedule && (ticket.dueAt || ticket.startAt) && (
-            <View
-              accessible
-              accessibilityLabel={
-                ticket.dueAt
-                  ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
-                  : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
-              }
-              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-            >
-              <TicketGlyph
-                name="calendar-clock"
-                color={overdue ? color.danger : color.muted}
-                size={14}
-              />
-              <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
-                {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </Text>
-            </View>
-          )}
           <TicketTags
             projectId={ticket.projectId}
             tags={ticket.labels ?? []}
             scopes={ticket.scopes ?? []}
+            preview={density !== "standard"}
           />
         </View>
       }
@@ -2022,45 +2099,102 @@ export function TicketTags({
   projectId,
   tags,
   scopes = [],
+  preview = false,
 }: {
   projectId: string;
   tags: string[];
   scopes?: string[];
+  preview?: boolean;
 }) {
-  const { api } = useConnection();
+  const { api } = useConnection(),
+    color = usePalette(),
+    { fontScale } = useWindowDimensions();
   const catalog = useQuery({
     ...api.query("list_project_labels", { projectId }),
     enabled: tags.length > 0,
   });
-  if (!tags.length && !scopes.length) return null;
+  const [available, setAvailable] = useState(0),
+    [widths, setWidths] = useState<Record<string, number>>({});
+  const items = [
+    ...tags.map((tag) => ({ tag, kind: "label" as const })),
+    ...scopes.map((tag) => ({ tag, kind: "scope" as const })),
+  ];
+  const keyOf = (item: { tag: string; kind: string }) => `${fontScale}:${item.kind}:${item.tag}`;
+  const overflowKey = `${fontScale}:overflow:${items.length}`;
+  const measured =
+    items.every((item) => widths[keyOf(item)] !== undefined) && widths[overflowKey] !== undefined;
+  const count = !preview
+    ? items.length
+    : measured
+      ? inlineItemCount(
+          items.map((item) => widths[keyOf(item)] ?? 0),
+          available,
+          widths[overflowKey] ?? 0,
+        )
+      : 0;
+  const label = formatList([
+    ...(tags.length
+      ? [t("ticket.tags.summary", { label: t("ticket.tags.labels"), tags: formatList(tags) })]
+      : []),
+    ...(scopes.length
+      ? [t("ticket.tags.summary", { label: t("ticket.tags.scopes"), tags: formatList(scopes) })]
+      : []),
+  ]);
+  function measure(key: string, width: number) {
+    setWidths((previous) => (previous[key] === width ? previous : { ...previous, [key]: width }));
+  }
+  const chip = (item: { tag: string; kind: "label" | "scope" }, measuring = false) => (
+    <TicketTag
+      key={keyOf(item)}
+      tag={item.tag}
+      kind={item.kind}
+      color={catalog.data?.find((entry) => entry.name === item.tag)?.color ?? "gray"}
+      {...(measuring
+        ? { onLayout: (event) => measure(keyOf(item), event.nativeEvent.layout.width) }
+        : {})}
+    />
+  );
+  if (!items.length) return null;
   return (
     <View
       accessible
-      accessibilityLabel={formatList([
-        ...(tags.length
-          ? [
-              t("ticket.tags.summary", {
-                label: t("ticket.tags.labels"),
-                tags: formatList(tags),
-              }),
-            ]
-          : []),
-        ...(scopes.length
-          ? [t("ticket.tags.summary", { label: t("ticket.tags.scopes"), tags: formatList(scopes) })]
-          : []),
-      ])}
-      style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5 }}
+      accessibilityLabel={label}
+      onLayout={preview ? (event) => setAvailable(event.nativeEvent.layout.width) : undefined}
+      style={[
+        { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5 },
+        preview && { width: "100%", minHeight: 22 },
+      ]}
     >
-      {tags.map((tag) => (
-        <TicketTag
-          key={tag}
-          tag={tag}
-          color={catalog.data?.find((label) => label.name === tag)?.color ?? "gray"}
-        />
-      ))}
-      {scopes.map((tag) => (
-        <TicketTag key={`scope:${tag}`} tag={tag} kind="scope" />
-      ))}
+      {items.slice(0, count).map((item) => chip(item))}
+      {count < items.length && (
+        <Text
+          style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}
+        >{`+${formatNumber(items.length - count)}`}</Text>
+      )}
+      {preview && (
+        <View
+          pointerEvents="none"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            start: 0,
+            top: 0,
+            width: "100%",
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 5,
+            opacity: 0,
+          }}
+        >
+          {items.map((item) => chip(item, true))}
+          <Text
+            onLayout={(event) => measure(overflowKey, event.nativeEvent.layout.width)}
+            style={{ fontSize: 12, lineHeight: 18 }}
+          >{`+${formatNumber(items.length)}`}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -2095,10 +2229,11 @@ export function RemovableSummary({
 }
 
 export function ContextBar({ children }: { children: ReactNode }) {
+  const padded = useContext(PaddedContent);
   return (
     <View
       style={{
-        paddingHorizontal: 16,
+        paddingHorizontal: padded ? 0 : 16,
         paddingVertical: 4,
         flexDirection: "row",
         flexWrap: "wrap",

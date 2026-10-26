@@ -54,3 +54,24 @@ export function paneLayout(bounds: Bounds, regions: readonly ReservedRegion[]) {
     secondary: { ...full, x: width, width: bounds.width - width },
   };
 }
+
+// A compact flow reserves the measured overflow label; a long first item still wraps fully.
+export function inlineItemCount(
+  widths: readonly number[],
+  available: number,
+  overflow: number,
+  gap = 5,
+) {
+  if (!widths.length || available <= 0) return 0;
+  if (widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1) <= available)
+    return widths.length;
+  let used = 0,
+    count = 0;
+  for (const width of widths) {
+    const next = used + (count ? gap : 0) + width;
+    if (next + gap + overflow > available) break;
+    used = next;
+    count++;
+  }
+  return Math.max(1, count);
+}

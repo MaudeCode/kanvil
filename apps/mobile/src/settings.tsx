@@ -151,36 +151,44 @@ export function Inbox() {
   }, [navigation, visible, view, mutate, action.isPending, scoped]);
   const target = items.data?.find((item) => item.id === focused);
   return (
-    <Screen scroll={false}>
-      <WorkspaceScope>
-        <Choice
-          compact
-          label={t("shell.page.inbox")}
-          value={view}
-          options={["unread", "mentions", "all"].map((value) => ({
-            value,
-            label: t(
-              value === "unread"
-                ? "shell.inbox.unread"
-                : value === "mentions"
-                  ? "shell.inbox.mentions"
-                  : "shell.inbox.all",
-            ),
-          }))}
-          onChange={(value) =>
-            setView(value === "mentions" ? "mentions" : value === "all" ? "all" : "unread")
-          }
-        />
-      </WorkspaceScope>
-      <ErrorNotice error={items.error ?? action.error} />
-      {items.isPending || projects.isPending ? (
-        <Loading />
-      ) : (
-        <List
-          data={visible}
-          keyExtractor={(item) => item.id}
-          onRefresh={() => items.refetch()}
-          ListEmptyComponent={
+    <Screen
+      scroll={false}
+      scrollInsets
+      header={
+        <>
+          <WorkspaceScope>
+            <Choice
+              compact
+              label={t("shell.page.inbox")}
+              value={view}
+              options={["unread", "mentions", "all"].map((value) => ({
+                value,
+                label: t(
+                  value === "unread"
+                    ? "shell.inbox.unread"
+                    : value === "mentions"
+                      ? "shell.inbox.mentions"
+                      : "shell.inbox.all",
+                ),
+              }))}
+              onChange={(value) =>
+                setView(value === "mentions" ? "mentions" : value === "all" ? "all" : "unread")
+              }
+            />
+          </WorkspaceScope>
+          <ErrorNotice error={items.error} />
+        </>
+      }
+    >
+      <ErrorNotice error={action.error} />
+      <List
+        data={visible}
+        keyExtractor={(item) => item.id}
+        onRefresh={() => items.refetch()}
+        ListEmptyComponent={
+          items.isPending || projects.isPending ? (
+            <Loading />
+          ) : (
             <View style={{ padding: 20 }}>
               <Body muted>
                 {view === "unread"
@@ -190,49 +198,49 @@ export function Inbox() {
                     : t("shell.inbox.noNotifications")}
               </Body>
             </View>
-          }
-          renderItem={({ item }) => (
-            <Row
-              title={
-                typeof item.event.data.title === "string"
-                  ? item.event.data.title
-                  : formatEvent(item.event, true)
-              }
-              emphasized={!item.readAt}
-              interaction="action"
-              leading={
-                <TicketGlyph
-                  name={item.readAt ? "circle-check" : "circle-dot"}
-                  color={item.readAt ? color.muted : color.accent}
-                />
-              }
-              accessibilityLabel={t("native.labelValue", {
-                label: t(item.readAt ? "native.inbox.read" : "shell.inbox.unread"),
-                value: [formatEvent(item.event, true), formatTimestamp(item.event.createdAt)].join(
-                  " · ",
-                ),
-              })}
-              caption={[
-                typeof item.event.data.key === "string" ? item.event.data.key : "",
-                formatEvent(item.event),
-                formatRelativeTime(item.event.createdAt),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              onLongPress={() => setFocused(item.id)}
-              onPress={() => {
-                mutate({ ids: [item.id], read: true });
-                if (item.event.ticketId)
-                  navigation.navigate("Ticket", {
-                    projectId: item.event.projectId,
-                    ticketId: item.event.ticketId,
-                  });
-                else setFocused(item.id);
-              }}
-            />
-          )}
-        />
-      )}
+          )
+        }
+        renderItem={({ item }) => (
+          <Row
+            title={
+              typeof item.event.data.title === "string"
+                ? item.event.data.title
+                : formatEvent(item.event, true)
+            }
+            emphasized={!item.readAt}
+            interaction="action"
+            leading={
+              <TicketGlyph
+                name={item.readAt ? "circle-check" : "circle-dot"}
+                color={item.readAt ? color.muted : color.accent}
+              />
+            }
+            accessibilityLabel={t("native.labelValue", {
+              label: t(item.readAt ? "native.inbox.read" : "shell.inbox.unread"),
+              value: [formatEvent(item.event, true), formatTimestamp(item.event.createdAt)].join(
+                " · ",
+              ),
+            })}
+            caption={[
+              typeof item.event.data.key === "string" ? item.event.data.key : "",
+              formatEvent(item.event),
+              formatRelativeTime(item.event.createdAt),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            onLongPress={() => setFocused(item.id)}
+            onPress={() => {
+              mutate({ ids: [item.id], read: true });
+              if (item.event.ticketId)
+                navigation.navigate("Ticket", {
+                  projectId: item.event.projectId,
+                  ticketId: item.event.ticketId,
+                });
+              else setFocused(item.id);
+            }}
+          />
+        )}
+      />
       <Sheet title={t("shell.page.inbox")} open={!!target} onClose={() => setFocused(undefined)}>
         {target && (
           <>

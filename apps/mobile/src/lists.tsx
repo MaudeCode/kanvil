@@ -47,6 +47,7 @@ export function Projects({ picker = false }: { picker?: boolean }) {
     options: searchOptions,
     setText: changeQuery,
     searching,
+    open: openSearch,
   } = useHeaderSearch(query, onQuery, t("shell.app.searchProjects"));
   const [creating, setCreating] = useState<string>();
   const identity = useIdentity();
@@ -73,6 +74,14 @@ export function Projects({ picker = false }: { picker?: boolean }) {
             t("shell.page.projects"),
             { type: "sfSymbol", name: "gearshape" },
             [
+              {
+                type: "action",
+                label: query.trim()
+                  ? t("ticket.filter.searchChip", { query })
+                  : t("shell.app.searchProjects"),
+                icon: { type: "sfSymbol", name: "magnifyingglass" },
+                onPress: openSearch,
+              },
               {
                 type: "action",
                 label: t("shell.app.archivedProjects"),
@@ -114,7 +123,11 @@ export function Projects({ picker = false }: { picker?: boolean }) {
                   ]
                 : []),
             ],
-            { identifier: "project-options", visibilityPriority: "low" },
+            {
+              identifier: "project-options",
+              visibilityPriority: "low",
+              ...(query.trim() ? { badge: { value: 1 } } : {}),
+            },
           ),
         ],
       }),
@@ -127,6 +140,8 @@ export function Projects({ picker = false }: { picker?: boolean }) {
     picker,
     projectNavigation,
     searchOptions,
+    openSearch,
+    query,
   ]);
   const candidates =
     picker && query.trim()
@@ -149,89 +164,93 @@ export function Projects({ picker = false }: { picker?: boolean }) {
       : [];
   const remaining = filtered.filter((project) => !recent.some((item) => item.id === project.id));
   return (
-    <Screen scroll={false}>
-      {picker ? (
-        <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
-          <Choice
-            compact
-            label={t("shell.workspace.workspaces")}
-            value={workspace.active?.id ?? ""}
-            options={workspace.workspaces.map((space) => ({
-              value: space.id,
-              label: space.name,
-            }))}
-            onChange={(id) => {
-              changeQuery("");
-              projectNavigation.selectWorkspace(id);
-            }}
-          />
-        </View>
-      ) : (
-        <WorkspaceScope />
-      )}
-      {!searching && (
-        <RemovableSummary
-          label={t("shell.app.clearSearch")}
-          value={query}
-          onClear={() => changeQuery("")}
-        />
-      )}
-      <ErrorNotice error={projects.error} />
-      {projects.isPending ? (
-        <Loading />
-      ) : (
-        <List
-          data={remaining}
-          ListHeaderComponent={
-            recent.length ? (
-              <View style={{ paddingTop: 8 }}>
-                <View style={{ paddingHorizontal: 20 }}>
-                  <Heading compact>{t("native.navigation.recentProjects")}</Heading>
-                </View>
-                {recent.map((project) => (
-                  <ProjectRow
-                    key={project.id}
-                    project={project}
-                    picker={picker}
-                    selected={project.id === projectNavigation.currentProjectId}
-                    onPress={() => projectNavigation.selectProject(project.id)}
-                  />
-                ))}
-                {remaining.length > 0 && (
-                  <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
-                    <Heading compact>{t("shell.page.projects")}</Heading>
-                  </View>
-                )}
-              </View>
-            ) : undefined
-          }
-          keyExtractor={(project) => project.id}
-          onRefresh={() => projects.refetch()}
-          ListEmptyComponent={
-            recent.length ? undefined : (
-              <View style={{ padding: 20 }}>
-                <Body muted>
-                  {t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
-                </Body>
-              </View>
-            )
-          }
-          renderItem={({ item }) => (
-            <ProjectRow
-              project={item}
-              workspaceName={
-                picker && query.trim()
-                  ? (workspace.workspaces.find((space) => space.id === item.workspaceId)?.name ??
-                    "")
-                  : ""
-              }
-              picker={picker}
-              selected={item.id === projectNavigation.currentProjectId}
-              onPress={() => projectNavigation.selectProject(item.id)}
+    <Screen
+      scroll={false}
+      scrollInsets
+      header={
+        <>
+          {picker ? (
+            <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+              <Choice
+                compact
+                label={t("shell.workspace.workspaces")}
+                value={workspace.active?.id ?? ""}
+                options={workspace.workspaces.map((space) => ({
+                  value: space.id,
+                  label: space.name,
+                }))}
+                onChange={(id) => {
+                  changeQuery("");
+                  projectNavigation.selectWorkspace(id);
+                }}
+              />
+            </View>
+          ) : (
+            <WorkspaceScope />
+          )}
+          {!searching && (
+            <RemovableSummary
+              label={t("shell.app.clearSearch")}
+              value={query}
+              onClear={() => changeQuery("")}
             />
           )}
-        />
-      )}
+          <ErrorNotice error={projects.error} />
+        </>
+      }
+    >
+      <List
+        data={remaining}
+        ListHeaderComponent={
+          recent.length ? (
+            <View style={{ paddingTop: 8 }}>
+              <View style={{ paddingHorizontal: 20 }}>
+                <Heading compact>{t("native.navigation.recentProjects")}</Heading>
+              </View>
+              {recent.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  picker={picker}
+                  selected={project.id === projectNavigation.currentProjectId}
+                  onPress={() => projectNavigation.selectProject(project.id)}
+                />
+              ))}
+              {remaining.length > 0 && (
+                <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+                  <Heading compact>{t("shell.page.projects")}</Heading>
+                </View>
+              )}
+            </View>
+          ) : undefined
+        }
+        keyExtractor={(project) => project.id}
+        onRefresh={() => projects.refetch()}
+        ListEmptyComponent={
+          projects.isPending ? (
+            <Loading />
+          ) : recent.length ? undefined : (
+            <View style={{ padding: 20 }}>
+              <Body muted>
+                {t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
+              </Body>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <ProjectRow
+            project={item}
+            workspaceName={
+              picker && query.trim()
+                ? (workspace.workspaces.find((space) => space.id === item.workspaceId)?.name ?? "")
+                : ""
+            }
+            picker={picker}
+            selected={item.id === projectNavigation.currentProjectId}
+            onPress={() => projectNavigation.selectProject(item.id)}
+          />
+        )}
+      />
       {creating && (
         <ProjectAction
           workspaceId={creating}
@@ -255,10 +274,12 @@ function ProjectRow({
   selected: boolean;
   onPress: () => void;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    scope = useProjectNavigation();
   return (
     <Row
       title={project.name}
+      onLongPress={() => scope.selectProject(project.id, true)}
       interaction={picker ? "choice" : "navigate"}
       selected={selected}
       leading={<ProjectIcon project={project} size={24} />}
@@ -296,11 +317,7 @@ function ProjectRow({
           </>
         )
       }
-      {...(!picker
-        ? { caption: project.description }
-        : workspaceName
-          ? { caption: workspaceName }
-          : {})}
+      {...(picker && workspaceName ? { caption: workspaceName } : {})}
       onPress={onPress}
     />
   );
