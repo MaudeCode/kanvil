@@ -25,6 +25,10 @@ import {
   styles,
   Pager,
   MarkdownField,
+  Menu,
+  TicketGlyph,
+  UserAvatar,
+  usePalette,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -246,6 +250,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
       >
         <MarkdownField
           label={t("detail.discussion.comment")}
+          autoFocus
           value={body}
           onChangeText={(value) => {
             setBody(value);
@@ -274,6 +279,7 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
   );
 }
 function Comment({ comment }: { comment: Output<"list_comments">["items"][number] }) {
+  const color = usePalette();
   const identity = useIdentity(),
     { api } = useConnection(),
     [open, setOpen] = useState(false),
@@ -288,48 +294,72 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
     remove = useOperation("delete_comment");
   return (
     <View style={{ gap: 10, paddingVertical: 12 }}>
-      <Body muted>
-        {comment.actorId === identity.id
-          ? t("native.discussion.you")
-          : memberName(members.data, deleted.data, comment.actorId)}{" "}
-        · {formatTimestamp(comment.createdAt)}
-      </Body>
-      <Markdown>{comment.body}</Markdown>
-      {(comment.actorId === identity.id || identity.admin) && (
-        <View style={styles.actions}>
-          <Button
-            title={t("native.discussion.edit")}
-            onPress={() => {
-              setBody(comment.body);
-              setEditingVersion(comment.version);
-              setOpen(true);
-            }}
-          />
-          <Button
-            title={t("native.discussion.delete")}
-            danger
-            onPress={() =>
-              Alert.alert(
-                t("native.discussion.deleteTitle"),
-                t("native.discussion.deleteMessage"),
-                [
-                  { text: t("common.action.cancel"), style: "cancel" },
-                  {
-                    text: t("common.action.delete"),
-                    style: "destructive",
-                    onPress: () =>
-                      remove.mutate({
-                        projectId: comment.projectId,
-                        commentId: comment.id,
-                        expectedVersion: comment.version,
-                      }),
-                  },
-                ],
-              )
-            }
-          />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <UserAvatar
+          name={memberName(members.data, deleted.data, comment.actorId)}
+          image={members.data?.find((member) => member.userId === comment.actorId)?.image ?? null}
+          size={28}
+        />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Body small>
+            {comment.actorId === identity.id
+              ? t("native.discussion.you")
+              : memberName(members.data, deleted.data, comment.actorId)}
+          </Body>
+          <Body muted small>
+            {formatTimestamp(comment.createdAt)}
+          </Body>
         </View>
-      )}
+        {(comment.actorId === identity.id || identity.admin) && (
+          <Menu
+            title={t("ticket.selection.more")}
+            items={[
+              {
+                type: "action",
+                label: t("native.discussion.edit"),
+                onPress: () => {
+                  setBody(comment.body);
+                  setEditingVersion(comment.version);
+                  setOpen(true);
+                },
+              },
+              {
+                type: "action",
+                label: t("native.discussion.delete"),
+                destructive: true,
+                onPress: () =>
+                  Alert.alert(
+                    t("native.discussion.deleteTitle"),
+                    t("native.discussion.deleteMessage"),
+                    [
+                      { text: t("common.action.cancel"), style: "cancel" },
+                      {
+                        text: t("common.action.delete"),
+                        style: "destructive",
+                        onPress: () =>
+                          remove.mutate({
+                            projectId: comment.projectId,
+                            commentId: comment.id,
+                            expectedVersion: comment.version,
+                          }),
+                      },
+                    ],
+                  ),
+              },
+            ]}
+          >
+            <Button
+              compact
+              plain
+              title=""
+              accessibilityLabel={t("ticket.selection.more")}
+              leading={<TicketGlyph name="ellipsis" color={color.muted} />}
+              onPress={() => {}}
+            />
+          </Menu>
+        )}
+      </View>
+      <Markdown>{comment.body}</Markdown>
       <ErrorNotice error={remove.error} />
       <Sheet title={t("native.discussion.edit")} open={open} onClose={() => setOpen(false)}>
         <Field

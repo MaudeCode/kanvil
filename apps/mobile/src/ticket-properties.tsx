@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { View } from "react-native";
 import { PropertyValue } from "./ticket-values.tsx";
 import { useQuery } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ export function TicketProperties({
   mixed = false,
   disabled = false,
   compact = false,
+  children,
 }: {
   projectId: string;
   value: { [K in keyof PropertyFields]: PropertyFields[K] | undefined };
@@ -40,6 +42,7 @@ export function TicketProperties({
   mixed?: boolean;
   disabled?: boolean;
   compact?: boolean;
+  children?: ReactNode;
 }) {
   const { api } = useConnection();
   const members = useQuery(api.query("list_members", { projectId }));
@@ -53,6 +56,16 @@ export function TicketProperties({
       <View style={compact ? { flexDirection: "row", flexWrap: "wrap", gap: 8 } : { gap: 4 }}>
         <Choice
           label={t("common.filterField.status")}
+          summary={
+            compact && value.status ? (
+              <PropertyValue
+                projectId={projectId}
+                property="status"
+                value={value.status}
+                stateId={value.stateId ?? null}
+              />
+            ) : undefined
+          }
           disabled={disabled}
           compact={compact}
           value={
@@ -210,6 +223,7 @@ export function TicketProperties({
             onChange({ difficulty: difficulties.find((item) => item === next) ?? null });
           }}
         />
+        {children}
       </View>
       <ErrorNotice error={members.error ?? workflow.error} />
     </>

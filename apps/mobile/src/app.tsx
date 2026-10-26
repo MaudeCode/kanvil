@@ -42,6 +42,7 @@ import {
   useLive,
   WorkspaceProvider,
   ClockProvider,
+  LiveStatus,
   useWorkspace,
   useAllProjects,
 } from "./data.tsx";
@@ -715,35 +716,20 @@ function Navigation({
         }}
       >
         <View style={{ flex: 1, backgroundColor: color.surface }}>
-          <Home onDisconnect={onDisconnect} />
-          <Sheet
-            title={t("shell.page.projects")}
-            open={picker}
-            onClose={() => setPicker(false)}
-            onDismissed={() =>
-              setWorkspaceCreation((pending) => (pending === "waiting" ? "ready" : pending))
-            }
-            scroll={false}
-          >
-            <Projects picker />
-          </Sheet>
-          {(connection === "offline" || connection === "signedOut") && (
-            <View
-              pointerEvents="none"
-              accessibilityLiveRegion="polite"
-              style={{
-                paddingHorizontal: 22,
-                paddingVertical: 5,
-                borderTopWidth: 0.5,
-                borderTopColor: color.line,
-                backgroundColor: color.surface,
-              }}
+          <LiveStatus value={connection}>
+            <Home onDisconnect={onDisconnect} />
+            <Sheet
+              title={t("shell.page.projects")}
+              open={picker}
+              onClose={() => setPicker(false)}
+              onDismissed={() =>
+                setWorkspaceCreation((pending) => (pending === "waiting" ? "ready" : pending))
+              }
+              scroll={false}
             >
-              <Body muted small>
-                {t(`native.connection.${connection}`)}
-              </Body>
-            </View>
-          )}
+              <Projects picker />
+            </Sheet>
+          </LiveStatus>
         </View>
       </NavigationContainer>
     </ProjectNavigation>
@@ -784,6 +770,7 @@ function BrowsingStack({
       screenLayout={BrowsingLayout}
       screenOptions={nativeHeaderOptions({
         headerShadowVisible: false,
+        headerTintColor: color.accent,
         headerTitleStyle: { fontSize: 17, fontWeight: "600" },
         headerBackButtonDisplayMode: "minimal",
         headerBackVisible: true,
@@ -891,7 +878,14 @@ function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
       .length ?? 0;
   if (workspace.pending) return <Loading />;
   return (
-    <Tabs.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: color.accent }}>
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: color.accent,
+        tabBarMinimizeBehavior: "none",
+        tabBarControllerMode: "tabBar",
+      }}
+    >
       <Tabs.Screen
         name="Projects"
         options={{

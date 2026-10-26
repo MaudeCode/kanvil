@@ -170,39 +170,6 @@ function Editor({
     stale = !!ticket && ticket.version !== draft.version;
   return (
     <Screen form scrollRef={scroll}>
-      {!ticket && (
-        <Choice
-          label={t("ticket.project.label")}
-          value={projectId}
-          compact
-          options={(projects.data ?? [])
-            .filter(
-              (project) =>
-                !project.archivedAt &&
-                (identity.admin || capabilitiesOf(project).includes("ticket.write")),
-            )
-            .map((project) => ({
-              value: project.id,
-              label: project.name,
-              leading: <ProjectIcon project={project} size={18} />,
-            }))}
-          onChange={(next) => {
-            change({
-              ...draft,
-              projectId: next,
-              fields: {
-                ...draft.fields,
-                stateId: null,
-                parentId: null,
-                assigneeId: null,
-                labels: [],
-                customFields: {},
-              },
-            });
-            setLabels("");
-          }}
-        />
-      )}
       {stale && (
         <>
           <Body>{t("native.editor.stale", { version: draft.version ?? "" })}</Body>
@@ -234,31 +201,68 @@ function Editor({
         value={fields}
         onChange={(changes) => change({ ...draft, fields: { ...draft.fields, ...changes } })}
         disabled={!access.canWrite}
-      />
-      <Choice
-        label={t("ticket.tags.labels")}
-        value=""
-        selected={draft.fields.labels}
-        summary={
-          draft.fields.labels.length ? (
-            <TicketTags projectId={projectId} tags={draft.fields.labels} limit={2} />
-          ) : undefined
-        }
-        options={labelOptions(catalog.data ?? [])}
-        onChange={() => {}}
-        onToggle={(label) => {
-          const next = draft.fields.labels.includes(label)
-            ? draft.fields.labels.filter((value) => value !== label)
-            : [...draft.fields.labels, label];
-          set("labels", next);
-          setLabels(next.join(", "));
-        }}
-      />
-      <Body muted small>
-        {t("detail.editor.savedLocally")}
-      </Body>
+      >
+        {!ticket && (
+          <Choice
+            label={t("ticket.project.label")}
+            value={projectId}
+            compact
+            options={(projects.data ?? [])
+              .filter(
+                (project) =>
+                  !project.archivedAt &&
+                  (identity.admin || capabilitiesOf(project).includes("ticket.write")),
+              )
+              .map((project) => ({
+                value: project.id,
+                label: project.name,
+                leading: <ProjectIcon project={project} size={18} />,
+              }))}
+            onChange={(next) => {
+              change({
+                ...draft,
+                projectId: next,
+                fields: {
+                  ...draft.fields,
+                  stateId: null,
+                  parentId: null,
+                  assigneeId: null,
+                  labels: [],
+                  customFields: {},
+                },
+              });
+              setLabels("");
+            }}
+          />
+        )}
+        <Choice
+          label={t("ticket.tags.labels")}
+          compact
+          value=""
+          selected={draft.fields.labels}
+          summary={
+            draft.fields.labels.length ? (
+              <TicketTags projectId={projectId} tags={draft.fields.labels} />
+            ) : undefined
+          }
+          options={labelOptions(catalog.data ?? [])}
+          onChange={() => {}}
+          onToggle={(label) => {
+            const next = draft.fields.labels.includes(label)
+              ? draft.fields.labels.filter((value) => value !== label)
+              : [...draft.fields.labels, label];
+            set("labels", next);
+            setLabels(next.join(", "));
+          }}
+        />
+      </TicketProperties>
       <MarkdownField
         label={t("native.detail.description")}
+        status={
+          <Body muted small>
+            {t("detail.editor.savedLocally")}
+          </Body>
+        }
         value={fields.description}
         onChangeText={(value) => set("description", value)}
         maxLength={100000}

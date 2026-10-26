@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Görünüşləri idarə et",
     selectSection: "{{section}} tiketlərini seç",
     expandSection: "{{section}} tiketlərini genişləndir",
     collapseSection: "{{section}} tiketlərini yığ",
@@ -131,6 +132,7 @@ export default {
     noDue: "Son tarix yoxdur",
   },
   filter: {
+    add: "Filtr əlavə et",
     me: "Mən",
     searchTickets: "Tiketlərdə axtar",
     searchTicketsPlaceholder: "Tiketlərdə axtar…",

@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Ansichten verwalten",
     selectSection: "Tickets in {{section}} auswählen",
     expandSection: "Tickets in {{section}} ausklappen",
     collapseSection: "Tickets in {{section}} einklappen",
@@ -132,6 +133,7 @@ export default {
     noDue: "Kein Fälligkeitsdatum",
   },
   filter: {
+    add: "Filter hinzufügen",
     me: "Ich",
     searchTickets: "Tickets suchen",
     searchTicketsPlaceholder: "Tickets suchen…",

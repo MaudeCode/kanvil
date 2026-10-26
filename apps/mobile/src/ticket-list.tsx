@@ -12,7 +12,10 @@ import {
 import { Alert, Platform, ScrollView, View, useWindowDimensions } from "react-native";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
+import type {
+  NativeStackHeaderItem,
+  NativeStackHeaderItemMenu,
+} from "@react-navigation/native-stack";
 import {
   states,
   stateLabels,
@@ -57,12 +60,13 @@ import {
   Loading,
   Screen,
   Scroll,
-  Section,
   Sheet,
   TicketRow,
   usePalette,
   RemovableSummary,
   Row,
+  Menu,
+  ContextBar,
   PropertyValue,
   TicketGlyph,
 } from "./ui.tsx";
@@ -119,7 +123,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   const [filters, setFilters] = useState(() => ticketFilter.parse(initial?.filters ?? {})),
     [query, setQuery] = useState(initial?.query ?? ""),
     [filtering, setFiltering] = useState(false),
-    [viewing, setViewing] = useState(false),
+    [managingViews, setManagingViews] = useState(false),
+    [viewQuery, setViewQuery] = useState(""),
     [saving, setSaving] = useState(false),
     [name, setName] = useState(""),
     [focused, setFocused] = useState<Ticket>(),
@@ -308,6 +313,135 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       ),
     [deleteTickets, projectId, versions, selection.size, title],
   );
+  const viewItems = useMemo<NativeStackHeaderItemMenu["menu"]["items"]>(
+    () => [
+      {
+        type: "submenu",
+        label: t("ticket.display.layout"),
+        inline: true,
+        layout: "palette",
+        items: ticketLayouts
+          .filter((value) => !planning || value === "list")
+          .map((value) => ({
+            type: "action",
+            label:
+              value === "calendar" || value === "timeline"
+                ? t(`ticket.schedule.${value}`)
+                : t(`ticket.display.${value}`),
+            icon: {
+              type: "sfSymbol",
+              name:
+                value === "list"
+                  ? "list.bullet"
+                  : value === "board"
+                    ? "rectangle.split.3x1"
+                    : value === "calendar"
+                      ? "calendar"
+                      : "chart.bar.xaxis",
+            },
+            state: value === layout ? "on" : "off",
+            onPress: () =>
+              navigation.setParams({ layout: value, collection: planning ? "planning" : "all" }),
+          })),
+      },
+      {
+        type: "submenu",
+        label: t("ticket.list.tickets"),
+        inline: true,
+        items: [
+          {
+            type: "action",
+            label: t("ticket.list.allTickets"),
+            state: planning ? "off" : "on",
+            onPress: () => navigation.setParams({ collection: "all", viewId: "" }),
+          },
+          {
+            type: "action",
+            label: t("ticket.list.planningLink"),
+            state: planning ? "on" : "off",
+            onPress: () =>
+              navigation.setParams({ collection: "planning", layout: "list", viewId: "" }),
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        label: t("ticket.list.views"),
+        items: [
+          ...(views.data ?? []).slice(0, 6).map((view) => ({
+            type: "action" as const,
+            label: view.name,
+            state: route.params.viewId === view.id ? ("on" as const) : ("off" as const),
+            onPress: () => {
+              setFilters(view.filters);
+              changeQuery(view.filters.q ?? "");
+              navigation.setParams({ viewId: view.id });
+            },
+          })),
+          {
+            type: "action",
+            label: t("ticket.list.saveCurrentView"),
+            onPress: () => {
+              setName("");
+              setSaving(true);
+            },
+          },
+          {
+            type: "action",
+            label: t("ticket.list.manageViews"),
+            onPress: () => {
+              setViewQuery("");
+              setManagingViews(true);
+            },
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        label: "",
+        inline: true,
+        items: [
+          { type: "action", label: t("ticket.filter.filters"), onPress: () => setFiltering(true) },
+          {
+            type: "action",
+            label: t("native.tickets.select"),
+            disabled: !rows.length || !access.canWrite,
+            onPress: () => {
+              if (layout === "calendar" || layout === "timeline")
+                navigation.setParams({ layout: "list" });
+              setSelecting(true);
+            },
+          },
+          ...(layout === "list"
+            ? [
+                {
+                  type: "action" as const,
+                  label: t("native.tickets.expandAll"),
+                  onPress: () => changeCollapsed(new Set()),
+                },
+                {
+                  type: "action" as const,
+                  label: t("native.tickets.collapseAll"),
+                  onPress: () => changeCollapsed(new Set(sections.map((section) => section.id))),
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+    [
+      planning,
+      layout,
+      navigation,
+      views.data,
+      route.params.viewId,
+      changeQuery,
+      rows.length,
+      access.canWrite,
+      changeCollapsed,
+      sections,
+    ],
+  );
   const headerItems = useMemo<NativeStackHeaderItem[]>(
     () =>
       selecting
@@ -406,11 +540,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                         ),
                       ]
                     : []),
-                  createHeaderAction(
+                  createHeaderMenu(
                     t("ticket.list.views"),
-                    () => setViewing(true),
                     { type: "sfSymbol", name: "rectangle.3.group" },
-                    false,
+                    viewItems,
                     {
                       identifier: "ticket-views",
                       visibilityPriority: searching ? "low" : "default",
@@ -435,6 +568,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       rows,
       selecting,
       searching,
+      viewItems,
     ],
   );
   useLayoutEffect(() => {
@@ -504,9 +638,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       setSplitState((state) => ({ ...state, secondaryVisible: true }));
     } else navigation.navigate("Ticket", { projectId, ticketId: ticket.id });
   };
-  const refresh = () => {
-    void (planning ? Promise.all([backlog.refetch(), archived.refetch()]) : tickets.refetch());
-  };
+  const refresh = () =>
+    planning ? Promise.all([backlog.refetch(), archived.refetch()]) : tickets.refetch();
   const collectionView =
     layout === "calendar" || layout === "timeline" ? (
       <TicketSchedule
@@ -551,7 +684,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         )}
       </View>
     ) : layout === "board" ? (
-      <Scroll horizontal contentContainerStyle={{ gap: 18, padding: 18 }}>
+      <Scroll
+        horizontal
+        contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingVertical: 8 }}
+      >
         {sections.map((state) => (
           <View
             key={state.id}
@@ -604,7 +740,6 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         scrollEventThrottle={100}
         keyExtractor={(entry) => entry.id}
         onRefresh={refresh}
-        refreshing={planning ? backlog.isRefetching || archived.isRefetching : tickets.isRefetching}
         renderItem={({ item }) =>
           "ticket" in item ? (
             <TicketRow
@@ -666,39 +801,31 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         }
       />
     );
-  return (
-    <Screen
-      scroll={false}
-      allowDivision={split || layout === "calendar"}
-      background={project?.background ?? null}
-    >
+  const primaryContent = (
+    <View style={{ flex: 1 }}>
       {!(split && splitState.collapsed && splitState.secondaryVisible) && (
         <>
           {!selecting && (
-            <View
-              style={{
-                paddingHorizontal: 20,
-                paddingVertical: 6,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
+            <ContextBar>
+              <Menu title={t("ticket.list.views")} items={viewItems}>
+                <Button
+                  compact
+                  plain
+                  title={
+                    views.data?.find((view) => view.id === route.params.viewId)?.name ??
+                    (planning
+                      ? t("ticket.list.planningLink")
+                      : layout === "calendar" || layout === "timeline"
+                        ? t(`ticket.schedule.${layout}`)
+                        : t(`ticket.display.${layout}`))
+                  }
+                  leading={<TicketGlyph name="panels-top-left" color={color.accent} />}
+                  onPress={() => {}}
+                />
+              </Menu>
               <Button
                 compact
-                title={
-                  planning
-                    ? t("ticket.list.planningLink")
-                    : layout === "calendar" || layout === "timeline"
-                      ? t(`ticket.schedule.${layout}`)
-                      : t(`ticket.display.${layout}`)
-                }
-                leading={<TicketGlyph name="panels-top-left" color={color.muted} />}
-                onPress={() => setViewing(true)}
-              />
-              <Button
-                compact
+                plain
                 title={
                   filterCount
                     ? t("ticket.list.sectionCount", {
@@ -707,10 +834,15 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                       })
                     : t("ticket.filter.filters")
                 }
-                leading={<TicketGlyph name="list-filter" color={color.muted} />}
+                leading={
+                  <TicketGlyph
+                    name="list-filter"
+                    color={filterCount ? color.accent : color.muted}
+                  />
+                }
                 onPress={() => setFiltering(true)}
               />
-            </View>
+            </ContextBar>
           )}
           {!searching && (
             <RemovableSummary
@@ -735,12 +867,21 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           )}
         </>
       )}
+      {collectionView}
+    </View>
+  );
+  return (
+    <Screen
+      scroll={false}
+      allowDivision={split || layout === "calendar"}
+      background={project?.background ?? null}
+    >
       <ErrorNotice
         error={error ?? bulk.error ?? remove.error ?? deleteView.error ?? views.error ?? listError}
       />
       {split ? (
         <SplitView
-          primary={collectionView}
+          primary={primaryContent}
           secondaryActive={!!selectedTicketId && splitState.secondaryVisible}
           onChange={setSplitState}
           secondary={
@@ -763,135 +904,76 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           }
         />
       ) : (
-        collectionView
+        primaryContent
       )}
-      <Sheet title={t("ticket.list.views")} open={viewing} onClose={() => setViewing(false)}>
-        <Section title={t("ticket.display.layout")}>
-          {ticketLayouts
-            .filter((value) => !planning || value === "list")
-            .map((value) => (
-              <Row
-                key={value}
-                dense
-                title={
-                  value === "calendar" || value === "timeline"
-                    ? t(`ticket.schedule.${value}`)
-                    : t(`ticket.display.${value}`)
-                }
-                selected={value === layout}
-                onPress={() => {
-                  navigation.setParams({
-                    layout: value,
-                    collection: planning ? "planning" : "all",
-                  });
-                  setViewing(false);
-                }}
-              />
-            ))}
-        </Section>
-        <Section title={t("ticket.list.tickets")}>
-          <Row
-            dense
-            title={t("ticket.list.allTickets")}
-            selected={!planning}
-            onPress={() => {
-              navigation.setParams({ collection: "all", layout: "list", viewId: "" });
-              setViewing(false);
-            }}
-          />
-          <Row
-            dense
-            title={t("ticket.list.planningLink")}
-            selected={planning}
-            onPress={() => {
-              navigation.setParams({ collection: "planning", layout: "list", viewId: "" });
-              setViewing(false);
-            }}
-          />
-          <Row
-            dense
-            title={t("native.tickets.select")}
-            disabled={!rows.length || !access.canWrite}
-            onPress={() => {
-              if (layout === "calendar" || layout === "timeline")
-                navigation.setParams({ layout: "list" });
-              setSelecting(true);
-              setViewing(false);
-            }}
-          />
-          {layout === "list" && (
-            <>
-              <Row
-                dense
-                title={t("native.tickets.expandAll")}
-                onPress={() => {
-                  changeCollapsed(new Set());
-                  setViewing(false);
-                }}
-              />
-              <Row
-                dense
-                title={t("native.tickets.collapseAll")}
-                onPress={() => {
-                  changeCollapsed(new Set(sections.map((section) => section.id)));
-                  setViewing(false);
-                }}
-              />
-            </>
-          )}
-        </Section>
-        <>
-          {(views.data ?? []).map((view) => (
+      <Sheet
+        title={t("ticket.list.views")}
+        open={managingViews}
+        onClose={() => setManagingViews(false)}
+      >
+        <Field
+          label={t("shell.search.field")}
+          labelHidden
+          variant="search"
+          placeholder={t("shell.search.placeholder")}
+          value={viewQuery}
+          onChangeText={setViewQuery}
+        />
+        {(views.data ?? [])
+          .filter((view) => view.name.toLocaleLowerCase().includes(viewQuery.toLocaleLowerCase()))
+          .map((view) => (
             <Row
               key={view.id}
               dense
+              interaction="choice"
               title={view.name}
               selected={route.params.viewId === view.id}
               onPress={() => {
                 setFilters(view.filters);
                 changeQuery(view.filters.q ?? "");
                 navigation.setParams({ viewId: view.id });
-                setViewing(false);
+                setManagingViews(false);
               }}
-            />
-          ))}
-          <Button
-            title={t("ticket.list.saveCurrentView")}
-            onPress={() => {
-              setName("");
-              setSaving(true);
-            }}
-          />
-          {route.params.viewId && (
-            <Button
-              danger
-              title={t("ticket.list.deleteView", {
-                name: views.data?.find((view) => view.id === route.params.viewId)?.name ?? "",
-              })}
-              onPress={() =>
-                Alert.alert(
-                  t("common.action.delete"),
-                  t("ticket.list.deleteViewConfirm", {
-                    name: views.data?.find((view) => view.id === route.params.viewId)?.name ?? "",
-                  }),
-                  [
-                    { text: t("common.action.cancel"), style: "cancel" },
-                    {
-                      text: t("common.action.delete"),
-                      style: "destructive",
-                      onPress: () => {
-                        if (route.params.viewId)
-                          void removeView({ projectId, viewId: route.params.viewId })
-                            .then(() => navigation.setParams({ viewId: "" }))
-                            .catch(setError);
-                      },
-                    },
-                  ],
-                )
+              trailing={
+                <Button
+                  compact
+                  plain
+                  danger
+                  title=""
+                  accessibilityLabel={t("ticket.list.deleteView", { name: view.name })}
+                  leading={<TicketGlyph name="trash-2" color={color.danger} />}
+                  onPress={() =>
+                    Alert.alert(
+                      t("common.action.delete"),
+                      t("ticket.list.deleteViewConfirm", { name: view.name }),
+                      [
+                        { text: t("common.action.cancel"), style: "cancel" },
+                        {
+                          text: t("common.action.delete"),
+                          style: "destructive",
+                          onPress: () => {
+                            void removeView({ projectId, viewId: view.id })
+                              .then(() => {
+                                if (route.params.viewId === view.id)
+                                  navigation.setParams({ viewId: "" });
+                              })
+                              .catch(setError);
+                          },
+                        },
+                      ],
+                    )
+                  }
+                />
               }
             />
-          )}
-        </>
+          ))}
+        <Button
+          title={t("ticket.list.saveCurrentView")}
+          onPress={() => {
+            setName("");
+            setSaving(true);
+          }}
+        />
       </Sheet>
       <Sheet
         title={t("ticket.filter.filters")}
@@ -977,11 +1059,12 @@ function TicketFilters({
   value: z.output<typeof ticketFilter>;
   onChange: (value: z.output<typeof ticketFilter>) => void;
 }) {
-  const { api } = useConnection();
+  const { api } = useConnection(),
+    color = usePalette();
   const members = useQuery(api.query("list_members", { projectId })),
     labels = useQuery(api.query("list_project_labels", { projectId })),
     fields = useQuery(api.query("list_custom_fields", { projectId }));
-  const [operators, setOperators] = useState<Partial<Record<FilterField, "any" | "none">>>({});
+  const [added, setAdded] = useState<FilterField[]>([]);
   const [error, setError] = useState<unknown>();
   function change(next: unknown) {
     const parsed = ticketFilter.safeParse(next);
@@ -1027,49 +1110,91 @@ function TicketFilters({
   return (
     <>
       <ErrorNotice error={error ?? members.error ?? labels.error ?? fields.error} />
-      {filterFieldNames.map((field) => {
-        const operator = operators[field] ?? "any",
-          key = filterKey(field, operator),
-          selected = filterList(value[key]);
-        return (
-          <Section key={field} title={filterFieldLabels[field]}>
-            <Choice
-              label={t("ticket.filter.match", { label: filterFieldLabels[field] })}
-              value={operator}
-              options={[
-                { value: "any", label: t("ticket.filter.is") },
-                { value: "none", label: t("ticket.filter.isNot") },
-              ]}
-              onChange={(next) =>
-                setOperators((previous) => ({
-                  ...previous,
-                  [field]: next === "none" ? "none" : "any",
-                }))
-              }
-            />
-            <Choice
-              label={filterFieldLabels[field]}
-              value=""
-              selected={selected}
-              emptyLabel={t("ticket.list.all")}
-              options={choices[field]}
-              onChange={() => {}}
-              onToggle={(next) => {
-                const values = selected.includes(next)
-                  ? selected.filter((item) => item !== next)
-                  : [...selected, next];
-                const otherKey = filterKey(field, operator === "any" ? "none" : "any"),
-                  excluded = filterList(value[otherKey]).filter((item) => item !== next);
-                change({
-                  ...value,
-                  [key]: values.length ? values : undefined,
-                  [otherKey]: excluded.length ? excluded : undefined,
-                });
-              }}
-            />
-          </Section>
-        );
-      })}
+      {filterFieldNames.flatMap((field) =>
+        (["any", "none"] as const)
+          .filter(
+            (operator) =>
+              filterList(value[filterKey(field, operator)]).length > 0 ||
+              (operator === "any" && added.includes(field)),
+          )
+          .map((operator) => {
+            const key = filterKey(field, operator),
+              selected = filterList(value[key]);
+            return (
+              <View
+                key={`${field}:${operator}`}
+                style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 }}
+              >
+                <Body small>{filterFieldLabels[field]}</Body>
+                <Choice
+                  compact
+                  label={t("ticket.filter.match", { label: filterFieldLabels[field] })}
+                  value={operator}
+                  options={[
+                    { value: "any", label: t("ticket.filter.is") },
+                    { value: "none", label: t("ticket.filter.isNot") },
+                  ]}
+                  onChange={(next) => {
+                    if (next === operator) return;
+                    const other = filterKey(field, next === "none" ? "none" : "any");
+                    change({
+                      ...value,
+                      [key]: undefined,
+                      [other]: [...new Set([...filterList(value[other]), ...selected])],
+                    });
+                  }}
+                />
+                <Choice
+                  compact
+                  label={filterFieldLabels[field]}
+                  value=""
+                  selected={selected}
+                  emptyLabel={t("ticket.list.all")}
+                  options={choices[field]}
+                  onChange={() => {}}
+                  onToggle={(next) => {
+                    const values = selected.includes(next)
+                      ? selected.filter((item) => item !== next)
+                      : [...selected, next];
+                    const otherKey = filterKey(field, operator === "any" ? "none" : "any"),
+                      excluded = filterList(value[otherKey]).filter((item) => item !== next);
+                    change({
+                      ...value,
+                      [key]: values.length ? values : undefined,
+                      [otherKey]: excluded.length ? excluded : undefined,
+                    });
+                  }}
+                />
+                <Button
+                  compact
+                  plain
+                  title=""
+                  accessibilityLabel={t("ticket.filter.clear")}
+                  leading={<TicketGlyph name="x" color={color.muted} />}
+                  onPress={() => {
+                    change({ ...value, [key]: undefined });
+                    setAdded((previous) => previous.filter((item) => item !== field));
+                  }}
+                />
+              </View>
+            );
+          }),
+      )}
+      <Choice
+        compact
+        label={t("ticket.filter.add")}
+        value=""
+        emptyLabel={t("ticket.filter.add")}
+        options={filterFieldNames
+          .filter(
+            (field) => !added.includes(field) && !filterList(value[filterKey(field, "any")]).length,
+          )
+          .map((field) => ({ value: field, label: filterFieldLabels[field] }))}
+        onChange={(next) => {
+          const field = filterFieldNames.find((item) => item === next);
+          if (field) setAdded((previous) => [...previous, field]);
+        }}
+      />
       <Choice
         label={t("ticket.display.orderBy")}
         value={value.sort}

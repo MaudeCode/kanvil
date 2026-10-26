@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Share } from "react-native";
+import { Alert, Share, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
@@ -37,7 +37,7 @@ import {
   Sheet,
 } from "./ui.tsx";
 import { chooseImage } from "./media.ts";
-import { AccountImage } from "./image.tsx";
+import { UserAvatar } from "./ticket-values.tsx";
 import { setAppearance, useAppearance } from "./theme.ts";
 
 export function ProfileSettings({ onDeleted }: { onDeleted: () => Promise<void> }) {
@@ -73,10 +73,32 @@ export function ProfileSettings({ onDeleted }: { onDeleted: () => Promise<void> 
     }
   }
   return (
-    <Section title={t("settings.profile.title")}>
-      {identity.image && (
-        <AccountImage uri={identity.image} style={{ width: 80, height: 80, borderRadius: 40 }} />
-      )}
+    <>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+        <UserAvatar name={identity.name} image={identity.image} size={64} />
+        <View style={{ flex: 1 }}>
+          <Button
+            compact
+            plain
+            title={t("settings.profile.changePhoto")}
+            disabled={pending}
+            onPress={() => {
+              void photo();
+            }}
+          />
+          {identity.image && (
+            <Button
+              compact
+              plain
+              title={t("settings.profile.removePhoto")}
+              disabled={pending}
+              onPress={() => {
+                void photo(true);
+              }}
+            />
+          )}
+        </View>
+      </View>
       <Field
         label={t("settings.profile.displayName")}
         value={name}
@@ -102,22 +124,10 @@ export function ProfileSettings({ onDeleted }: { onDeleted: () => Promise<void> 
             .finally(() => setPending(false));
         }}
       />
-      <Button
-        title={t("settings.profile.changePhoto")}
-        disabled={pending}
-        onPress={() => {
-          void photo();
-        }}
-      />
-      <Button
-        title={t("settings.profile.removePhoto")}
-        disabled={pending}
-        onPress={() => {
-          void photo(true);
-        }}
-      />
-      <AccountDeletion user={identity} own onDeleted={onDeleted} />
-    </Section>
+      <Section title={t("settings.lifecycle.deleteAccount")} collapsible>
+        <AccountDeletion user={identity} own onDeleted={onDeleted} />
+      </Section>
+    </>
   );
 }
 

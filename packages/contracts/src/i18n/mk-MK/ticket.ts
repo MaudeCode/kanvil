@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Управувај со прикази",
     selectSection: "Избери ги тикетите во {{section}}",
     expandSection: "Прошири ги тикетите во {{section}}",
     collapseSection: "Собери ги тикетите во {{section}}",
@@ -131,6 +132,7 @@ export default {
     noDue: "Без рок",
   },
   filter: {
+    add: "Додај филтер",
     me: "Јас",
     searchTickets: "Пребарај тикети",
     searchTicketsPlaceholder: "Пребарај тикети…",

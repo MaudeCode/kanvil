@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Kelola tampilan",
     selectSection: "Pilih tiket {{section}}",
     expandSection: "Luaskan tiket {{section}}",
     collapseSection: "Ciutkan tiket {{section}}",
@@ -128,6 +129,7 @@ export default {
     noDue: "Tanpa tenggat",
   },
   filter: {
+    add: "Tambah filter",
     me: "Saya",
     searchTickets: "Cari tiket",
     searchTicketsPlaceholder: "Cari tiket…",

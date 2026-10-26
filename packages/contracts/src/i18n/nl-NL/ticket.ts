@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Weergaven beheren",
     selectSection: "Tickets in {{section}} selecteren",
     expandSection: "Tickets in {{section}} uitvouwen",
     collapseSection: "Tickets in {{section}} samenvouwen",
@@ -131,6 +132,7 @@ export default {
     noDue: "Geen vervaldatum",
   },
   filter: {
+    add: "Filter toevoegen",
     me: "Ik",
     searchTickets: "Tickets zoeken",
     searchTicketsPlaceholder: "Tickets zoeken…",

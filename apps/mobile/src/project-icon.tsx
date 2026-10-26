@@ -1,3 +1,4 @@
+import { iconFromLibrary } from "@kanvil/contracts/icons";
 import { AccountImage } from "./image.tsx";
 import { View, useColorScheme } from "react-native";
 import { SvgXml } from "react-native-svg";
@@ -17,7 +18,7 @@ export function ProjectIcon({
   const library = useIconLibrary(!project.image),
     palette = usePalette(),
     mode = useColorScheme() === "dark" ? "dark" : "light";
-  const icon = library.data?.icons[project.iconName ?? "folder-open"];
+  const icon = iconFromLibrary(library.data, project.iconName ?? "folder-open");
   const color = nativeAccentColor(project.iconColor, mode, palette);
   return (
     <View

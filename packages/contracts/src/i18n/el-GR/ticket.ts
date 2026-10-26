@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Διαχείριση προβολών",
     selectSection: "Επιλογή δελτίων «{{section}}»",
     expandSection: "Ανάπτυξη δελτίων «{{section}}»",
     collapseSection: "Σύμπτυξη δελτίων «{{section}}»",
@@ -131,6 +132,7 @@ export default {
     noDue: "Χωρίς προθεσμία",
   },
   filter: {
+    add: "Προσθήκη φίλτρου",
     me: "Εγώ",
     searchTickets: "Αναζήτηση δελτίων",
     searchTicketsPlaceholder: "Αναζήτηση δελτίων…",

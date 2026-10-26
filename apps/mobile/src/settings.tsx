@@ -4,6 +4,7 @@ import {
   localePreference,
   locales,
   t,
+  formatRelativeTime,
   type LocalePreference,
 } from "@kanvil/contracts/i18n";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -18,7 +19,11 @@ import {
   reminderUnitSchema,
 } from "@kanvil/contracts";
 import { useConnection, useIdentity, useProjects, useWorkspace, useAllProjects } from "./data.tsx";
-import { accountSections, settingsSectionLabel } from "@kanvil/contracts/navigation";
+import {
+  accountSections,
+  settingsSectionLabel,
+  settingsSectionSymbols,
+} from "@kanvil/contracts/navigation";
 import { ProjectIcon } from "./project-icon.tsx";
 import { UserAvatar } from "./ticket-values.tsx";
 import { useProjectNavigation } from "./navigation.ts";
@@ -47,7 +52,6 @@ import {
   Row,
   Screen,
   WorkspaceScope,
-  Heading,
   Section,
   Sheet,
   TicketGlyph,
@@ -148,10 +152,9 @@ export function Inbox() {
   const target = items.data?.find((item) => item.id === focused);
   return (
     <Screen scroll={false}>
-      <WorkspaceScope />
-      <View style={{ paddingHorizontal: 20, paddingVertical: 6 }}>
+      <WorkspaceScope>
         <Choice
-          inline
+          compact
           label={t("shell.page.inbox")}
           value={view}
           options={["unread", "mentions", "all"].map((value) => ({
@@ -168,7 +171,7 @@ export function Inbox() {
             setView(value === "mentions" ? "mentions" : value === "all" ? "all" : "unread")
           }
         />
-      </View>
+      </WorkspaceScope>
       <ErrorNotice error={items.error ?? action.error} />
       {items.isPending || projects.isPending ? (
         <Loading />
@@ -176,10 +179,7 @@ export function Inbox() {
         <List
           data={visible}
           keyExtractor={(item) => item.id}
-          onRefresh={() => {
-            void items.refetch();
-          }}
-          refreshing={items.isRefetching}
+          onRefresh={() => items.refetch()}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
               <Body muted>
@@ -193,7 +193,13 @@ export function Inbox() {
           }
           renderItem={({ item }) => (
             <Row
-              title={formatEvent(item.event, true)}
+              title={
+                typeof item.event.data.title === "string"
+                  ? item.event.data.title
+                  : formatEvent(item.event, true)
+              }
+              emphasized={!item.readAt}
+              interaction="action"
               leading={
                 <TicketGlyph
                   name={item.readAt ? "circle-check" : "circle-dot"}
@@ -202,9 +208,13 @@ export function Inbox() {
               }
               accessibilityLabel={t("native.labelValue", {
                 label: t(item.readAt ? "native.inbox.read" : "shell.inbox.unread"),
-                value: formatEvent(item.event, true),
+                value: [formatEvent(item.event, true), formatTimestamp(item.event.createdAt)].join(
+                  " · ",
+                ),
               })}
-              caption={formatTimestamp(item.event.createdAt)}
+              caption={[formatEvent(item.event), formatRelativeTime(item.event.createdAt)].join(
+                " · ",
+              )}
               onLongPress={() => setFocused(item.id)}
               onPress={() => {
                 mutate({ ids: [item.id], read: true });
@@ -424,6 +434,7 @@ export function Settings({
     identity = useIdentity(),
     workspace = useWorkspace(),
     projects = useProjects(),
+    color = usePalette(),
     navigation = useNavigation();
   const { currentProjectId } = useProjectNavigation();
   const activeSection = accountSections.find((value) => value === section);
@@ -513,6 +524,7 @@ export function Settings({
               <Row
                 key={value}
                 title={settingsSectionLabel(value)}
+                leading={<TicketGlyph name={settingsSectionSymbols[value]} color={color.accent} />}
                 onPress={() => navigation.navigate("AccountSettings", { section: value })}
               />
             ))}
@@ -521,6 +533,7 @@ export function Settings({
           <Section title={workspace.active.name}>
             <Row
               title={t("shell.workspace.settings")}
+              leading={<TicketGlyph name="building-2" color={color.accent} />}
               onPress={() => {
                 if (workspace.active)
                   navigation.navigate("WorkspaceSettings", { workspaceId: workspace.active.id });
@@ -548,6 +561,7 @@ export function Settings({
         {identity.admin && (
           <Row
             title={t("shell.settingsNav.administration")}
+            leading={<TicketGlyph name="shield-check" color={color.accent} />}
             onPress={() => navigation.navigate("Administration", {})}
           />
         )}
@@ -596,7 +610,6 @@ export function Settings({
     );
   return (
     <Screen>
-      <Heading>{settingsSectionLabel(activeSection)}</Heading>
       <ErrorNotice error={error} />
       {message && <Body>{message}</Body>}
       {activeSection === "account" && (

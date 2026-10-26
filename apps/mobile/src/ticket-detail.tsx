@@ -133,9 +133,9 @@ export function TicketContent({
         selectable
         style={{
           color: color.foreground,
-          fontSize: 26,
+          fontSize: 24,
           fontWeight: "600",
-          lineHeight: 34,
+          lineHeight: 30,
           letterSpacing: -0.6,
         }}
       >
@@ -171,12 +171,15 @@ export function TicketContent({
         </Body>
       )}
       {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
-      <TicketTags projectId={projectId} tags={ticket.labels} />
-      <TicketTags projectId={projectId} tags={ticket.scopes} kind="scope" />
+      <TicketTags projectId={projectId} tags={ticket.labels} scopes={ticket.scopes} />
       <ErrorNotice error={result.error ?? release.error ?? update.error} />
-      <Section title={t("native.detail.description")}>
-        <Markdown>{ticket.description || t("native.detail.noDescription")}</Markdown>
-      </Section>
+      {ticket.description ? (
+        <Markdown>{ticket.description}</Markdown>
+      ) : (
+        <Body muted small>
+          {t("native.detail.noDescription")}
+        </Body>
+      )}
       {ticket.acceptanceCriteria && (
         <Section title={t("native.detail.acceptanceCriteria")}>
           <Markdown>{ticket.acceptanceCriteria}</Markdown>

@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Управление представлениями",
     selectSection: "Выбрать тикеты: {{section}}",
     expandSection: "Развернуть тикеты: {{section}}",
     collapseSection: "Свернуть тикеты: {{section}}",
@@ -135,6 +136,7 @@ export default {
     noDue: "Без срока",
   },
   filter: {
+    add: "Добавить фильтр",
     me: "Я",
     searchTickets: "Поиск тикетов",
     searchTicketsPlaceholder: "Поиск тикетов…",

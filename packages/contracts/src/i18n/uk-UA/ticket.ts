@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Керувати поданнями",
     selectSection: "Вибрати тікети: {{section}}",
     expandSection: "Розгорнути тікети: {{section}}",
     collapseSection: "Згорнути тікети: {{section}}",
@@ -135,6 +136,7 @@ export default {
     noDue: "Без терміну",
   },
   filter: {
+    add: "Додати фільтр",
     me: "Я",
     searchTickets: "Пошук тікетів",
     searchTicketsPlaceholder: "Пошук тікетів…",

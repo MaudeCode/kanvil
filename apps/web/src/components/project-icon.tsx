@@ -1,4 +1,4 @@
-import { loadProjectIcons } from "@kanvil/contracts/icons";
+import { loadProjectIcons, iconFromLibrary } from "@kanvil/contracts/icons";
 import { accentColorClasses } from "../lib/accent-colors.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react/offline";
@@ -22,7 +22,7 @@ export function ProjectIcon({
   className?: string;
 }) {
   const library = useIconLibrary(!!project.iconName && !project.image),
-    icon = project.iconName ? library.data?.icons[project.iconName] : undefined;
+    icon = project.iconName ? iconFromLibrary(library.data, project.iconName) : undefined;
   return (
     <span
       data-slot="project-icon"

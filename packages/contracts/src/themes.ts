@@ -218,6 +218,18 @@ export function validateTheme(value: unknown) {
   }
   return theme;
 }
+export function tintedSurface(
+  background: string,
+  foreground: string,
+  color: string,
+  strength = 0.12,
+) {
+  for (let ratio = strength; ratio > 0; ratio -= 0.02) {
+    const surface = blend(background, color, ratio);
+    if (contrast(surface, foreground) >= 4.5) return surface;
+  }
+  return background;
+}
 export function themeVariables(p: ThemePalette): Record<string, string> {
   const mix = (percentage: number) => blend(p.background, p.foreground, percentage / 100),
     muted = readable(
@@ -232,6 +244,7 @@ export function themeVariables(p: ThemePalette): Record<string, string> {
     "sidebar-foreground": readable(blend(p.sidebar, p.foreground, 0.72), p.sidebar, p.foreground),
     primary: p.primary,
     "primary-foreground": p.primaryForeground,
+    "primary-surface": tintedSurface(p.background, p.foreground, p.primary),
     card: p.background,
     "card-foreground": p.foreground,
     popover: mix(2),

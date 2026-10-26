@@ -3,6 +3,23 @@ import type { palettes } from "./theme.ts";
 
 // Both apps use the exact icon library already installed for the web project picker.
 export const loadProjectIcons = async () => (await import("@iconify-json/lucide")).icons;
+// The installed Lucide catalog keeps renamed glyphs as parent aliases.
+export function iconFromLibrary(
+  library: Awaited<ReturnType<typeof loadProjectIcons>> | undefined,
+  name: string,
+) {
+  if (!library) return undefined;
+  const visited = new Set<string>();
+  while (!visited.has(name)) {
+    const icon = library.icons[name];
+    if (icon) return icon;
+    visited.add(name);
+    const parent = library.aliases?.[name]?.parent;
+    if (!parent) return undefined;
+    name = parent;
+  }
+  return undefined;
+}
 
 // Ticket symbols are product language. Web and native choose the same Lucide glyph and tone.
 export const ticketSymbols = {

@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "व्यू प्रबंधित करें",
     selectSection: "{{section}} टिकट चुनें",
     expandSection: "{{section}} टिकट फैलाएं",
     collapseSection: "{{section}} टिकट समेटें",
@@ -130,6 +131,7 @@ export default {
     noDue: "कोई नियत तारीख नहीं",
   },
   filter: {
+    add: "फ़िल्टर जोड़ें",
     me: "मैं",
     searchTickets: "टिकट खोजें",
     searchTicketsPlaceholder: "टिकट खोजें…",

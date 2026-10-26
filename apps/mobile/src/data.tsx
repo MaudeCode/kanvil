@@ -208,3 +208,5 @@ export function ClockProvider({ children }: { children: ReactNode }) {
   }, []);
   return <CurrentTime value={now}>{children}</CurrentTime>;
 }
+
+export const LiveStatus = createContext<ReturnType<typeof useLive>>("connecting");

@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Quản lý chế độ xem",
     selectSection: "Chọn các phiếu {{section}}",
     expandSection: "Mở rộng các phiếu {{section}}",
     collapseSection: "Thu gọn các phiếu {{section}}",
@@ -128,6 +129,7 @@ export default {
     noDue: "Không có hạn chót",
   },
   filter: {
+    add: "Thêm bộ lọc",
     me: "Tôi",
     searchTickets: "Tìm phiếu",
     searchTicketsPlaceholder: "Tìm phiếu…",

@@ -1,7 +1,9 @@
+import { tintedSurface } from "@kanvil/contracts/themes";
 import { Text, View, useColorScheme } from "react-native";
 import Svg, { Rect, SvgXml } from "react-native-svg";
 import { useQuery } from "@tanstack/react-query";
 import {
+  iconFromLibrary,
   difficultySegments,
   ticketSymbols,
   type TicketPropertyName,
@@ -36,7 +38,7 @@ export function TicketGlyph({
   weight?: number;
 }) {
   const library = useIconLibrary();
-  const body = library.data?.icons[name]?.body;
+  const body = iconFromLibrary(library.data, name)?.body;
   return (
     <View
       style={{ width: size, height: size, flexShrink: 0 }}
@@ -232,11 +234,34 @@ export function PropertyValue({
       accessible
       accessibilityRole="image"
       accessibilityLabel={propertyDescription({ ...props, stateId }, catalog)}
-      style={{ flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1, minWidth: 0 }}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        flexShrink: 1,
+        minWidth: 0,
+        ...(!iconOnly && props.property === "status"
+          ? {
+              backgroundColor: tintedSurface(color.surface, color.foreground, tone),
+              paddingHorizontal: 7,
+              paddingVertical: 3,
+              borderRadius: 6,
+            }
+          : {}),
+      }}
     >
       {glyph}
       {!iconOnly && (
-        <Text style={{ color: tone, fontSize: 13, lineHeight: 20, flexShrink: 1 }}>{name}</Text>
+        <Text
+          style={{
+            color: props.property === "status" ? color.foreground : tone,
+            fontSize: 13,
+            lineHeight: 18,
+            flexShrink: 1,
+          }}
+        >
+          {name}
+        </Text>
       )}
     </View>
   );
@@ -280,7 +305,14 @@ export function TicketTag({
         borderRadius: 5,
         borderWidth: kind === "scope" ? 0.5 : 0,
         borderColor: color.line,
-        backgroundColor: kind === "label" ? color.background : "transparent",
+        backgroundColor:
+          kind === "label"
+            ? tintedSurface(
+                color.surface,
+                color.foreground,
+                nativeAccentColor(labelColor, mode, color),
+              )
+            : "transparent",
       }}
     >
       {kind === "label" && (
@@ -295,7 +327,10 @@ export function TicketTag({
           }}
         />
       )}
-      <Text style={{ color: color.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 }}>{tag}</Text>
+      {kind === "scope" && <TicketGlyph name="hash" color={color.muted} size={11} />}
+      <Text style={{ color: color.foreground, fontSize: 12, lineHeight: 18, flexShrink: 1 }}>
+        {tag}
+      </Text>
     </View>
   );
 }

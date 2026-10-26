@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "보기 관리",
     selectSection: "{{section}} 티켓 선택",
     expandSection: "{{section}} 티켓 펼치기",
     collapseSection: "{{section}} 티켓 접기",
@@ -128,6 +129,7 @@ export default {
     noDue: "마감일 없음",
   },
   filter: {
+    add: "필터 추가",
     me: "나",
     searchTickets: "티켓 검색",
     searchTicketsPlaceholder: "티켓 검색…",

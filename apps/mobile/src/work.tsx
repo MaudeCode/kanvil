@@ -132,10 +132,7 @@ export function MyWork() {
         <List
           data={entries}
           keyExtractor={(item) => item.id}
-          onRefresh={() => {
-            void work.refetch();
-          }}
-          refreshing={work.isRefetching}
+          onRefresh={() => work.refetch()}
           onEndReached={() => {
             if (work.hasNextPage && !work.isFetchingNextPage) void work.fetchNextPage();
           }}
@@ -227,6 +224,8 @@ export function Search() {
       <View style={{ padding: 20, gap: 12 }}>
         <Field
           label={t("shell.search.field")}
+          labelHidden
+          variant="search"
           placeholder={t("shell.search.placeholder")}
           value={query}
           onChangeText={setQuery}
@@ -234,6 +233,7 @@ export function Search() {
         />
         <Choice
           label={t("shell.page.search")}
+          compact
           value={type ?? "all"}
           options={[
             { value: "all", label: t("shell.search.tab.all") },

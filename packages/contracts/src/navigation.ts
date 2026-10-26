@@ -37,3 +37,25 @@ export type SettingsSection = (
 )[number];
 export const settingsSectionLabel = (section: SettingsSection) =>
   t(`shell.settingsNav.section.${section === "account" ? "profile" : section}`);
+
+export const settingsSectionSymbols = {
+  account: "user-round",
+  appearance: "palette",
+  preferences: "settings-2",
+  credentials: "key-round",
+  notifications: "bell",
+  general: "settings-2",
+  members: "users",
+  roles: "user-cog",
+  labels: "tags",
+  workflow: "workflow",
+  fields: "rows-3",
+  integrations: "webhook",
+  calendar: "calendar-sync",
+  storage: "hard-drive",
+  search: "search",
+  events: "network",
+  users: "users",
+  workspaces: "building-2",
+  authentication: "shield-check",
+} as const satisfies Record<SettingsSection, string>;

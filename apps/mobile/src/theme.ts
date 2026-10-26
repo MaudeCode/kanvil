@@ -63,7 +63,7 @@ export function useNativePalette() {
       line: colors.border ?? palettes[mode].line,
       accent: theme[mode].primary,
       accentForeground: theme[mode].primaryForeground,
-      accentSurface: colors.accent ?? palettes[mode].accentSurface,
+      accentSurface: colors["primary-surface"] ?? palettes[mode].accentSurface,
       danger: colors.destructive ?? palettes[mode].danger,
       warning: colors.warning ?? palettes[mode].warning,
       success: colors.success ?? palettes[mode].success,

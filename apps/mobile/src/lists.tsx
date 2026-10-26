@@ -151,7 +151,7 @@ export function Projects({ picker = false }: { picker?: boolean }) {
       {picker ? (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
           <Choice
-            inline
+            compact
             label={t("shell.workspace.workspaces")}
             value={workspace.active?.id ?? ""}
             options={workspace.workspaces.map((space) => ({
@@ -204,10 +204,7 @@ export function Projects({ picker = false }: { picker?: boolean }) {
             ) : undefined
           }
           keyExtractor={(project) => project.id}
-          onRefresh={() => {
-            void projects.refetch();
-          }}
-          refreshing={projects.isRefetching}
+          onRefresh={() => projects.refetch()}
           ListEmptyComponent={
             recent.length ? undefined : (
               <View style={{ padding: 20 }}>
@@ -259,6 +256,7 @@ function ProjectRow({
   return (
     <Row
       title={project.name}
+      interaction={picker ? "choice" : "navigate"}
       selected={selected}
       leading={<ProjectIcon project={project} size={24} />}
       dense

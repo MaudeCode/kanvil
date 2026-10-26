@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Görünümleri yönet",
     selectSection: "{{section}} taleplerini seç",
     expandSection: "{{section}} taleplerini genişlet",
     collapseSection: "{{section}} taleplerini daralt",
@@ -130,6 +131,7 @@ export default {
     noDue: "Bitiş tarihi yok",
   },
   filter: {
+    add: "Filtre ekle",
     me: "Ben",
     searchTickets: "Taleplerde ara",
     searchTicketsPlaceholder: "Taleplerde ara…",

@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Gérer les vues",
     selectSection: "Sélectionner les tickets : {{section}}",
     expandSection: "Développer les tickets : {{section}}",
     collapseSection: "Réduire les tickets : {{section}}",
@@ -132,6 +133,7 @@ export default {
     noDue: "Sans date d’échéance",
   },
   filter: {
+    add: "Ajouter un filtre",
     me: "Moi",
     searchTickets: "Rechercher des tickets",
     searchTicketsPlaceholder: "Rechercher des tickets…",

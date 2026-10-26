@@ -55,6 +55,9 @@ import {
   CustomFieldInput,
   ColorChoice,
   PropertyValue,
+  Menu,
+  TicketGlyph,
+  usePalette,
 } from "./ui.tsx";
 import { useProjectNavigation, type ScreenProps } from "./navigation.ts";
 import { IntegrationSettings, CalendarFeeds } from "./delivery-settings.tsx";
@@ -116,7 +119,7 @@ export function DetailsForm({
     [version, setVersion] = useState(entity.version);
   const stale = version !== entity.version;
   return (
-    <Section title={t("shell.settingsNav.section.general")}>
+    <>
       <Field
         label={t("settings.layout.name")}
         value={name}
@@ -158,7 +161,7 @@ export function DetailsForm({
           }}
         />
       )}
-    </Section>
+    </>
   );
 }
 
@@ -1350,7 +1353,7 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
         <View key={item.id} style={{ gap: 8 }}>
           <Row
             title={item.name}
-            caption={stateLabels[item.category]}
+            caption={item.name === stateLabels[item.category] ? "" : stateLabels[item.category]}
             leading={
               <PropertyValue
                 projectId={projectId}
@@ -1369,30 +1372,32 @@ function WorkflowSettings({ projectId, canManage }: { projectId: string; canMana
                 setReassignTo("");
               }
             }}
+            trailing={
+              canManage ? (
+                <ReorderActions
+                  name={item.name}
+                  upDisabled={update.isPending || item.position === 0}
+                  downDisabled={update.isPending}
+                  onUp={() =>
+                    update.mutate({
+                      projectId,
+                      stateId: item.id,
+                      expectedVersion: item.version,
+                      position: Math.max(0, item.position - 1),
+                    })
+                  }
+                  onDown={() =>
+                    update.mutate({
+                      projectId,
+                      stateId: item.id,
+                      expectedVersion: item.version,
+                      position: item.position + 1,
+                    })
+                  }
+                />
+              ) : undefined
+            }
           />
-          {canManage && (
-            <ReorderActions
-              name={item.name}
-              upDisabled={update.isPending || item.position === 0}
-              downDisabled={update.isPending}
-              onUp={() =>
-                update.mutate({
-                  projectId,
-                  stateId: item.id,
-                  expectedVersion: item.version,
-                  position: Math.max(0, item.position - 1),
-                })
-              }
-              onDown={() =>
-                update.mutate({
-                  projectId,
-                  stateId: item.id,
-                  expectedVersion: item.version,
-                  position: item.position + 1,
-                })
-              }
-            />
-          )}
         </View>
       ))}
       {canManage && (
@@ -1515,34 +1520,36 @@ function FieldSettings({ projectId, canManage }: { projectId: string; canManage:
             onPress={() => {
               if (canManage) setEditing(field);
             }}
+            trailing={
+              canManage ? (
+                <ReorderActions
+                  name={field.name}
+                  upDisabled={index === 0 || move.isPending}
+                  downDisabled={index === all.length - 1 || move.isPending}
+                  onUp={() => {
+                    const before = all[index - 1]?.id;
+                    if (before)
+                      move.mutate({
+                        projectId,
+                        fieldId: field.id,
+                        expectedVersion: field.version,
+                        before,
+                      });
+                  }}
+                  onDown={() => {
+                    const after = all[index + 1]?.id;
+                    if (after)
+                      move.mutate({
+                        projectId,
+                        fieldId: field.id,
+                        expectedVersion: field.version,
+                        after,
+                      });
+                  }}
+                />
+              ) : undefined
+            }
           />
-          {canManage && (
-            <ReorderActions
-              name={field.name}
-              upDisabled={index === 0 || move.isPending}
-              downDisabled={index === all.length - 1 || move.isPending}
-              onUp={() => {
-                const before = all[index - 1]?.id;
-                if (before)
-                  move.mutate({
-                    projectId,
-                    fieldId: field.id,
-                    expectedVersion: field.version,
-                    before,
-                  });
-              }}
-              onDown={() => {
-                const after = all[index + 1]?.id;
-                if (after)
-                  move.mutate({
-                    projectId,
-                    fieldId: field.id,
-                    expectedVersion: field.version,
-                    after,
-                  });
-              }}
-            />
-          )}
         </View>
       ))}
       {canManage && <Button title={t("settings.fields.new")} onPress={() => setEditing(null)} />}
@@ -1754,22 +1761,33 @@ function ReorderActions({
   onUp: () => void;
   onDown: () => void;
 }) {
+  const color = usePalette();
   return (
-    <View style={{ flexDirection: "row", gap: 8 }}>
+    <Menu
+      title={name}
+      items={[
+        {
+          type: "action",
+          label: t("settings.moveUp", { name }),
+          disabled: upDisabled,
+          onPress: onUp,
+        },
+        {
+          type: "action",
+          label: t("settings.moveDown", { name }),
+          disabled: downDisabled,
+          onPress: onDown,
+        },
+      ]}
+    >
       <Button
         compact
-        title={t("shell.move.up.menu")}
-        accessibilityLabel={t("settings.moveUp", { name })}
-        disabled={upDisabled}
-        onPress={onUp}
+        plain
+        title=""
+        accessibilityLabel={t("ticket.selection.more")}
+        leading={<TicketGlyph name="ellipsis" color={color.muted} />}
+        onPress={() => {}}
       />
-      <Button
-        compact
-        title={t("shell.move.down.menu")}
-        accessibilityLabel={t("settings.moveDown", { name })}
-        disabled={downDisabled}
-        onPress={onDown}
-      />
-    </View>
+    </Menu>
   );
 }

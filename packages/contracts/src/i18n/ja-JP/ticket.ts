@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "ビューを管理",
     selectSection: "{{section}}のチケットを選択",
     expandSection: "{{section}}のチケットを展開",
     collapseSection: "{{section}}のチケットを折りたたむ",
@@ -128,6 +129,7 @@ export default {
     noDue: "期限なし",
   },
   filter: {
+    add: "フィルターを追加",
     me: "自分",
     searchTickets: "チケットを検索",
     searchTicketsPlaceholder: "チケットを検索…",

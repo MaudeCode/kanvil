@@ -38,10 +38,27 @@ export const MainNavigation = createContext<Pick<
   NativeStackNavigationProp<Routes>,
   "navigate" | "goBack" | "dispatch"
 > | null>(null);
+// A native sheet must finish dismissing before UIKit can present a root editor modal.
+export const AfterSheet = createContext<((action: () => void) => void) | null>(null);
 export function useAppNavigation() {
-  const navigation = useContext(MainNavigation);
+  const navigation = useContext(MainNavigation),
+    afterSheet = useContext(AfterSheet);
   if (!navigation) throw new Error("The main navigation is unavailable");
-  return navigation;
+  return useMemo<typeof navigation>(() => {
+    if (!afterSheet) return navigation;
+    return {
+      ...navigation,
+      navigate: (...args) => {
+        const route = args[0],
+          name = typeof route === "string" ? route : route?.name;
+        const action = () => {
+          Reflect.apply(navigation.navigate, navigation, args);
+        };
+        if (name === "Edit") afterSheet(action);
+        else action();
+      },
+    };
+  }, [navigation, afterSheet]);
 }
 export type ProjectContext = {
   location: Routes["Tickets"];

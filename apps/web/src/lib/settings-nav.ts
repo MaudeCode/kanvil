@@ -19,54 +19,42 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { t } from "@kanvil/contracts/i18n";
+import { settingsSectionLabel, settingsSectionSymbols } from "@kanvil/contracts/navigation";
 import { accountSections, adminSections, projectSections, workspaceSections } from "../search.ts";
 // Every settings destination, shared by the settings navigation, breadcrumbs and the palette.
 // Labels read the interface language each time they are read.
 type Section = { label: string; icon: LucideIcon };
-type Sections<T extends readonly string[]> = Record<T[number], Section>;
 type SettingsSection = (
   | typeof accountSections
   | typeof adminSections
   | typeof projectSections
   | typeof workspaceSections
 )[number];
-const sectionOf = (label: () => string, icon: LucideIcon): Section => ({
+const glyphs = {
+  "user-round": UserRound,
+  palette: Palette,
+  "settings-2": Settings2,
+  "key-round": KeyRound,
+  bell: Bell,
+  users: Users,
+  "user-cog": UserCog,
+  tags: Tags,
+  workflow: Workflow,
+  "rows-3": Rows3,
+  webhook: Webhook,
+  "calendar-sync": CalendarSync,
+  "hard-drive": HardDrive,
+  search: Search,
+  network: Network,
+  "building-2": Building2,
+  "shield-check": ShieldCheck,
+};
+const sectionOf = (section: SettingsSection): Section => ({
   get label() {
-    return label();
+    return settingsSectionLabel(section);
   },
-  icon,
+  icon: glyphs[settingsSectionSymbols[section]],
 });
-const account: Sections<typeof accountSections> = {
-  account: sectionOf(() => t("shell.settingsNav.section.profile"), UserRound),
-  appearance: sectionOf(() => t("shell.settingsNav.section.appearance"), Palette),
-  preferences: sectionOf(() => t("shell.settingsNav.section.preferences"), Settings2),
-  credentials: sectionOf(() => t("shell.settingsNav.section.credentials"), KeyRound),
-  notifications: sectionOf(() => t("shell.settingsNav.section.notifications"), Bell),
-};
-const workspace: Sections<typeof workspaceSections> = {
-  general: sectionOf(() => t("shell.settingsNav.section.general"), Settings2),
-  members: sectionOf(() => t("shell.settingsNav.section.members"), Users),
-  roles: sectionOf(() => t("shell.settingsNav.section.roles"), UserCog),
-  labels: sectionOf(() => t("shell.settingsNav.section.labels"), Tags),
-};
-const project: Sections<typeof projectSections> = {
-  general: workspace.general,
-  members: workspace.members,
-  labels: workspace.labels,
-  workflow: sectionOf(() => t("shell.settingsNav.section.workflow"), Workflow),
-  fields: sectionOf(() => t("shell.settingsNav.section.fields"), Rows3),
-  integrations: sectionOf(() => t("shell.settingsNav.section.integrations"), Webhook),
-  calendar: sectionOf(() => t("shell.settingsNav.section.calendar"), CalendarSync),
-};
-const admin: Sections<typeof adminSections> = {
-  general: workspace.general,
-  storage: sectionOf(() => t("shell.settingsNav.section.storage"), HardDrive),
-  search: sectionOf(() => t("shell.settingsNav.section.search"), Search),
-  events: sectionOf(() => t("shell.settingsNav.section.events"), Network),
-  users: sectionOf(() => t("shell.settingsNav.section.users"), Users),
-  workspaces: sectionOf(() => t("shell.settingsNav.section.workspaces"), Building2),
-  authentication: sectionOf(() => t("shell.settingsNav.section.authentication"), ShieldCheck),
-};
 export type SettingsEntry<P = never> = {
   to: string;
   section: SettingsSection;
@@ -81,11 +69,8 @@ export type SettingsGroup<P = never> = {
   title: string;
   entries: SettingsEntry<P>[];
 };
-const entries = <T extends SettingsSection>(
-  to: string,
-  ids: readonly T[],
-  sections: Record<T, Section>,
-) => ids.map((section) => ({ to, section, ...sections[section] }));
+const entries = <T extends SettingsSection>(to: string, ids: readonly T[]) =>
+  ids.map((section) => ({ to, section, ...sectionOf(section) }));
 // Groups appear only for what the server already granted: a workspace role, the projects listed
 // for this user, and the instance administrator role from the session.
 export function settingsGroups<P extends { id: string; name: string }>(scope: {
@@ -98,7 +83,7 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
       id: "account",
       label: t("shell.settingsNav.account"),
       title: t("shell.settingsNav.settings"),
-      entries: entries("/settings", accountSections, account),
+      entries: entries("/settings", accountSections),
     },
   ];
   if (scope.workspace)
@@ -106,7 +91,7 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
       id: "workspace",
       label: t("shell.settingsNav.workspace"),
       title: t("shell.settingsNav.workspaceSettings"),
-      entries: entries(`/workspaces/${scope.workspace.id}/settings`, workspaceSections, workspace),
+      entries: entries(`/workspaces/${scope.workspace.id}/settings`, workspaceSections),
     });
   if (scope.projects.length)
     groups.push({
@@ -120,7 +105,7 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
           section: "general" as const,
           label: item.name,
           project: item,
-          children: entries(to, projectSections, project),
+          children: entries(to, projectSections),
         };
       }),
     });
@@ -129,7 +114,7 @@ export function settingsGroups<P extends { id: string; name: string }>(scope: {
       id: "admin",
       label: t("shell.settingsNav.administration"),
       title: t("shell.settingsNav.administration"),
-      entries: entries("/admin", adminSections, admin),
+      entries: entries("/admin", adminSections),
     });
   return groups;
 }

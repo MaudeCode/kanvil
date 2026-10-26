@@ -44,7 +44,9 @@ export function createHeaderAction(
     icon,
     onPress,
     disabled,
-    ...(policy.visibilityPriority ? { sharesBackground: false } : {}),
+    ...(policy.visibilityPriority
+      ? { sharesBackground: policy.visibilityPriority !== "high" }
+      : {}),
     ...policy,
   };
 }
@@ -62,7 +64,7 @@ export function createHeaderMenu(
     accessibilityLabel: title,
     icon,
     menu: { items },
-    sharesBackground: false,
+    sharesBackground: true,
     visibilityPriority: "low",
     ...policy,
   };

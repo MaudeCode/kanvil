@@ -1,3 +1,5 @@
+import { MenuView, type MenuAction } from "@expo/ui/community/menu";
+import SegmentedControl from "@expo/ui/community/segmented-control";
 import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
 import {
@@ -16,6 +18,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Switch,
   I18nManager,
   Button as SystemButton,
   Keyboard,
@@ -84,8 +87,8 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Renderer, useMarkdown } from "react-native-marked";
 import { brandMark } from "@kanvil/contracts/theme";
 import { useQuery } from "@tanstack/react-query";
-import { useConnection, useWorkspace, useAllProjects, useNow } from "./data.tsx";
-import { useProjectNavigation } from "./navigation.ts";
+import { useConnection, useWorkspace, useAllProjects, useNow, LiveStatus } from "./data.tsx";
+import { AfterSheet, useProjectNavigation } from "./navigation.ts";
 import {
   errorMessage,
   mentionScheme,
@@ -314,6 +317,50 @@ function HeaderItemsFallback({ items }: { items: NativeStackHeaderItem[] }) {
     </>
   );
 }
+export function Menu({
+  title,
+  items,
+  children,
+}: {
+  title: string;
+  items: NativeStackHeaderItemMenu["menu"]["items"];
+  children: ReactNode;
+}) {
+  const handlers = new Map<string, () => void>();
+  function actions(entries: NativeStackHeaderItemMenu["menu"]["items"], prefix = ""): MenuAction[] {
+    return entries.map((item, index) => {
+      const id = `${prefix}${index}`;
+      if (item.type === "submenu")
+        return {
+          id,
+          title: item.label,
+          ...(item.inline === undefined ? {} : { displayInline: item.inline }),
+          subactions: actions(item.items, `${id}.`),
+        };
+      handlers.set(id, item.onPress);
+      return {
+        id,
+        title: item.label,
+        ...(item.state === "on" || item.state === "off" ? { state: item.state } : {}),
+        attributes: {
+          ...(item.disabled === undefined ? {} : { disabled: item.disabled }),
+          ...(item.hidden === undefined ? {} : { hidden: item.hidden }),
+          ...(item.destructive === undefined ? {} : { destructive: item.destructive }),
+        },
+      };
+    });
+  }
+  return (
+    <MenuView
+      title={title}
+      actions={actions(items)}
+      onPressAction={({ nativeEvent }) => handlers.get(nativeEvent.event)?.()}
+    >
+      {children}
+    </MenuView>
+  );
+}
+
 export function Brand() {
   const color = usePalette();
   return (
@@ -344,6 +391,8 @@ export function Button({
   plain = false,
   disclosure = false,
   leading,
+  trailing,
+  children,
   dismissKeyboard = true,
 }: {
   title: string;
@@ -356,6 +405,8 @@ export function Button({
   plain?: boolean;
   disclosure?: boolean;
   leading?: ReactNode;
+  trailing?: ReactNode;
+  children?: ReactNode;
   dismissKeyboard?: boolean;
 }) {
   const color = usePalette();
@@ -379,35 +430,48 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          borderWidth: primary || compact ? StyleSheet.hairlineWidth : 0,
+          borderWidth: 0,
           borderColor: primary ? color.accent : color.line,
-          backgroundColor: primary ? color.accent : pressed ? color.accentSurface : "transparent",
+          backgroundColor: primary
+            ? color.accent
+            : pressed
+              ? color.accentSurface
+              : compact && !plain
+                ? color.background
+                : "transparent",
           alignItems: primary ? "center" : "flex-start",
           opacity: disabled ? 0.45 : 1,
           paddingHorizontal: primary ? 16 : 0,
         },
-        compact && { paddingHorizontal: 10, paddingVertical: 8 },
-        !!(disclosure || leading) && { flexDirection: "row", alignItems: "center", gap: 6 },
+        compact && { paddingHorizontal: 9, paddingVertical: 7 },
+        !!(disclosure || leading || trailing) && {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        },
         disclosure && { justifyContent: "space-between" },
       ]}
     >
       {leading}
-      <Text
-        style={{
-          color: danger
-            ? color.danger
-            : primary
-              ? color.accentForeground
-              : compact
-                ? color.foreground
-                : color.accent,
-          fontWeight: primary || plain ? "600" : "500",
-          fontSize: 15,
-          flexShrink: 1,
-        }}
-      >
-        {title}
-      </Text>
+      {children ?? (
+        <Text
+          style={{
+            color: danger
+              ? color.danger
+              : primary
+                ? color.accentForeground
+                : compact
+                  ? color.foreground
+                  : color.accent,
+            fontWeight: primary || plain ? "600" : "500",
+            fontSize: 15,
+            flexShrink: 1,
+          }}
+        >
+          {title}
+        </Text>
+      )}
+      {trailing}
       {disclosure && <DecorativeIcon name="chevron-down" size={16} color={color.muted} />}
     </Pressable>
   );
@@ -419,14 +483,43 @@ export function Field({
   ...props
 }: ComponentProps<typeof TextInput> & {
   label: string;
-  variant?: "standard" | "title";
+  variant?: "standard" | "title" | "search";
   labelHidden?: boolean;
 }) {
   const color = usePalette(),
     [focused, setFocused] = useState(false);
   return (
-    <View style={styles.field}>
-      {!labelHidden && <Text style={[styles.label, { color: color.muted }]}>{label}</Text>}
+    <View
+      style={
+        variant === "standard" && !props.multiline && !labelHidden
+          ? {
+              flexDirection: "row",
+              alignItems: "center",
+              minHeight: 52,
+              gap: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: focused ? color.accent : color.line,
+            }
+          : styles.field
+      }
+    >
+      {!labelHidden && (
+        <Text
+          style={[
+            styles.label,
+            { color: props.multiline ? color.muted : color.foreground },
+            !props.multiline &&
+              variant === "standard" && {
+                width: "34%",
+                maxWidth: 180,
+                fontSize: 15,
+                lineHeight: 21,
+              },
+          ]}
+        >
+          {label}
+        </Text>
+      )}
       <TextInput
         autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
         autoCorrect={!props.secureTextEntry}
@@ -447,10 +540,16 @@ export function Field({
           {
             color: color.foreground,
             borderColor: focused ? color.accent : color.line,
-            backgroundColor: color.background,
+            backgroundColor: "transparent",
+            ...(!props.multiline && !labelHidden && variant === "standard"
+              ? { flex: 1, minWidth: 0, textAlign: I18nManager.isRTL ? "left" : "right" }
+              : {}),
+            ...(variant === "search"
+              ? { paddingHorizontal: 12, backgroundColor: color.background, borderRadius: 10 }
+              : {}),
           },
           props.multiline && {
-            minHeight: variant === "title" ? 56 : 110,
+            minHeight: variant === "title" ? 42 : 88,
             textAlignVertical: "top",
           },
           variant === "title" && {
@@ -458,7 +557,7 @@ export function Field({
             paddingVertical: 8,
             borderWidth: 0,
             backgroundColor: "transparent",
-            fontSize: 23,
+            fontSize: 24,
             lineHeight: 30,
             fontWeight: "600",
             letterSpacing: -0.4,
@@ -474,11 +573,15 @@ export function MarkdownField({
   value,
   onChangeText,
   maxLength,
+  status,
+  autoFocus = false,
 }: {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
   maxLength?: number;
+  status?: ReactNode;
+  autoFocus?: boolean;
 }) {
   const input = useRef<ComponentRef<typeof TextInput>>(null),
     color = usePalette();
@@ -497,15 +600,20 @@ export function MarkdownField({
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
+          flexWrap: "wrap",
           gap: 8,
         }}
       >
-        <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
-        <Button
-          compact
-          plain
-          title={preview ? t("detail.markdown.write") : t("detail.markdown.preview")}
-          onPress={() => setPreview((previous) => !previous)}
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
+          {status}
+        </View>
+        <SegmentedControl
+          values={[t("detail.markdown.write"), t("detail.markdown.preview")]}
+          selectedIndex={preview ? 1 : 0}
+          onChange={({ nativeEvent }) => setPreview(nativeEvent.selectedSegmentIndex === 1)}
+          accessibilityLabel={label}
+          style={{ minWidth: 168, height: 32 }}
         />
       </View>
       {!preview && (
@@ -513,11 +621,13 @@ export function MarkdownField({
           horizontal
           keyboardShouldPersistTaps="always"
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12 }}
+          style={{ backgroundColor: color.background, borderRadius: 10 }}
+          contentContainerStyle={{ gap: 0, paddingHorizontal: 2 }}
         >
           {markdownFormats.map((format) => (
             <Button
               compact
+              plain
               dismissKeyboard={false}
               key={format}
               title=""
@@ -536,6 +646,8 @@ export function MarkdownField({
           ref={input}
           label={label}
           labelHidden
+          autoFocus={autoFocus}
+          style={{ minHeight: 144 }}
           value={value}
           onChangeText={onChangeText}
           multiline
@@ -648,11 +760,20 @@ export function Sheet({
   children: ReactNode;
   scroll?: boolean;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    parentAfterSheet = useContext(AfterSheet);
+  const pending = useRef<(() => void) | undefined>(undefined);
   const [submit, setSubmit] = useState<ButtonAction>();
   const navigation = useNavigationContainerRef<SheetRoutes>();
   const [presented, setPresented] = useState(false);
   const close = useCallback(() => navigation.goBack(), [navigation]);
+  const afterSheet = useCallback(
+    (action: () => void) => {
+      pending.current = action;
+      close();
+    },
+    [close],
+  );
   const dark = useColorScheme() === "dark";
   useEffect(() => {
     if (!open && presented && navigation.isReady() && navigation.canGoBack()) navigation.goBack();
@@ -687,7 +808,13 @@ export function Sheet({
                 transitionEnd: (event) => {
                   if (!open && !event.data.closing) {
                     setPresented(false);
+                    const action = pending.current;
+                    pending.current = undefined;
                     onDismissed?.();
+                    if (action) {
+                      if (parentAfterSheet) parentAfterSheet(action);
+                      else action();
+                    }
                   }
                 },
               }}
@@ -729,7 +856,9 @@ export function Sheet({
                 <InsetsConsumed value={false}>
                   <SafeAreaProvider style={{ backgroundColor: color.surface }}>
                     <FormAction value={setSubmit}>
-                      <Screen scroll={scroll}>{children}</Screen>
+                      <AfterSheet value={afterSheet}>
+                        <Screen scroll={scroll}>{children}</Screen>
+                      </AfterSheet>
                     </FormAction>
                   </SafeAreaProvider>
                 </InsetsConsumed>
@@ -775,6 +904,7 @@ export function Choice({
         .map((option) => option.label)
         .join(", ") || emptyLabel
     : (options.find((option) => option.value === value)?.label ?? (value || emptyLabel));
+  const anchored = !selected && options.length > 0 && options.length <= 7;
   const choices = (
     <>
       {options.length > 7 && (
@@ -783,6 +913,9 @@ export function Choice({
           value={query}
           onChangeText={setQuery}
           autoFocus
+          variant="search"
+          labelHidden
+          placeholder={t("ticket.property.search", { label })}
           autoCorrect={false}
         />
       )}
@@ -794,6 +927,7 @@ export function Choice({
               key={option.value}
               label={option.label}
               checked={selected.includes(option.value)}
+              variant="checkbox"
               leading={option.leading}
               onChange={() => onToggle?.(option.value)}
             />
@@ -803,6 +937,7 @@ export function Choice({
               title={option.label}
               leading={option.leading}
               accessibilityLabel={t("native.labelValue", { label, value: option.label })}
+              interaction="choice"
               selected={option.value === value}
               trailing={option.value === value ? undefined : <View />}
               onPress={() => {
@@ -814,57 +949,75 @@ export function Choice({
         )}
     </>
   );
+  const trigger = compact ? (
+    <Button
+      compact
+      plain={!!summary}
+      title={current}
+      disabled={disabled}
+      leading={summary ? undefined : options.find((option) => option.value === value)?.leading}
+      accessibilityLabel={t("native.labelValue", { label, value: current })}
+      onPress={() => {
+        if (!anchored) {
+          setQuery("");
+          setOpen(true);
+        }
+      }}
+    >
+      {summary}
+    </Button>
+  ) : (
+    <Row
+      compact
+      title={label}
+      disabled={disabled}
+      accessibilityLabel={t("native.labelValue", { label, value: current })}
+      onPress={() => {
+        if (!anchored) {
+          setQuery("");
+          setOpen(true);
+        }
+      }}
+      trailing={
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center", maxWidth: "56%" }}>
+          {options.find((option) => option.value === value)?.leading}
+          {summary ?? (
+            <Text style={{ color: color.muted, fontSize: 15, flexShrink: 1 }}>
+              {selected && selected.length > 1
+                ? t("ticket.selection.selected", { count: selected.length })
+                : current}
+            </Text>
+          )}
+          <DecorativeIcon name="chevron-down" color={color.muted} size={14} accessible={false} />
+        </View>
+      }
+    />
+  );
+  const items: NativeStackHeaderItemMenu["menu"]["items"] = options.map((option) => ({
+    type: "action",
+    label: option.label,
+    state: option.value === value ? "on" : "off",
+    onPress: () => {
+      if (!disabled) onChange(option.value);
+    },
+  }));
   return (
     <View style={[styles.field, compact && { maxWidth: "100%", alignSelf: "flex-start" }]}>
-      {compact ? (
-        <Button
-          compact
-          title={current}
-          disabled={disabled}
-          leading={options.find((option) => option.value === value)?.leading}
-          accessibilityLabel={t("native.labelValue", { label, value: current })}
-          onPress={() => {
-            setQuery("");
-            setOpen(true);
-          }}
-        />
+      {anchored && !disabled ? (
+        <Menu title={label} items={items}>
+          {trigger}
+        </Menu>
       ) : (
-        <Row
-          compact
-          title={label}
-          disabled={disabled}
-          accessibilityLabel={t("native.labelValue", { label, value: current })}
-          onPress={() => {
-            setQuery("");
-            setOpen(true);
-          }}
-          trailing={
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", maxWidth: "56%" }}>
-              {options.find((option) => option.value === value)?.leading}
-              {summary ?? (
-                <Text style={{ color: color.muted, fontSize: 15, flexShrink: 1 }}>
-                  {selected && selected.length > 1
-                    ? t("ticket.selection.selected", { count: selected.length })
-                    : current}
-                </Text>
-              )}
-              <DecorativeIcon
-                name="chevron-down"
-                color={color.muted}
-                size={14}
-                accessible={false}
-              />
-            </View>
-          }
-        />
+        trigger
       )}
-      {inline ? (
-        open && <View>{choices}</View>
-      ) : (
-        <Sheet title={label} open={open} onClose={() => setOpen(false)}>
-          {choices}
-        </Sheet>
-      )}
+      {!anchored &&
+        (inline ? (
+          open && <View>{choices}</View>
+        ) : (
+          <Sheet title={label} open={open} onClose={() => setOpen(false)}>
+            {choices}
+          </Sheet>
+        ))}
     </View>
   );
 }
@@ -916,14 +1069,41 @@ export function Check({
   onChange,
   disabled = false,
   leading,
+  variant = "switch",
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
   leading?: ReactNode;
+  variant?: "switch" | "checkbox";
 }) {
   const color = usePalette();
+  if (variant === "switch")
+    return (
+      <View
+        style={{
+          minHeight: 52,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: color.line,
+        }}
+      >
+        {leading}
+        <Text style={{ color: color.foreground, fontSize: 15, lineHeight: 22, flex: 1 }}>
+          {label}
+        </Text>
+        <Switch
+          accessibilityLabel={label}
+          disabled={disabled}
+          value={checked}
+          onValueChange={onChange}
+          trackColor={{ true: color.accent }}
+        />
+      </View>
+    );
   return (
     <Pressable
       accessibilityRole="checkbox"
@@ -1259,15 +1439,12 @@ export function Section({
   initiallyOpen?: boolean;
   summary?: ReactNode;
 }) {
-  const color = usePalette(),
-    [expanded, setExpanded] = useState(initiallyOpen);
+  const [expanded, setExpanded] = useState(initiallyOpen);
   return (
     <View
       style={{
-        borderTopWidth: StyleSheet.hairlineWidth,
-        borderColor: color.line,
-        paddingVertical: 14,
-        gap: 10,
+        paddingTop: 8,
+        gap: 8,
       }}
     >
       <Heading
@@ -1308,7 +1485,9 @@ export function Screen({
   allowDivision?: boolean;
   scrollRef?: ComponentProps<typeof ScrollView>["ref"];
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    live = useContext(LiveStatus),
+    boundary = !useContext(InsetsConsumed);
   const navigation = useContext(NavigationContext);
   const content = (
     <ImageSurface value={!!background}>
@@ -1317,6 +1496,20 @@ export function Screen({
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
         <ContentArea enabled={!!navigation && safeArea} allowDivision={allowDivision}>
+          {boundary && (live === "offline" || live === "signedOut") && (
+            <View
+              accessibilityLiveRegion="polite"
+              style={{
+                paddingHorizontal: 20,
+                paddingVertical: 6,
+                backgroundColor: color.background,
+              }}
+            >
+              <Body small muted>
+                {t(`native.connection.${live}`)}
+              </Body>
+            </View>
+          )}
           <PaddedContent value={scroll}>
             {scroll ? (
               <Scroll
@@ -1324,9 +1517,10 @@ export function Screen({
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
                 contentContainerStyle={{
-                  padding: 22,
-                  paddingBottom: 48,
-                  gap: 16,
+                  paddingHorizontal: 16,
+                  paddingTop: 12,
+                  paddingBottom: 40,
+                  gap: 12,
                   width: "100%",
                   maxWidth: navigation ? 720 : 560,
                   alignSelf: "center",
@@ -1429,7 +1623,24 @@ export function Pager({
     </View>
   );
 }
-export function List<T>(props: LegendListProps<T>) {
+export function List<T>({
+  onRefresh,
+  ...props
+}: Omit<LegendListProps<T>, "onRefresh" | "refreshing"> & {
+  onRefresh?: () => Promise<unknown>;
+}) {
+  const [refreshing, setRefreshing] = useState(false);
+  async function refresh() {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } catch {
+      /* The owning query renders the failure; this state tracks only the gesture. */
+    } finally {
+      setRefreshing(false);
+    }
+  }
   return (
     <LegendList
       recycleItems
@@ -1437,6 +1648,14 @@ export function List<T>(props: LegendListProps<T>) {
       keyboardShouldPersistTaps="handled"
       contentInsetAdjustmentBehavior="automatic"
       {...props}
+      refreshing={refreshing}
+      {...(onRefresh
+        ? {
+            onRefresh: () => {
+              void refresh();
+            },
+          }
+        : {})}
     />
   );
 }
@@ -1456,6 +1675,8 @@ export function Row({
   disabled = false,
   accessibilityLabel,
   style,
+  interaction = "navigate",
+  emphasized = false,
 }: {
   title: string;
   caption?: string;
@@ -1472,6 +1693,8 @@ export function Row({
   disabled?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
+  interaction?: "navigate" | "choice" | "action" | "content";
+  emphasized?: boolean;
 }) {
   const color = usePalette();
   const imageSurface = useContext(ImageSurface),
@@ -1495,19 +1718,21 @@ export function Row({
           flexDirection: "row",
           alignItems: "center",
           minHeight: 44,
-          paddingVertical: compact || dense ? 12 : 14,
-          paddingHorizontal: compact || padded ? 0 : 20,
+          paddingVertical: compact || dense ? 10 : 12,
+          paddingHorizontal: compact || padded ? 0 : 16,
           gap: 12,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderColor: color.line,
-          borderStartWidth: active ? 2 : 0,
-          borderStartColor: color.accent,
+          borderStartWidth: 2,
+          borderStartColor: active || selected ? color.accent : "transparent",
           backgroundColor:
-            pressed || selected || active
+            selected || active
               ? color.accentSurface
-              : imageSurface
-                ? "transparent"
-                : color.surface,
+              : pressed
+                ? color.background
+                : imageSurface
+                  ? "transparent"
+                  : color.surface,
         },
         style,
       ]}
@@ -1530,8 +1755,8 @@ export function Row({
           style={{
             color: color.foreground,
             fontSize: compact ? 15 : 16,
-            fontWeight: "500",
-            lineHeight: dense ? 23 : 25,
+            fontWeight: emphasized ? "600" : "500",
+            lineHeight: 23,
             letterSpacing: -0.2,
           }}
         >
@@ -1542,16 +1767,17 @@ export function Row({
         )}
         {metadata && <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>}
       </View>
-      {trailing ?? (
-        <DecorativeIcon
-          name={selected ? "checkmark" : "chevron-forward"}
-          size={16}
-          color={selected ? color.accent : color.muted}
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        />
-      )}
+      {trailing ??
+        ((selected || interaction === "navigate") && (
+          <DecorativeIcon
+            name={selected ? "checkmark" : "chevron-forward"}
+            size={16}
+            color={selected ? color.accent : color.muted}
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        ))}
     </Pressable>
   );
 }
@@ -1746,18 +1972,8 @@ export function TicketRow({
           <TicketTags
             projectId={ticket.projectId}
             tags={ticket.labels ?? []}
-            limit={schedule ? 1 : 2}
-            {...(!schedule ? { onExpand: onPress } : {})}
+            scopes={ticket.scopes ?? []}
           />
-          {!schedule && (
-            <TicketTags
-              projectId={ticket.projectId}
-              tags={ticket.scopes ?? []}
-              kind="scope"
-              limit={1}
-              onExpand={onPress}
-            />
-          )}
         </View>
       }
       onPress={onPress}
@@ -1767,68 +1983,51 @@ export function TicketRow({
   );
 }
 
-// Detail shows every tag. Compact rows show a preview; opening the row reveals the full set.
+// Ticket surfaces share a single wrapping label/scope flow.
 export function TicketTags({
   projectId,
   tags,
-  kind = "label",
-  limit = tags.length,
-  onExpand,
+  scopes = [],
 }: {
   projectId: string;
   tags: string[];
-  kind?: "label" | "scope";
-  limit?: number;
-  onExpand?: () => void;
+  scopes?: string[];
 }) {
   const { api } = useConnection();
   const catalog = useQuery({
     ...api.query("list_project_labels", { projectId }),
-    enabled: kind === "label" && tags.length > 0,
+    enabled: tags.length > 0,
   });
-  const color = usePalette();
-  if (!tags.length) return null;
-  const content = (
+  if (!tags.length && !scopes.length) return null;
+  return (
     <View
       accessible
-      accessibilityLabel={t("ticket.tags.summary", {
-        label: t(kind === "label" ? "ticket.tags.labels" : "ticket.tags.scopes"),
-        tags: formatList(tags),
-      })}
+      accessibilityLabel={formatList([
+        ...(tags.length
+          ? [
+              t("ticket.tags.summary", {
+                label: t("ticket.tags.labels"),
+                tags: formatList(tags),
+              }),
+            ]
+          : []),
+        ...(scopes.length
+          ? [t("ticket.tags.summary", { label: t("ticket.tags.scopes"), tags: formatList(scopes) })]
+          : []),
+      ])}
       style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5 }}
     >
-      {tags.slice(0, limit).map((tag) => (
+      {tags.map((tag) => (
         <TicketTag
           key={tag}
           tag={tag}
-          kind={kind}
           color={catalog.data?.find((label) => label.name === tag)?.color ?? "gray"}
         />
       ))}
-      {tags.length > limit && (
-        <Text
-          style={{ color: color.muted, fontSize: 12 }}
-        >{`+${formatNumber(tags.length - limit)}`}</Text>
-      )}
+      {scopes.map((tag) => (
+        <TicketTag key={`scope:${tag}`} tag={tag} kind="scope" />
+      ))}
     </View>
-  );
-  return tags.length > limit && onExpand ? (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t("ticket.tags.summary", {
-        label: t(kind === "label" ? "ticket.tags.labels" : "ticket.tags.scopes"),
-        tags: formatList(tags),
-      })}
-      onPress={(event) => {
-        event.stopPropagation();
-        onExpand();
-      }}
-      style={{ minHeight: 44, justifyContent: "center" }}
-    >
-      {content}
-    </Pressable>
-  ) : (
-    content
   );
 }
 
@@ -1861,26 +2060,44 @@ export function RemovableSummary({
   ) : null;
 }
 
-export function WorkspaceScope() {
+export function ContextBar({ children }: { children: ReactNode }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 16,
+        paddingVertical: 4,
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+export function WorkspaceScope({ children }: { children?: ReactNode }) {
   const { active } = useWorkspace(),
     { showPicker } = useProjectNavigation(),
     color = usePalette();
   return (
-    <Row
-      title={active?.name ?? t("shell.app.noWorkspaceSelected")}
-      dense
-      accessibilityLabel={t("native.labelValue", {
-        label: t("native.navigation.switchProject"),
-        value: active?.name ?? t("shell.app.noWorkspaceSelected"),
-      })}
-      leading={
-        <DecorativeIcon name="business-outline" size={16} color={color.muted} accessible={false} />
-      }
-      trailing={
-        <DecorativeIcon name="chevron-down" size={14} color={color.muted} accessible={false} />
-      }
-      onPress={showPicker}
-    />
+    <ContextBar>
+      <Button
+        compact
+        plain
+        title={active?.name ?? t("shell.app.noWorkspaceSelected")}
+        accessibilityLabel={t("native.labelValue", {
+          label: t("native.navigation.switchProject"),
+          value: active?.name ?? t("shell.app.noWorkspaceSelected"),
+        })}
+        leading={<TicketGlyph name="building-2" size={16} color={color.muted} />}
+        trailing={
+          <DecorativeIcon name="chevron-down" size={12} color={color.muted} accessible={false} />
+        }
+        onPress={showPicker}
+      />
+      {children}
+    </ContextBar>
   );
 }
 // Compatibility entrypoint for relationships and schedules, using the common property renderer.
@@ -1945,9 +2162,10 @@ export const styles = StyleSheet.create({
   field: { gap: 8 },
   label: { fontSize: 13, fontWeight: "500" },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    padding: 14,
+    borderWidth: 0,
+    borderRadius: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 0,
     minHeight: 48,
     fontSize: 16,
   },
