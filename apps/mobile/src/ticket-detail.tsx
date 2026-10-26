@@ -120,28 +120,6 @@ export function TicketContent({
           {ticket.key}
         </Body>
       )}
-      <View style={styles.actions}>
-        <Status ticket={ticket} />
-        <Body muted small>
-          {priorityText(ticket.priority)}
-        </Body>
-        <Body muted small>
-          {kindLabels[ticket.kind]}
-        </Body>
-        <Body muted small>
-          {ticket.difficulty
-            ? difficultyLabels[ticket.difficulty]
-            : t("native.ticket.noDifficulty")}
-        </Body>
-        <Body muted small>
-          {t("native.ticket.version", { version: ticket.version })}
-        </Body>
-        {(ticket.startAt || ticket.dueAt) && (
-          <Body muted small>
-            {scheduleText(ticket)}
-          </Body>
-        )}
-      </View>
       <Text
         accessibilityRole="header"
         selectable
@@ -155,6 +133,25 @@ export function TicketContent({
       >
         {ticket.title}
       </Text>
+      <View style={styles.actions}>
+        <Status ticket={ticket} />
+        <Body muted small>
+          {priorityText(ticket.priority)}
+        </Body>
+        <Body muted small>
+          {kindLabels[ticket.kind]}
+        </Body>
+        <Body muted small>
+          {ticket.difficulty
+            ? difficultyLabels[ticket.difficulty]
+            : t("native.ticket.noDifficulty")}
+        </Body>
+        {(ticket.startAt || ticket.dueAt) && (
+          <Body muted small>
+            {scheduleText(ticket)}
+          </Body>
+        )}
+      </View>
       {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
       {ticket.labels.length > 0 && (
         <Body muted small>
@@ -165,9 +162,11 @@ export function TicketContent({
       <Section title={t("native.detail.description")}>
         <Markdown>{ticket.description || t("native.detail.noDescription")}</Markdown>
       </Section>
-      <Section title={t("native.detail.acceptanceCriteria")}>
-        <Markdown>{ticket.acceptanceCriteria || t("native.detail.noAcceptanceCriteria")}</Markdown>
-      </Section>
+      {ticket.acceptanceCriteria && (
+        <Section title={t("native.detail.acceptanceCriteria")}>
+          <Markdown>{ticket.acceptanceCriteria}</Markdown>
+        </Section>
+      )}
       {valued.length > 0 && (
         <Section title={t("native.detail.fields")}>
           {valued.map((field) => (

@@ -48,6 +48,10 @@ export default {
     create: "Criar projeto",
   },
   tickets: {
+    expandAll: "Expandir todas as seções",
+    collapseAll: "Recolher todas as seções",
+    select: "Selecionar tickets",
+
     search: "Pesquisar tickets",
     searchPlaceholder: "Título, descrição ou chave",
     allStatuses: "Todos os status",

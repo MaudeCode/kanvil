@@ -1,10 +1,10 @@
 import { createHeaderAction } from "./navigation-actions.tsx";
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { capabilitiesOf } from "@kanvil/contracts";
-import { useProjectNavigation } from "./navigation.ts";
+import { useHeaderSearch, useProjectNavigation } from "./navigation.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { t } from "@kanvil/contracts/i18n";
 import { useProjects, useWorkspace, useOperation } from "./data.tsx";
@@ -20,9 +20,11 @@ import {
   List,
   Row,
   Screen,
+  RemovableSummary,
+  WorkspaceScope,
 } from "./ui.tsx";
 
-export function Projects({ footer, picker = false }: { footer?: ReactNode; picker?: boolean }) {
+export function Projects({ picker = false }: { picker?: boolean }) {
   const projectNavigation = useProjectNavigation();
   const navigation = useNavigation();
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -33,11 +35,21 @@ export function Projects({ footer, picker = false }: { footer?: ReactNode; picke
     query: "",
   });
   const query = search.workspaceId === workspace.active?.id ? search.query : "";
+  const onQuery = useCallback(
+    (value: string) => setSearch({ workspaceId: workspace.active?.id, query: value }),
+    [workspace.active?.id],
+  );
+  const {
+    options: searchOptions,
+    setText: changeQuery,
+    searching,
+  } = useHeaderSearch(query, onQuery, t("shell.app.searchProjects"));
   const [creating, setCreating] = useState<string>();
   const canCreate = !!workspace.active && capabilitiesOf(workspace.active).includes("ticket.write");
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
+        headerSearchBarOptions: searchOptions,
         unstable_headerRightItems: (): NativeStackHeaderItem[] => [
           createHeaderAction(
             t("native.projects.new"),
@@ -97,28 +109,42 @@ export function Projects({ footer, picker = false }: { footer?: ReactNode; picke
         ],
       }),
     );
-  }, [navigation, canCreate, includeArchived, workspace.active, picker, projectNavigation]);
+  }, [
+    navigation,
+    canCreate,
+    includeArchived,
+    workspace.active,
+    picker,
+    projectNavigation,
+    searchOptions,
+  ]);
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 20, gap: 12 }}>
-        {picker && (
+      {picker ? (
+        <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
           <Choice
             label={t("shell.workspace.workspaces")}
             value={workspace.active?.id ?? ""}
-            options={workspace.workspaces.map((space) => ({ value: space.id, label: space.name }))}
+            options={workspace.workspaces.map((space) => ({
+              value: space.id,
+              label: space.name,
+            }))}
             onChange={(id) => {
+              changeQuery("");
               projectNavigation.selectWorkspace(id);
-              projectNavigation.showPicker();
             }}
           />
-        )}
-        <Field
-          label={t("shell.app.searchProjects")}
+        </View>
+      ) : (
+        <WorkspaceScope />
+      )}
+      {!searching && (
+        <RemovableSummary
+          label={t("shell.app.clearSearch")}
           value={query}
-          onChangeText={(value) => setSearch({ workspaceId: workspace.active?.id, query: value })}
-          autoCorrect={false}
+          onClear={() => changeQuery("")}
         />
-      </View>
+      )}
       <ErrorNotice error={projects.error} />
       {projects.isPending ? (
         <Loading />
@@ -129,7 +155,6 @@ export function Projects({ footer, picker = false }: { footer?: ReactNode; picke
               .toLocaleLowerCase()
               .includes(query.trim().toLocaleLowerCase()),
           )}
-          ListFooterComponent={footer && !query.trim() ? <>{footer}</> : undefined}
           keyExtractor={(project) => project.id}
           onRefresh={() => {
             void projects.refetch();
@@ -147,8 +172,13 @@ export function Projects({ footer, picker = false }: { footer?: ReactNode; picke
               title={item.name}
               selected={item.id === projectNavigation.currentProjectId}
               leading={<ProjectIcon project={item} />}
-              overline={item.archivedAt ? `${item.key} · ${t("shell.app.archived")}` : item.key}
-              caption={item.description}
+              dense
+              metadata={
+                <Body muted small>
+                  {item.archivedAt ? `${item.key} · ${t("shell.app.archived")}` : item.key}
+                </Body>
+              }
+              {...(!picker ? { caption: item.description } : {})}
               onPress={() => projectNavigation.selectProject(item.id)}
             />
           )}

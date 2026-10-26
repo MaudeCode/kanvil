@@ -48,6 +48,10 @@ export default {
     create: "建立專案",
   },
   tickets: {
+    expandAll: "展開所有群組",
+    collapseAll: "收合所有群組",
+    select: "選取工單",
+
     search: "搜尋工單",
     searchPlaceholder: "標題、說明或編號",
     allStatuses: "所有狀態",

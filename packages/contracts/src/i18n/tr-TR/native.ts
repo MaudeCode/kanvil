@@ -49,6 +49,10 @@ export default {
     create: "Proje oluştur",
   },
   tickets: {
+    expandAll: "Tüm bölümleri genişlet",
+    collapseAll: "Tüm bölümleri daralt",
+    select: "Biletleri seç",
+
     search: "Taleplerde ara",
     searchPlaceholder: "Başlık, açıklama veya anahtar",
     allStatuses: "Tüm durumlar",

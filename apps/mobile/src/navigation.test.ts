@@ -67,3 +67,19 @@ it("restores late-mounted search controls without overwriting typing when their 
   expect(handle.ref.current).toBe(commands);
   expect(writes).toEqual(["cached query", "edited query"]);
 });
+
+it("retains collection disclosure choices and workspace searches only within their account", () => {
+  const contexts = createProjectContexts();
+  contexts.save("a", { collapsedSections: { all: ["ready"], planning: ["archived"] } });
+  contexts.save("a", { query: "search" });
+  expect(contexts.get("a")?.collapsedSections).toEqual({ all: ["ready"], planning: ["archived"] });
+  expect(contexts.get("b")?.collapsedSections).toBeUndefined();
+  contexts.saveSearch("workspace-a", "work", "release");
+  contexts.saveSearch("workspace-a", "search", "comment");
+  expect(contexts.search("workspace-a", "work")).toBe("release");
+  expect(contexts.search("workspace-a", "search")).toBe("comment");
+  expect(contexts.search("workspace-b", "work")).toBe("");
+  contexts.clear();
+  contexts.saveSearch("workspace-a", "work", "late");
+  expect(contexts.search("workspace-a", "work")).toBe("");
+});

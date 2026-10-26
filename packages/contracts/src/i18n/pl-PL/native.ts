@@ -53,6 +53,10 @@ export default {
     create: "Utwórz projekt",
   },
   tickets: {
+    expandAll: "Rozwiń wszystkie sekcje",
+    collapseAll: "Zwiń wszystkie sekcje",
+    select: "Wybierz zgłoszenia",
+
     search: "Szukaj zadań",
     searchPlaceholder: "Tytuł, opis lub klucz",
     allStatuses: "Wszystkie statusy",

@@ -48,6 +48,10 @@ export default {
     create: "प्रोजेक्ट बनाएं",
   },
   tickets: {
+    expandAll: "सभी अनुभाग खोलें",
+    collapseAll: "सभी अनुभाग समेटें",
+    select: "टिकट चुनें",
+
     search: "टिकट खोजें",
     searchPlaceholder: "शीर्षक, विवरण या कुंजी",
     allStatuses: "सभी स्थितियां",

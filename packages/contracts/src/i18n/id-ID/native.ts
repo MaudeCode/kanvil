@@ -48,6 +48,10 @@ export default {
     create: "Buat proyek",
   },
   tickets: {
+    expandAll: "Perluas semua bagian",
+    collapseAll: "Ciutkan semua bagian",
+    select: "Pilih tiket",
+
     search: "Cari tiket",
     searchPlaceholder: "Judul, deskripsi, atau kunci",
     allStatuses: "Semua status",

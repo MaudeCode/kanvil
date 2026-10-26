@@ -41,6 +41,12 @@ Settings has a global push preference and an action to enable or disable this de
 
 Outbox commits, receipt processing, retry/restart behavior, membership revocation during delivery, account changes on a shared device, and session revocation are tested with an isolated transport. Native Inbox/push preference changes were checked against a second HTTP client on the iOS simulator. Real APNs/FCM delivery and notification-tap routing have not been validated; they need signing/push configuration and an authorized notification source. The unconfigured simulator rejected an injected notification with `UNErrorDomain 2003: Source is not authorized`.
 
+Local search in Projects, My work, and project tickets uses the native integrated search button. Closing the native search field or dismissing its keyboard retains the query; the removable search row clears it. Platforms that expose a search Cancel callback also clear the query on Cancel. Compact ticket detail hides list search and restores it on Back. The dedicated Search tab keeps its input available. Workspace roots show the workspace name as a picker action. The picker changes workspace in place; selecting the current project dismisses it without resetting the active screen.
+
+Ticket-list status headers expand and collapse their rows. Counts include every matching ticket. Normal disclosure choices are retained by project and collection; search starts with matching sections expanded and keeps temporary choices until the query changes. Clearing search restores normal disclosure choices. The list menu contains filters, layouts, saved views, section controls, and explicit selection. Ticket rows wrap full titles, use compact metadata, and distinguish the open split-view ticket from bulk selection. Empty results, loading additional batches, and failed reads have separate states.
+
+The native-stack type patch permits explicitly clearing `headerSearchBarOptions`, matching its existing runtime nullish check. This removes list search from compact detail and selection mode without replacing the system bar.
+
 ## Checks
 
 ```sh

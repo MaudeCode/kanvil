@@ -1,77 +1,51 @@
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useLayoutEffect, useState, useEffect } from "react";
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { formatEvent, formatTimestamp, searchResultTypes } from "@kanvil/contracts";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { searchResultTypes } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
-import { useProjectNavigation } from "./navigation.ts";
+import { useHeaderSearch, useProjectNavigation } from "./navigation.ts";
 import { useConnection, useWorkspace } from "./data.tsx";
-import { Body, Choice, ErrorNotice, Field, List, Loading, Row, Screen, Section } from "./ui.tsx";
+import {
+  Body,
+  Choice,
+  ErrorNotice,
+  Field,
+  List,
+  Loading,
+  Row,
+  Screen,
+  RemovableSummary,
+  WorkspaceScope,
+  nativeHeaderOptions,
+} from "./ui.tsx";
 import { TicketRow } from "./ui.tsx";
 
-// Home and My work read the same operation; the home preview is deliberately bounded.
-export function WorkOverview() {
-  const { api } = useConnection(),
-    workspace = useWorkspace(),
-    navigation = useNavigation();
-  const work = useQuery({
-    ...api.query("list_my_work", {
-      workspaceId: workspace.active?.id,
-      sort: "due",
-      limit: 5,
-      activity: 5,
-    }),
-    enabled: !!workspace.active,
-  });
-  return (
-    <View style={{ paddingHorizontal: 20 }}>
-      <ErrorNotice error={workspace.error ?? work.error} />
-      <Section title={t("shell.app.assigned")}>
-        {work.isLoading ? (
-          <Loading />
-        ) : work.data?.items.length ? (
-          work.data.items.map((ticket) => (
-            <TicketRow
-              key={ticket.id}
-              ticket={ticket}
-              onPress={() =>
-                navigation.navigate("Ticket", { projectId: ticket.projectId, ticketId: ticket.id })
-              }
-            />
-          ))
-        ) : (
-          <Body muted>{t("shell.app.noAssigned")}</Body>
-        )}
-      </Section>
-      <Section title={t("shell.app.recentActivity")}>
-        {work.data?.activity.length ? (
-          work.data.activity.map((event) => (
-            <Row
-              key={event.id}
-              title={formatEvent(event, true)}
-              caption={formatTimestamp(event.createdAt)}
-              onPress={() => {
-                if (event.ticketId)
-                  navigation.navigate("Ticket", {
-                    projectId: event.projectId,
-                    ticketId: event.ticketId,
-                  });
-              }}
-            />
-          ))
-        ) : (
-          <Body muted>{t("shell.app.noActivity")}</Body>
-        )}
-      </Section>
-    </View>
-  );
+// The account-owned context also retains workspace searches when their root remounts.
+function useWorkspaceSearch(page: string) {
+  const { contexts } = useProjectNavigation(),
+    { active } = useWorkspace();
+  const [query, setQuery] = useState(() => contexts.search(active?.id ?? "", page));
+  useEffect(() => {
+    if (active) contexts.saveSearch(active.id, page, query);
+  }, [contexts, active, page, query]);
+  return [query, setQuery] as const;
 }
 
 export function MyWork() {
   const { api } = useConnection(),
     workspace = useWorkspace(),
     navigation = useNavigation();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useWorkspaceSearch("work");
+  const {
+    options: searchOptions,
+    setText: changeQuery,
+    searching,
+  } = useHeaderSearch(query, setQuery, t("native.tickets.searchPlaceholder"));
+  useLayoutEffect(
+    () => navigation.setOptions(nativeHeaderOptions({ headerSearchBarOptions: searchOptions })),
+    [navigation, searchOptions],
+  );
   const q = useDeferredValue(query);
   const input = { workspaceId: workspace.active?.id, q, sort: "due" as const, limit: 50 };
   const work = useInfiniteQuery({
@@ -86,10 +60,15 @@ export function MyWork() {
   });
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 20 }}>
-        <Field label={t("native.tickets.search")} value={query} onChangeText={setQuery} />
-        <ErrorNotice error={work.error ?? workspace.error} />
-      </View>
+      <WorkspaceScope />
+      {!searching && (
+        <RemovableSummary
+          label={t("shell.app.clearSearch")}
+          value={query}
+          onClear={() => changeQuery("")}
+        />
+      )}
+      <ErrorNotice error={work.error ?? workspace.error} />
       {work.isLoading ? (
         <Loading />
       ) : (
@@ -105,7 +84,9 @@ export function MyWork() {
           }}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>{t("shell.app.noAssigned")}</Body>
+              <Body muted>
+                {t(query.trim() ? "ticket.list.emptyFiltered" : "shell.app.noAssigned")}
+              </Body>
             </View>
           }
           renderItem={({ item }) => (
@@ -127,8 +108,8 @@ export function Search() {
   const { api } = useConnection(),
     workspace = useWorkspace(),
     navigation = useNavigation();
-  const [query, setQuery] = useState(""),
-    [type, setType] = useState<(typeof searchResultTypes)[number] | undefined>();
+  const [query, setQuery] = useWorkspaceSearch("search");
+  const [type, setType] = useState<(typeof searchResultTypes)[number] | undefined>();
   const q = useDeferredValue(query.trim());
   const input = { workspaceId: workspace.active?.id, q, type, limit: 50 };
   const results = useInfiniteQuery({
@@ -143,6 +124,7 @@ export function Search() {
   });
   return (
     <Screen scroll={false}>
+      <WorkspaceScope />
       <View style={{ padding: 20, gap: 12 }}>
         <Field
           label={t("shell.search.field")}

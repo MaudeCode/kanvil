@@ -48,6 +48,10 @@ export default {
     create: "프로젝트 만들기",
   },
   tickets: {
+    expandAll: "모든 섹션 펼치기",
+    collapseAll: "모든 섹션 접기",
+    select: "티켓 선택",
+
     search: "티켓 검색",
     searchPlaceholder: "제목, 설명 또는 키",
     allStatuses: "모든 상태",

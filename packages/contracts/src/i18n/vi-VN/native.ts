@@ -49,6 +49,10 @@ export default {
     create: "Tạo dự án",
   },
   tickets: {
+    expandAll: "Mở rộng tất cả các phần",
+    collapseAll: "Thu gọn tất cả các phần",
+    select: "Chọn phiếu",
+
     search: "Tìm phiếu",
     searchPlaceholder: "Tiêu đề, mô tả hoặc mã",
     allStatuses: "Mọi trạng thái",

@@ -1,0 +1,26 @@
+diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
+index 27a3d8eb19f99c986ba143aceddb5d7f06277fc1..7490967ba69fa4f492ee4a9f7ecb43a982e2ffbf 100644
+--- a/lib/typescript/src/types.d.ts
++++ b/lib/typescript/src/types.d.ts
+@@ -361,7 +361,7 @@ export type NativeStackNavigationOptions = {
+      * You also need to specify `contentInsetAdjustmentBehavior="automatic"` in your `ScrollView`, `FlatList` etc.
+      * If you don't have a `ScrollView`, specify `headerTransparent: false`.
+      */
+-    headerSearchBarOptions?: SearchBarProps;
++    headerSearchBarOptions?: SearchBarProps | undefined;
+     /**
+      * Boolean indicating whether to show the menu on longPress of iOS >= 14 back button. Defaults to `true`.
+      * Requires `react-native-screens` version >=3.3.0.
+diff --git a/src/types.tsx b/src/types.tsx
+index 5d63f4112acf503f639d8f8103917e179786c4ae..60696b2a25540787c643a0fdbb731362d7eebe7f 100644
+--- a/src/types.tsx
++++ b/src/types.tsx
+@@ -413,7 +413,7 @@ export type NativeStackNavigationOptions = {
+    * You also need to specify `contentInsetAdjustmentBehavior="automatic"` in your `ScrollView`, `FlatList` etc.
+    * If you don't have a `ScrollView`, specify `headerTransparent: false`.
+    */
+-  headerSearchBarOptions?: SearchBarProps;
++  headerSearchBarOptions?: SearchBarProps | undefined;
+   /**
+    * Boolean indicating whether to show the menu on longPress of iOS >= 14 back button. Defaults to `true`.
+    * Requires `react-native-screens` version >=3.3.0.

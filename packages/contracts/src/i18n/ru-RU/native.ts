@@ -48,6 +48,10 @@ export default {
     create: "Создать проект",
   },
   tickets: {
+    expandAll: "Развернуть все разделы",
+    collapseAll: "Свернуть все разделы",
+    select: "Выбрать задачи",
+
     search: "Поиск тикетов",
     searchPlaceholder: "Название, описание или ключ",
     allStatuses: "Все статусы",

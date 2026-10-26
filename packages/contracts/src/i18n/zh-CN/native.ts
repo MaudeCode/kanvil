@@ -48,6 +48,10 @@ export default {
     create: "创建项目",
   },
   tickets: {
+    expandAll: "展开所有分组",
+    collapseAll: "折叠所有分组",
+    select: "选择工单",
+
     search: "搜索工单",
     searchPlaceholder: "标题、描述或编号",
     allStatuses: "所有状态",

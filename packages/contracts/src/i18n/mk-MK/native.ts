@@ -49,6 +49,10 @@ export default {
     create: "Креирај проект",
   },
   tickets: {
+    expandAll: "Прошири ги сите секции",
+    collapseAll: "Собери ги сите секции",
+    select: "Избери тикети",
+
     search: "Пребарај тикети",
     searchPlaceholder: "Наслов, опис или клуч",
     allStatuses: "Сите статуси",

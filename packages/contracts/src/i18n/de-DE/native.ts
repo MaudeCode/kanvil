@@ -49,6 +49,10 @@ export default {
     create: "Projekt erstellen",
   },
   tickets: {
+    expandAll: "Alle Abschnitte aufklappen",
+    collapseAll: "Alle Abschnitte zuklappen",
+    select: "Tickets auswählen",
+
     search: "Tickets suchen",
     searchPlaceholder: "Titel, Beschreibung oder Schlüssel",
     allStatuses: "Alle Status",

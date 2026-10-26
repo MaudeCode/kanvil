@@ -49,6 +49,10 @@ export default {
     create: "Layihə yarat",
   },
   tickets: {
+    expandAll: "Bütün bölmələri genişləndir",
+    collapseAll: "Bütün bölmələri yığ",
+    select: "Biletləri seç",
+
     search: "Tiketlərdə axtar",
     searchPlaceholder: "Başlıq, təsvir və ya açar",
     allStatuses: "Bütün statuslar",

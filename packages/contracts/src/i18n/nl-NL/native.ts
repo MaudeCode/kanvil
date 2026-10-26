@@ -49,6 +49,10 @@ export default {
     create: "Project aanmaken",
   },
   tickets: {
+    expandAll: "Alle secties uitvouwen",
+    collapseAll: "Alle secties samenvouwen",
+    select: "Tickets selecteren",
+
     search: "Tickets zoeken",
     searchPlaceholder: "Titel, beschrijving of sleutel",
     allStatuses: "Alle statussen",

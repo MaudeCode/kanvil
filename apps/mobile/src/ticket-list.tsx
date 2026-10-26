@@ -30,6 +30,7 @@ import {
   defaultOrder,
   dueFilterLabels,
   operations,
+  ticketPredicates,
   type Input,
   type Ticket,
   type FilterField,
@@ -53,17 +54,16 @@ import {
   Sheet,
   TicketRow,
   usePalette,
+  RemovableSummary,
 } from "./ui.tsx";
 import { createHeaderAction, projectHeaderItems } from "./navigation-actions.tsx";
 import { TicketActions, BulkProperties } from "./ticket-actions.tsx";
 import { TicketSchedule } from "./ticket-schedule.tsx";
 import { TicketContent } from "./ticket-detail.tsx";
 import { SplitView } from "./split-view.tsx";
-import { createSearchBarHandle, useProjectNavigation, type ScreenProps } from "./navigation.ts";
+import { useHeaderSearch, useProjectNavigation, type ScreenProps } from "./navigation.ts";
+import { ticketSections, sectionEntries } from "./ticket-sections.ts";
 
-type TicketListEntry =
-  | { id: string; ticket: Ticket }
-  | { id: string; heading: string; count: number };
 function useTicketPages(input: Input<"list_tickets">, enabled: boolean) {
   const { api } = useConnection();
   const result = useInfiniteQuery({
@@ -113,15 +113,43 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     [selectedTicketId, setSelectedTicketId] = useState(initial?.selectedTicketId),
     [selection, setSelection] = useState<Map<string, Ticket>>(() => new Map()),
     [bulkOpen, setBulkOpen] = useState(false),
+    [selecting, setSelecting] = useState(false),
     [error, setError] = useState<unknown>();
   const layout = route.params.layout ?? "list",
     planning = route.params.collection === "planning";
   const split =
     Platform.OS === "ios" && Number.parseInt(Platform.Version, 10) >= 26 && layout === "list";
   const q = useDeferredValue(query);
-  const [searchHandle] = useState(() => createSearchBarHandle(query));
-  const searchBar = searchHandle.ref;
-  useLayoutEffect(() => searchHandle.updateText(query), [searchHandle, query]);
+  const collection = planning ? "planning" : "all";
+  const [normalCollapsed, setNormalCollapsed] = useState(
+    () => new Set(initial?.collapsedSections?.[collection] ?? []),
+  );
+  const [searchCollapsed, setSearchCollapsed] = useState<{ query: string; ids: Set<string> }>({
+    query: "",
+    ids: new Set(),
+  });
+  const onQuery = useCallback((value: string) => {
+    setQuery(value);
+    setSearchCollapsed({ query: value, ids: new Set() });
+  }, []);
+  const {
+    options: searchOptions,
+    setText: changeQuery,
+    searching,
+  } = useHeaderSearch(query, onQuery, t("native.tickets.searchPlaceholder"));
+  const collapsed = query.trim()
+    ? searchCollapsed.query === query
+      ? searchCollapsed.ids
+      : new Set<string>()
+    : normalCollapsed;
+  const changeCollapsed = useCallback(
+    (ids: Set<string>) => {
+      if (query.trim()) setSearchCollapsed({ query, ids });
+      else setNormalCollapsed(ids);
+    },
+    [query],
+  );
+
   const save = useOperation("save_view"),
     deleteView = useOperation("delete_view"),
     bulk = useOperation("bulk_update_tickets"),
@@ -159,6 +187,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       ...new Map(pages.flatMap((page) => page.items).map((ticket) => [ticket.id, ticket])).values(),
     ];
   }, [planning, includesBacklog, backlog.data, archived.data, tickets.data]);
+  const sections = useMemo(() => ticketSections(rows, workflow.data), [rows, workflow.data]);
   const selected = useQuery({
     ...api.query("get_ticket", { projectId, ticketId: selectedTicketId ?? "none" }),
     enabled: !!selectedTicketId,
@@ -173,6 +202,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         selectedTicketId,
         secondaryVisible: splitState.secondaryVisible,
         location: route.params,
+        collapsedSections: {
+          ...contexts.get(projectId)?.collapsedSections,
+          [collection]: [...normalCollapsed],
+        },
       });
   }, [
     isFocused,
@@ -184,10 +217,16 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     selectedTicketId,
     splitState.secondaryVisible,
     route.params,
+    collection,
+    normalCollapsed,
   ]);
   const pending = planning
     ? (includesBacklog && backlog.isPending) || archived.isPending
     : tickets.isPending;
+  const listError = planning ? (backlog.error ?? archived.error) : tickets.error;
+  const incomplete = planning
+    ? (includesBacklog && backlog.hasNextPage) || archived.hasNextPage
+    : tickets.hasNextPage;
   const loadingMore = planning
     ? backlog.isFetchingNextPage || archived.isFetchingNextPage
     : tickets.isFetchingNextPage;
@@ -207,6 +246,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     async (changes: Input<"update_ticket">["changes"]) => {
       await applyBulk({ projectId, tickets: versions, changes });
       setSelection(new Map());
+      setSelecting(false);
       setBulkOpen(false);
     },
     [applyBulk, projectId, versions],
@@ -220,7 +260,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         [...next.values()].map((item) => ({ ticketId: item.id, expectedVersion: item.version })),
       );
       if (next.size && !parsed.success) setError(parsed.error);
-      else setSelection(next);
+      else {
+        setSelection(next);
+        setSelecting(true);
+      }
     },
     [selection],
   );
@@ -246,36 +289,55 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   );
   const headerItems = useMemo<NativeStackHeaderItem[]>(
     () =>
-      selection.size
+      selecting
         ? [
-            createHeaderAction(t("ticket.selection.clear"), () => setSelection(new Map()), {
-              type: "sfSymbol",
-              name: "xmark",
-            }),
+            createHeaderAction(
+              t("common.action.done"),
+              () => {
+                setSelection(new Map());
+                setSelecting(false);
+              },
+              {
+                type: "sfSymbol",
+                name: "xmark",
+              },
+            ),
             createHeaderAction(
               t("ticket.selection.fields"),
               () => setBulkOpen(true),
               { type: "sfSymbol", name: "slider.horizontal.3" },
-              bulk.isPending,
+              bulk.isPending || !selection.size,
             ),
-            createHeaderAction(
-              restoreSelection ? t("ticket.selection.restore") : t("ticket.selection.archive"),
-              () => {
-                void apply({ archived: !restoreSelection }).catch(setError);
+            {
+              type: "menu",
+              label: t("ticket.selection.more"),
+              icon: { type: "sfSymbol", name: "ellipsis" },
+              menu: {
+                items: [
+                  {
+                    type: "action",
+                    label: restoreSelection
+                      ? t("ticket.selection.restore")
+                      : t("ticket.selection.archive"),
+                    disabled: !selection.size || bulk.isPending,
+                    onPress: () => {
+                      void apply({ archived: !restoreSelection }).catch(setError);
+                    },
+                  },
+                  ...(access.canDelete
+                    ? [
+                        {
+                          type: "action" as const,
+                          label: t("ticket.selection.delete"),
+                          destructive: true,
+                          disabled: !selection.size || remove.isPending,
+                          onPress: destroy,
+                        },
+                      ]
+                    : []),
+                ],
               },
-              { type: "sfSymbol", name: "archivebox" },
-              bulk.isPending,
-            ),
-            ...(access.canDelete
-              ? [
-                  createHeaderAction(
-                    t("ticket.selection.delete"),
-                    destroy,
-                    { type: "sfSymbol", name: "trash" },
-                    remove.isPending,
-                  ),
-                ]
-              : []),
+            },
           ]
         : [
             ...(selectedTicket && split && (!splitState.collapsed || splitState.secondaryVisible)
@@ -309,17 +371,39 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                     { type: "sfSymbol", name: "plus" },
                     !access.canWrite,
                   ),
-                  createHeaderAction(t("ticket.filter.filters"), () => setFiltering(true), {
-                    type: "sfSymbol",
-                    name: "line.3.horizontal.decrease",
-                  }),
                   {
                     type: "menu",
                     label: t("ticket.list.views"),
                     accessibilityLabel: t("ticket.list.views"),
-                    icon: { type: "sfSymbol", name: "rectangle.3.group" },
+                    icon: { type: "sfSymbol", name: "ellipsis" },
                     menu: {
                       items: [
+                        {
+                          type: "action",
+                          label: t("ticket.filter.filters"),
+                          onPress: () => setFiltering(true),
+                        },
+                        {
+                          type: "action",
+                          label: t("native.tickets.select"),
+                          disabled: !rows.length || !access.canWrite,
+                          onPress: () => setSelecting(true),
+                        },
+                        ...(layout === "list"
+                          ? [
+                              {
+                                type: "action" as const,
+                                label: t("native.tickets.expandAll"),
+                                onPress: () => changeCollapsed(new Set()),
+                              },
+                              {
+                                type: "action" as const,
+                                label: t("native.tickets.collapseAll"),
+                                onPress: () =>
+                                  changeCollapsed(new Set(sections.map((section) => section.id))),
+                              },
+                            ]
+                          : []),
                         {
                           type: "submenu",
                           label: t("ticket.display.layout"),
@@ -350,8 +434,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                           label: view.name,
                           onPress: () => {
                             setFilters(view.filters);
-                            setQuery(view.filters.q ?? "");
-                            searchBar.current?.setText(view.filters.q ?? "");
+                            changeQuery(view.filters.q ?? "");
                             navigation.setParams({ viewId: view.id });
                           },
                         })),
@@ -426,13 +509,16 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       splitState,
       split,
       rows,
-      searchBar,
+      changeQuery,
+      selecting,
+      changeCollapsed,
+      sections,
     ],
   );
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
-        title: selection.size ? t("ticket.selection.selected", { count: selection.size }) : title,
+        title: selecting ? t("ticket.selection.selected", { count: selection.size }) : title,
         unstable_headerRightItems: () => headerItems,
         ...(layout === "list" || layout === "board"
           ? {
@@ -452,13 +538,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                 ),
             }
           : {}),
-        headerSearchBarOptions: {
-          ref: searchBar,
-          placeholder: t("native.tickets.searchPlaceholder"),
-          hideWhenScrolling: false,
-          hideNavigationBar: false,
-          onChangeText: (event) => setQuery(event.nativeEvent.text),
-        },
+        headerSearchBarOptions:
+          selecting || (split && splitState.collapsed && splitState.secondaryVisible)
+            ? undefined
+            : searchOptions,
       }),
     );
   }, [
@@ -470,30 +553,22 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     split,
     splitState,
     showPicker,
-    searchBar,
+    searchOptions,
+    selecting,
   ]);
-  const entries = useMemo<TicketListEntry[]>(() => {
-    const groups = workflow.data?.length
-      ? workflow.data.map((state) => ({ id: state.id, name: state.name, category: state.category }))
-      : states.map((status) => ({ id: status, name: stateLabels[status], category: status }));
-    const byId = new Map(groups.map((group) => [group.id, group]));
-    const buckets = new Map<string, Ticket[]>();
-    for (const ticket of rows) {
-      const key =
-        ticket.stateId && byId.has(ticket.stateId)
-          ? ticket.stateId
-          : (groups.find((group) => group.category === ticket.status)?.id ?? ticket.status);
-      const bucket = buckets.get(key) ?? [];
-      bucket.push(ticket);
-      buckets.set(key, bucket);
-    }
-    return groups.flatMap((group) => [
-      { id: `section-${group.id}`, heading: group.name, count: buckets.get(group.id)?.length ?? 0 },
-      ...(buckets.get(group.id) ?? []).map((ticket) => ({ id: ticket.id, ticket })),
-    ]);
-  }, [workflow.data, rows]);
+  const entries = sectionEntries(sections, collapsed, !!query.trim());
+  const filterCount =
+    ticketPredicates(filters).length +
+    (filters.archived !== "exclude" ? 1 : 0) +
+    (filters.due ? 1 : 0) +
+    (filters.parentId ? 1 : 0);
+  const filtered = !!query.trim() || filterCount > 0;
+  const clearFilters = () => {
+    setFilters(ticketFilter.parse({}));
+    navigation.setParams({ viewId: "" });
+  };
   const open = (ticket: Ticket) => {
-    if (selection.size) toggle(ticket);
+    if (selecting) toggle(ticket);
     else if (split) {
       setSelectedTicketId(ticket.id);
       setSplitState((state) => ({ ...state, secondaryVisible: true }));
@@ -515,12 +590,38 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       />
     ) : pending ? (
       <Loading />
+    ) : listError && !rows.length ? (
+      <View style={{ padding: 24 }}>
+        <Button plain title={t("ticket.list.retry")} onPress={refresh} />
+      </View>
+    ) : !rows.length ? (
+      <View style={{ padding: 24, gap: 12 }}>
+        <Body muted>
+          {t(
+            filtered
+              ? "ticket.list.emptyFiltered"
+              : planning
+                ? "ticket.list.emptyPlanning"
+                : "ticket.list.emptyProject",
+          )}
+        </Body>
+        {query.trim() && (
+          <Button plain title={t("shell.app.clearSearch")} onPress={() => changeQuery("")} />
+        )}
+        {filterCount > 0 && (
+          <Button plain title={t("ticket.filter.clear")} onPress={clearFilters} />
+        )}
+        {!filtered && access.canWrite && (
+          <Button
+            plain
+            title={t("ticket.list.createFirst")}
+            onPress={() => navigation.navigate("Edit", { projectId })}
+          />
+        )}
+      </View>
     ) : layout === "board" ? (
       <Scroll horizontal contentContainerStyle={{ gap: 18, padding: 18 }}>
-        {(workflow.data?.length
-          ? workflow.data
-          : states.map((status) => ({ id: status, name: stateLabels[status], category: status }))
-        ).map((state) => (
+        {sections.map((state) => (
           <View
             key={state.id}
             style={{
@@ -530,19 +631,17 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           >
             <Heading compact>{state.name}</Heading>
             <ScrollView>
-              {rows
-                .filter((ticket) =>
-                  ticket.stateId ? ticket.stateId === state.id : ticket.status === state.category,
-                )
-                .map((ticket) => (
-                  <TicketRow
-                    key={ticket.id}
-                    ticket={ticket}
-                    selected={selection.has(ticket.id)}
-                    onPress={() => open(ticket)}
-                    onLongPress={() => setFocused(ticket)}
-                  />
-                ))}
+              {state.tickets.map((ticket) => (
+                <TicketRow
+                  key={ticket.id}
+                  ticket={ticket}
+                  selected={selecting ? selection.has(ticket.id) : undefined}
+                  selecting={selecting}
+                  showStatus={false}
+                  onPress={() => open(ticket)}
+                  onLongPress={() => setFocused(ticket)}
+                />
+              ))}
             </ScrollView>
           </View>
         ))}
@@ -563,26 +662,41 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           "ticket" in item ? (
             <TicketRow
               ticket={item.ticket}
-              selected={selection.has(item.ticket.id)}
+              selected={selecting ? selection.has(item.ticket.id) : undefined}
+              selecting={selecting}
+              showStatus={false}
+              active={split && selectedTicketId === item.ticket.id}
               onPress={() => open(item.ticket)}
               onLongPress={() => setFocused(item.ticket)}
             />
           ) : (
-            <View
-              style={{
-                paddingHorizontal: 20,
-                paddingVertical: 12,
-                backgroundColor: color.background,
+            <Heading
+              compact
+              disclosure={{
+                expanded: !collapsed.has(item.sectionId),
+                count: item.count,
+                label: t(
+                  collapsed.has(item.sectionId)
+                    ? "ticket.list.expandSection"
+                    : "ticket.list.collapseSection",
+                  { section: item.heading },
+                ),
+                onPress: () => {
+                  const next = new Set(collapsed);
+                  if (next.has(item.sectionId)) next.delete(item.sectionId);
+                  else next.add(item.sectionId);
+                  changeCollapsed(next);
+                },
               }}
             >
-              <Body muted small>
-                {t("ticket.list.sectionCount", { n: item.count, section: item.heading })}
-              </Body>
-            </View>
+              {item.heading}
+            </Heading>
           )
         }
         ListFooterComponent={
-          loadingMore ? (
+          listError ? (
+            <Button plain title={t("ticket.list.retry")} onPress={refresh} />
+          ) : loadingMore || incomplete ? (
             <Loading />
           ) : (
             <View style={{ padding: 20 }}>
@@ -600,15 +714,33 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       allowDivision={split || layout === "calendar"}
       background={project?.background ?? null}
     >
+      {!(split && splitState.collapsed && splitState.secondaryVisible) && (
+        <>
+          {!searching && (
+            <RemovableSummary
+              label={t("shell.app.clearSearch")}
+              value={query}
+              onClear={() => changeQuery("")}
+            />
+          )}
+          {(filterCount > 0 || route.params.viewId) && (
+            <RemovableSummary
+              icon="filter-outline"
+              value={
+                views.data?.find((view) => view.id === route.params.viewId)?.name ??
+                t("ticket.list.sectionCount", {
+                  n: filterCount,
+                  section: t("ticket.filter.filters"),
+                })
+              }
+              label={t("ticket.filter.clear")}
+              onClear={clearFilters}
+            />
+          )}
+        </>
+      )}
       <ErrorNotice
-        error={
-          error ??
-          bulk.error ??
-          remove.error ??
-          deleteView.error ??
-          views.error ??
-          (planning ? (backlog.error ?? archived.error) : tickets.error)
-        }
+        error={error ?? bulk.error ?? remove.error ?? deleteView.error ?? views.error ?? listError}
       />
       {split ? (
         <SplitView
@@ -674,7 +806,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           <TicketActions
             ticket={focused}
             onClose={() => setFocused(undefined)}
-            onSelect={() => toggle(focused)}
+            onSelect={() => {
+              toggle(focused);
+              setSplitState((state) => ({ ...state, secondaryVisible: false }));
+            }}
             {...(filters.sort === "manual" ? { order: rows } : {})}
           />
         )}

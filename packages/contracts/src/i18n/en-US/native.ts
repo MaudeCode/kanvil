@@ -52,6 +52,10 @@ export default {
     create: "Create project",
   },
   tickets: {
+    expandAll: "Expand all sections",
+    collapseAll: "Collapse all sections",
+    select: "Select tickets",
+
     search: "Search tickets",
     searchPlaceholder: "Title, description, or key",
     allStatuses: "All statuses",

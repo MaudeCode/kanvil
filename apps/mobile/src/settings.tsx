@@ -43,6 +43,7 @@ import {
   Loading,
   Row,
   Screen,
+  WorkspaceScope,
   Heading,
   Section,
   Sheet,
@@ -138,6 +139,7 @@ export function Inbox() {
   const target = items.data?.find((item) => item.id === focused);
   return (
     <Screen scroll={false}>
+      <WorkspaceScope />
       <ErrorNotice error={items.error ?? action.error} />
       {items.isPending || projects.isPending ? (
         <Loading />

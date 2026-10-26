@@ -74,7 +74,8 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Renderer, useMarkdown } from "react-native-marked";
 import { brandMark } from "@kanvil/contracts/theme";
 import { useQuery } from "@tanstack/react-query";
-import { useConnection } from "./data.tsx";
+import { useConnection, useWorkspace } from "./data.tsx";
+import { useProjectNavigation } from "./navigation.ts";
 import {
   errorMessage,
   mentionScheme,
@@ -93,6 +94,18 @@ export const priorityText = (priority: Ticket["priority"]) =>
   priority === "none"
     ? priorityLabels.none
     : t("native.ticket.priority", { priority: priorityLabels[priority] });
+
+// Shared UI glyphs decorate controls whose text already provides their accessible name.
+function DecorativeIcon(props: ComponentProps<typeof Ionicons>) {
+  return (
+    <Ionicons
+      {...props}
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
+  );
+}
 
 export const usePalette = useNativePalette;
 type SheetRoutes = { Hidden: undefined; Sheet: undefined };
@@ -224,12 +237,7 @@ function ContentArea({
 
 // Extend the native item description once: UIKit owns iOS bars; Android uses the same actions
 // through our existing Sheet/Row primitives. Choice is flat and cannot represent bar submenus.
-export function nativeHeaderOptions<
-  const T extends Pick<
-    NativeStackNavigationOptions,
-    "unstable_headerLeftItems" | "unstable_headerRightItems"
-  >,
->(options: T) {
+export function nativeHeaderOptions<const T extends NativeStackNavigationOptions>(options: T) {
   if (Platform.OS === "ios") return options;
   const left = options.unstable_headerLeftItems,
     right = options.unstable_headerRightItems;
@@ -390,7 +398,7 @@ export function Button({
       >
         {title}
       </Text>
-      {disclosure && <Ionicons name="chevron-down" size={16} color={color.muted} />}
+      {disclosure && <DecorativeIcon name="chevron-down" size={16} color={color.muted} />}
     </Pressable>
   );
 }
@@ -706,7 +714,7 @@ export function Choice({
                 ? t("ticket.selection.selected", { count: selected.length })
                 : current}
             </Text>
-            <Ionicons name="chevron-down" color={color.muted} size={14} accessible={false} />
+            <DecorativeIcon name="chevron-down" color={color.muted} size={14} accessible={false} />
           </View>
         }
       />
@@ -768,7 +776,7 @@ export function Check({
       onPress={() => onChange(!checked)}
       style={styles.check}
     >
-      <Ionicons
+      <DecorativeIcon
         name={checked ? "checkbox" : "square-outline"}
         size={24}
         color={checked ? color.accent : color.muted}
@@ -964,9 +972,17 @@ export function Body({
     </Text>
   );
 }
-export function Heading({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
+export function Heading({
+  children,
+  compact = false,
+  disclosure,
+}: {
+  children: ReactNode;
+  compact?: boolean;
+  disclosure?: { expanded: boolean; count: number; label: string; onPress: () => void };
+}) {
   const color = usePalette();
-  return (
+  const title = (
     <Text
       accessibilityRole="header"
       style={[
@@ -977,6 +993,43 @@ export function Heading({ children, compact = false }: { children: ReactNode; co
     >
       {children}
     </Text>
+  );
+  return disclosure ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={disclosure.label}
+      accessibilityState={{ expanded: disclosure.expanded }}
+      accessibilityValue={{ text: t("ticket.list.count", { count: disclosure.count }) }}
+      onPress={disclosure.onPress}
+      style={({ pressed }) => ({
+        minHeight: 44,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        backgroundColor: pressed ? color.accentSurface : color.background,
+      })}
+    >
+      <DecorativeIcon
+        name={
+          disclosure.expanded
+            ? "chevron-down"
+            : I18nManager.isRTL
+              ? "chevron-back"
+              : "chevron-forward"
+        }
+        size={14}
+        color={color.muted}
+        accessible={false}
+      />
+      <View style={{ flex: 1 }}>{title}</View>
+      <Text style={{ color: color.muted, fontSize: 12, fontVariant: ["tabular-nums"] }}>
+        {formatNumber(disclosure.count)}
+      </Text>
+    </Pressable>
+  ) : (
+    title
   );
 }
 export function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -1147,6 +1200,8 @@ export function Row({
   onPress,
   onLongPress,
   selected,
+  active = false,
+  dense = false,
   compact = false,
   disabled = false,
   accessibilityLabel,
@@ -1161,6 +1216,8 @@ export function Row({
   onPress: () => void;
   onLongPress?: (() => void) | undefined;
   selected?: boolean | undefined;
+  active?: boolean;
+  dense?: boolean;
   compact?: boolean;
   disabled?: boolean;
   accessibilityLabel?: string;
@@ -1172,7 +1229,10 @@ export function Row({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ ...(selected !== undefined ? { selected } : {}), disabled }}
+      accessibilityState={{
+        ...(selected !== undefined || active ? { selected: selected ?? active } : {}),
+        disabled,
+      }}
       disabled={disabled}
       onLongPress={onLongPress}
       onPress={() => {
@@ -1184,13 +1244,15 @@ export function Row({
           flexDirection: "row",
           alignItems: "center",
           minHeight: 44,
-          paddingVertical: compact ? 12 : 18,
+          paddingVertical: compact || dense ? 12 : 18,
           paddingHorizontal: compact ? 0 : 20,
           gap: 12,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderColor: color.line,
+          borderStartWidth: active ? 2 : 0,
+          borderStartColor: color.accent,
           backgroundColor:
-            pressed || selected
+            pressed || selected || active
               ? color.accentSurface
               : imageSurface
                 ? "transparent"
@@ -1200,7 +1262,7 @@ export function Row({
       ]}
     >
       {leading}
-      <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: dense ? 4 : 8 }}>
         {overline && (
           <Text
             style={{
@@ -1216,9 +1278,9 @@ export function Row({
         <Text
           style={{
             color: color.foreground,
-            fontSize: compact ? 15 : 17,
-            fontWeight: "600",
-            lineHeight: 25,
+            fontSize: compact ? 15 : dense ? 16 : 17,
+            fontWeight: dense ? "500" : "600",
+            lineHeight: dense ? 23 : 25,
             letterSpacing: -0.2,
           }}
         >
@@ -1227,10 +1289,10 @@ export function Row({
         {caption && (
           <Text style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}>{caption}</Text>
         )}
-        {metadata && <View style={[styles.actions, { marginTop: 3 }]}>{metadata}</View>}
+        {metadata && <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>}
       </View>
       {trailing ?? (
-        <Ionicons
+        <DecorativeIcon
           name={selected ? "checkmark" : "chevron-forward"}
           size={16}
           color={selected ? color.accent : color.muted}
@@ -1247,22 +1309,47 @@ export function TicketRow({
   onPress,
   onLongPress,
   selected,
+  active = false,
+  showStatus = true,
+  selecting = false,
 }: {
   ticket: Ticket;
   onPress: () => void;
   onLongPress?: (() => void) | undefined;
   selected?: boolean | undefined;
+  active?: boolean;
+  showStatus?: boolean;
+  selecting?: boolean;
 }) {
+  const color = usePalette();
   return (
     <Row
       title={ticket.title}
-      overline={ticket.key}
+      dense
+      active={active}
+      trailing={
+        selecting ? (
+          <DecorativeIcon
+            name={selected ? "checkmark-circle" : "ellipse-outline"}
+            size={22}
+            color={selected ? color.accent : color.muted}
+            accessible={false}
+          />
+        ) : (
+          <View />
+        )
+      }
       metadata={
         <>
-          <Status ticket={ticket} />
           <Body muted small>
-            {priorityText(ticket.priority)}
+            {ticket.key}
           </Body>
+          {showStatus && <Status ticket={ticket} />}
+          {ticket.priority !== "none" && (
+            <Body muted small>
+              {priorityText(ticket.priority)}
+            </Body>
+          )}
           {ticket.difficulty && (
             <Body muted small>
               {difficultyLabels[ticket.difficulty]}
@@ -1273,6 +1360,58 @@ export function TicketRow({
       onPress={onPress}
       onLongPress={onLongPress}
       selected={selected}
+    />
+  );
+}
+
+export function RemovableSummary({
+  value,
+  label,
+  icon = "search",
+  onClear,
+}: {
+  value: string;
+  label: string;
+  icon?: ComponentProps<typeof Ionicons>["name"];
+  onClear: () => void;
+}) {
+  const color = usePalette();
+  return value.trim() ? (
+    <Row
+      title={value}
+      dense
+      accessibilityLabel={t("native.labelValue", {
+        label,
+        value,
+      })}
+      leading={<DecorativeIcon name={icon} size={16} color={color.muted} accessible={false} />}
+      trailing={
+        <DecorativeIcon name="close-circle" size={18} color={color.muted} accessible={false} />
+      }
+      onPress={onClear}
+    />
+  ) : null;
+}
+
+export function WorkspaceScope() {
+  const { active } = useWorkspace(),
+    { showPicker } = useProjectNavigation(),
+    color = usePalette();
+  return (
+    <Row
+      title={active?.name ?? t("shell.app.noWorkspaceSelected")}
+      dense
+      accessibilityLabel={t("native.labelValue", {
+        label: t("native.navigation.switchProject"),
+        value: active?.name ?? t("shell.app.noWorkspaceSelected"),
+      })}
+      leading={
+        <DecorativeIcon name="business-outline" size={16} color={color.muted} accessible={false} />
+      }
+      trailing={
+        <DecorativeIcon name="chevron-down" size={14} color={color.muted} accessible={false} />
+      }
+      onPress={showPicker}
     />
   );
 }

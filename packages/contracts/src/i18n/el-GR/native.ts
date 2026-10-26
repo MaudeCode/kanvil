@@ -49,6 +49,10 @@ export default {
     create: "Δημιουργία έργου",
   },
   tickets: {
+    expandAll: "Ανάπτυξη όλων των ενοτήτων",
+    collapseAll: "Σύμπτυξη όλων των ενοτήτων",
+    select: "Επιλογή εισιτηρίων",
+
     search: "Αναζήτηση δελτίων",
     searchPlaceholder: "Τίτλος, περιγραφή ή κωδικός",
     allStatuses: "Όλες οι καταστάσεις",

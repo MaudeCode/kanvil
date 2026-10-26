@@ -3,9 +3,9 @@ import type {
   NativeStackScreenProps,
 } from "@react-navigation/native-stack";
 import type { NavigatorScreenParams } from "@react-navigation/native";
-import { createContext, useContext } from "react";
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
 import type { TicketLayout } from "@kanvil/contracts/navigation";
-import type { SearchBarCommands } from "react-native-screens";
+import type { SearchBarCommands, SearchBarProps } from "react-native-screens";
 import type { Input } from "@kanvil/contracts";
 export type Routes = {
   Home: undefined;
@@ -51,19 +51,26 @@ export type ProjectContext = {
   selectedTicketId: string | undefined;
   secondaryVisible: boolean;
   scrollOffset: number;
+  collapsedSections: Partial<Record<"all" | "planning", string[]>>;
 };
 // Account-owned, like the private query cache. Never persists ticket records or bulk selection.
 export function createProjectContexts() {
   const entries = new Map<string, Partial<ProjectContext>>();
+  const searches = new Map<string, string>();
   let cleared = false;
   return {
     get: (projectId: string) => entries.get(projectId),
     save(projectId: string, patch: Partial<ProjectContext>) {
       if (!cleared) entries.set(projectId, { ...entries.get(projectId), ...patch });
     },
+    search: (workspaceId: string, page: string) => searches.get(`${workspaceId}:${page}`) ?? "",
+    saveSearch(workspaceId: string, page: string, query: string) {
+      if (!cleared) searches.set(`${workspaceId}:${page}`, query);
+    },
     clear() {
       cleared = true;
       entries.clear();
+      searches.clear();
     },
   };
 }
@@ -81,6 +88,44 @@ export function useProjectNavigation() {
   const value = useContext(ProjectNavigation);
   if (!value) throw new Error("Project navigation is unavailable");
   return value;
+}
+
+// Local searches share the system's collapsed search button, including Duo rail placement.
+export function useHeaderSearch(
+  query: string,
+  onChange: (value: string) => void,
+  placeholder: string,
+) {
+  const [handle] = useState(() => createSearchBarHandle(query));
+  const [searching, setSearching] = useState(false);
+  useLayoutEffect(() => handle.updateText(query), [handle, query]);
+  const options = useMemo<SearchBarProps>(
+    () => ({
+      ref: handle.ref,
+      placement: "integratedButton",
+      hideWhenScrolling: true,
+      hideNavigationBar: false,
+      autoCapitalize: "none",
+      placeholder,
+      onChangeText: (event) => onChange(event.nativeEvent.text),
+      onFocus: () => setSearching(true),
+      onBlur: () => setSearching(false),
+      onCancelButtonPress: () => {
+        handle.ref.current?.setText("");
+        onChange("");
+        setSearching(false);
+      },
+    }),
+    [handle, onChange, placeholder],
+  );
+  const setText = useCallback(
+    (value: string) => {
+      handle.ref.current?.setText(value);
+      onChange(value);
+    },
+    [handle, onChange],
+  );
+  return { options, setText, searching };
 }
 
 declare global {

@@ -58,7 +58,7 @@ import {
   usePalette,
 } from "./ui.tsx";
 import { Projects, Tickets } from "./lists.tsx";
-import { WorkOverview, MyWork, Search } from "./work.tsx";
+import { MyWork, Search } from "./work.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
 import { Inbox, Settings } from "./settings.tsx";
@@ -595,6 +595,16 @@ function Navigation({
   const switchDestination = useCallback(
     (projectId?: string, settings = false) => {
       if (!navigationRef.isReady()) return;
+      const currentId = z
+        .object({ projectId: z.string() })
+        .safeParse(navigationRef.getCurrentRoute()?.params).data?.projectId;
+      const current = projects.data?.find(
+        (item) => item.id === currentId || item.key === currentId?.toUpperCase(),
+      );
+      if (projectId && !settings && current?.id === projectId) {
+        setPicker(false);
+        return;
+      }
       const tabs = navigationRef.getRootState();
       const stack = tabs?.routes.find((item) => item.name === "Projects")?.state;
       const project = projects.data?.find((item) => item.id === projectId);
@@ -628,7 +638,7 @@ function Navigation({
         navigationRef.navigate("Projects", { state: destination });
       }
       setCurrentProjectId(projectId);
-      setPicker(false);
+      if (projectId) setPicker(false);
       if (project) selectWorkspace(project.workspaceId);
     },
     [navigationRef, projects.data, contexts, selectWorkspace],
@@ -702,7 +712,7 @@ function Navigation({
         <View style={{ flex: 1, backgroundColor: color.surface }}>
           <Home onDisconnect={onDisconnect} />
           <Sheet
-            title={t("native.navigation.switchProject")}
+            title={t("shell.page.projects")}
             open={picker}
             onClose={() => setPicker(false)}
             onDismissed={() =>
@@ -736,7 +746,7 @@ function Navigation({
 }
 function HomeProjects() {
   const workspace = useWorkspace();
-  return <Projects key={workspace.active?.id} footer={<WorkOverview />} />;
+  return <Projects key={workspace.active?.id} />;
 }
 function BrowsingLayout({
   children,
@@ -755,7 +765,8 @@ function BrowsingStack({
   onDisconnect: () => Promise<void>;
 }) {
   const color = usePalette(),
-    projectNavigation = useProjectNavigation();
+    projectNavigation = useProjectNavigation(),
+    workspace = useWorkspace();
   const titles = {
     Projects: t("shell.page.projects"),
     Work: t("shell.page.myWork"),
@@ -781,11 +792,11 @@ function BrowsingStack({
           tab === "Projects" ? (
             <HomeProjects />
           ) : tab === "Work" ? (
-            <MyWork />
+            <MyWork key={workspace.active?.id} />
           ) : tab === "Inbox" ? (
             <Inbox />
           ) : tab === "Search" ? (
-            <Search />
+            <Search key={workspace.active?.id} />
           ) : (
             <Settings onDisconnect={onDisconnect} />
           )
@@ -821,7 +832,12 @@ function BrowsingStack({
         />
       </Stack.Group>
       <Stack.Screen name="Tickets" getId={({ params }) => params.projectId}>
-        {(props) => <Tickets key={props.route.params.projectId} {...props} />}
+        {(props) => (
+          <Tickets
+            key={`${props.route.params.projectId}:${props.route.params.collection ?? "all"}`}
+            {...props}
+          />
+        )}
       </Stack.Screen>
       <Stack.Screen
         name="Ticket"

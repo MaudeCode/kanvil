@@ -49,6 +49,10 @@ export default {
     create: "プロジェクトを作成",
   },
   tickets: {
+    expandAll: "すべてのセクションを展開",
+    collapseAll: "すべてのセクションを折りたたむ",
+    select: "チケットを選択",
+
     search: "チケットを検索",
     searchPlaceholder: "タイトル、説明、キー",
     allStatuses: "すべてのステータス",
