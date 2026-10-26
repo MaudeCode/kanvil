@@ -37,6 +37,7 @@ import { stagedUploadCutoff } from "./blob-storage.ts";
 import {
   assertVersion,
   assertWorkerClaim,
+  can,
   context,
   ownsLiveClaim,
   complete,
@@ -1241,7 +1242,13 @@ export const ticketHandlers: Pick<
         .from(claims)
         .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
     );
-    if (current.expiresAt > new Date())
+    if (input.cancelActive && !can(ctx, "project.manage"))
+      fail(
+        403,
+        "forbidden",
+        "Cancelling an active claim requires project management access and admin scope",
+      );
+    if (current.expiresAt > new Date() && !input.cancelActive)
       fail(409, "claim_not_expired", "The current claim has not expired");
     if (input.reschedule && input.expectedVersion !== undefined) {
       assertVersion(ticket, input.expectedVersion, "ticket", "rescheduling recovered work");
@@ -1266,6 +1273,7 @@ export const ticketHandlers: Pick<
       claimId: current.id,
       reason: input.reason,
       confirmedStopped: true,
+      ...(input.cancelActive && { cancelActive: true }),
     });
     return { ok: true };
   },

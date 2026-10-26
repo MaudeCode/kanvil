@@ -16,7 +16,7 @@ it.each([
     "KANVIL_CLAIM_MAX_LEASE_SECONDS",
     value,
   ]),
-])("rejects invalid deployment %s at startup", (key, value) => {
+])("rejects invalid deployment %s at startup: %s", (key, value) => {
   expect(() => readConfig({ ...base, [key]: value })).toThrow();
 });
 it("keeps API-key rate limits enabled unless explicitly disabled", () => {

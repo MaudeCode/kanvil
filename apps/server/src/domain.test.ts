@@ -1744,6 +1744,44 @@ describe("ticket operations on PostgreSQL", () => {
       domain.execute("renew_claim", { ...input, claimId: replacement.id }, worker),
     ).rejects.toMatchObject({ status: 404 });
   });
+  it("requires scoped project management to cancel live ownership", async () => {
+    const ticketRow = await ticket();
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const input = { projectId: project.id, ticketId: ticketRow.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "stopped-worker", leaseSeconds: 86400 },
+      owner,
+    );
+    const recover = {
+      ...input,
+      claimId: claim.id,
+      reason: "Confirmed the old worker has stopped",
+      confirmedStopped: true as const,
+      cancelActive: true,
+    };
+    const writerWithAdminScope = await domain.actor(writer.id, {
+      ownerId: "writer-key",
+      scopes: ["read", "claim", "admin"],
+    });
+    const adminWithoutAdminScope = await domain.actor(owner.id, {
+      ownerId: "limited-admin-key",
+      scopes: ["read", "claim"],
+    });
+    for (const denied of [writerWithAdminScope, adminWithoutAdminScope])
+      await expect(domain.execute("recover_claim", recover, denied)).rejects.toMatchObject({
+        code: "forbidden",
+      });
+    expect((await domain.execute("get_ticket", input, owner)).claim?.id).toBe(claim.id);
+    expect(await domain.execute("recover_claim", recover, owner)).toEqual({ ok: true });
+    const recovered = await domain.execute("get_ticket", input, owner);
+    expect(recovered.claim).toBeNull();
+    expect(recovered.ticket).toMatchObject({ status: "in_progress", version: 2 });
+  });
   it("coordinates competing workers and fences old ownership after recovery", async () => {
     const current = await ticket();
     const workers = [

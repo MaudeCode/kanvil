@@ -75,10 +75,10 @@ describe("HTTP, realtime, and MCP", () => {
   afterAll(async () => {
     await fixture?.close();
   });
-  const client = () =>
+  const client = (key?: string) =>
     createClient({
       baseUrl: fixture.config.KANVIL_URL,
-      headers: sessionHeaders,
+      headers: key ? () => ({ Authorization: `Bearer ${key}` }) : sessionHeaders,
       fetch: async (input, init) => application.app.fetch(new Request(input, init)),
     });
   const listedProjects = async (query = "") =>
@@ -542,11 +542,7 @@ describe("HTTP, realtime, and MCP", () => {
     const api = client(),
       project = await newProject();
     const token = await credential(project.id, ["read", "claim"]);
-    const claimApi = createClient({
-      baseUrl: fixture.config.KANVIL_URL,
-      headers: () => ({ Authorization: `Bearer ${token.key}` }),
-      fetch: async (requestInput, init) => application.app.fetch(new Request(requestInput, init)),
-    });
+    const claimApi = client(token.key);
     for (const maximum of [86400, 172800, 60]) {
       if (maximum !== 86400) {
         await application.close();
@@ -604,6 +600,95 @@ describe("HTTP, realtime, and MCP", () => {
         await sdk.close();
       }
     }
+  });
+  it("lets administrators cancel a revoked worker's live claim and fence its old claim ID", async () => {
+    const api = client(),
+      project = await newProject();
+    const token = await credential(project.id),
+      worker = client(token.key);
+    const ticket = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Revoked worker",
+      description: "Recover stopped ownership after credential revocation",
+      acceptanceCriteria: "A live lease cannot strand the project after revocation",
+      difficulty: "med",
+      automationReady: true,
+    });
+    const input = { projectId: project.id, ticketId: ticket.id };
+    const claim = await worker.call("claim_ticket", {
+      ...input,
+      expectedVersion: 1,
+      workerId: "revoked-worker",
+      leaseSeconds: 86400,
+    });
+    expect(
+      (
+        await request(`/api/v1/credentials/${token.id}`, {
+          method: "DELETE",
+          headers: sessionHeaders(),
+        })
+      ).status,
+    ).toBe(200);
+    await expect(worker.call("renew_claim", { ...input, claimId: claim.id })).rejects.toMatchObject(
+      { status: 401 },
+    );
+    const recover = {
+      claimId: claim.id,
+      reason: "Revoked credential and confirmed the worker stopped",
+      confirmedStopped: true as const,
+    };
+    await expect(api.call("recover_claim", { ...input, ...recover })).rejects.toMatchObject({
+      code: "claim_not_expired",
+    });
+    const cancellation = await request(
+      `/api/v1/projects/${project.id}/tickets/${ticket.id}/claim/recover`,
+      {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          ...recover,
+          cancelActive: true,
+          reschedule: true,
+          expectedVersion: 2,
+        }),
+      },
+    );
+    expect(cancellation.status, await cancellation.clone().text()).toBe(200);
+    expect(await cancellation.json()).toEqual({ ok: true });
+    const recovered = await api.call("get_ticket", input);
+    expect(recovered.claim).toBeNull();
+    expect(recovered.ticket).toMatchObject({ status: "todo", version: 3 });
+    expect((await api.call("get_project_impact", { projectId: project.id })).blockers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "claim_conflict" })]),
+    );
+    expect((await api.call("list_activity", input)).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claim.recovered",
+          data: expect.objectContaining({
+            claimId: claim.id,
+            cancelActive: true,
+            confirmedStopped: true,
+          }),
+        }),
+      ]),
+    );
+    const replacementToken = await credential(project.id),
+      replacementWorker = client(replacementToken.key);
+    const replacement = await replacementWorker.call("claim_ticket", {
+      ...input,
+      expectedVersion: 3,
+      workerId: "replacement",
+    });
+    expect(replacement.id).not.toBe(claim.id);
+    await expect(
+      replacementWorker.call("update_ticket", {
+        ...input,
+        expectedVersion: 4,
+        claimId: claim.id,
+        changes: { title: "Stale ownership" },
+      }),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
   });
   it.each([false, true])(
     "disables API-key rate limits for existing and new keys across HTTP and MCP, global=%s",

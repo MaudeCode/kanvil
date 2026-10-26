@@ -3144,6 +3144,7 @@ export const operations = {
         claimId: z.uuid(),
         reason: text.min(10).max(2000),
         confirmedStopped: z.literal(true),
+        cancelActive: z.boolean().optional(),
         reschedule: z.boolean().optional(),
         expectedVersion: version.optional(),
       })
@@ -3156,7 +3157,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim/recover",
     "claim",
-    "Recover an expired claim after confirming the worker stopped. Optionally reschedule it to To do at its expectedVersion.",
+    "Recover an expired claim after confirming the worker stopped. Optionally reschedule it to To do at its expectedVersion. Project managers with admin scope may explicitly cancel an active claim.",
   ),
   set_subscription: op(
     ticketInput.extend({ ...mutation, enabled: z.boolean() }).strict(),
