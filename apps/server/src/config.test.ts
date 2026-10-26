@@ -11,8 +11,20 @@ it.each([
   ["S3_ENDPOINT", "ftp://example.test"],
   ["RABBITMQ_EXCHANGE", "amq.reserved"],
   ["RABBITMQ_URL", "https://example.test"],
+  ["KANVIL_API_KEY_RATE_LIMIT_ENABLED", "off"],
 ])("rejects invalid deployment %s at startup", (key, value) => {
   expect(() => readConfig({ ...base, [key]: value })).toThrow();
+});
+it("keeps API-key rate limits enabled unless explicitly disabled", () => {
+  expect(readConfig(base).KANVIL_API_KEY_RATE_LIMIT_ENABLED).toBe(true);
+  expect(
+    readConfig({ ...base, KANVIL_API_KEY_RATE_LIMIT_ENABLED: "true" })
+      .KANVIL_API_KEY_RATE_LIMIT_ENABLED,
+  ).toBe(true);
+  expect(
+    readConfig({ ...base, KANVIL_API_KEY_RATE_LIMIT_ENABLED: "false" })
+      .KANVIL_API_KEY_RATE_LIMIT_ENABLED,
+  ).toBe(false);
 });
 it("validates provider requirements and accepts compatible optional services", () => {
   expect(() =>

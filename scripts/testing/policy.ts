@@ -186,7 +186,7 @@ export const families: readonly Family[] = [
       "Adapters speak HTTP, SMTP, and OIDC to fakes on loopback, so request framing, headers, redirects, response limits, signatures, and the outbound sender's address checks run as in production, against PostgreSQL-backed services.",
     cases: {
       "apps/server/src/delivery.test.ts": 11,
-      "apps/server/src/http.test.ts": 28,
+      "apps/server/src/http.test.ts": 30,
       "apps/server/src/import-sources.test.ts": 26,
       "apps/server/src/instance.test.ts": 6,
       "apps/server/src/issue-sync.test.ts": 14,
