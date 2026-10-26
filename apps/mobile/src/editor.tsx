@@ -48,7 +48,18 @@ export function EditTicket({ route, navigation }: ScreenProps<"Edit">) {
     enabled: !!ticketId,
   });
   if (ticketId && current.isPending) return <Loading />;
-  if (ticketId && !current.data) return <ErrorNotice error={current.error} />;
+  if (ticketId && !current.data)
+    return (
+      <Screen>
+        <ErrorNotice
+          error={current.error}
+          retrying={current.isFetching}
+          onRetry={() => {
+            void current.refetch();
+          }}
+        />
+      </Screen>
+    );
   return (
     <Editor
       key={`${projectId}:${ticketId ?? "new"}`}

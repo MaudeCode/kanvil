@@ -1,3 +1,4 @@
+import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
 import {
   createContext,
@@ -1085,9 +1086,18 @@ export function CustomFieldInput({
     />
   );
 }
-export function ErrorNotice({ error }: { error: unknown }) {
+export function ErrorNotice({
+  error,
+  onRetry,
+  retrying = false,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  retrying?: boolean;
+}) {
   const color = usePalette();
-  return error ? (
+  if (!error) return null;
+  const message = (
     <Text
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
@@ -1095,7 +1105,16 @@ export function ErrorNotice({ error }: { error: unknown }) {
     >
       {errorMessage(error)}
     </Text>
-  ) : null;
+  );
+  return onRetry ? (
+    <View>
+      {message}
+      <Button plain title={t("common.action.retry")} disabled={retrying} onPress={onRetry} />
+      {retrying && <Loading />}
+    </View>
+  ) : (
+    message
+  );
 }
 export function Loading() {
   const color = usePalette();
@@ -1604,7 +1623,7 @@ export function TicketRow({
           }),
         ]
       : []),
-    ...(ticket.dueAt ? [t("native.ticket.due", { date: formatDate(ticket.dueAt) })] : []),
+    ...(ticket.startAt || ticket.dueAt ? [ticketScheduleText(ticket)] : []),
   ]);
   return (
     <Row

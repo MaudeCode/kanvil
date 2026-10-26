@@ -1,5 +1,5 @@
 import { dueFilterLabels } from "./index.ts";
-import { t } from "./i18n/index.ts";
+import { formatDate, t } from "./i18n/index.ts";
 import type { Ticket } from "./index.ts";
 import type { TicketLayout } from "./navigation.ts";
 export type ScheduleLayout = Exclude<TicketLayout, "list">;
@@ -74,3 +74,15 @@ export function dueWindow(ticket: Pick<Ticket, "dueAt">, now: number) {
 }
 export const dueWindowLabel = (id: (typeof dueWindows)[number][0] | "none") =>
   id === "later" ? t("ticket.list.later") : dueFilterLabels[id];
+
+// Reading rows, detail and schedule bars share the same complete localized date summary.
+export function ticketScheduleText(ticket: Partial<Pick<Ticket, "startAt" | "dueAt">>) {
+  return [
+    ticket.startAt &&
+      t("native.ticket.starts", { date: formatDate(ticket.startAt, { dateStyle: "medium" }) }),
+    ticket.dueAt &&
+      t("native.ticket.due", { date: formatDate(ticket.dueAt, { dateStyle: "medium" }) }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}

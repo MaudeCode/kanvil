@@ -1,5 +1,13 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { I18nManager, Pressable, ScrollView, Text, View, useColorScheme } from "react-native";
+import {
+  I18nManager,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useColorScheme,
+  useWindowDimensions,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -8,8 +16,9 @@ import {
   shiftAnchor,
   ticketSpan,
   calendarDistance,
+  ticketScheduleText,
 } from "@kanvil/contracts/schedule";
-import { formatDate, formatNumber, t } from "@kanvil/contracts/i18n";
+import { formatDate, formatNumber, formatList, t } from "@kanvil/contracts/i18n";
 import { nativeStatusColor } from "@kanvil/contracts/colors";
 import type { Ticket } from "@kanvil/contracts";
 import { useConnection } from "./data.tsx";
@@ -58,7 +67,15 @@ export function TicketSchedule({
   const [today] = useState(() => calendarDay(new Date())),
     [selected, setSelected] = useState(anchor),
     [showDay, setShowDay] = useState(false),
-    [rowHeights, setRowHeights] = useState<Record<string, number>>({});
+    [rowHeights, setRowHeights] = useState<Record<string, number>>({}),
+    [headerHeights, setHeaderHeights] = useState({ identity: 0, days: 0 });
+  const { fontScale } = useWindowDimensions();
+  const headerHeight = Math.max(44, headerHeights.identity, headerHeights.days);
+  // Measure inner content so both headers also shrink when the user restores text size.
+  const measureHeader = (part: keyof typeof headerHeights, height: number) =>
+    setHeaderHeights((previous) =>
+      previous[part] === height ? previous : { ...previous, [part]: height },
+    );
   const color = usePalette(),
     mode = useColorScheme() === "dark" ? "dark" : "light",
     viewport = useNativeViewport();
@@ -168,7 +185,7 @@ export function TicketSchedule({
     const days = Array.from({ length: calendarDistance(range.from, range.to) }, (_, index) =>
       addCalendarDays(range.from, index),
     );
-    const dayWidth = 34,
+    const dayWidth = 34 * Math.max(1, fontScale),
       chartWidth = days.length * dayWidth,
       identityWidth = Math.min(280, Math.max(160, viewport.bounds.width * 0.6));
     return (
@@ -183,8 +200,14 @@ export function TicketSchedule({
         ) : (
           <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
             <View style={{ width: identityWidth }}>
-              <View style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}>
-                <Heading compact>{t("ticket.schedule.ticketColumn")}</Heading>
+              <View
+                style={{ height: headerHeight, paddingHorizontal: 12, justifyContent: "center" }}
+              >
+                <View
+                  onLayout={(event) => measureHeader("identity", event.nativeEvent.layout.height)}
+                >
+                  <Heading compact>{t("ticket.schedule.ticketColumn")}</Heading>
+                </View>
               </View>
               {spans.map(({ ticket }) => (
                 <View
@@ -204,17 +227,25 @@ export function TicketSchedule({
             </View>
             <ScrollView horizontal nestedScrollEnabled style={{ flex: 1, minWidth: 0 }}>
               <View style={{ width: chartWidth }}>
-                <View style={{ flexDirection: "row", minHeight: 44, alignItems: "center" }}>
-                  {days.map((day) => (
-                    <View key={day.toISOString()} style={{ width: dayWidth, alignItems: "center" }}>
-                      <Text style={{ color: color.muted, fontSize: 10 }}>
-                        {formatDate(day, { weekday: "narrow" })}
-                      </Text>
-                      <Text style={{ color: color.foreground, fontSize: 12 }}>
-                        {formatNumber(day.getDate())}
-                      </Text>
-                    </View>
-                  ))}
+                <View style={{ height: headerHeight, justifyContent: "center" }}>
+                  <View
+                    style={{ flexDirection: "row", alignItems: "center" }}
+                    onLayout={(event) => measureHeader("days", event.nativeEvent.layout.height)}
+                  >
+                    {days.map((day) => (
+                      <View
+                        key={day.toISOString()}
+                        style={{ width: dayWidth, alignItems: "center" }}
+                      >
+                        <Text style={{ color: color.muted, fontSize: 10 }}>
+                          {formatDate(day, { weekday: "narrow" })}
+                        </Text>
+                        <Text style={{ color: color.foreground, fontSize: 12 }}>
+                          {formatNumber(day.getDate())}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
                 {spans.map((span) => {
                   const start = Math.max(0, calendarDistance(range.from, span.start)),
@@ -239,7 +270,9 @@ export function TicketSchedule({
                         accessibilityRole="button"
                         accessibilityLabel={t("native.labelValue", {
                           label: span.ticket.key,
-                          value: span.ticket.title,
+                          value: formatList(
+                            [span.ticket.title, ticketScheduleText(span.ticket)].filter(Boolean),
+                          ),
                         })}
                         onPress={() => onOpen(span.ticket)}
                         style={{

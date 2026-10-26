@@ -1,10 +1,11 @@
+import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import {
   formatCustomFieldValue,
   formatTimestamp,
   readinessReasonText,
   ApiError,
 } from "@kanvil/contracts";
-import { formatDate, t } from "@kanvil/contracts/i18n";
+import { t } from "@kanvil/contracts/i18n";
 import { createHeaderAction } from "./navigation-actions.tsx";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
@@ -35,15 +36,6 @@ import type { ScreenProps, Routes } from "./navigation.ts";
 import { TicketProperties, propertyChanges } from "./ticket-properties.tsx";
 import { TicketActions } from "./ticket-actions.tsx";
 
-const day = (value: string) => formatDate(value, { dateStyle: "medium" });
-function scheduleText(ticket: { startAt: string | null; dueAt: string | null }) {
-  return [
-    ticket.startAt && t("native.ticket.starts", { date: day(ticket.startAt) }),
-    ticket.dueAt && t("native.ticket.due", { date: day(ticket.dueAt) }),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 export function TicketDetail(props: ScreenProps<"Ticket">) {
   return (
     <TicketContent
@@ -85,34 +77,48 @@ export function TicketContent({
     navigation.setOptions(
       nativeHeaderOptions({
         title: result.data?.ticket.key ?? t("native.screen.ticket"),
-        unstable_headerRightItems: () => [
-          ...(access.canWrite
+        unstable_headerRightItems: () =>
+          result.data
             ? [
+                ...(access.canWrite
+                  ? [
+                      createHeaderAction(
+                        t("common.action.edit"),
+                        () => navigation.navigate("Edit", { projectId, ticketId }),
+                        { type: "sfSymbol", name: "square.and.pencil" },
+                        false,
+                        { visibilityPriority: "high", identifier: "ticket-edit" },
+                      ),
+                    ]
+                  : []),
                 createHeaderAction(
-                  t("common.action.edit"),
-                  () => navigation.navigate("Edit", { projectId, ticketId }),
-                  { type: "sfSymbol", name: "square.and.pencil" },
+                  t("ticket.selection.more"),
+                  () => setActions(true),
+                  {
+                    type: "sfSymbol",
+                    name: "ticket",
+                  },
                   false,
-                  { visibilityPriority: "high", identifier: "ticket-edit" },
+                  { visibilityPriority: "low", identifier: "ticket-actions" },
                 ),
               ]
-            : []),
-          createHeaderAction(
-            t("ticket.selection.more"),
-            () => setActions(true),
-            {
-              type: "sfSymbol",
-              name: "ticket",
-            },
-            false,
-            { visibilityPriority: "low", identifier: "ticket-actions" },
-          ),
-        ],
+            : [],
       }),
     );
-  }, [preview, navigation, projectId, ticketId, result.data?.ticket.key, access.canWrite]);
+  }, [preview, navigation, projectId, ticketId, result.data, access.canWrite]);
   if (result.isPending) return <Loading />;
-  if (!result.data) return <ErrorNotice error={result.error} />;
+  if (!result.data)
+    return (
+      <Screen>
+        <ErrorNotice
+          error={result.error}
+          retrying={result.isFetching}
+          onRetry={() => {
+            void result.refetch();
+          }}
+        />
+      </Screen>
+    );
   const { ticket, readiness, claim, canReleaseClaim } = result.data;
   const valued = (fields.data ?? []).filter((field) => ticket.customFields[field.id] !== undefined);
   return (
@@ -161,7 +167,7 @@ export function TicketContent({
       )}
       {(ticket.startAt || ticket.dueAt) && (
         <Body muted small>
-          {scheduleText(ticket)}
+          {ticketScheduleText(ticket)}
         </Body>
       )}
       {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}

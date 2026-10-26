@@ -1,4 +1,4 @@
-import { dueWindow } from "./schedule.ts";
+import { dueWindow, ticketScheduleText } from "./schedule.ts";
 import { expect, it } from "vite-plus/test";
 import { addCalendarDays, scheduleWindow, shiftAnchor, ticketSpan } from "./schedule.ts";
 it("keeps month steps valid at month ends and across a leap year", () => {
@@ -36,4 +36,13 @@ it("groups due work consistently at the rolling window boundaries and leaves und
       dueWindow({ dueAt: new Date(now + offset).toISOString() }, now),
     ),
   ).toEqual(["overdue", "today", "today", "week", "later"]);
+});
+
+it("names start and due dates independently, including start-only scheduled tickets", () => {
+  const startAt = new Date(2026, 9, 28, 12).toISOString(),
+    dueAt = new Date(2026, 9, 30, 12).toISOString();
+  expect(ticketScheduleText({ startAt, dueAt: null })).toBe("Starts Oct 28, 2026");
+  expect(ticketScheduleText({ startAt: null, dueAt })).toBe("Due Oct 30, 2026");
+  expect(ticketScheduleText({ startAt, dueAt })).toBe("Starts Oct 28, 2026 · Due Oct 30, 2026");
+  expect(ticketScheduleText({})).toBe("");
 });
