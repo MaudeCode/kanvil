@@ -70,6 +70,9 @@ export default {
     saved: "Profil enregistré",
   },
   credentials: {
+    global: "Globale",
+    globalDescription:
+      "Accédez à tous les projets et espaces de travail accessibles à votre compte, y compris les accès futurs.",
     title: "Clés API",
     description:
       "Connectez des scripts, des intégrations et des agents avec un accès que vous pouvez révoquer.",
@@ -131,9 +134,9 @@ export default {
         description: "Prendre en charge, renouveler et libérer la prise en charge des tickets.",
       },
       admin: {
-        name: "Gérer les projets",
+        name: "Gérer les projets et espaces de travail",
         description:
-          "Modifier les paramètres et les membres des projets lorsque votre rôle le permet.",
+          "Modifier les paramètres et les membres des projets et espaces de travail lorsque votre rôle le permet.",
       },
     },
     expiry: {

@@ -70,6 +70,9 @@ export default {
     saved: "Đã lưu hồ sơ",
   },
   credentials: {
+    global: "Toàn cục",
+    globalDescription:
+      "Truy cập mọi dự án và không gian làm việc mà tài khoản của bạn có quyền truy cập, kể cả quyền được cấp sau này.",
     title: "Khóa API",
     description: "Kết nối script, tích hợp và tác tử với quyền truy cập có thể thu hồi.",
     create: "Tạo khóa API",
@@ -129,8 +132,9 @@ export default {
         description: "Nhận, gia hạn và trả lại quyền sở hữu phiếu.",
       },
       admin: {
-        name: "Quản lý dự án",
-        description: "Thay đổi cài đặt và thành viên dự án trong phạm vi vai trò của bạn cho phép.",
+        name: "Quản lý dự án và không gian làm việc",
+        description:
+          "Thay đổi cài đặt và thành viên của dự án và không gian làm việc trong phạm vi vai trò cho phép.",
       },
     },
     expiry: {

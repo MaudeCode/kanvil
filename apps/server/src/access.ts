@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { scopes } from "@kanvil/contracts";
+import { credentialProjectsSchema, scopes } from "@kanvil/contracts";
 import { fail, type Actor, type Domain } from "./domain.ts";
 import type { Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
@@ -8,7 +8,6 @@ import { apikey } from "./auth-schema.ts";
 import { eq } from "drizzle-orm";
 
 const credentialPermissions = z.object({ kanvil: z.array(z.enum(scopes)) });
-const credentialMetadata = z.object({ projectIds: z.array(z.uuid()).max(1000) });
 // ponytail: per-process sliding window; move to PostgreSQL or the broker if Kanvil runs on several instances.
 // Keys stay in the order they were last used, so pruning reads from the front: expired keys go,
 // and past `capacity` the least recently used key goes too. Callers may key it by input from the
@@ -66,13 +65,13 @@ export function createAccess(auth: Auth, domain: Domain, config: Config, databas
     metadata?: unknown;
   }) {
     const permissions = credentialPermissions.safeParse(storedJson(key.permissions));
-    const metadata = credentialMetadata.safeParse(storedJson(key.metadata));
+    const metadata = credentialProjectsSchema.safeParse(storedJson(key.metadata));
     if (!permissions.success || !metadata.success)
       fail(403, "invalid_credential_scope", "This credential has no valid project permissions");
     return domain.actor(key.referenceId, {
       ownerId: key.id,
       scopes: permissions.data.kanvil,
-      projectIds: metadata.data.projectIds,
+      ...(metadata.data.projectIds === null ? {} : { projectIds: metadata.data.projectIds }),
     });
   }
   async function authenticate(request: Request): Promise<Actor> {

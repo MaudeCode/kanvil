@@ -70,6 +70,9 @@ export default {
     saved: "Profiel opgeslagen",
   },
   credentials: {
+    global: "Globaal",
+    globalDescription:
+      "Toegang tot alle projecten en werkruimten waar je account toegang toe heeft, ook in de toekomst.",
     title: "API-sleutels",
     description: "Koppel scripts, integraties en agents met toegang die je kunt intrekken.",
     create: "API-sleutel aanmaken",
@@ -129,8 +132,9 @@ export default {
         description: "Eigendom van tickets claimen, verlengen en vrijgeven.",
       },
       admin: {
-        name: "Projecten beheren",
-        description: "Projectinstellingen en lidmaatschap wijzigen waar je rol dat toestaat.",
+        name: "Projecten en werkruimten beheren",
+        description:
+          "Wijzig instellingen en lidmaatschap van projecten en werkruimten waar je rol dat toestaat.",
       },
     },
     expiry: {

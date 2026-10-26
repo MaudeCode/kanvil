@@ -434,3 +434,76 @@ test("one settings navigation reaches every scope and keeps history, palette, an
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   expect(errors).toEqual([]);
 });
+
+test("API keys support explicit global access and preserve selected-project defaults", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "KEYS", name: "Scoped key fixture" },
+    })
+  ).json();
+  await page.goto("/settings?section=credentials");
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("checkbox", { name: "Global", exact: true })).not.toBeChecked();
+  await dialog.getByLabel("Key name", { exact: true }).fill("Global fixture");
+  await choose(page, "Access level", "Custom permissions");
+  await expect(
+    dialog.getByRole("checkbox", { name: "Manage projects and workspaces", exact: true }),
+  ).toBeVisible();
+  await choose(page, "Access level", "Read only");
+  await dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "Global", exact: true }).check();
+  await expect(
+    dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }),
+  ).toHaveCount(0);
+  await dialog.getByRole("checkbox", { name: "Global", exact: true }).uncheck();
+  await expect(
+    dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }),
+  ).toBeChecked();
+  await dialog.getByRole("checkbox", { name: "Global", exact: true }).check();
+  for (const mode of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme: mode === "light" ? "light" : "dark" });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(
+        dialog.getByRole("button", { name: "Create API key", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `test-results/credentials-${mode}-${width}.png`,
+        animations: "disabled",
+        fullPage: true,
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+    }
+  }
+  await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
+  await expect(dialog.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Global fixture" })).toContainText("Global");
+  await page.reload();
+  await expect(page.getByRole("row").filter({ hasText: "Global fixture" })).toContainText("Global");
+  const credentials = await (await page.request.get("/api/v1/credentials")).json();
+  const global = credentials.find((value: { name: string }) => value.name === "Global fixture");
+  expect(JSON.parse(global.metadata)).toEqual({ projectIds: null });
+  await page.getByRole("button", { name: "Create API key", exact: true }).click();
+  await expect(dialog.getByRole("checkbox", { name: "Global", exact: true })).not.toBeChecked();
+  await dialog.getByLabel("Key name", { exact: true }).fill("Scoped fixture");
+  await dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }).check();
+  await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
+  await expect(dialog.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  const scoped = (await (await page.request.get("/api/v1/credentials")).json()).find(
+    (value: { name: string }) => value.name === "Scoped fixture",
+  );
+  expect(JSON.parse(scoped.metadata)).toEqual({ projectIds: [project.id] });
+  await expect(page.getByRole("row").filter({ hasText: "Scoped fixture" })).toContainText(
+    "Scoped key fixture",
+  );
+  for (const credential of [global, scoped])
+    expect((await page.request.delete(`/api/v1/credentials/${credential.id}`)).ok()).toBe(true);
+});

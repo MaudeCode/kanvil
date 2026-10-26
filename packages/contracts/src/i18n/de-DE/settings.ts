@@ -70,6 +70,9 @@ export default {
     saved: "Profil gespeichert",
   },
   credentials: {
+    global: "Global",
+    globalDescription:
+      "Zugriff auf alle Projekte und Arbeitsbereiche Ihres Kontos, einschließlich künftiger Zugriffsrechte.",
     title: "API-Schlüssel",
     description: "Skripte, Integrationen und Agenten mit widerrufbarem Zugriff verbinden.",
     create: "API-Schlüssel erstellen",
@@ -129,9 +132,9 @@ export default {
         description: "Ticket-Übernahmen beanspruchen, verlängern und freigeben.",
       },
       admin: {
-        name: "Projekte verwalten",
+        name: "Projekte und Arbeitsbereiche verwalten",
         description:
-          "Projekteinstellungen und Mitgliedschaften ändern, soweit Ihre Rolle es erlaubt.",
+          "Projekt- und Arbeitsbereichseinstellungen sowie Mitgliedschaften ändern, soweit Ihre Rolle es erlaubt.",
       },
     },
     expiry: {

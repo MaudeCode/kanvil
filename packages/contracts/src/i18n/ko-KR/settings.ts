@@ -70,6 +70,9 @@ export default {
     saved: "프로필이 저장되었습니다",
   },
   credentials: {
+    global: "전체",
+    globalDescription:
+      "나중에 접근 권한을 얻는 항목을 포함하여 계정이 접근할 수 있는 모든 프로젝트와 워크스페이스에 접근합니다.",
     title: "API 키",
     description: "취소할 수 있는 액세스 권한으로 스크립트, 연동, 에이전트를 연결합니다.",
     create: "API 키 만들기",
@@ -124,8 +127,9 @@ export default {
       },
       claim: { name: "작업 선점", description: "티켓 소유권을 선점, 갱신, 해제합니다." },
       admin: {
-        name: "프로젝트 관리",
-        description: "역할이 허용하는 범위에서 프로젝트 설정과 멤버를 변경합니다.",
+        name: "프로젝트 및 워크스페이스 관리",
+        description:
+          "역할이 허용하는 범위에서 프로젝트와 워크스페이스의 설정 및 멤버를 변경합니다.",
       },
     },
     expiry: {

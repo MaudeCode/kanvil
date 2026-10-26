@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createClient } from "@kanvil/client";
 import { z } from "zod";
@@ -63,9 +63,16 @@ describe("HTTP, realtime, and MCP", () => {
       .getSetCookie()
       .map((value) => value.split(";")[0])
       .join("; ");
+    await application.close();
+  });
+  // Keep process-local state, including request budgets, isolated between unrelated cases.
+  beforeEach(async () => {
+    application = await createApplication(fixture.database, fixture.config);
+  });
+  afterEach(async () => {
+    await application?.close();
   });
   afterAll(async () => {
-    await application?.close();
     await fixture?.close();
   });
   const client = () =>
@@ -86,11 +93,18 @@ describe("HTTP, realtime, and MCP", () => {
       key: `H${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
       name: "HTTP project",
     });
-  async function credential(projectId: string, permissions: string[] = ["read", "write", "claim"]) {
+  async function credential(
+    projectId: string | null,
+    permissions: string[] = ["read", "write", "claim"],
+  ) {
     const response = await request("/api/v1/credentials", {
       method: "POST",
       headers: sessionHeaders(),
-      body: JSON.stringify({ name: "Test consumer", projectIds: [projectId], scopes: permissions }),
+      body: JSON.stringify({
+        name: "Test consumer",
+        projectIds: projectId === null ? null : [projectId],
+        scopes: permissions,
+      }),
     });
     expect(response.status).toBe(201);
     return z.object({ id: z.string(), key: z.string() }).parse(await response.json());
@@ -408,6 +422,143 @@ describe("HTTP, realtime, and MCP", () => {
     ).toBe(200);
     expect((await request(`/api/v1/projects/${project.id}/tickets`, { headers })).status).toBe(401);
   });
+  it("lets global credentials follow current account access while keeping machine and scope gates", async () => {
+    const person = await fixture.auth.api.createUser({
+      body: {
+        name: "Global consumer",
+        email: "global@example.test",
+        password: "Global test password 42!",
+        role: "user",
+      },
+    });
+    const login = await request("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: sessionHeaders(),
+      body: JSON.stringify({ email: person.user.email, password: "Global test password 42!" }),
+    });
+    const personHeaders = {
+      ...sessionHeaders(),
+      Cookie: login.headers
+        .getSetCookie()
+        .map((value) => value.split(";")[0])
+        .join("; "),
+    };
+    const create = async (permissions: string[]) => {
+      const response = await request("/api/v1/credentials", {
+        method: "POST",
+        headers: personHeaders,
+        body: JSON.stringify({ name: "Global consumer", projectIds: null, scopes: permissions }),
+      });
+      expect(response.status).toBe(201);
+      return z.object({ id: z.string(), key: z.string() }).parse(await response.json());
+    };
+    // No projects exist for this account when its global keys are created.
+    const token = await create(["read", "write"]),
+      readOnly = await create(["read"]),
+      administrator = await create(["admin"]);
+    const machine = (key: string) =>
+      createClient({
+        baseUrl: fixture.config.KANVIL_URL,
+        headers: () => ({ Authorization: `Bearer ${key}` }),
+        fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+      });
+    const api = machine(token.key),
+      project = await newProject();
+    expect(await api.call("list_projects", {})).toEqual([]);
+    await expect(api.call("get_project", { projectId: project.id })).rejects.toMatchObject({
+      status: 404,
+    });
+    await client().call("set_member", {
+      projectId: project.id,
+      email: person.user.email,
+      role: "reader",
+    });
+    expect((await api.call("get_project", { projectId: project.id })).id).toBe(project.id);
+    await expect(
+      api.call("create_ticket", { projectId: project.id, title: "Role denied" }),
+    ).rejects.toMatchObject({ status: 403 });
+    await client().call("set_member", {
+      projectId: project.id,
+      email: person.user.email,
+      role: "writer",
+    });
+    await api.call("create_ticket", { projectId: project.id, title: "Allowed after grant" });
+    await expect(
+      machine(readOnly.key).call("create_ticket", { projectId: project.id, title: "Scope denied" }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      (await request("/api/v1/credentials", { headers: { Authorization: `Bearer ${token.key}` } }))
+        .status,
+    ).toBe(403);
+    await expect(api.call("get_account_impact", { userId: person.user.id })).rejects.toMatchObject({
+      code: "session_required",
+    });
+    await client().call("set_member", {
+      projectId: project.id,
+      email: person.user.email,
+      role: null,
+    });
+    expect(await api.call("list_projects", {})).toEqual([]);
+    await expect(api.call("get_project", { projectId: project.id })).rejects.toMatchObject({
+      status: 404,
+    });
+    const space = await api.call("create_workspace", {
+      name: "Global workspace",
+      slug: `global-${crypto.randomUUID()}`,
+    });
+    const future = await api.call("create_project", {
+      workspaceId: space.id,
+      key: "GLBL",
+      name: "Future global project",
+    });
+    const update = {
+      workspaceId: space.id,
+      expectedVersion: space.version,
+      name: "Updated global workspace",
+      description: space.description,
+    };
+    await expect(api.call("update_workspace", update)).rejects.toMatchObject({ status: 403 });
+    expect((await machine(administrator.key).call("update_workspace", update)).name).toBe(
+      update.name,
+    );
+    expect((await api.call("list_projects", {})).map((row) => row.id)).toEqual([future.id]);
+    await expect(
+      machine(readOnly.key).call("create_project", {
+        workspaceId: space.id,
+        key: "NOPE",
+        name: "Scope denied",
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await request(`/api/v1/credentials/${token.id}`, { method: "DELETE", headers: personHeaders });
+    await expect(api.call("list_projects", {})).rejects.toMatchObject({ status: 401 });
+    await fixture.database.pool.query('UPDATE "user" SET banned = true WHERE id = $1', [
+      person.user.id,
+    ]);
+    await expect(machine(readOnly.key).call("list_projects", {})).rejects.toMatchObject({
+      code: "account_disabled",
+    });
+  });
+  it("never treats missing or malformed credential project metadata as global access", async () => {
+    const project = await newProject(),
+      token = await credential(project.id);
+    for (const metadata of [
+      null,
+      "not-json",
+      {},
+      { projectIds: "all" },
+      { projectIds: ["invalid"] },
+    ]) {
+      await fixture.database.pool.query("UPDATE apikey SET metadata = $1 WHERE id = $2", [
+        metadata === null ? null : JSON.stringify(metadata),
+        token.id,
+      ]);
+      const response = await request(`/api/v1/projects/${project.id}/tickets`, {
+        headers: { Authorization: `Bearer ${token.key}` },
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ error: { code: "invalid_credential_scope" } });
+    }
+  });
   it("replays changes from a snapshot and streams new committed changes", async () => {
     const project = await newProject();
     const snapshot = snapshotSchema.parse(
@@ -442,136 +593,147 @@ describe("HTTP, realtime, and MCP", () => {
     });
     expect(invalid.status).toBe(410);
   });
-  it("counts an SSE connection once while rechecking credential revocation for every batch", async () => {
-    const project = await newProject(),
-      token = await credential(project.id, ["read"]);
-    await fixture.database.pool.query(
-      "UPDATE apikey SET rate_limit_max = 1, request_count = 0 WHERE id = $1",
-      [token.id],
-    );
-    const controller = new AbortController();
-    const response = await request(`/api/v1/events?projectId=${project.id}`, {
-      headers: { Authorization: `Bearer ${token.key}` },
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
-    });
-    expect(response.status).toBe(200);
-    const reader = response.body!.getReader();
-    try {
-      await readSseUntil(reader, "checkpoint");
-      const ticket = await client().call("create_ticket", {
-        projectId: project.id,
-        title: "Rate-limited streaming",
+  it.each([false, true])(
+    "counts an SSE connection once while rechecking credential revocation for every batch, global=%s",
+    async (global) => {
+      const project = await newProject(),
+        token = await credential(global ? null : project.id, ["read"]);
+      await fixture.database.pool.query(
+        "UPDATE apikey SET rate_limit_max = 1, request_count = 0 WHERE id = $1",
+        [token.id],
+      );
+      const controller = new AbortController();
+      const response = await request(`/api/v1/events?projectId=${project.id}`, {
+        headers: { Authorization: `Bearer ${token.key}` },
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
       });
-      await readSseUntil(reader, ticket.id);
-      expect(
-        (
-          await fixture.database.pool.query("SELECT request_count FROM apikey WHERE id = $1", [
-            token.id,
-          ])
-        ).rows[0]?.request_count,
-      ).toBe(1);
-      await request(`/api/v1/credentials/${token.id}`, {
-        method: "DELETE",
-        headers: sessionHeaders(),
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      try {
+        await readSseUntil(reader, "checkpoint");
+        const ticket = await client().call("create_ticket", {
+          projectId: project.id,
+          title: "Rate-limited streaming",
+        });
+        await readSseUntil(reader, ticket.id);
+        expect(
+          (
+            await fixture.database.pool.query("SELECT request_count FROM apikey WHERE id = $1", [
+              token.id,
+            ])
+          ).rows[0]?.request_count,
+        ).toBe(1);
+        await request(`/api/v1/credentials/${token.id}`, {
+          method: "DELETE",
+          headers: sessionHeaders(),
+        });
+        await client().call("create_ticket", {
+          projectId: project.id,
+          title: "Wake revoked stream",
+        });
+        expect(await readSseUntil(reader, '"status":401')).toContain("unauthorized");
+      } finally {
+        controller.abort();
+        await reader.cancel().catch(() => {});
+      }
+    },
+  );
+  it.each([false, true])(
+    "supports discovery and tool calls with the official MCP client, global=%s",
+    async (global) => {
+      const project = await newProject(),
+        token = await credential(global ? null : project.id);
+      const sdk = new Client({ name: "kanvil-contract-test", version: "1.0.0" });
+      const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+        fetch: async (input, init) => application.app.fetch(new Request(input, init)),
       });
-      await client().call("create_ticket", { projectId: project.id, title: "Wake revoked stream" });
-      expect(await readSseUntil(reader, '"status":401')).toContain("unauthorized");
-    } finally {
-      controller.abort();
-      await reader.cancel().catch(() => {});
-    }
-  });
-  it("supports discovery and tool calls with the official MCP client", async () => {
-    const project = await newProject(),
-      token = await credential(project.id);
-    const sdk = new Client({ name: "kanvil-contract-test", version: "1.0.0" });
-    const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
-      requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
-      fetch: async (input, init) => application.app.fetch(new Request(input, init)),
-    });
-    try {
-      await sdk.connect(transport);
-      const tools = await sdk.listTools();
-      expect(tools.tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
-      for (const name of [
-        "list_project_labels",
-        "create_project_label",
-        "update_project_label",
-        "delete_project_label",
-        "list_workspace_labels",
-        "create_workspace_label",
-        "update_workspace_label",
-        "delete_workspace_label",
-        "archive_project",
-        "get_project_impact",
-        "transfer_project",
-        "delete_project",
-      ])
-        expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
-      const managedLabel = await client().call("create_project_label", {
-        projectId: project.id,
-        name: "MCP label",
-        color: "blue",
-      });
-      const catalog = await sdk.callTool({
-        name: "list_project_labels",
-        arguments: { projectId: project.id },
-      });
-      expect(catalog.structuredContent).toMatchObject({
-        result: [{ id: managedLabel.id, name: "MCP label", color: "blue", count: 0 }],
-      });
-      const deniedLabel = await sdk.callTool({
-        name: "create_project_label",
-        arguments: { projectId: project.id, name: "Requires admin" },
-      });
-      expect(deniedLabel.isError).toBe(true);
-      const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
-      const discovered = z
-        .object({ result: z.array(z.object({ id: z.string(), role: z.null() })) })
-        .parse(spaces.structuredContent);
-      expect(discovered.result.map((workspace) => workspace.id)).toEqual([project.workspaceId]);
-      const forbidden = await sdk.callTool({
-        name: "list_workspace_members",
-        arguments: { workspaceId: project.workspaceId },
-      });
-      expect(forbidden.isError).toBe(true);
+      try {
+        await sdk.connect(transport);
+        const tools = await sdk.listTools();
+        expect(tools.tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
+        for (const name of [
+          "list_project_labels",
+          "create_project_label",
+          "update_project_label",
+          "delete_project_label",
+          "list_workspace_labels",
+          "create_workspace_label",
+          "update_workspace_label",
+          "delete_workspace_label",
+          "archive_project",
+          "get_project_impact",
+          "transfer_project",
+          "delete_project",
+        ])
+          expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
+        const managedLabel = await client().call("create_project_label", {
+          projectId: project.id,
+          name: "MCP label",
+          color: "blue",
+        });
+        const catalog = await sdk.callTool({
+          name: "list_project_labels",
+          arguments: { projectId: project.id },
+        });
+        expect(catalog.structuredContent).toMatchObject({
+          result: [{ id: managedLabel.id, name: "MCP label", color: "blue", count: 0 }],
+        });
+        const deniedLabel = await sdk.callTool({
+          name: "create_project_label",
+          arguments: { projectId: project.id, name: "Requires admin" },
+        });
+        expect(deniedLabel.isError).toBe(true);
+        const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
+        const discovered = z
+          .object({ result: z.array(z.object({ id: z.string(), role: z.string().nullable() })) })
+          .parse(spaces.structuredContent);
+        if (global)
+          expect(discovered.result).toContainEqual({ id: project.workspaceId, role: "admin" });
+        else expect(discovered.result).toEqual([{ id: project.workspaceId, role: null }]);
+        const forbidden = await sdk.callTool({
+          name: "list_workspace_members",
+          arguments: { workspaceId: project.workspaceId },
+        });
+        expect(forbidden.isError ?? false).toBe(!global);
 
-      const response = await sdk.callTool({
-        name: "create_ticket",
-        arguments: { projectId: project.id, title: "Created through MCP" },
+        const response = await sdk.callTool({
+          name: "create_ticket",
+          arguments: { projectId: project.id, title: "Created through MCP" },
+        });
+        expect(response.isError).not.toBe(true);
+        const result = z.object({ result: ticketSchema }).parse(response.structuredContent).result;
+        expect(
+          (await client().call("get_ticket", { projectId: project.id, ticketId: result.id })).ticket
+            .title,
+        ).toBe("Created through MCP");
+      } finally {
+        await sdk.close();
+      }
+      const unauthorized = await request("/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       });
-      expect(response.isError).not.toBe(true);
-      const result = z.object({ result: ticketSchema }).parse(response.structuredContent).result;
-      expect(
-        (await client().call("get_ticket", { projectId: project.id, ticketId: result.id })).ticket
-          .title,
-      ).toBe("Created through MCP");
-    } finally {
-      await sdk.close();
-    }
-    const unauthorized = await request("/mcp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    expect(unauthorized.status).toBe(401);
-    expect(unauthorized.headers.get("www-authenticate")).toContain("resource_metadata");
-    const metadataUrl = unauthorized.headers
-      .get("www-authenticate")
-      ?.match(/resource_metadata="([^"]+)"/)?.[1];
-    expect(metadataUrl).toBeDefined();
-    const metadata = await application.app.fetch(new Request(metadataUrl!));
-    expect(metadata.status).toBe(200);
-    const resource = z
-      .object({ resource: z.url(), authorization_servers: z.array(z.url()).min(1) })
-      .parse(await metadata.json());
-    expect(resource.resource).toBe(url("/mcp"));
-    const issuer = new URL(resource.authorization_servers[0]!);
-    const discovery = await application.app.fetch(
-      new Request(`${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`),
-    );
-    expect(discovery.status).toBe(200);
-  });
+      expect(unauthorized.status).toBe(401);
+      expect(unauthorized.headers.get("www-authenticate")).toContain("resource_metadata");
+      const metadataUrl = unauthorized.headers
+        .get("www-authenticate")
+        ?.match(/resource_metadata="([^"]+)"/)?.[1];
+      expect(metadataUrl).toBeDefined();
+      const metadata = await application.app.fetch(new Request(metadataUrl!));
+      expect(metadata.status).toBe(200);
+      const resource = z
+        .object({ resource: z.url(), authorization_servers: z.array(z.url()).min(1) })
+        .parse(await metadata.json());
+      expect(resource.resource).toBe(url("/mcp"));
+      const issuer = new URL(resource.authorization_servers[0]!);
+      const discovery = await application.app.fetch(
+        new Request(`${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`),
+      );
+      expect(discovery.status).toBe(200);
+    },
+  );
   it("serves editable ticket links over HTTP and MCP with versions and URL validation", async () => {
     const project = await newProject(),
       ticket = await client().call("create_ticket", { projectId: project.id, title: "Linked" });
@@ -791,6 +953,12 @@ describe("HTTP, realtime, and MCP", () => {
     expect(content.status).toBe(200);
     expect(Buffer.from(await content.arrayBuffer())).toEqual(bytes);
     expect(content.headers.get("content-disposition")).toContain("attachment;");
+    for (const projectId of [project.id, null]) {
+      const token = await credential(projectId, ["read"]);
+      const download = await request(path, { headers: { Authorization: `Bearer ${token.key}` } });
+      expect(download.status).toBe(200);
+      expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes);
+    }
     await expect(
       api.call("upload_attachment", { ...input, data: "not base64!" }),
     ).rejects.toMatchObject({ status: 400 });

@@ -761,7 +761,7 @@ export function createDomain(
     const projectId = "projectId" in input ? input.projectId : undefined;
     const workspaceId =
       "workspaceId" in input && !workspaceIsFilter.has(name) ? input.workspaceId : undefined;
-    // Checked first: every credential is project-bound and would otherwise get a scope error.
+    // Check the session-only gate before operation scopes for every machine identity.
     if (actor.machine && sessionOnly.has(name))
       fail(403, "session_required", "Use a signed-in account for this action");
     if (actor.projectIds && spec.method !== "GET" && !projectId)

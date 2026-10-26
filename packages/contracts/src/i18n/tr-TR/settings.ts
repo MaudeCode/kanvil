@@ -70,6 +70,9 @@ export default {
     saved: "Profil kaydedildi",
   },
   credentials: {
+    global: "Genel",
+    globalDescription:
+      "Gelecekte erişim kazanacaklarınız dahil hesabınızın erişebildiği tüm projelere ve çalışma alanlarına erişin.",
     title: "API anahtarları",
     description: "Betikleri, entegrasyonları ve ajanları iptal edebileceğiniz erişimle bağlayın.",
     create: "API anahtarı oluştur",
@@ -129,8 +132,9 @@ export default {
         description: "Talep sahipliğini üstlenme, yenileme ve bırakma.",
       },
       admin: {
-        name: "Projeleri yönetme",
-        description: "Rolünüzün izin verdiği yerlerde proje ayarlarını ve üyeliği değiştirme.",
+        name: "Projeleri ve çalışma alanlarını yönet",
+        description:
+          "Rolünüzün izin verdiği proje ve çalışma alanı ayarlarını ve üyeliklerini değiştirin.",
       },
     },
     expiry: {

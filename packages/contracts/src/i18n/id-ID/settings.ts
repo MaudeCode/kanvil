@@ -70,6 +70,9 @@ export default {
     saved: "Profil disimpan",
   },
   credentials: {
+    global: "Global",
+    globalDescription:
+      "Akses semua proyek dan ruang kerja yang dapat diakses akun Anda, termasuk akses di masa mendatang.",
     title: "Kunci API",
     description: "Hubungkan skrip, integrasi, dan agen dengan akses yang dapat Anda cabut.",
     create: "Buat kunci API",
@@ -128,8 +131,9 @@ export default {
         description: "Klaim, perpanjang, dan lepaskan kepemilikan tiket.",
       },
       admin: {
-        name: "Kelola proyek",
-        description: "Ubah pengaturan dan keanggotaan proyek jika peran Anda mengizinkan.",
+        name: "Kelola proyek dan ruang kerja",
+        description:
+          "Ubah pengaturan dan keanggotaan proyek serta ruang kerja jika peran Anda mengizinkannya.",
       },
     },
     expiry: {

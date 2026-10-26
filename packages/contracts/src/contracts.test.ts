@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   capabilitiesOf,
+  credentialInput,
+  credentialProjectsSchema,
   operationPermission,
   roleCategory,
   roleId,
@@ -48,6 +50,21 @@ const bigTicket = (index: number) => ({
 });
 
 describe("agent write contracts", () => {
+  it("requires an explicit global or nonempty project scope when creating credentials", () => {
+    const input = { name: "Consumer", scopes: ["read"] };
+    expect(credentialInput.parse({ ...input, projectIds: null }).projectIds).toBeNull();
+    const ids = ["10000000-0000-4000-8000-000000000001"];
+    expect(credentialInput.parse({ ...input, projectIds: ids }).projectIds).toEqual(ids);
+    for (const scope of [
+      {},
+      { projectIds: [] },
+      { projectIds: "all" },
+      { projectIds: ["invalid"] },
+    ])
+      expect(credentialInput.safeParse({ ...input, ...scope }).success).toBe(false);
+    expect(credentialProjectsSchema.safeParse({}).success).toBe(false);
+    expect(credentialProjectsSchema.parse({ projectIds: [] }).projectIds).toEqual([]);
+  });
   it("preserves omitted time-entry patch fields and rejects server-owned values", () => {
     const subject = {
       projectId: "project",

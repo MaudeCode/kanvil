@@ -1394,10 +1394,16 @@ export const credentialsSchema = z.array(
     metadata: z.string().nullable(),
   }),
 );
+// null explicitly follows the account; an array always remains a project allowlist.
+export const credentialProjectsSchema = z.object({
+  projectIds: z.array(z.uuid()).max(1000).nullable(),
+});
 export const credentialInput = z
   .object({
     name: z.string().trim().min(1).max(100),
-    projectIds: z.array(z.uuid()).min(1).max(1000),
+    projectIds: credentialProjectsSchema.shape.projectIds.refine(
+      (ids) => ids === null || ids.length > 0,
+    ),
     scopes: z.array(z.enum(scopes)).min(1),
     // Omitted means the 90-day default; null is an explicit request for a key that never expires.
     expiresIn: z.number().int().min(3600).max(31_536_000).nullable().default(7_776_000),

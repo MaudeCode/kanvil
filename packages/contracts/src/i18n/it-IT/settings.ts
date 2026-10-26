@@ -70,6 +70,9 @@ export default {
     saved: "Profilo salvato",
   },
   credentials: {
+    global: "Globale",
+    globalDescription:
+      "Accedi a tutti i progetti e gli spazi di lavoro accessibili al tuo account, inclusi gli accessi futuri.",
     title: "Chiavi API",
     description: "Collega script, integrazioni e agenti con un accesso revocabile.",
     create: "Crea chiave API",
@@ -129,8 +132,9 @@ export default {
         description: "Prendere in carico, rinnovare e rilasciare i ticket.",
       },
       admin: {
-        name: "Gestire progetti",
-        description: "Modificare impostazioni e membri del progetto dove il ruolo lo consente.",
+        name: "Gestisci progetti e spazi di lavoro",
+        description:
+          "Modifica impostazioni e membri di progetti e spazi di lavoro dove il tuo ruolo lo consente.",
       },
     },
     expiry: {
