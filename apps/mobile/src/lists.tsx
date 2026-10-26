@@ -11,6 +11,8 @@ import { useProjects, useAllProjects, useWorkspace, useOperation, useIdentity } 
 import {
   nativeHeaderOptions,
   Body,
+  TicketGlyph,
+  usePalette,
   Button,
   Choice,
   Sheet,
@@ -253,6 +255,7 @@ function ProjectRow({
   selected: boolean;
   onPress: () => void;
 }) {
+  const color = usePalette();
   return (
     <Row
       title={project.name}
@@ -260,24 +263,44 @@ function ProjectRow({
       selected={selected}
       leading={<ProjectIcon project={project} size={24} />}
       dense
-      metadata={
-        <>
-          <Body muted small>
-            {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
-          </Body>
-          {workspaceName && (
+      trailing={
+        picker ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Body muted small>
-              {workspaceName}
+              {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
             </Body>
-          )}
-          {!picker && (
-            <Body muted small>
-              {t("ticket.list.count", { count: project.openTickets })}
-            </Body>
-          )}
-        </>
+            {selected ? (
+              <TicketGlyph name="check" color={color.accent} />
+            ) : (
+              <View style={{ width: 16 }} />
+            )}
+          </View>
+        ) : undefined
       }
-      {...(!picker ? { caption: project.description } : {})}
+      metadata={
+        picker ? undefined : (
+          <>
+            <Body muted small>
+              {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
+            </Body>
+            {workspaceName && (
+              <Body muted small>
+                {workspaceName}
+              </Body>
+            )}
+            {!picker && (
+              <Body muted small>
+                {t("ticket.list.count", { count: project.openTickets })}
+              </Body>
+            )}
+          </>
+        )
+      }
+      {...(!picker
+        ? { caption: project.description }
+        : workspaceName
+          ? { caption: workspaceName }
+          : {})}
       onPress={onPress}
     />
   );

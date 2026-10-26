@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { tintedSurface } from "@kanvil/contracts/themes";
 import { Text, View, useColorScheme } from "react-native";
 import Svg, { Rect, SvgXml } from "react-native-svg";
@@ -265,6 +266,25 @@ export function PropertyValue({
       )}
     </View>
   );
+}
+
+// Choices extend the same value renderer with native-menu geometry, without another property table.
+export function propertyOption({
+  optionValue,
+  label,
+  ...value
+}: ComponentProps<typeof PropertyValue> & { optionValue: string; label: string }) {
+  const symbol =
+    value.property === "status"
+      ? ticketSymbols.status[value.value].icon
+      : value.property === "priority"
+        ? ticketSymbols.priority[value.value].icon
+        : value.property === "kind"
+          ? ticketSymbols.kind[value.value].icon
+          : value.property === "difficulty"
+            ? "chart-bar"
+            : "circle-user-round";
+  return { value: optionValue, label, symbol, leading: <PropertyValue {...value} iconOnly /> };
 }
 
 // Labels retain catalog colors; scopes use the same renderer with an outline and no dot.

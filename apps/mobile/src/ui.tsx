@@ -1,8 +1,11 @@
 import { MenuView, type MenuAction } from "@expo/ui/community/menu";
+import { nativeMenuSymbol } from "./native-menu-symbols.ts";
 import SegmentedControl from "@expo/ui/community/segmented-control";
 import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
 import {
+  lazy,
+  Suspense,
   createContext,
   useCallback,
   useContext,
@@ -319,6 +322,7 @@ function HeaderItemsFallback({ items }: { items: NativeStackHeaderItem[] }) {
     </>
   );
 }
+const IOSMenu = lazy(() => import("./native-menu.ios.tsx"));
 export function Menu({
   title,
   items,
@@ -355,15 +359,23 @@ export function Menu({
       };
     });
   }
-  const menu = (
-    <MenuView
-      title={title}
-      actions={actions(items)}
-      onPressAction={({ nativeEvent }) => handlers.get(nativeEvent.event)?.()}
-    >
-      {fill ? <View style={{ width }}>{children}</View> : children}
-    </MenuView>
-  );
+  const content = fill ? <View style={{ width }}>{children}</View> : children;
+  const menu =
+    Platform.OS === "ios" ? (
+      <Suspense fallback={content}>
+        <IOSMenu title={title} items={items}>
+          {content}
+        </IOSMenu>
+      </Suspense>
+    ) : (
+      <MenuView
+        title={title}
+        actions={actions(items)}
+        onPressAction={({ nativeEvent }) => handlers.get(nativeEvent.event)?.()}
+      >
+        {content}
+      </MenuView>
+    );
   // SwiftUI measures menu labels intrinsically; form rows take their measured RN container width.
   return fill ? (
     <View
@@ -901,7 +913,7 @@ export function Choice({
 }: {
   label: string;
   value: string;
-  options: { value: string; label: string; leading?: ReactNode }[];
+  options: { value: string; label: string; leading?: ReactNode; symbol?: string }[];
   onChange: (value: string) => void;
   selected?: string[];
   onToggle?: (value: string) => void;
@@ -1009,14 +1021,18 @@ export function Choice({
       }
     />
   );
-  const items: NativeStackHeaderItemMenu["menu"]["items"] = options.map((option) => ({
-    type: "action",
-    label: option.label,
-    state: option.value === value ? "on" : "off",
-    onPress: () => {
-      if (!disabled) onChange(option.value);
-    },
-  }));
+  const items: NativeStackHeaderItemMenu["menu"]["items"] = options.map((option) => {
+    const symbol = option.symbol ? nativeMenuSymbol(option.symbol) : undefined;
+    return {
+      type: "action",
+      label: option.label,
+      state: option.value === value ? "on" : "off",
+      ...(symbol ? { icon: { type: "sfSymbol", name: symbol } } : {}),
+      onPress: () => {
+        if (!disabled) onChange(option.value);
+      },
+    };
+  });
   return (
     <View style={[styles.field, compact && { maxWidth: "100%", alignSelf: "flex-start" }]}>
       {anchored && !disabled ? (

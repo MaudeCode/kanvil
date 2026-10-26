@@ -220,13 +220,14 @@ export function validateTheme(value: unknown) {
 }
 export function tintedSurface(
   background: string,
-  foreground: string,
+  foreground: string | string[],
   color: string,
   strength = 0.12,
 ) {
+  const textColors = Array.isArray(foreground) ? foreground : [foreground];
   for (let ratio = strength; ratio > 0; ratio -= 0.02) {
     const surface = blend(background, color, ratio);
-    if (contrast(surface, foreground) >= 4.5) return surface;
+    if (textColors.every((text) => contrast(surface, text) >= 4.5)) return surface;
   }
   return background;
 }
@@ -244,7 +245,7 @@ export function themeVariables(p: ThemePalette): Record<string, string> {
     "sidebar-foreground": readable(blend(p.sidebar, p.foreground, 0.72), p.sidebar, p.foreground),
     primary: p.primary,
     "primary-foreground": p.primaryForeground,
-    "primary-surface": tintedSurface(p.background, p.foreground, p.primary),
+    "primary-surface": tintedSurface(p.background, [p.foreground, muted], p.primary),
     card: p.background,
     "card-foreground": p.foreground,
     popover: mix(2),

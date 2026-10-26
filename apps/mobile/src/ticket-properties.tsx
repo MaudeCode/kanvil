@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { PropertyValue } from "./ticket-values.tsx";
+import { PropertyValue, propertyOption } from "./ticket-values.tsx";
 import { useQuery } from "@tanstack/react-query";
 import {
   difficulties,
@@ -79,31 +79,25 @@ export function TicketProperties({
           options={[
             ...prefix,
             ...(workflow.data?.length
-              ? workflow.data.map((state) => ({
-                  value: state.id,
-                  label: state.name,
-                  leading: (
-                    <PropertyValue
-                      projectId={projectId}
-                      property="status"
-                      value={state.category}
-                      stateId={state.id}
-                      iconOnly
-                    />
-                  ),
-                }))
-              : states.map((status) => ({
-                  value: status,
-                  label: stateLabels[status],
-                  leading: (
-                    <PropertyValue
-                      projectId={projectId}
-                      property="status"
-                      value={status}
-                      iconOnly
-                    />
-                  ),
-                }))),
+              ? workflow.data.map((state) =>
+                  propertyOption({
+                    projectId,
+                    property: "status",
+                    value: state.category,
+                    stateId: state.id,
+                    optionValue: state.id,
+                    label: state.name,
+                  }),
+                )
+              : states.map((status) =>
+                  propertyOption({
+                    projectId,
+                    property: "status",
+                    value: status,
+                    optionValue: status,
+                    label: stateLabels[status],
+                  }),
+                )),
           ]}
           onChange={(next) => {
             if (next === mixedValue) return;
@@ -122,18 +116,15 @@ export function TicketProperties({
           value={value.priority ?? mixedValue}
           options={[
             ...prefix,
-            ...priorities.map((priority) => ({
-              value: priority,
-              label: priorityLabels[priority],
-              leading: (
-                <PropertyValue
-                  projectId={projectId}
-                  property="priority"
-                  value={priority}
-                  iconOnly
-                />
-              ),
-            })),
+            ...priorities.map((priority) =>
+              propertyOption({
+                projectId,
+                property: "priority",
+                value: priority,
+                optionValue: priority,
+                label: priorityLabels[priority],
+              }),
+            ),
           ]}
           onChange={(next) => {
             const priority = priorities.find((item) => item === next);
@@ -147,25 +138,22 @@ export function TicketProperties({
           value={value.assigneeId === undefined ? mixedValue : (value.assigneeId ?? "")}
           options={[
             ...prefix,
-            {
-              value: "",
+            propertyOption({
+              projectId,
+              property: "assignee",
+              value: null,
+              optionValue: "",
               label: t("common.state.unassigned"),
-              leading: (
-                <PropertyValue projectId={projectId} property="assignee" value={null} iconOnly />
-              ),
-            },
-            ...(members.data ?? []).map((member) => ({
-              value: member.userId,
-              label: member.name,
-              leading: (
-                <PropertyValue
-                  projectId={projectId}
-                  property="assignee"
-                  value={member.userId}
-                  iconOnly
-                />
-              ),
-            })),
+            }),
+            ...(members.data ?? []).map((member) =>
+              propertyOption({
+                projectId,
+                property: "assignee",
+                value: member.userId,
+                optionValue: member.userId,
+                label: member.name,
+              }),
+            ),
           ]}
           onChange={(next) => {
             if (next !== mixedValue) onChange({ assigneeId: next || null });
@@ -178,13 +166,15 @@ export function TicketProperties({
           value={value.kind ?? mixedValue}
           options={[
             ...prefix,
-            ...kinds.map((kind) => ({
-              value: kind,
-              label: kindLabels[kind],
-              leading: (
-                <PropertyValue projectId={projectId} property="kind" value={kind} iconOnly />
-              ),
-            })),
+            ...kinds.map((kind) =>
+              propertyOption({
+                projectId,
+                property: "kind",
+                value: kind,
+                optionValue: kind,
+                label: kindLabels[kind],
+              }),
+            ),
           ]}
           onChange={(next) => {
             const kind = kinds.find((item) => item === next);
@@ -198,25 +188,22 @@ export function TicketProperties({
           value={value.difficulty === undefined ? mixedValue : (value.difficulty ?? "")}
           options={[
             ...prefix,
-            {
-              value: "",
+            propertyOption({
+              projectId,
+              property: "difficulty",
+              value: null,
+              optionValue: "",
               label: t("native.editor.noDifficulty"),
-              leading: (
-                <PropertyValue projectId={projectId} property="difficulty" value={null} iconOnly />
-              ),
-            },
-            ...difficulties.map((difficulty) => ({
-              value: difficulty,
-              label: difficultyLabels[difficulty],
-              leading: (
-                <PropertyValue
-                  projectId={projectId}
-                  property="difficulty"
-                  value={difficulty}
-                  iconOnly
-                />
-              ),
-            })),
+            }),
+            ...difficulties.map((difficulty) =>
+              propertyOption({
+                projectId,
+                property: "difficulty",
+                value: difficulty,
+                optionValue: difficulty,
+                label: difficultyLabels[difficulty],
+              }),
+            ),
           ]}
           onChange={(next) => {
             if (next === mixedValue) return;

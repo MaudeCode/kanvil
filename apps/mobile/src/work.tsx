@@ -220,17 +220,7 @@ export function Search() {
   });
   return (
     <Screen scroll={false}>
-      <WorkspaceScope />
-      <View style={{ padding: 20, gap: 12 }}>
-        <Field
-          label={t("shell.search.field")}
-          labelHidden
-          variant="search"
-          placeholder={t("shell.search.placeholder")}
-          value={query}
-          onChangeText={setQuery}
-          returnKeyType="search"
-        />
+      <WorkspaceScope>
         <Choice
           label={t("shell.page.search")}
           compact
@@ -241,13 +231,20 @@ export function Search() {
           ]}
           onChange={(value) => setType(searchResultTypes.find((item) => item === value))}
         />
+      </WorkspaceScope>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
+        <Field
+          label={t("shell.search.field")}
+          labelHidden
+          variant="search"
+          placeholder={t("shell.search.placeholder")}
+          value={query}
+          onChangeText={setQuery}
+          returnKeyType="search"
+        />
         <ErrorNotice error={results.error} />
       </View>
-      {!q ? (
-        <View style={{ padding: 20 }}>
-          <Body muted>{t("shell.search.empty")}</Body>
-        </View>
-      ) : results.isLoading ? (
+      {!q ? null : results.isLoading ? (
         <Loading />
       ) : (
         <List

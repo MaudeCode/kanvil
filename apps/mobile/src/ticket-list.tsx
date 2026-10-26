@@ -9,7 +9,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Alert, Platform, ScrollView, View, useWindowDimensions } from "react-native";
+import { Alert, Platform, View, useWindowDimensions } from "react-native";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import type {
@@ -136,7 +136,9 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   const planning = route.params.collection === "planning";
   const layout = planning ? "list" : (route.params.layout ?? "list");
   const split =
-    Platform.OS === "ios" && Number.parseInt(Platform.Version, 10) >= 26 && layout === "list";
+    Platform.OS === "ios" &&
+    Number.parseInt(Platform.Version, 10) >= 26 &&
+    (layout === "list" || layout === "board");
   const exitSelection = useCallback(() => {
     setSelecting(false);
     setSelection(new Map());
@@ -713,19 +715,21 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                 {state.name}
               </Heading>
             </View>
-            <ScrollView>
-              {state.tickets.map((ticket) => (
+            <List
+              data={state.tickets}
+              keyExtractor={(ticket) => ticket.id}
+              renderItem={({ item: ticket }) => (
                 <TicketRow
-                  key={ticket.id}
                   ticket={ticket}
                   selected={selecting ? selection.has(ticket.id) : undefined}
                   selecting={selecting}
+                  active={split && selectedTicketId === ticket.id}
                   showStatus={false}
                   onPress={() => open(ticket)}
                   onLongPress={() => setFocused(ticket)}
                 />
-              ))}
-            </ScrollView>
+              )}
+            />
           </View>
         ))}
       </Scroll>
