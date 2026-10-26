@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { formatEvent, formatTimestamp, searchResultTypes } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
+import { useProjectNavigation } from "./navigation.ts";
 import { useConnection, useWorkspace } from "./data.tsx";
 import { Body, Choice, ErrorNotice, Field, List, Loading, Row, Screen, Section } from "./ui.tsx";
 import { TicketRow } from "./ui.tsx";
@@ -122,6 +123,7 @@ export function MyWork() {
 }
 
 export function Search() {
+  const { selectProject } = useProjectNavigation();
   const { api } = useConnection(),
     workspace = useWorkspace(),
     navigation = useNavigation();
@@ -189,11 +191,7 @@ export function Search() {
                     projectId: item.project.id,
                     ticketId: item.ticket.id,
                   });
-                else
-                  navigation.navigate("Tickets", {
-                    projectId: item.project.id,
-                    name: item.project.name,
-                  });
+                else selectProject(item.project.id);
               }}
             />
           )}

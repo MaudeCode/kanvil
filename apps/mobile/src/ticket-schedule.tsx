@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { Platform, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { Platform, ScrollView, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import {
   calendarDay,
@@ -27,7 +27,8 @@ import {
   usePalette,
 } from "./ui.tsx";
 import { SplitView } from "./split-view.tsx";
-import { createHeaderAction } from "./navigation-actions.tsx";
+import { useProjectNavigation } from "./navigation.ts";
+import { projectHeaderItems } from "./navigation-actions.tsx";
 
 export function TicketSchedule({
   layout,
@@ -46,8 +47,9 @@ export function TicketSchedule({
   onAnchor: (date: Date) => void;
   loading: boolean;
 }) {
-  const navigation = useNavigation(),
-    { width } = useWindowDimensions();
+  const navigation = useNavigation();
+  const { showPicker } = useProjectNavigation();
+  const [splitState, setSplitState] = useState({ collapsed: false, secondaryVisible: false });
   const [today] = useState(() => calendarDay(new Date())),
     [selected, setSelected] = useState(anchor),
     [showDay, setShowDay] = useState(false);
@@ -59,6 +61,7 @@ export function TicketSchedule({
   const selectDay = (date: Date) => {
     moveAnchor(calendarDay(date));
     setShowDay(true);
+    setSplitState((state) => ({ ...state, secondaryVisible: true }));
   };
   const spans = useMemo(() => {
     const entries = tickets.flatMap((ticket) => {
@@ -75,23 +78,26 @@ export function TicketSchedule({
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
-        headerBackVisible: !(showDay && width < 740),
+        headerBackVisible: !(showDay && splitState.collapsed && splitState.secondaryVisible),
         unstable_headerLeftItems: () =>
-          showDay && width < 740
-            ? [
-                createHeaderAction(t("ticket.schedule.calendar"), () => setShowDay(false), {
-                  type: "sfSymbol",
-                  name: "calendar",
-                }),
-              ]
-            : [],
+          projectHeaderItems(
+            showPicker,
+            t("native.navigation.switchProject"),
+            showDay && splitState.collapsed && splitState.secondaryVisible
+              ? { title: t("ticket.schedule.calendar"), onPress: () => setShowDay(false) }
+              : undefined,
+          ),
       }),
     );
     return () =>
       navigation.setOptions(
-        nativeHeaderOptions({ headerBackVisible: true, unstable_headerLeftItems: () => [] }),
+        nativeHeaderOptions({
+          headerBackVisible: true,
+          unstable_headerLeftItems: () =>
+            projectHeaderItems(showPicker, t("native.navigation.switchProject")),
+        }),
       );
-  }, [navigation, showDay, width]);
+  }, [navigation, showDay, splitState, showPicker]);
   const controls = (
     <View style={{ padding: 16, gap: 12 }}>
       <Heading compact>
@@ -204,7 +210,8 @@ export function TicketSchedule({
   }
   return (
     <SplitView
-      secondaryActive={showDay}
+      secondaryActive={showDay && splitState.secondaryVisible}
+      onChange={setSplitState}
       primary={
         <Screen>
           <View style={{ padding: 16 }}>
@@ -215,6 +222,7 @@ export function TicketSchedule({
                 onAnchor(today);
                 setSelected(today);
                 setShowDay(true);
+                setSplitState((state) => ({ ...state, secondaryVisible: true }));
               }}
             />
           </View>

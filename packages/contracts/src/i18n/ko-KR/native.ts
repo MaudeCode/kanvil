@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "워크스페이스 또는 프로젝트 전환",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "닫기",

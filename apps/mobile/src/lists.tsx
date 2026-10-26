@@ -4,6 +4,7 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { capabilitiesOf } from "@kanvil/contracts";
+import { useProjectNavigation } from "./navigation.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { t } from "@kanvil/contracts/i18n";
 import { useProjects, useWorkspace, useOperation } from "./data.tsx";
@@ -21,11 +22,17 @@ import {
   Screen,
 } from "./ui.tsx";
 
-export function Projects({ header }: { header?: ReactNode }) {
+export function Projects({ footer, picker = false }: { footer?: ReactNode; picker?: boolean }) {
+  const projectNavigation = useProjectNavigation();
   const navigation = useNavigation();
   const [includeArchived, setIncludeArchived] = useState(false);
   const projects = useProjects(includeArchived),
     workspace = useWorkspace();
+  const [search, setSearch] = useState<{ workspaceId: string | undefined; query: string }>({
+    workspaceId: workspace.active?.id,
+    query: "",
+  });
+  const query = search.workspaceId === workspace.active?.id ? search.query : "";
   const [creating, setCreating] = useState<string>();
   const canCreate = !!workspace.active && capabilitiesOf(workspace.active).includes("ticket.write");
   useLayoutEffect(() => {
@@ -50,33 +57,79 @@ export function Projects({ header }: { header?: ReactNode }) {
                   state: includeArchived ? "on" : "off",
                   onPress: () => setIncludeArchived((previous) => !previous),
                 },
+                ...(picker
+                  ? [
+                      ...(projectNavigation.currentProjectId
+                        ? [
+                            {
+                              type: "action" as const,
+                              label: t("shell.settingsNav.projectSettings"),
+                              onPress: () =>
+                                projectNavigation.selectProject(
+                                  projectNavigation.currentProjectId ?? "",
+                                  true,
+                                ),
+                            },
+                          ]
+                        : []),
+                      ...(workspace.active
+                        ? [
+                            {
+                              type: "action" as const,
+                              label: t("shell.workspace.settings"),
+                              onPress: () => {
+                                if (workspace.active)
+                                  projectNavigation.workspaceSettings(workspace.active.id);
+                              },
+                            },
+                          ]
+                        : []),
+                      {
+                        type: "action" as const,
+                        label: t("shell.workspace.new"),
+                        onPress: projectNavigation.createWorkspace,
+                      },
+                    ]
+                  : []),
               ],
             },
           },
         ],
       }),
     );
-  }, [navigation, canCreate, includeArchived, workspace.active?.id]);
+  }, [navigation, canCreate, includeArchived, workspace.active, picker, projectNavigation]);
   return (
     <Screen scroll={false}>
+      <View style={{ padding: 20, gap: 12 }}>
+        {picker && (
+          <Choice
+            label={t("shell.workspace.workspaces")}
+            value={workspace.active?.id ?? ""}
+            options={workspace.workspaces.map((space) => ({ value: space.id, label: space.name }))}
+            onChange={(id) => {
+              projectNavigation.selectWorkspace(id);
+              projectNavigation.showPicker();
+            }}
+          />
+        )}
+        <Field
+          label={t("shell.app.searchProjects")}
+          value={query}
+          onChangeText={(value) => setSearch({ workspaceId: workspace.active?.id, query: value })}
+          autoCorrect={false}
+        />
+      </View>
       <ErrorNotice error={projects.error} />
       {projects.isPending ? (
         <Loading />
       ) : (
         <List
-          data={projects.data ?? []}
-          ListHeaderComponent={
-            header ? (
-              <>
-                {header}
-                <View style={{ padding: 20 }}>
-                  <Body muted small>
-                    {t("shell.page.projects")}
-                  </Body>
-                </View>
-              </>
-            ) : undefined
-          }
+          data={(projects.data ?? []).filter((project) =>
+            `${project.name} ${project.key}`
+              .toLocaleLowerCase()
+              .includes(query.trim().toLocaleLowerCase()),
+          )}
+          ListFooterComponent={footer && !query.trim() ? <>{footer}</> : undefined}
           keyExtractor={(project) => project.id}
           onRefresh={() => {
             void projects.refetch();
@@ -84,35 +137,49 @@ export function Projects({ header }: { header?: ReactNode }) {
           refreshing={projects.isRefetching}
           ListEmptyComponent={
             <View style={{ padding: 20 }}>
-              <Body muted>{t("native.projects.empty")}</Body>
+              <Body muted>
+                {t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
+              </Body>
             </View>
           }
           renderItem={({ item }) => (
             <Row
               title={item.name}
+              selected={item.id === projectNavigation.currentProjectId}
               leading={<ProjectIcon project={item} />}
               overline={item.archivedAt ? `${item.key} · ${t("shell.app.archived")}` : item.key}
               caption={item.description}
-              onPress={() =>
-                navigation.navigate("Tickets", { projectId: item.id, name: item.name })
-              }
+              onPress={() => projectNavigation.selectProject(item.id)}
             />
           )}
         />
       )}
-      {creating && <ProjectAction workspaceId={creating} onClose={() => setCreating(undefined)} />}
+      {creating && (
+        <ProjectAction
+          workspaceId={creating}
+          onClose={() => setCreating(undefined)}
+          onCreated={projectNavigation.selectProject}
+        />
+      )}
     </Screen>
   );
 }
 export { Tickets } from "./ticket-list.tsx";
 
-function ProjectAction({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+function ProjectAction({
+  workspaceId,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onCreated: (projectId: string) => void;
+}) {
   const [name, setName] = useState(""),
     [key, setKey] = useState(""),
     [description, setDescription] = useState(""),
     [visibility, setVisibility] = useState<"private" | "workspace">("private");
-  const create = useOperation("create_project"),
-    navigation = useNavigation();
+  const create = useOperation("create_project");
   return (
     <>
       <Sheet title={t("native.projects.new")} open onClose={onClose}>
@@ -159,7 +226,7 @@ function ProjectAction({ workspaceId, onClose }: { workspaceId: string; onClose:
                 setName("");
                 setKey("");
                 setDescription("");
-                navigation.navigate("Tickets", { projectId: project.id, name: project.name });
+                onCreated(project.id);
               })
               .catch(() => {});
           }}

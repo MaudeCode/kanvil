@@ -1,6 +1,7 @@
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
 import {
   createContext,
+  useCallback,
   useContext,
   useDeferredValue,
   useEffect,
@@ -14,9 +15,9 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  I18nManager,
   Button as SystemButton,
   Keyboard,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -28,6 +29,13 @@ import {
   type ViewStyle,
   type StyleProp,
 } from "react-native";
+import {
+  ReservedRegionsProvider,
+  useReservedRegions,
+  useReservedRegionsReady,
+  type ReservedRegion,
+} from "react-native-reserved-regions";
+import { usableViewport } from "./pane-layout.ts";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
@@ -36,6 +44,7 @@ import {
   DefaultTheme,
   DarkTheme,
   useNavigation,
+  useNavigationContainerRef,
   NavigationContext,
 } from "@react-navigation/native";
 import {
@@ -45,6 +54,7 @@ import {
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import {
+  HeaderButton,
   createHeaderAction,
   createHeaderFallback,
   type HeaderAction,
@@ -85,10 +95,132 @@ export const priorityText = (priority: Ticket["priority"]) =>
     : t("native.ticket.priority", { priority: priorityLabels[priority] });
 
 export const usePalette = useNativePalette;
-const SheetStack = createNativeStackNavigator<{ Sheet: undefined }>();
+type SheetRoutes = { Hidden: undefined; Sheet: undefined };
+const SheetStack = createNativeStackNavigator<SheetRoutes>();
 type ButtonAction = HeaderAction;
 const FormAction = createContext<((action: ButtonAction | undefined) => void) | null>(null);
 const ImageSurface = createContext(false);
+const InsetsConsumed = createContext(false);
+
+const ViewportContext = createContext<{
+  bounds: { width: number; height: number };
+  regions: readonly ReservedRegion[];
+} | null>(null);
+export function useNativeViewport() {
+  const viewport = useContext(ViewportContext);
+  if (!viewport) throw new Error("A native viewport requires Screen");
+  return viewport;
+}
+// Shared by ordinary screens and list/detail panes; coordinates remain physical in RTL.
+export function ViewportPane({
+  children,
+  rect,
+  viewportWidth,
+  visible = true,
+}: {
+  children: ReactNode;
+  rect: ReservedRegion["frame"];
+  viewportWidth: number;
+  visible?: boolean;
+}) {
+  return (
+    <View
+      pointerEvents={visible ? "auto" : "none"}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+      style={{
+        position: "absolute",
+        start: I18nManager.isRTL ? viewportWidth - rect.x - rect.width : rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        opacity: visible ? 1 : 0,
+        overflow: "hidden",
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+function ViewportContent({
+  children,
+  bounds,
+  allowDivision,
+}: {
+  children: ReactNode;
+  bounds: { width: number; height: number };
+  allowDivision: boolean;
+}) {
+  const regions = useReservedRegions(),
+    ready = useReservedRegionsReady();
+  if (!ready || !bounds.width || !bounds.height) return <Loading />;
+  const rect = allowDivision ? { x: 0, y: 0, ...bounds } : usableViewport(bounds, regions);
+  const localRegions = regions.map((region) => ({
+    ...region,
+    frame: {
+      ...region.frame,
+      x: region.frame.x - rect.x,
+      y: region.frame.y - rect.y,
+    },
+  }));
+  return (
+    <View style={{ flex: 1 }}>
+      <ViewportPane rect={rect} viewportWidth={bounds.width}>
+        <ViewportContext
+          value={{ bounds: { width: rect.width, height: rect.height }, regions: localRegions }}
+        >
+          {children}
+        </ViewportContext>
+      </ViewportPane>
+    </View>
+  );
+}
+export function MeasuredViewport({
+  children,
+  allowDivision = false,
+}: {
+  children: ReactNode;
+  allowDivision?: boolean;
+}) {
+  const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  return (
+    <ReservedRegionsProvider
+      style={{ flex: 1 }}
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        if (width > 0 && height > 0) setBounds({ width, height });
+      }}
+    >
+      <ViewportContent bounds={bounds} allowDivision={allowDivision}>
+        {children}
+      </ViewportContent>
+    </ReservedRegionsProvider>
+  );
+}
+// One native screen boundary owns bar insets; nested content measures its own fold coordinates.
+function ContentArea({
+  children,
+  enabled = true,
+  allowDivision,
+}: {
+  children: ReactNode;
+  enabled?: boolean;
+  allowDivision: boolean;
+}) {
+  const consumed = useContext(InsetsConsumed);
+  return (
+    <SafeAreaProvider style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={enabled && !consumed ? ["left", "right", "top", "bottom"] : []}
+        style={{ flex: 1 }}
+      >
+        <InsetsConsumed value={consumed || enabled}>
+          <MeasuredViewport allowDivision={allowDivision}>{children}</MeasuredViewport>
+        </InsetsConsumed>
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+}
 
 // Extend the native item description once: UIKit owns iOS bars; Android uses the same actions
 // through our existing Sheet/Row primitives. Choice is flat and cannot represent bar submenus.
@@ -411,82 +543,121 @@ export function TicketPicker({
     </View>
   );
 }
+function SheetCloseButton() {
+  const navigation = useNavigation(),
+    color = usePalette();
+  return (
+    <HeaderButton
+      action={{ title: t("common.action.close"), onPress: () => navigation.goBack() }}
+      color={color.accent}
+    />
+  );
+}
 export function Sheet({
   title,
   open,
   onClose,
+  onDismissed,
   children,
   scroll = true,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
+  onDismissed?: () => void;
   children: ReactNode;
   scroll?: boolean;
 }) {
   const color = usePalette();
   const [submit, setSubmit] = useState<ButtonAction>();
+  const navigation = useNavigationContainerRef<SheetRoutes>();
+  const [presented, setPresented] = useState(false);
+  const close = useCallback(() => navigation.goBack(), [navigation]);
+  const dark = useColorScheme() === "dark";
+  useEffect(() => {
+    if (!open && presented && navigation.isReady() && navigation.canGoBack()) navigation.goBack();
+  }, [open, presented, navigation]);
+  if (!open && !presented) return null;
+  // Full-screen native presentation keeps one touch surface and gives the presenting screen
+  // an appearance event after dismissal, so its temporary navigator can be removed safely.
   return (
-    <Modal
-      visible={open}
-      presentationStyle="pageSheet"
-      animationType="slide"
-      onRequestClose={onClose}
-      allowSwipeDismissal={false}
-    >
-      <SafeAreaProvider style={{ backgroundColor: color.surface }}>
-        <NavigationIndependentTree>
-          <NavigationContainer theme={useColorScheme() === "dark" ? DarkTheme : DefaultTheme}>
-            <SheetStack.Navigator
-              screenOptions={{
-                headerShadowVisible: false,
-                contentStyle: { backgroundColor: color.surface },
-                headerStyle: { backgroundColor: color.surface },
-                headerTintColor: color.accent,
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <NavigationIndependentTree>
+        <NavigationContainer
+          ref={navigation}
+          onReady={() => setPresented(true)}
+          theme={dark ? DarkTheme : DefaultTheme}
+          initialState={{ index: 1, routes: [{ name: "Hidden" }, { name: "Sheet" }] }}
+          onStateChange={(state) => {
+            if (state?.routes[state.index]?.name === "Hidden") onClose();
+          }}
+        >
+          <SheetStack.Navigator
+            screenOptions={{
+              headerShadowVisible: false,
+              contentStyle: { backgroundColor: color.surface },
+              headerStyle: { backgroundColor: color.surface },
+              headerTintColor: color.accent,
+            }}
+          >
+            <SheetStack.Screen
+              name="Hidden"
+              options={{ headerShown: false, contentStyle: { backgroundColor: "transparent" } }}
+              listeners={{
+                transitionEnd: (event) => {
+                  if (!open && !event.data.closing) {
+                    setPresented(false);
+                    onDismissed?.();
+                  }
+                },
               }}
             >
-              <SheetStack.Screen
-                name="Sheet"
-                options={{
-                  title,
-                  headerLeft: createHeaderFallback(
-                    { title: t("common.action.close"), onPress: onClose },
-                    color.accent,
-                  ),
-                  headerRight: createHeaderFallback(submit, color.accent),
-                  unstable_headerLeftItems: () => [
-                    createHeaderAction(t("common.action.close"), onClose, {
-                      type: "sfSymbol",
-                      name: "xmark",
-                    }),
-                  ],
-                  unstable_headerRightItems: () =>
-                    submit
-                      ? [
-                          {
-                            ...createHeaderAction(
-                              submit.title,
-                              submit.onPress,
-                              { type: "sfSymbol", name: "checkmark" },
-                              submit.disabled,
-                            ),
-                            variant: "done",
-                          },
-                        ]
-                      : [],
-                }}
-              >
-                {() => (
-                  <FormAction value={setSubmit}>
-                    <Screen scroll={scroll}>{children}</Screen>
-                  </FormAction>
-                )}
-              </SheetStack.Screen>
-            </SheetStack.Navigator>
-          </NavigationContainer>
-        </NavigationIndependentTree>
-      </SafeAreaProvider>
-    </Modal>
+              {() => null}
+            </SheetStack.Screen>
+            <SheetStack.Screen
+              name="Sheet"
+              options={{
+                presentation: "fullScreenModal",
+                gestureEnabled: false,
+                title,
+                headerLeft: SheetCloseButton,
+                headerRight: createHeaderFallback(submit, color.accent),
+                unstable_headerLeftItems: () => [
+                  createHeaderAction(t("common.action.close"), close, {
+                    type: "sfSymbol",
+                    name: "xmark",
+                  }),
+                ],
+                unstable_headerRightItems: () =>
+                  submit
+                    ? [
+                        {
+                          ...createHeaderAction(
+                            submit.title,
+                            submit.onPress,
+                            { type: "sfSymbol", name: "checkmark" },
+                            submit.disabled,
+                          ),
+                          variant: "done",
+                        },
+                      ]
+                    : [],
+              }}
+            >
+              {() => (
+                <InsetsConsumed value={false}>
+                  <SafeAreaProvider style={{ backgroundColor: color.surface }}>
+                    <FormAction value={setSubmit}>
+                      <Screen scroll={scroll}>{children}</Screen>
+                    </FormAction>
+                  </SafeAreaProvider>
+                </InsetsConsumed>
+              )}
+            </SheetStack.Screen>
+          </SheetStack.Navigator>
+        </NavigationContainer>
+      </NavigationIndependentTree>
+    </View>
   );
 }
 export function Choice({
@@ -564,13 +735,7 @@ export function Choice({
                 key={option.value}
                 title={option.label}
                 selected={option.value === value}
-                trailing={
-                  option.value === value ? (
-                    <Ionicons name="checkmark" size={20} color={color.accent} accessible={false} />
-                  ) : (
-                    <View />
-                  )
-                }
+                trailing={option.value === value ? undefined : <View />}
                 onPress={() => {
                   onChange(option.value);
                   setOpen(false);
@@ -837,6 +1002,7 @@ export function Screen({
   form = false,
   background,
   safeArea = true,
+  allowDivision = false,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -844,6 +1010,7 @@ export function Screen({
   form?: boolean;
   background?: string | null;
   safeArea?: boolean;
+  allowDivision?: boolean;
 }) {
   const color = usePalette();
   const navigation = useContext(NavigationContext);
@@ -853,7 +1020,7 @@ export function Screen({
         {background && (
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
-        <SafeAreaView edges={navigation && safeArea ? ["left", "right"] : []} style={{ flex: 1 }}>
+        <ContentArea enabled={!!navigation && safeArea} allowDivision={allowDivision}>
           {scroll ? (
             <Scroll
               keyboardShouldPersistTaps="handled"
@@ -870,7 +1037,7 @@ export function Screen({
           ) : (
             children
           )}
-        </SafeAreaView>
+        </ContentArea>
       </View>
     </ImageSurface>
   );
@@ -964,6 +1131,7 @@ export function List<T>(props: LegendListProps<T>) {
     <LegendList
       recycleItems
       keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
       contentInsetAdjustmentBehavior="automatic"
       {...props}
     />
@@ -1062,7 +1230,14 @@ export function Row({
         {metadata && <View style={[styles.actions, { marginTop: 3 }]}>{metadata}</View>}
       </View>
       {trailing ?? (
-        <Ionicons name="chevron-forward" size={16} color={color.muted} accessible={false} />
+        <Ionicons
+          name={selected ? "checkmark" : "chevron-forward"}
+          size={16}
+          color={selected ? color.accent : color.muted}
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
       )}
     </Pressable>
   );

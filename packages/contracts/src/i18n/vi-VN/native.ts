@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Chuyển không gian làm việc hoặc dự án",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Bỏ qua",

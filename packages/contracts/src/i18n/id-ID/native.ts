@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Ganti ruang kerja atau proyek",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Tutup",

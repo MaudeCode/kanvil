@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "切换工作区或项目",
   labelValue: "{{label}}：{{value}}",
   ui: {
     dismiss: "关闭",

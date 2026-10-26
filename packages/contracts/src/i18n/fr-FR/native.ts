@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Changer d’espace de travail ou de projet",
   labelValue: "{{label}} : {{value}}",
   ui: {
     dismiss: "Ignorer",

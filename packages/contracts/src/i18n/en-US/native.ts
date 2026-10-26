@@ -1,5 +1,6 @@
 // Screens of the native app. Shared wording comes from `common`.
 export default {
+  "navigation.switchProject": "Switch workspace or project",
   // A field's name and its current value, for screen readers and read-only field lists.
   labelValue: "{{label}}: {{value}}",
   ui: {

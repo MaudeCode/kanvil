@@ -1,3 +1,4 @@
+import { useIsFocused } from "@react-navigation/native";
 import { calendarDay, scheduleWindow } from "@kanvil/contracts/schedule";
 import {
   useCallback,
@@ -5,14 +6,12 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Alert, Platform, ScrollView, View, useWindowDimensions } from "react-native";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
-import type { SearchBarCommands } from "react-native-screens";
 import {
   states,
   stateLabels,
@@ -55,12 +54,12 @@ import {
   TicketRow,
   usePalette,
 } from "./ui.tsx";
-import { createHeaderAction } from "./navigation-actions.tsx";
+import { createHeaderAction, projectHeaderItems } from "./navigation-actions.tsx";
 import { TicketActions, BulkProperties } from "./ticket-actions.tsx";
 import { TicketSchedule } from "./ticket-schedule.tsx";
 import { TicketContent } from "./ticket-detail.tsx";
 import { SplitView } from "./split-view.tsx";
-import type { ScreenProps } from "./navigation.ts";
+import { createSearchBarHandle, useProjectNavigation, type ScreenProps } from "./navigation.ts";
 
 type TicketListEntry =
   | { id: string; ticket: Ticket }
@@ -89,22 +88,29 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     projects = useAllProjects(),
     color = usePalette();
   const { width } = useWindowDimensions();
-  const [anchor, setAnchor] = useState(() => calendarDay(new Date()));
   const project = projects.data?.find(
       (item) =>
         item.id === route.params.projectId || item.key === route.params.projectId.toUpperCase(),
     ),
     projectId = project?.id ?? route.params.projectId,
     access = useProjectAccess(projectId);
+  const { contexts, showPicker } = useProjectNavigation();
+  const isFocused = useIsFocused();
+  const [initial] = useState(() => contexts.get(projectId));
+  const [anchor, setAnchor] = useState(() => initial?.anchor ?? calendarDay(new Date()));
+  const [splitState, setSplitState] = useState({
+    collapsed: false,
+    secondaryVisible: initial?.secondaryVisible ?? !!initial?.selectedTicketId,
+  });
   const views = useQuery(api.query("list_views", { projectId })),
     workflow = useQuery(api.query("list_workflow_states", { projectId }));
-  const [filters, setFilters] = useState(() => ticketFilter.parse({})),
-    [query, setQuery] = useState(""),
+  const [filters, setFilters] = useState(() => ticketFilter.parse(initial?.filters ?? {})),
+    [query, setQuery] = useState(initial?.query ?? ""),
     [filtering, setFiltering] = useState(false),
     [saving, setSaving] = useState(false),
     [name, setName] = useState(""),
     [focused, setFocused] = useState<Ticket>(),
-    [selectedTicket, setSelectedTicket] = useState<Ticket>(),
+    [selectedTicketId, setSelectedTicketId] = useState(initial?.selectedTicketId),
     [selection, setSelection] = useState<Map<string, Ticket>>(() => new Map()),
     [bulkOpen, setBulkOpen] = useState(false),
     [error, setError] = useState<unknown>();
@@ -112,8 +118,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     planning = route.params.collection === "planning";
   const split =
     Platform.OS === "ios" && Number.parseInt(Platform.Version, 10) >= 26 && layout === "list";
-  const q = useDeferredValue(query),
-    searchBar = useRef<SearchBarCommands>(null);
+  const q = useDeferredValue(query);
+  const [searchHandle] = useState(() => createSearchBarHandle(query));
+  const searchBar = searchHandle.ref;
+  useLayoutEffect(() => searchHandle.updateText(query), [searchHandle, query]);
   const save = useOperation("save_view"),
     deleteView = useOperation("delete_view"),
     bulk = useOperation("bulk_update_tickets"),
@@ -151,6 +159,32 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       ...new Map(pages.flatMap((page) => page.items).map((ticket) => [ticket.id, ticket])).values(),
     ];
   }, [planning, includesBacklog, backlog.data, archived.data, tickets.data]);
+  const selected = useQuery({
+    ...api.query("get_ticket", { projectId, ticketId: selectedTicketId ?? "none" }),
+    enabled: !!selectedTicketId,
+  });
+  const selectedTicket = rows.find((item) => item.id === selectedTicketId) ?? selected.data?.ticket;
+  useEffect(() => {
+    if (isFocused)
+      contexts.save(projectId, {
+        filters,
+        query,
+        anchor,
+        selectedTicketId,
+        secondaryVisible: splitState.secondaryVisible,
+        location: route.params,
+      });
+  }, [
+    isFocused,
+    contexts,
+    projectId,
+    filters,
+    query,
+    anchor,
+    selectedTicketId,
+    splitState.secondaryVisible,
+    route.params,
+  ]);
   const pending = planning
     ? (includesBacklog && backlog.isPending) || archived.isPending
     : tickets.isPending;
@@ -244,7 +278,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
               : []),
           ]
         : [
-            ...(selectedTicket && split
+            ...(selectedTicket && split && (!splitState.collapsed || splitState.secondaryVisible)
               ? [
                   ...(access.canWrite
                     ? [
@@ -266,109 +300,111 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                   ),
                 ]
               : []),
-            createHeaderAction(
-              t("native.screen.newTicket"),
-              () => navigation.navigate("Edit", { projectId }),
-              { type: "sfSymbol", name: "plus" },
-              !access.canWrite,
-            ),
-            createHeaderAction(t("ticket.filter.filters"), () => setFiltering(true), {
-              type: "sfSymbol",
-              name: "line.3.horizontal.decrease",
-            }),
-            {
-              type: "menu",
-              label: t("ticket.list.views"),
-              accessibilityLabel: t("ticket.list.views"),
-              icon: { type: "sfSymbol", name: "rectangle.3.group" },
-              menu: {
-                items: [
+            ...(split && splitState.collapsed && splitState.secondaryVisible
+              ? []
+              : ([
+                  createHeaderAction(
+                    t("native.screen.newTicket"),
+                    () => navigation.navigate("Edit", { projectId }),
+                    { type: "sfSymbol", name: "plus" },
+                    !access.canWrite,
+                  ),
+                  createHeaderAction(t("ticket.filter.filters"), () => setFiltering(true), {
+                    type: "sfSymbol",
+                    name: "line.3.horizontal.decrease",
+                  }),
                   {
-                    type: "submenu",
-                    label: t("ticket.display.layout"),
-                    items: ticketLayouts.map((value) => ({
-                      type: "action",
-                      label:
-                        value === "calendar" || value === "timeline"
-                          ? t(`ticket.schedule.${value}`)
-                          : t(`ticket.display.${value}`),
-                      state: value === layout ? "on" : "off",
-                      onPress: () => navigation.setParams({ layout: value }),
-                    })),
-                  },
-                  {
-                    type: "action",
-                    label: t("ticket.list.allTickets"),
-                    state: planning ? "off" : "on",
-                    onPress: () => navigation.setParams({ collection: "all" }),
-                  },
-                  {
-                    type: "action",
-                    label: t("ticket.list.planningLink"),
-                    state: planning ? "on" : "off",
-                    onPress: () => navigation.setParams({ collection: "planning" }),
-                  },
-                  ...(views.data ?? []).map((view) => ({
-                    type: "action" as const,
-                    label: view.name,
-                    onPress: () => {
-                      setFilters(view.filters);
-                      setQuery(view.filters.q ?? "");
-                      searchBar.current?.setText(view.filters.q ?? "");
-                      navigation.setParams({ viewId: view.id });
-                    },
-                  })),
-                  {
-                    type: "action",
-                    label: t("ticket.list.saveCurrentView"),
-                    onPress: () => {
-                      setName("");
-                      setSaving(true);
-                    },
-                  },
-                  ...(route.params.viewId
-                    ? [
+                    type: "menu",
+                    label: t("ticket.list.views"),
+                    accessibilityLabel: t("ticket.list.views"),
+                    icon: { type: "sfSymbol", name: "rectangle.3.group" },
+                    menu: {
+                      items: [
                         {
-                          type: "action" as const,
-                          label: t("ticket.list.deleteView", {
-                            name:
-                              views.data?.find((view) => view.id === route.params.viewId)?.name ??
-                              "",
-                          }),
-                          destructive: true,
-                          onPress: () =>
-                            Alert.alert(
-                              t("common.action.delete"),
-                              t("ticket.list.deleteViewConfirm", {
-                                name:
-                                  views.data?.find((view) => view.id === route.params.viewId)
-                                    ?.name ?? "",
-                              }),
-                              [
-                                { text: t("common.action.cancel"), style: "cancel" },
-                                {
-                                  text: t("common.action.confirm"),
-                                  style: "destructive",
-                                  onPress: () => {
-                                    if (route.params.viewId)
-                                      void removeView({ projectId, viewId: route.params.viewId })
-                                        .then(() => navigation.setParams({ viewId: "" }))
-                                        .catch(() => {});
-                                  },
-                                },
-                              ],
-                            ),
+                          type: "submenu",
+                          label: t("ticket.display.layout"),
+                          items: ticketLayouts.map((value) => ({
+                            type: "action",
+                            label:
+                              value === "calendar" || value === "timeline"
+                                ? t(`ticket.schedule.${value}`)
+                                : t(`ticket.display.${value}`),
+                            state: value === layout ? "on" : "off",
+                            onPress: () => navigation.setParams({ layout: value }),
+                          })),
                         },
-                      ]
-                    : []),
-                ],
-              },
-            },
-            createHeaderAction(
-              t("shell.settingsNav.projectSettings"),
-              () => navigation.navigate("ProjectSettings", { projectId }),
-              { type: "sfSymbol", name: "gearshape" },
-            ),
+                        {
+                          type: "action",
+                          label: t("ticket.list.allTickets"),
+                          state: planning ? "off" : "on",
+                          onPress: () => navigation.setParams({ collection: "all" }),
+                        },
+                        {
+                          type: "action",
+                          label: t("ticket.list.planningLink"),
+                          state: planning ? "on" : "off",
+                          onPress: () => navigation.setParams({ collection: "planning" }),
+                        },
+                        ...(views.data ?? []).map((view) => ({
+                          type: "action" as const,
+                          label: view.name,
+                          onPress: () => {
+                            setFilters(view.filters);
+                            setQuery(view.filters.q ?? "");
+                            searchBar.current?.setText(view.filters.q ?? "");
+                            navigation.setParams({ viewId: view.id });
+                          },
+                        })),
+                        {
+                          type: "action",
+                          label: t("ticket.list.saveCurrentView"),
+                          onPress: () => {
+                            setName("");
+                            setSaving(true);
+                          },
+                        },
+                        ...(route.params.viewId
+                          ? [
+                              {
+                                type: "action" as const,
+                                label: t("ticket.list.deleteView", {
+                                  name:
+                                    views.data?.find((view) => view.id === route.params.viewId)
+                                      ?.name ?? "",
+                                }),
+                                destructive: true,
+                                onPress: () =>
+                                  Alert.alert(
+                                    t("common.action.delete"),
+                                    t("ticket.list.deleteViewConfirm", {
+                                      name:
+                                        views.data?.find((view) => view.id === route.params.viewId)
+                                          ?.name ?? "",
+                                    }),
+                                    [
+                                      { text: t("common.action.cancel"), style: "cancel" },
+                                      {
+                                        text: t("common.action.confirm"),
+                                        style: "destructive",
+                                        onPress: () => {
+                                          if (route.params.viewId)
+                                            void removeView({
+                                              projectId,
+                                              viewId: route.params.viewId,
+                                            })
+                                              .then(() => navigation.setParams({ viewId: "" }))
+                                              .catch(() => {});
+                                        },
+                                      },
+                                    ],
+                                  ),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  },
+                ] satisfies NativeStackHeaderItem[])),
           ],
     [
       selection.size,
@@ -387,6 +423,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       route.params.viewId,
       removeView,
       selectedTicket,
+      splitState,
       split,
       rows,
       searchBar,
@@ -399,23 +436,27 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         unstable_headerRightItems: () => headerItems,
         ...(layout === "list" || layout === "board"
           ? {
-              headerBackVisible: !(split && selectedTicket && width < 740),
+              headerBackVisible: !(split && splitState.collapsed && splitState.secondaryVisible),
               unstable_headerLeftItems: () =>
-                split && selectedTicket && width < 740
-                  ? [
-                      createHeaderAction(
-                        t("ticket.list.tickets"),
-                        () => setSelectedTicket(undefined),
-                        { type: "sfSymbol", name: "chevron.left" },
-                      ),
-                    ]
-                  : [],
+                projectHeaderItems(
+                  showPicker,
+                  t("native.navigation.switchProject"),
+                  split && splitState.collapsed && splitState.secondaryVisible
+                    ? {
+                        title: t("ticket.list.tickets"),
+                        onPress: () => {
+                          setSplitState((state) => ({ ...state, secondaryVisible: false }));
+                        },
+                      }
+                    : undefined,
+                ),
             }
           : {}),
         headerSearchBarOptions: {
           ref: searchBar,
           placeholder: t("native.tickets.searchPlaceholder"),
           hideWhenScrolling: false,
+          hideNavigationBar: false,
           onChangeText: (event) => setQuery(event.nativeEvent.text),
         },
       }),
@@ -427,8 +468,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     title,
     layout,
     split,
-    selectedTicket,
-    width,
+    splitState,
+    showPicker,
     searchBar,
   ]);
   const entries = useMemo<TicketListEntry[]>(() => {
@@ -453,8 +494,10 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   }, [workflow.data, rows]);
   const open = (ticket: Ticket) => {
     if (selection.size) toggle(ticket);
-    else if (split) setSelectedTicket(ticket);
-    else navigation.navigate("Ticket", { projectId, ticketId: ticket.id });
+    else if (split) {
+      setSelectedTicketId(ticket.id);
+      setSplitState((state) => ({ ...state, secondaryVisible: true }));
+    } else navigation.navigate("Ticket", { projectId, ticketId: ticket.id });
   };
   const refresh = () => {
     void (planning ? Promise.all([backlog.refetch(), archived.refetch()]) : tickets.refetch());
@@ -507,6 +550,12 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : (
       <List
         data={entries}
+        initialScrollOffset={initial?.scrollOffset ?? 0}
+        onScroll={(event) => {
+          if (isFocused)
+            contexts.save(projectId, { scrollOffset: event.nativeEvent.contentOffset.y });
+        }}
+        scrollEventThrottle={100}
         keyExtractor={(entry) => entry.id}
         onRefresh={refresh}
         refreshing={planning ? backlog.isRefetching || archived.isRefetching : tickets.isRefetching}
@@ -548,13 +597,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   return (
     <Screen
       scroll={false}
-      safeArea={
-        !(
-          Platform.OS === "ios" &&
-          Number.parseInt(Platform.Version, 10) >= 26 &&
-          (layout === "list" || layout === "calendar")
-        )
-      }
+      allowDivision={split || layout === "calendar"}
       background={project?.background ?? null}
     >
       <ErrorNotice
@@ -570,7 +613,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       {split ? (
         <SplitView
           primary={collectionView}
-          secondaryActive={!!selectedTicket}
+          secondaryActive={!!selectedTicketId && splitState.secondaryVisible}
+          onChange={setSplitState}
           secondary={
             selectedTicket ? (
               <TicketContent
@@ -578,7 +622,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                 projectId={projectId}
                 ticketId={selectedTicket.id}
                 preview
-                onUnavailable={() => setSelectedTicket(undefined)}
+                onUnavailable={() => setSelectedTicketId(undefined)}
               />
             ) : (
               <View style={{ padding: 24 }}>

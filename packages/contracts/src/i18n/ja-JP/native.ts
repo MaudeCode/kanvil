@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "ワークスペースまたはプロジェクトを切り替え",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "閉じる",

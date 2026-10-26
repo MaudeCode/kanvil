@@ -53,7 +53,7 @@ import {
   Sheet,
   CustomFieldInput,
 } from "./ui.tsx";
-import type { ScreenProps } from "./navigation.ts";
+import { useProjectNavigation, type ScreenProps } from "./navigation.ts";
 import { IntegrationSettings, CalendarFeeds } from "./delivery-settings.tsx";
 import { ProjectAppearance } from "./project-appearance.tsx";
 export { Administration } from "./administration.tsx";
@@ -167,7 +167,7 @@ export function CreateWorkspace({ navigation }: ScreenProps<"CreateWorkspace">) 
     [slug, setSlug] = useState(""),
     [description, setDescription] = useState("");
   const create = useOperation("create_workspace"),
-    workspace = useWorkspace();
+    projectNavigation = useProjectNavigation();
   return (
     <Screen form>
       <Field
@@ -199,8 +199,8 @@ export function CreateWorkspace({ navigation }: ScreenProps<"CreateWorkspace">) 
           void create
             .mutateAsync({ name, slug, description })
             .then((space) => {
-              workspace.select(space.id);
               navigation.goBack();
+              projectNavigation.selectWorkspace(space.id);
             })
             .catch(() => {});
         }}
@@ -210,6 +210,7 @@ export function CreateWorkspace({ navigation }: ScreenProps<"CreateWorkspace">) 
 }
 
 export function WorkspaceSettings({ route, navigation }: ScreenProps<"WorkspaceSettings">) {
+  const projectNavigation = useProjectNavigation();
   const { workspaceId } = route.params,
     workspace = useWorkspace(),
     identity = useIdentity(),
@@ -239,10 +240,9 @@ export function WorkspaceSettings({ route, navigation }: ScreenProps<"WorkspaceS
           <WorkspaceLifecycle
             space={space}
             onDeleted={() => {
-              workspace.select(
+              projectNavigation.selectWorkspace(
                 workspace.workspaces.find((item) => item.id !== workspaceId)?.id ?? "",
               );
-              navigation.goBack();
             }}
           />
           <Button
@@ -976,6 +976,7 @@ function Labels({
 }
 
 export function ProjectSettings({ route, navigation }: ScreenProps<"ProjectSettings">) {
+  const projectNavigation = useProjectNavigation();
   const { projectId } = route.params,
     projects = useAllProjects(),
     access = useProjectAccess(projectId),
@@ -1054,7 +1055,7 @@ export function ProjectSettings({ route, navigation }: ScreenProps<"ProjectSetti
           <ProjectLifecycle
             project={project}
             canManage={access.canManage}
-            onDeleted={() => navigation.popTo("Home")}
+            onDeleted={() => projectNavigation.selectWorkspace(project.workspaceId)}
           />
         </>
       )}

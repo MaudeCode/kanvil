@@ -9,7 +9,7 @@ import { okSchema } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
 import { type Connection, useConnection, useIdentity } from "./data.tsx";
-import type { Routes } from "./navigation.ts";
+import type { Routes, TabRoutes } from "./navigation.ts";
 
 export const pushProjectId =
   Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
@@ -48,7 +48,10 @@ export async function disableDevicePush(connection: Connection, userId: string) 
 }
 
 const destination = z.object({ server: z.string(), projectId: z.uuid(), ticketId: z.uuid() });
-export function usePushNavigation(navigation: NavigationContainerRefWithCurrent<Routes>) {
+export function usePushNavigation(
+  navigation: NavigationContainerRefWithCurrent<TabRoutes>,
+  openTicket: (params: Routes["Ticket"]) => void,
+) {
   const connection = useConnection(),
     { baseUrl } = connection,
     identity = useIdentity(),
@@ -67,13 +70,13 @@ export function usePushNavigation(navigation: NavigationContainerRefWithCurrent<
       handled.current = response.notification.request.identifier;
       pending.current = null;
       void cache.invalidateQueries({ queryKey: ["kanvil"] });
-      navigation.navigate("Ticket", {
+      openTicket({
         projectId: target.data.projectId,
         ticketId: target.data.ticketId,
       });
       void Notifications.clearLastNotificationResponseAsync().catch(() => {});
     },
-    [baseUrl, cache, navigation],
+    [baseUrl, cache, navigation, openTicket],
   );
   useEffect(() => {
     const listener = Notifications.addNotificationResponseReceivedListener(open);

@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Çalışma alanını veya projeyi değiştir",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Kapat",

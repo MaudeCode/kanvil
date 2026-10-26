@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Αλλαγή χώρου εργασίας ή έργου",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Απόρριψη",

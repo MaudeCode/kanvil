@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "कार्यस्थान या प्रोजेक्ट बदलें",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "खारिज करें",

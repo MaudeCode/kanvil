@@ -1,0 +1,69 @@
+import { expect, it } from "vite-plus/test";
+import { createProjectContexts, createSearchBarHandle } from "./navigation.ts";
+import { ticketFilter } from "@kanvil/contracts";
+
+it("restores each project's browsing context without borrowing another project's selection", () => {
+  const contexts = createProjectContexts();
+  const filters = ticketFilter.parse({ status: "todo", priority: "high" });
+  contexts.save("project-a", {
+    filters,
+    query: "release",
+    selectedTicketId: "ticket-a",
+    secondaryVisible: false,
+    location: { projectId: "project-a", layout: "board", viewId: "view-a", collection: "planning" },
+    anchor: new Date("2026-10-26T12:00:00Z"),
+    scrollOffset: 480,
+  });
+  contexts.save("project-b", { query: "deployment", scrollOffset: 50 });
+  contexts.save("project-a", { scrollOffset: 640 });
+  expect(contexts.get("project-a")).toEqual({
+    filters,
+    query: "release",
+    selectedTicketId: "ticket-a",
+    secondaryVisible: false,
+    location: { projectId: "project-a", layout: "board", viewId: "view-a", collection: "planning" },
+    anchor: new Date("2026-10-26T12:00:00Z"),
+    scrollOffset: 640,
+  });
+  expect(contexts.get("project-b")).toEqual({ query: "deployment", scrollOffset: 50 });
+});
+
+it("isolates accounts and refuses writes from mounted screens after sign-out", () => {
+  const first = createProjectContexts(),
+    second = createProjectContexts();
+  first.save("project", { query: "private", selectedTicketId: "private-ticket" });
+  expect(second.get("project")).toBeUndefined();
+  first.clear();
+  first.save("project", { query: "late scroll callback" });
+  expect(first.get("project")).toBeUndefined();
+  second.save("project", { query: "other account" });
+  expect(second.get("project")?.query).toBe("other account");
+});
+
+it("restores late-mounted search controls without overwriting typing when their handle refreshes", async () => {
+  const handle = createSearchBarHandle("cached query"),
+    writes: string[] = [];
+  const commands = {
+    focus() {},
+    blur() {},
+    clearText() {},
+    cancelSearch() {},
+    toggleCancelButton() {},
+    setText(value: string) {
+      writes.push(value);
+    },
+  };
+  handle.ref.current = commands;
+  expect(writes).toEqual(["cached query"]);
+  handle.updateText("edited query");
+  expect(writes).toEqual(["cached query"]);
+  handle.ref.current = null;
+  handle.ref.current = commands;
+  expect(writes).toEqual(["cached query"]);
+  await Promise.resolve();
+  handle.ref.current = null;
+  await Promise.resolve();
+  handle.ref.current = commands;
+  expect(handle.ref.current).toBe(commands);
+  expect(writes).toEqual(["cached query", "edited query"]);
+});

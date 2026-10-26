@@ -1,4 +1,5 @@
 export default {
+  "navigation.switchProject": "Змінити робочий простір або проєкт",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Закрити",
