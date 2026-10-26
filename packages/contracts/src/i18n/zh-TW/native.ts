@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "已讀",
   "navigation.recentProjects": "最近的專案",
   "navigation.switchProject": "切換工作區或專案",
   labelValue: "{{label}}：{{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "較新的活動",
   },
   inbox: {
+    read: "已讀",
     markAllRead: "全部標示為已讀",
     empty: "沒有通知",
   },

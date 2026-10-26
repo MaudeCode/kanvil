@@ -1,6 +1,5 @@
 // Screens of the native app. Shared wording comes from `common`.
 export default {
-  "inbox.read": "Read",
   "navigation.recentProjects": "Recent projects",
   "navigation.switchProject": "Switch workspace or project",
   // A field's name and its current value, for screen readers and read-only field lists.
@@ -189,6 +188,7 @@ export default {
     next: "Next activity",
   },
   inbox: {
+    read: "Read",
     markAllRead: "Mark all read",
     empty: "No notifications",
   },

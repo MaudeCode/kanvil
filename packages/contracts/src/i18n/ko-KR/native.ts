@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "읽음",
   "navigation.recentProjects": "최근 프로젝트",
   "navigation.switchProject": "워크스페이스 또는 프로젝트 전환",
   labelValue: "{{label}}: {{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "다음 활동",
   },
   inbox: {
+    read: "읽음",
     markAllRead: "모두 읽음으로 표시",
     empty: "알림이 없습니다",
   },

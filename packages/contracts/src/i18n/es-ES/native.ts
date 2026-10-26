@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Leída",
   "navigation.recentProjects": "Proyectos recientes",
   "navigation.switchProject": "Cambiar espacio de trabajo o proyecto",
   labelValue: "{{label}}: {{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "Actividad siguiente",
   },
   inbox: {
+    read: "Leída",
     markAllRead: "Marcar todo como leído",
     empty: "No hay notificaciones",
   },

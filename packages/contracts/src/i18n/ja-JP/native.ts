@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "既読",
   "navigation.recentProjects": "最近のプロジェクト",
   "navigation.switchProject": "ワークスペースまたはプロジェクトを切り替え",
   labelValue: "{{label}}: {{value}}",
@@ -182,6 +181,7 @@ export default {
     next: "次のアクティビティ",
   },
   inbox: {
+    read: "既読",
     markAllRead: "すべて既読にする",
     empty: "通知はありません",
   },

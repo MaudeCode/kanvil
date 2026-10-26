@@ -35,6 +35,7 @@ export function Relations({
   ticket: Ticket;
   navigation: Pick<ScreenProps<"Ticket">["navigation"], "navigate" | "push">;
 }) {
+  const access = useProjectAccess(ticket.projectId);
   const { api } = useConnection(),
     [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -60,9 +61,10 @@ export function Relations({
   const relations = useQuery(
       api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
     ),
-    matches = useQuery(
-      api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
-    );
+    matches = useQuery({
+      ...api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
+      enabled: open && access.canWrite,
+    });
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
   return (
@@ -125,26 +127,34 @@ export function Relations({
                 })
               }
             />
-            <Button
-              title={t("native.relations.remove")}
-              onPress={() =>
-                Alert.alert(t("native.relations.removeTitle"), "", [
-                  { text: t("common.action.cancel"), style: "cancel" },
-                  {
-                    text: t("common.action.remove"),
-                    style: "destructive",
-                    onPress: () =>
-                      remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
-                  },
-                ])
-              }
-            />
+            {access.canWrite && (
+              <Button
+                title={t("native.relations.remove")}
+                onPress={() =>
+                  Alert.alert(t("native.relations.removeTitle"), "", [
+                    { text: t("common.action.cancel"), style: "cancel" },
+                    {
+                      text: t("common.action.remove"),
+                      style: "destructive",
+                      onPress: () =>
+                        remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
+                    },
+                  ])
+                }
+              />
+            )}
           </View>
         );
       })}
-      <Button title={t("native.relations.add")} onPress={() => setOpen(true)} />
+      {access.canWrite && (
+        <Button title={t("native.relations.add")} onPress={() => setOpen(true)} />
+      )}
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
-      <Sheet title={t("native.relations.add")} open={open} onClose={() => setOpen(false)}>
+      <Sheet
+        title={t("native.relations.add")}
+        open={open && access.canWrite}
+        onClose={() => setOpen(false)}
+      >
         <Field label={t("native.relations.find")} value={query} onChangeText={setQuery} />
         <Choice
           label={t("native.relations.type")}
@@ -167,8 +177,9 @@ export function Relations({
         <Button
           title={t("common.action.add")}
           primary
-          disabled={!target || add.isPending}
+          disabled={!access.canWrite || !target || add.isPending}
           onPress={() => {
+            if (!access.canWrite) return;
             void add
               .mutateAsync({
                 projectId: ticket.projectId,

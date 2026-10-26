@@ -144,6 +144,14 @@ describe("presentation in another language", () => {
   afterEach(async () => {
     await applyLocale("en-US");
   });
+  it("resolves read-notification wording through the runtime lookup in every language", async () => {
+    for (const locale of locales) {
+      await applyLocale(locale);
+      const expected = leaves(await catalog(locale)).get("native.inbox.read");
+      expect(t("native.inbox.read"), locale).toBe(expected);
+      expect(t("native.inbox.read"), locale).not.toBe("native.inbox.read");
+    }
+  });
   it("reads labels, dates, numbers, and errors in the active language", async () => {
     expect(stateLabels.in_progress).toBe("In progress");
     await applyLocale("de-DE");

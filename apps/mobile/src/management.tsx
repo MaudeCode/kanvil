@@ -1669,7 +1669,7 @@ function FieldDefinition({
         </Section>
       )}
       <CustomFieldInput
-        field={{ name: t("settings.fields.defaultValue"), type, options }}
+        field={{ name: t("settings.fields.default"), type, options }}
         value={defaultValue}
         onChange={setDefaultValue}
       />
@@ -1714,7 +1714,7 @@ function FieldDefinition({
           onPress={() =>
             Alert.alert(
               t("settings.fields.deleteNamed", { name: field.name }),
-              t("settings.fields.deleteUsed", { count: field.count }),
+              t("settings.fields.deleteUsed", { name: field.name, count: field.count }),
               [
                 { text: t("common.action.cancel"), style: "cancel" },
                 {

@@ -1545,6 +1545,7 @@ export function TicketRow({
   showStatus = true,
   selecting = false,
   showProject = false,
+  density = "standard",
 }: {
   ticket: Pick<Ticket, "id" | "projectId" | "key" | "title" | "status"> & Partial<Ticket>;
   onPress: () => void;
@@ -1554,7 +1555,9 @@ export function TicketRow({
   showStatus?: boolean;
   selecting?: boolean;
   showProject?: boolean;
+  density?: "standard" | "schedule";
 }) {
+  const schedule = density === "schedule";
   const color = usePalette(),
     projects = useAllProjects(),
     now = useNow();
@@ -1608,6 +1611,7 @@ export function TicketRow({
       title={ticket.title}
       accessibilityLabel={spoken}
       dense
+      style={schedule ? { paddingVertical: 8, paddingHorizontal: 12 } : undefined}
       active={active}
       leading={
         !showStatus ? (
@@ -1634,13 +1638,13 @@ export function TicketRow({
         )
       }
       metadata={
-        <View style={{ gap: 6, width: "100%" }}>
+        <View style={{ gap: schedule ? 4 : 6, width: "100%" }}>
           <View
             style={{
               flexDirection: "row",
               flexWrap: "wrap",
               alignItems: "center",
-              columnGap: 10,
+              columnGap: schedule ? 6 : 10,
               rowGap: 4,
             }}
           >
@@ -1672,7 +1676,7 @@ export function TicketRow({
                 iconOnly
               />
             )}
-            {ticket.kind !== undefined && (
+            {!schedule && ticket.kind !== undefined && (
               <PropertyValue
                 projectId={ticket.projectId}
                 property="kind"
@@ -1680,7 +1684,7 @@ export function TicketRow({
                 iconOnly
               />
             )}
-            {ticket.difficulty !== undefined && (
+            {!schedule && ticket.difficulty !== undefined && (
               <PropertyValue
                 projectId={ticket.projectId}
                 property="difficulty"
@@ -1697,7 +1701,7 @@ export function TicketRow({
               />
             )}
           </View>
-          {(ticket.dueAt || ticket.startAt) && (
+          {!schedule && (ticket.dueAt || ticket.startAt) && (
             <View
               accessible
               accessibilityLabel={
@@ -1723,16 +1727,18 @@ export function TicketRow({
           <TicketTags
             projectId={ticket.projectId}
             tags={ticket.labels ?? []}
-            limit={2}
-            onExpand={onPress}
+            limit={schedule ? 1 : 2}
+            {...(!schedule ? { onExpand: onPress } : {})}
           />
-          <TicketTags
-            projectId={ticket.projectId}
-            tags={ticket.scopes ?? []}
-            kind="scope"
-            limit={1}
-            onExpand={onPress}
-          />
+          {!schedule && (
+            <TicketTags
+              projectId={ticket.projectId}
+              tags={ticket.scopes ?? []}
+              kind="scope"
+              limit={1}
+              onExpand={onPress}
+            />
+          )}
         </View>
       }
       onPress={onPress}

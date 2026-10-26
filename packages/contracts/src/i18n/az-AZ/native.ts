@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Oxunub",
   "navigation.recentProjects": "Son layihələr",
   "navigation.switchProject": "İş sahəsini və ya layihəni dəyiş",
   labelValue: "{{label}}: {{value}}",
@@ -182,6 +181,7 @@ export default {
     next: "Növbəti fəaliyyət",
   },
   inbox: {
+    read: "Oxunub",
     markAllRead: "Hamısını oxunmuş kimi qeyd et",
     empty: "Bildiriş yoxdur",
   },

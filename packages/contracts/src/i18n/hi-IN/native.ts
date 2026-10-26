@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "पढ़ा गया",
   "navigation.recentProjects": "हाल के प्रोजेक्ट",
   "navigation.switchProject": "कार्यस्थान या प्रोजेक्ट बदलें",
   labelValue: "{{label}}: {{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "अगली गतिविधि",
   },
   inbox: {
+    read: "पढ़ा गया",
     markAllRead: "सभी को पढ़ा हुआ चिह्नित करें",
     empty: "कोई सूचना नहीं",
   },

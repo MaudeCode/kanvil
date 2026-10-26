@@ -801,7 +801,7 @@ function UserDetails({ userId, onSaved }: { userId: string | null; onSaved: () =
           </Section>
           {person.data.id === identity.id ? (
             <Button
-              title={t("settings.lifecycle.deleteOwnAccount")}
+              title={t("settings.lifecycle.deleteAccount")}
               danger
               onPress={() => {
                 onSaved();

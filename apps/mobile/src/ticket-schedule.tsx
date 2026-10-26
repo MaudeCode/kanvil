@@ -170,7 +170,7 @@ export function TicketSchedule({
     );
     const dayWidth = 34,
       chartWidth = days.length * dayWidth,
-      identityWidth = Math.min(240, Math.max(132, viewport.bounds.width * 0.42));
+      identityWidth = Math.min(280, Math.max(160, viewport.bounds.width * 0.6));
     return (
       <Scroll>
         {controls}
@@ -198,7 +198,7 @@ export function TicketSchedule({
                     );
                   }}
                 >
-                  <TicketRow ticket={ticket} onPress={() => onOpen(ticket)} />
+                  <TicketRow ticket={ticket} density="schedule" onPress={() => onOpen(ticket)} />
                 </View>
               ))}
             </View>
@@ -229,7 +229,7 @@ export function TicketSchedule({
                     <View
                       key={span.ticket.id}
                       style={{
-                        height: rowHeights[span.ticket.id] ?? 100,
+                        height: rowHeights[span.ticket.id] ?? 88,
                         justifyContent: "center",
                         borderBottomWidth: 0.5,
                         borderBottomColor: color.line,

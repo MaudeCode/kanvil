@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Διαβασμένο",
   "navigation.recentProjects": "Πρόσφατα έργα",
   "navigation.switchProject": "Αλλαγή χώρου εργασίας ή έργου",
   labelValue: "{{label}}: {{value}}",
@@ -182,6 +181,7 @@ export default {
     next: "Επόμενη δραστηριότητα",
   },
   inbox: {
+    read: "Διαβασμένο",
     markAllRead: "Σήμανση όλων ως αναγνωσμένα",
     empty: "Καμία ειδοποίηση",
   },

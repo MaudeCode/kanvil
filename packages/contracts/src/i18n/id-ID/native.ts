@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Dibaca",
   "navigation.recentProjects": "Proyek terbaru",
   "navigation.switchProject": "Ganti ruang kerja atau proyek",
   labelValue: "{{label}}: {{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "Aktivitas berikutnya",
   },
   inbox: {
+    read: "Dibaca",
     markAllRead: "Tandai semua sudah dibaca",
     empty: "Tidak ada notifikasi",
   },

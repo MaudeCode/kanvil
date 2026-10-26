@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Đã đọc",
   "navigation.recentProjects": "Dự án gần đây",
   "navigation.switchProject": "Chuyển không gian làm việc hoặc dự án",
   labelValue: "{{label}}: {{value}}",
@@ -181,6 +180,7 @@ export default {
     next: "Hoạt động tiếp theo",
   },
   inbox: {
+    read: "Đã đọc",
     markAllRead: "Đánh dấu tất cả đã đọc",
     empty: "Không có thông báo",
   },

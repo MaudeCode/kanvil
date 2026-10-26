@@ -139,7 +139,7 @@ export function AccountDeletion({
     enabled: deleting,
   });
   const remove = useOperation("delete_account");
-  const label = t(own ? "settings.lifecycle.deleteOwnAccount" : "settings.lifecycle.deleteAccount");
+  const label = t("settings.lifecycle.deleteAccount");
   return (
     <>
       <Button
@@ -157,6 +157,12 @@ export function AccountDeletion({
           if (!remove.isPending) setDeleting(false);
         }}
       >
+        <Body>
+          {t(
+            own ? "settings.lifecycle.deleteOwnAccount" : "settings.lifecycle.deleteOtherAccount",
+            { name: t("common.person.deleted") },
+          )}
+        </Body>
         {impact.isPending ? (
           <Loading />
         ) : (
@@ -164,7 +170,14 @@ export function AccountDeletion({
             <>
               <Body>{t("settings.lifecycle.profileErased")}</Body>
               <Body>{t("settings.lifecycle.sessions", { count: impact.data.sessions })}</Body>
-              <Body>{t("settings.lifecycle.keptAccount")}</Body>
+              <Body>
+                {t("settings.lifecycle.keptAccount", {
+                  tickets: t("settings.tickets", { count: impact.data.tickets }),
+                  comments: t("settings.lifecycle.commentCount", { count: impact.data.comments }),
+                  events: t("settings.lifecycle.activityCount", { count: impact.data.events }),
+                  name: t("common.person.deleted"),
+                })}
+              </Body>
               {impact.data.blockers.map((item) => (
                 <Body key={item.code}>{item.message}</Body>
               ))}

@@ -1,6 +1,5 @@
 // Screens of the native app. Shared wording comes from `common`.
 export default {
-  "inbox.read": "Przeczytane",
   "navigation.recentProjects": "Ostatnie projekty",
   "navigation.switchProject": "Zmień obszar roboczy lub projekt",
   // A field's name and its current value, for screen readers and read-only field lists.
@@ -190,6 +189,7 @@ export default {
     next: "Późniejsza aktywność",
   },
   inbox: {
+    read: "Przeczytane",
     markAllRead: "Oznacz wszystkie jako przeczytane",
     empty: "Brak powiadomień",
   },

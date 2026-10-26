@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Прочитано",
   "navigation.recentProjects": "Нещодавні проєкти",
   "navigation.switchProject": "Змінити робочий простір або проєкт",
   labelValue: "{{label}}: {{value}}",
@@ -180,6 +179,7 @@ export default {
     next: "Наступні дії",
   },
   inbox: {
+    read: "Прочитано",
     markAllRead: "Позначити всі як прочитані",
     empty: "Немає сповіщень",
   },

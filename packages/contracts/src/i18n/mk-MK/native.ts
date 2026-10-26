@@ -1,5 +1,4 @@
 export default {
-  "inbox.read": "Прочитано",
   "navigation.recentProjects": "Неодамнешни проекти",
   "navigation.switchProject": "Промени работен простор или проект",
   labelValue: "{{label}}: {{value}}",
@@ -181,6 +180,7 @@ export default {
     next: "Следна активност",
   },
   inbox: {
+    read: "Прочитано",
     markAllRead: "Означи сè како прочитано",
     empty: "Нема известувања",
   },
