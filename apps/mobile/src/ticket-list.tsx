@@ -1139,11 +1139,12 @@ function TicketFilters({
                       ...previous,
                       [field]: next === "none" ? "none" : "any",
                     }));
-                    const other = filterKey(field, next === "none" ? "none" : "any");
+                    const other = filterKey(field, next === "none" ? "none" : "any"),
+                      moved = [...new Set([...filterList(value[other]), ...selected])];
                     change({
                       ...value,
                       [key]: undefined,
-                      [other]: [...new Set([...filterList(value[other]), ...selected])],
+                      [other]: moved.length ? moved : undefined,
                     });
                   }}
                 />
