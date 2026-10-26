@@ -70,8 +70,7 @@ export default {
     release: "Zwolnij moje przejęcie",
     releaseDescription: "Zwolnić własność po zakończeniu zapisów przez wykonawcę?",
     recover: "Odzyskaj wygasłe przejęcie",
-    recoverHelp:
-      "Odzyskanie wymaga dostępu administratora projektu i wygasłego przejęcia. Najpierw zatrzymaj wykonawcę.",
+    recoverHelp: "Najpierw potwierdź, że wykonawca został zatrzymany.",
     reason: "Powód odzyskania",
     confirmed: "Potwierdzam, że wykonawca został zatrzymany",
     submit: "Odzyskaj własność",

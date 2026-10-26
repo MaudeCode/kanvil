@@ -62,8 +62,7 @@ export default {
     release: "Rilascia la mia presa in carico",
     releaseDescription: "Rilasciare la presa in carico dopo che l’esecutore ha smesso di scrivere?",
     recover: "Recupera presa in carico scaduta",
-    recoverHelp:
-      "Il recupero richiede l’accesso da amministratore del progetto e una presa in carico scaduta. Arresta prima l’esecutore.",
+    recoverHelp: "Verifica prima che l’esecutore si sia fermato.",
     reason: "Motivo del recupero",
     confirmed: "Ho verificato che l’esecutore si è fermato",
     submit: "Recupera presa in carico",

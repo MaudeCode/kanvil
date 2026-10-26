@@ -113,6 +113,7 @@ export async function createApplication(
       publicUrl: config.KANVIL_URL,
       mail: senders.mail,
       sources: adapters.importSources(config),
+      claimMaxLeaseSeconds: config.KANVIL_CLAIM_MAX_LEASE_SECONDS,
     }),
     access = createAccess(auth, domain, config, database),
     realtime = await adapters.realtime(config, instance, integrationDatabase);

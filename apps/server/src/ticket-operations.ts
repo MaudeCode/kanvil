@@ -179,6 +179,15 @@ async function readinessMany(ctx: Context, selected: (typeof tickets.$inferSelec
   }
   return result;
 }
+function claimExpiry(ctx: Context, requested?: number) {
+  const leaseSeconds = requested ?? Math.min(300, ctx.claimMaxLeaseSeconds);
+  if (leaseSeconds > ctx.claimMaxLeaseSeconds)
+    fail(400, "validation_error", "Claim lease exceeds the configured maximum", {
+      path: "leaseSeconds",
+      maximum: ctx.claimMaxLeaseSeconds,
+    });
+  return new Date(Date.now() + leaseSeconds * 1000);
+}
 export async function readiness(ctx: Context, ticket: typeof tickets.$inferSelect) {
   return requireRow((await readinessMany(ctx, [ticket])).get(ticket.id));
 }
@@ -1160,7 +1169,7 @@ export const ticketHandlers: Pick<
           actorId: ctx.actor.id,
           ownerId: ctx.actor.ownerId,
           workerId: input.workerId,
-          expiresAt: new Date(Date.now() + input.leaseSeconds * 1000),
+          expiresAt: claimExpiry(ctx, input.leaseSeconds),
         })
         .returning(),
     );
@@ -1196,7 +1205,7 @@ export const ticketHandlers: Pick<
     const claim = one(
       await ctx.db
         .update(claims)
-        .set({ expiresAt: new Date(Date.now() + input.leaseSeconds * 1000) })
+        .set({ expiresAt: claimExpiry(ctx, input.leaseSeconds) })
         .where(eq(claims.id, current.id))
         .returning(),
     );
@@ -1218,7 +1227,7 @@ export const ticketHandlers: Pick<
       fail(
         409,
         "claim_conflict",
-        "Only the owning worker can release an unexpired claim. Expired claims require administrator recovery.",
+        "Only the owning worker can release an unexpired claim. Expired claims require explicit recovery.",
       );
     await ctx.db.delete(claims).where(eq(claims.id, current.id));
     await publish(ctx, "claim.released", ticket.id, { claimId: current.id });
@@ -1234,6 +1243,24 @@ export const ticketHandlers: Pick<
     );
     if (current.expiresAt > new Date())
       fail(409, "claim_not_expired", "The current claim has not expired");
+    if (input.reschedule && input.expectedVersion !== undefined) {
+      assertVersion(ticket, input.expectedVersion, "ticket", "rescheduling recovered work");
+      const row = one(
+        await ctx.db
+          .update(tickets)
+          .set({
+            ...(await resolveState(ctx, { status: "todo" }, ticket)),
+            version: ticket.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(tickets.id, ticket.id))
+          .returning(),
+      );
+      await publish(ctx, "ticket.updated", ticket.id, {
+        version: row.version,
+        changedFields: ["status", "stateId"],
+      });
+    }
     await ctx.db.delete(claims).where(eq(claims.id, current.id));
     await publish(ctx, "claim.recovered", ticket.id, {
       claimId: current.id,

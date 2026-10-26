@@ -113,8 +113,7 @@ export default {
     },
     recover: {
       action: "Verlopen claim herstellen",
-      explanation:
-        "Alleen een projectbeheerder kan een verlopen claim herstellen. Bevestig eerst dat de worker is gestopt.",
+      explanation: "Bevestig eerst dat de worker is gestopt.",
       reason: "Reden voor herstel",
       confirm: "Worker gestopt · herstellen",
     },

@@ -114,8 +114,7 @@ export default {
     },
     recover: {
       action: "Müddəti bitmiş götürməni bərpa et",
-      explanation:
-        "Müddəti bitmiş götürməni yalnız layihə administratoru bərpa edə bilər. Əvvəlcə işçinin dayandığını təsdiqləyin.",
+      explanation: "Əvvəlcə işçinin dayandığını təsdiqləyin.",
       reason: "Bərpa səbəbi",
       confirm: "İşçi dayandı · bərpa et",
     },

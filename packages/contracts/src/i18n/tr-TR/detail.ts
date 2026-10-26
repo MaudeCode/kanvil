@@ -62,8 +62,7 @@ export default {
     release: "Üstlenmemi bırak",
     releaseDescription: "Çalışanınız yazmayı bıraktıktan sonra sahiplik bırakılsın mı?",
     recover: "Süresi dolmuş üstlenmeyi geri al",
-    recoverHelp:
-      "Geri alma için proje yöneticisi erişimi ve süresi dolmuş bir üstlenme gerekir. Önce çalışanı durdurun.",
+    recoverHelp: "Önce çalışanın durduğunu doğrulayın.",
     reason: "Geri alma nedeni",
     confirmed: "Çalışanın durduğunu doğruladım",
     submit: "Sahipliği geri al",

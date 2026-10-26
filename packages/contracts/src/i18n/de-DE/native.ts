@@ -114,8 +114,7 @@ export default {
     },
     recover: {
       action: "Abgelaufene Übernahme wiederherstellen",
-      explanation:
-        "Nur eine Projektadministration kann eine abgelaufene Übernahme wiederherstellen. Bestätigen Sie zuerst, dass der Worker gestoppt hat.",
+      explanation: "Bestätigen Sie zuerst, dass der Worker gestoppt hat.",
       reason: "Grund der Wiederherstellung",
       confirm: "Worker gestoppt · wiederherstellen",
     },

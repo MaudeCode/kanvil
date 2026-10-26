@@ -158,7 +158,7 @@ export const families: readonly Family[] = [
       "apps/server/src/cli/client.integration.test.ts": 2,
       "apps/server/src/consumers.test.ts": 2,
       "apps/server/src/custom-fields.test.ts": 7,
-      "apps/server/src/domain.test.ts": 33,
+      "apps/server/src/domain.test.ts": 38,
       "apps/server/src/foundation.test.ts": 5,
       "apps/server/src/imports.test.ts": 9,
       "apps/server/src/invitations.test.ts": 10,
@@ -186,7 +186,7 @@ export const families: readonly Family[] = [
       "Adapters speak HTTP, SMTP, and OIDC to fakes on loopback, so request framing, headers, redirects, response limits, signatures, and the outbound sender's address checks run as in production, against PostgreSQL-backed services.",
     cases: {
       "apps/server/src/delivery.test.ts": 11,
-      "apps/server/src/http.test.ts": 30,
+      "apps/server/src/http.test.ts": 31,
       "apps/server/src/import-sources.test.ts": 26,
       "apps/server/src/instance.test.ts": 6,
       "apps/server/src/issue-sync.test.ts": 14,
@@ -348,8 +348,8 @@ export const families: readonly Family[] = [
   spec("workspace-roles.spec.ts", 1, "The role editor and reassignment dialogs."),
   spec(
     "workspace.spec.ts",
-    3,
-    "First-run owner setup, ticket detail, discussion, attachments, credentials, and realtime conflict banners.",
+    4,
+    "First-run owner setup, ticket detail, discussion, attachments, credentials, realtime conflict banners, and writer recovery controls for expired ownership.",
   ),
   spec(
     "workspaces.spec.ts",

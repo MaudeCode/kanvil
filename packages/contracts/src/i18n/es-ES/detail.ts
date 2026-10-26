@@ -62,8 +62,7 @@ export default {
     release: "Liberar mi reserva",
     releaseDescription: "¿Liberar la propiedad cuando su ejecutor haya dejado de escribir?",
     recover: "Recuperar reserva caducada",
-    recoverHelp:
-      "La recuperación requiere acceso de administrador del proyecto y una reserva caducada. Detenga primero el ejecutor.",
+    recoverHelp: "Confirme primero que el ejecutor se ha detenido.",
     reason: "Motivo de la recuperación",
     confirmed: "He confirmado que el ejecutor se ha detenido",
     submit: "Recuperar la propiedad",

@@ -113,8 +113,7 @@ export default {
     },
     recover: {
       action: "Récupérer la prise en charge expirée",
-      explanation:
-        "Seul un administrateur du projet peut récupérer une prise en charge expirée. Vérifiez d’abord que l’exécutant s’est arrêté.",
+      explanation: "Vérifiez d’abord que l’exécutant s’est arrêté.",
       reason: "Motif de la récupération",
       confirm: "Exécutant arrêté · récupérer",
     },

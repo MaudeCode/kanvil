@@ -62,8 +62,7 @@ export default {
     release: "Mijn claim vrijgeven",
     releaseDescription: "Eigendom vrijgeven nadat je worker is gestopt met schrijven?",
     recover: "Verlopen claim herstellen",
-    recoverHelp:
-      "Herstellen vereist toegang als projectbeheerder en een verlopen claim. Stop eerst de worker.",
+    recoverHelp: "Bevestig eerst dat de worker is gestopt.",
     reason: "Reden voor herstel",
     confirmed: "Ik heb bevestigd dat de worker is gestopt",
     submit: "Eigendom herstellen",

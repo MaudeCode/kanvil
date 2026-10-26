@@ -62,8 +62,7 @@ export default {
     release: "Götürməmi burax",
     releaseDescription: "İşçiniz yazmağı dayandırdıqdan sonra sahiblik buraxılsın?",
     recover: "Müddəti bitmiş götürməni bərpa et",
-    recoverHelp:
-      "Bərpa üçün layihə administratoru girişi və müddəti bitmiş götürmə tələb olunur. Əvvəlcə işçini dayandırın.",
+    recoverHelp: "Əvvəlcə işçinin dayandığını təsdiqləyin.",
     reason: "Bərpa səbəbi",
     confirmed: "İşçinin dayandığını təsdiqləmişəm",
     submit: "Sahibliyi bərpa et",

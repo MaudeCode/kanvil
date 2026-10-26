@@ -63,8 +63,7 @@ export default {
     releaseDescription:
       "Libérer la prise en charge une fois que votre exécutant a cessé d’écrire ?",
     recover: "Récupérer la prise en charge expirée",
-    recoverHelp:
-      "La récupération exige un accès administrateur au projet et une prise en charge expirée. Arrêtez d’abord l’exécutant.",
+    recoverHelp: "Vérifiez d’abord que l’exécutant s’est arrêté.",
     reason: "Motif de la récupération",
     confirmed: "J’ai vérifié que l’exécutant s’est arrêté",
     submit: "Récupérer la prise en charge",

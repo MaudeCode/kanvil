@@ -95,6 +95,8 @@ Signed-in sessions and MCP OAuth clients may make `KANVIL_SESSION_WRITE_LIMIT` w
 
 API keys have a separate limit of 600 requests per minute per key across HTTP and MCP. Set `KANVIL_API_KEY_RATE_LIMIT_ENABLED=false` in `.env` and restart the server (with Compose, `docker compose up -d app`) to disable that limit for every existing and new API key. Restore `true` to enforce it again. This setting does not change session, MCP OAuth, or sign-in limits, and key expiration, revocation, scopes, and account permissions still apply.
 
+Set `KANVIL_CLAIM_MAX_LEASE_SECONDS` in `.env` to change the maximum initial or renewed worker claim lease. The default is `86400` (24 hours); valid values are integers from `30` to `2147483647` seconds. Restart the server after changing it; with Compose, run `docker compose up -d app`. Omitting `leaseSeconds` requests 300 seconds, capped by this setting. Lowering the setting does not shorten existing claims, but their next renewal must use the new maximum. Expired claims can be explicitly recovered by callers with claim scope and ticket write permission after confirming the old worker stopped, without administrator intervention. A worker can pass `reschedule: true` and the current `expectedVersion` to recovery, then acquire a new claim, without needing a human to reset the ticket.
+
 ## PocketID / OIDC
 
 Create a confidential OIDC client in PocketID, enable PKCE, and register:

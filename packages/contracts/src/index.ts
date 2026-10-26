@@ -114,6 +114,9 @@ export const stateTones: Record<(typeof states)[number], keyof typeof palettes.l
 const id = z.string().min(1).max(80);
 const timestamp = z.iso.datetime();
 const version = z.number().int().positive();
+// A signed 32-bit second count keeps even the largest lease within JavaScript's date range.
+export const claimLeaseSecondsSchema = z.number().int().min(30).max(2_147_483_647);
+export const defaultClaimMaxLeaseSeconds = 86400;
 const text = z.string().trim().min(1);
 // PostgreSQL rejects year 0, which the ISO grammar allows. Start and due dates share it.
 export const dueDate = z.iso
@@ -3103,7 +3106,7 @@ export const operations = {
         ...mutation,
         workerId: text.max(200),
         expectedVersion: version,
-        leaseSeconds: z.number().int().min(30).max(3600).default(300),
+        leaseSeconds: claimLeaseSecondsSchema.optional(),
       })
       .strict(),
     claimSchema,
@@ -3117,7 +3120,7 @@ export const operations = {
       .extend({
         ...mutation,
         claimId: z.uuid(),
-        leaseSeconds: z.number().int().min(30).max(3600).default(300),
+        leaseSeconds: claimLeaseSecondsSchema.optional(),
       })
       .strict(),
     claimSchema,
@@ -3141,13 +3144,19 @@ export const operations = {
         claimId: z.uuid(),
         reason: text.min(10).max(2000),
         confirmedStopped: z.literal(true),
+        reschedule: z.boolean().optional(),
+        expectedVersion: version.optional(),
       })
-      .strict(),
+      .strict()
+      .refine((input) => !input.reschedule || input.expectedVersion !== undefined, {
+        message: "expectedVersion is required to reschedule recovered work",
+        path: ["expectedVersion"],
+      }),
     okSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim/recover",
-    "admin",
-    "Recover an expired claim only after confirming the worker stopped.",
+    "claim",
+    "Recover an expired claim after confirming the worker stopped. Optionally reschedule it to To do at its expectedVersion.",
   ),
   set_subscription: op(
     ticketInput.extend({ ...mutation, enabled: z.boolean() }).strict(),

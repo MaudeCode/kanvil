@@ -538,6 +538,73 @@ describe("HTTP, realtime, and MCP", () => {
       code: "account_disabled",
     });
   });
+  it("applies deployment claim lease caps through HTTP clients and MCP", async () => {
+    const api = client(),
+      project = await newProject();
+    const token = await credential(project.id, ["read", "claim"]);
+    const claimApi = createClient({
+      baseUrl: fixture.config.KANVIL_URL,
+      headers: () => ({ Authorization: `Bearer ${token.key}` }),
+      fetch: async (requestInput, init) => application.app.fetch(new Request(requestInput, init)),
+    });
+    for (const maximum of [86400, 172800, 60]) {
+      if (maximum !== 86400) {
+        await application.close();
+        application = await createApplication(fixture.database, {
+          ...fixture.config,
+          KANVIL_CLAIM_MAX_LEASE_SECONDS: maximum,
+        });
+      }
+      const ticket = await api.call("create_ticket", {
+        projectId: project.id,
+        title: "Lease cap",
+        description: "Exercise runtime claim policy",
+        acceptanceCriteria: "Both transports honor the configured cap",
+        difficulty: "med",
+        automationReady: true,
+      });
+      const input = { projectId: project.id, ticketId: ticket.id };
+      await expect(
+        claimApi.call("claim_ticket", {
+          ...input,
+          expectedVersion: 1,
+          workerId: "http-worker",
+          leaseSeconds: maximum + 1,
+        }),
+      ).rejects.toMatchObject({ code: "validation_error" });
+      const claim = await claimApi.call("claim_ticket", {
+        ...input,
+        expectedVersion: 1,
+        workerId: "http-worker",
+        leaseSeconds: maximum,
+      });
+      const sdk = new Client({ name: "claim-cap-test", version: "1.0.0" });
+      const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+        fetch: async (requestInput, init) => application.app.fetch(new Request(requestInput, init)),
+      });
+      try {
+        await sdk.connect(transport);
+        const args = { ...input, claimId: claim.id };
+        expect(
+          (
+            await sdk.callTool({
+              name: "renew_claim",
+              arguments: { ...args, leaseSeconds: maximum + 1 },
+            })
+          ).isError,
+        ).toBe(true);
+        const renewed = await sdk.callTool({
+          name: "renew_claim",
+          arguments: { ...args, leaseSeconds: maximum },
+        });
+        expect(renewed.isError).not.toBe(true);
+        expect(renewed.structuredContent).toMatchObject({ result: { id: claim.id } });
+      } finally {
+        await sdk.close();
+      }
+    }
+  });
   it.each([false, true])(
     "disables API-key rate limits for existing and new keys across HTTP and MCP, global=%s",
     async (global) => {

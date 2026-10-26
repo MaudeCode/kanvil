@@ -4,7 +4,13 @@ import { connect, createServer } from "node:net";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { createHttpSender, DeliveryError } from "../../apps/server/src/adapters/outbound.ts";
 import { watchBoundaries } from "./boundaries.ts";
-import { reconcile, requiredLayers, type CaseRecord, type LayerReport } from "./policy.ts";
+import {
+  familyOf,
+  reconcile,
+  requiredLayers,
+  type CaseRecord,
+  type LayerReport,
+} from "./policy.ts";
 
 // This file is a fast family: the guard allows it no real boundary. Each case that widens or
 // trips the guard on purpose clears what it recorded and restores that policy afterwards.
@@ -107,23 +113,29 @@ const outbound = "apps/server/src/adapters/outbound.test.ts",
   branding = "e2e/branding.spec.ts";
 
 const local = (cases: CaseRecord[]) => [report("local-vitest", cases)];
+const domainCases = familyOf(domain)?.cases[domain];
+if (!domainCases) throw new Error("The domain test family must be classified");
 
 describe("accounting reconciliation", () => {
   it("accepts fast cases and a classified family at its bound", () => {
-    const cases = Array.from({ length: 33 }, (_, index) => passed(domain, `case ${index}`));
+    const cases = Array.from({ length: domainCases }, (_, index) =>
+      passed(domain, `case ${index}`),
+    );
     expect(reconcile(local([passed(outbound, "fast"), ...cases]), [])).toEqual(
       expect.not.arrayContaining([expect.stringContaining(domain)]),
     );
   });
   it("refuses an expanded family and an unclassified case that reached a real boundary", () => {
-    const cases = Array.from({ length: 34 }, (_, index) => passed(domain, `case ${index}`));
+    const cases = Array.from({ length: domainCases + 1 }, (_, index) =>
+      passed(domain, `case ${index}`),
+    );
     const unclassified = {
       ...passed("apps/server/src/new.test.ts", "opens a socket"),
       boundaries: { loopback: 1 },
     };
     const problems = reconcile(local([...cases, unclassified]), []);
     expect(problems).toContainEqual(
-      expect.stringMatching(/domain\.test\.ts collected 34 heavyweight cases/),
+      expect.stringContaining(`domain.test.ts collected ${domainCases + 1} heavyweight cases`),
     );
     expect(problems).toContainEqual(
       expect.stringMatching(/new\.test\.ts › opens a socket uses real infrastructure/),
@@ -153,7 +165,7 @@ describe("accounting reconciliation", () => {
       /branding\.spec\.ts › serves ran in both browser-1 and browser-2/,
       /outbound\.test\.ts › skipped skipped in unit/,
       /outbound\.test\.ts › cancelled notRun in unit/,
-      /domain\.test\.ts completed 0 of its 33 required cases/,
+      new RegExp(`domain\\.test\\.ts completed 0 of its ${domainCases} required cases`),
     ])
       expect(problems).toContainEqual(expect.stringMatching(expected));
   });

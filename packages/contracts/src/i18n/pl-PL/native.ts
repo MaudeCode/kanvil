@@ -120,8 +120,7 @@ export default {
     },
     recover: {
       action: "Odzyskaj wygasłe przejęcie",
-      explanation:
-        "Tylko administrator projektu może odzyskać wygasłe przejęcie. Najpierw potwierdź, że wykonawca został zatrzymany.",
+      explanation: "Najpierw potwierdź, że wykonawca został zatrzymany.",
       reason: "Powód odzyskania",
       confirm: "Wykonawca zatrzymany · odzyskaj",
     },

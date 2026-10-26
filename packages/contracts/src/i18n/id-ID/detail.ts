@@ -62,8 +62,7 @@ export default {
     release: "Lepaskan klaim saya",
     releaseDescription: "Lepaskan kepemilikan setelah pekerja Anda berhenti menulis?",
     recover: "Pulihkan klaim kedaluwarsa",
-    recoverHelp:
-      "Pemulihan memerlukan akses administrator proyek dan klaim yang sudah kedaluwarsa. Hentikan pekerja terlebih dahulu.",
+    recoverHelp: "Pastikan pekerja sudah berhenti terlebih dahulu.",
     reason: "Alasan pemulihan",
     confirmed: "Saya sudah memastikan pekerja telah berhenti",
     submit: "Pulihkan kepemilikan",

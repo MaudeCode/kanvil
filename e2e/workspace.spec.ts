@@ -9,6 +9,7 @@ import {
   openSaveView,
   searchTickets,
   settingsLink,
+  appearance,
 } from "./controls.ts";
 import { expect, test } from "./test.ts";
 
@@ -324,4 +325,118 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     ),
   ).toBe(false);
   expect(errors).toEqual([]);
+});
+
+test("writers can open expired claim recovery without administrator access", async ({
+  page,
+  browser,
+}) => {
+  await signIn(page);
+  const origin = new URL(page.url()).origin;
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "RECOVER", name: "Claim recovery" },
+    })
+  ).json();
+  const email = "claim-writer@example.test",
+    password = "Claim writer browser password 234!";
+  expect(
+    (
+      await page.request.post("/api/auth/admin/create-user", {
+        headers: { Origin: origin },
+        data: { email, password, name: "Claim writer", role: "user" },
+      })
+    ).ok(),
+  ).toBe(true);
+  const membership = (role: string) =>
+    page.request.post(`/api/v1/projects/${project.id}/members`, { data: { email, role } });
+  expect((await membership("writer")).ok()).toBe(true);
+  const ticket = await (
+    await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: {
+        title: "Recover stalled ownership",
+        description: "A stopped worker must not require an administrator.",
+        acceptanceCriteria: "Authorized writers can explicitly recover expired claims.",
+        difficulty: "med",
+        automationReady: true,
+      },
+    })
+  ).json();
+  expect(
+    (
+      await page.request.post(`/api/v1/projects/${project.id}/tickets/${ticket.id}/claim`, {
+        data: { workerId: "stopped-worker", expectedVersion: 1 },
+      })
+    ).ok(),
+  ).toBe(true);
+  const context = await browser.newContext({ baseURL: origin });
+  try {
+    const writer = await context.newPage();
+    expect(
+      (
+        await writer.request.post("/api/auth/sign-in/email", {
+          headers: { Origin: origin },
+          data: { email, password },
+        })
+      ).ok(),
+    ).toBe(true);
+    let expired = true;
+    // The domain suite proves expiry and recovery against PostgreSQL; this case proves the role-gated DOM.
+    await writer.route(`**/api/v1/projects/${project.id}/tickets/${ticket.id}`, async (route) => {
+      const response = await route.fetch(),
+        body = await response.json();
+      if (expired) {
+        body.claim.expiresAt = "2020-01-01T00:00:00.000Z";
+        body.canReleaseClaim = false;
+        body.readiness = {
+          ready: false,
+          reasons: [
+            {
+              code: "claim_recovery_required",
+              message: "Confirm the previous worker stopped before recovering ownership",
+            },
+          ],
+        };
+      }
+      await route.fulfill({ response, json: body });
+    });
+    await writer.goto(`/projects/${project.id}/tickets/${ticket.id}`);
+    const recover = writer.getByRole("button", { name: "Recover expired claim", exact: true });
+    await expect(recover).toBeVisible();
+    for (const mode of ["Light", "Dark"] as const) {
+      await appearance(writer, mode);
+      for (const width of [1440, 390]) {
+        await writer.setViewportSize({ width, height: 1000 });
+        await recover.click();
+        const dialog = writer.getByRole("dialog", { name: "Recover expired claim" });
+        await expect(
+          dialog.getByText("Confirm the worker has stopped first.", { exact: true }),
+        ).toBeVisible();
+        await dialog
+          .getByLabel("Recovery reason", { exact: true })
+          .fill("Confirmed the old worker process has stopped");
+        await dialog
+          .getByRole("checkbox", { name: "I have confirmed the worker has stopped" })
+          .check();
+        await expect(
+          dialog.getByRole("button", { name: "Recover ownership", exact: true }),
+        ).toBeEnabled();
+        await writer.screenshot({
+          path: `test-results/claim-recovery-${mode.toLowerCase()}-${width}.png`,
+          fullPage: false,
+          animations: "disabled",
+        });
+        await writer.keyboard.press("Escape");
+      }
+    }
+    expired = false;
+    await writer.reload();
+    await expect(recover).toHaveCount(0);
+    expired = true;
+    expect((await membership("reader")).ok()).toBe(true);
+    await writer.reload();
+    await expect(recover).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });

@@ -62,7 +62,7 @@ export default {
     release: "释放我的认领",
     releaseDescription: "确认执行者已停止写入后释放所有权？",
     recover: "收回已过期的认领",
-    recoverHelp: "收回认领需要项目管理员权限，且认领已过期。请先停止执行者。",
+    recoverHelp: "请先确认执行者已停止。",
     reason: "收回原因",
     confirmed: "我已确认执行者已停止",
     submit: "收回所有权",
