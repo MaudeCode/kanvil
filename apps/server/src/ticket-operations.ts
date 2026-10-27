@@ -268,9 +268,27 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   const current = await getTicket(ctx, input.ticketId);
   assertVersion(current, input.expectedVersion, "ticket");
   await assertWorkerClaim(ctx, current, input.claimId);
-  await validateReferences(ctx, current.id, input.changes);
-  const state = await resolveState(ctx, input.changes, current);
-  const { startAt, dueAt, customFields, ...changes } = input.changes,
+  return persistTicketChanges(ctx, current, input.changes);
+}
+// Definition administration changes only labels and never takes or clears worker ownership.
+export async function updateTicketLabelsForDefinition(
+  ctx: Context,
+  input: Pick<ParsedInput<"update_ticket">, "ticketId" | "expectedVersion"> & { labels: string[] },
+) {
+  if (!can(ctx, "project.manage") && !can(ctx, "workspace.manage"))
+    fail(403, "forbidden", "Label administration permission is required");
+  const current = await getTicket(ctx, input.ticketId);
+  assertVersion(current, input.expectedVersion, "ticket");
+  return persistTicketChanges(ctx, current, { labels: input.labels });
+}
+async function persistTicketChanges(
+  ctx: Context,
+  current: typeof tickets.$inferSelect,
+  changes: ParsedInput<"update_ticket">["changes"],
+) {
+  await validateReferences(ctx, current.id, changes);
+  const state = await resolveState(ctx, changes, current);
+  const { startAt, dueAt, customFields, ...values } = changes,
     dates = dateColumns({ startAt, dueAt });
   assertSchedule(
     dates.startAt === undefined ? current.startAt : dates.startAt,
@@ -281,7 +299,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
     await ctx.db
       .update(tickets)
       .set({
-        ...changes,
+        ...values,
         ...state,
         ...dates,
         ...(customFields && {
@@ -305,7 +323,7 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
     data: {
       version: row.version,
       changedFields: [
-        ...new Set([...Object.keys(input.changes), ...(state ? ["status", "stateId"] : [])]),
+        ...new Set([...Object.keys(changes), ...(state ? ["status", "stateId"] : [])]),
       ],
     },
   };

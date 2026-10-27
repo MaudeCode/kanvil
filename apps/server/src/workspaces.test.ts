@@ -422,6 +422,244 @@ describe("workspace boundaries and inherited project access", () => {
       ),
     ).rejects.toMatchObject({ status: 404 });
   });
+  it.each(["project", "workspace"] as const)(
+    "administers %s labels without taking ticket worker claims",
+    async (scope) => {
+      const first = await project(),
+        second = scope === "workspace" ? await project() : first;
+      const label =
+        scope === "workspace"
+          ? await domain.execute(
+              "create_workspace_label",
+              { workspaceId: workspace.id, name: "managed" },
+              owner,
+            )
+          : await domain.execute(
+              "create_project_label",
+              { projectId: first.id, name: "managed" },
+              owner,
+            );
+      const admin = await domain.actor(owner.id, { ownerId: "label-admin", scopes: ["admin"] }),
+        worker = await domain.actor(owner.id, { ownerId: "ticket-worker", scopes: ["admin"] });
+      const rename = (actor: Actor, expectedVersion: number, name: string) =>
+        scope === "workspace"
+          ? domain.execute(
+              "update_workspace_label",
+              {
+                workspaceId: workspace.id,
+                labelId: label.id,
+                expectedVersion,
+                name,
+                color: "blue",
+              },
+              actor,
+            )
+          : domain.execute(
+              "update_project_label",
+              { projectId: first.id, labelId: label.id, expectedVersion, name, color: "blue" },
+              actor,
+            );
+      const remove = (actor: Actor, expectedVersion: number) =>
+        scope === "workspace"
+          ? domain.execute(
+              "delete_workspace_label",
+              { workspaceId: workspace.id, labelId: label.id, expectedVersion },
+              actor,
+            )
+          : domain.execute(
+              "delete_project_label",
+              { projectId: first.id, labelId: label.id, expectedVersion },
+              actor,
+            );
+      const selected = [];
+      for (const state of ["completed", "live", "expired"]) {
+        const projectId = state === "completed" ? first.id : second.id;
+        const ticket = await domain.execute(
+          "create_ticket",
+          {
+            projectId,
+            title: state,
+            labels: ["managed", "keep"],
+            description: "Synthetic claim-protected work.",
+            acceptanceCriteria: "Keep ownership and readiness.",
+            difficulty: "low",
+            automationReady: true,
+          },
+          owner,
+        );
+        const claim = await domain.execute(
+          "claim_ticket",
+          {
+            projectId,
+            ticketId: ticket.id,
+            expectedVersion: ticket.version,
+            workerId: `worker-${state}`,
+          },
+          worker,
+        );
+        if (state === "completed") {
+          const claimed = await domain.execute(
+            "get_ticket",
+            { projectId, ticketId: ticket.id },
+            owner,
+          );
+          await domain.execute(
+            "update_ticket",
+            {
+              projectId,
+              ticketId: ticket.id,
+              expectedVersion: claimed.ticket.version,
+              changes: { status: "done" },
+              claimId: claim.id,
+            },
+            worker,
+          );
+          await domain.execute(
+            "release_claim",
+            { projectId, ticketId: ticket.id, claimId: claim.id },
+            worker,
+          );
+        } else if (state === "expired") {
+          await fixture.database.pool.query(
+            "UPDATE claims SET expires_at = '2000-01-01' WHERE id = $1",
+            [claim.id],
+          );
+        }
+        selected.push(
+          await domain.execute("get_ticket", { projectId, ticketId: ticket.id }, owner),
+        );
+      }
+      const view = await domain.execute(
+        "save_view",
+        {
+          projectId: second.id,
+          name: "Managed work",
+          filters: { label: ["managed", "keep"], labelNot: ["ignore"], status: "todo" },
+        },
+        owner,
+      );
+      const feed = await domain.execute(
+        "create_calendar_feed",
+        {
+          projectId: second.id,
+          name: "Managed schedule",
+          labels: ["managed"],
+          timeZone: "UTC",
+        },
+        owner,
+      );
+      const cursors = await Promise.all(
+        [...new Set([first.id, second.id])].map(async (projectId) => ({
+          projectId,
+          cursor: BigInt((await domain.snapshot(owner, projectId)).cursor),
+        })),
+      );
+      await membership("writer");
+      const denied = await domain.actor(member.id, {
+        ownerId: "not-a-label-admin",
+        scopes: ["admin"],
+      });
+      await expect(rename(denied, label.version, "forbidden")).rejects.toMatchObject({
+        status: 403,
+      });
+      await expect(remove(denied, label.version)).rejects.toMatchObject({ status: 403 });
+      await expect(rename(admin, label.version + 1, "stale")).rejects.toMatchObject({
+        code: "version_conflict",
+      });
+      const renamed = await rename(admin, label.version, "renamed");
+      for (const before of selected) {
+        const after = await domain.execute(
+          "get_ticket",
+          { projectId: before.ticket.projectId, ticketId: before.ticket.id },
+          owner,
+        );
+        expect(after.ticket).toEqual({
+          ...before.ticket,
+          labels: ["renamed", "keep"],
+          version: before.ticket.version + 1,
+          updatedAt: after.ticket.updatedAt,
+        });
+        expect(after.claim).toEqual(before.claim);
+        await expect(
+          domain.execute(
+            "update_ticket",
+            {
+              projectId: after.ticket.projectId,
+              ticketId: after.ticket.id,
+              expectedVersion: after.ticket.version,
+              changes: { labels: ["worker-edit"] },
+            },
+            admin,
+          ),
+        ).rejects.toMatchObject({ code: "claim_conflict" });
+        await expect(
+          domain.execute(
+            "bulk_update_tickets",
+            {
+              projectId: after.ticket.projectId,
+              tickets: [{ ticketId: after.ticket.id, expectedVersion: after.ticket.version }],
+              changes: { labels: ["worker-edit"] },
+            },
+            admin,
+          ),
+        ).rejects.toMatchObject({ code: "claim_conflict" });
+      }
+      expect(
+        (await domain.execute("list_views", { projectId: second.id }, owner)).find(
+          (row) => row.id === view.id,
+        )?.filters,
+      ).toMatchObject({ label: ["renamed", "keep"], labelNot: ["ignore"], status: "todo" });
+      expect(
+        (await domain.execute("list_calendar_feeds", { projectId: second.id }, owner)).find(
+          (row) => row.id === feed.id,
+        )?.labels,
+      ).toEqual(["renamed"]);
+      await expect(remove(admin, label.version)).rejects.toMatchObject({
+        code: "version_conflict",
+      });
+      await remove(admin, renamed.version);
+      for (const before of selected) {
+        const after = await domain.execute(
+          "get_ticket",
+          { projectId: before.ticket.projectId, ticketId: before.ticket.id },
+          owner,
+        );
+        expect(after.ticket).toEqual({
+          ...before.ticket,
+          labels: ["keep"],
+          version: before.ticket.version + 2,
+          updatedAt: after.ticket.updatedAt,
+        });
+        expect(after.claim).toEqual(before.claim);
+      }
+      expect(
+        (await domain.execute("list_views", { projectId: second.id }, owner)).find(
+          (row) => row.id === view.id,
+        )?.filters,
+      ).toMatchObject({ label: ["keep"], labelNot: ["ignore"], status: "todo" });
+      // Deleting a feed label never widens the schedule it shares.
+      expect(
+        (await domain.execute("list_calendar_feeds", { projectId: second.id }, owner)).find(
+          (row) => row.id === feed.id,
+        )?.labels,
+      ).toEqual(["renamed"]);
+      for (const { projectId, cursor } of cursors) {
+        const events = (await domain.readEvents(owner, cursor, projectId)).items;
+        const changed = events.filter((event) => event.type === "ticket.updated");
+        expect(changed).toHaveLength(
+          selected.filter((row) => row.ticket.projectId === projectId).length * 2,
+        );
+        expect(
+          changed.every(
+            (event) => JSON.stringify(event.data.changedFields) === JSON.stringify(["labels"]),
+          ),
+        ).toBe(true);
+        expect(
+          events.filter((event) => event.type.startsWith("label.")).map((event) => event.type),
+        ).toEqual(["label.updated", "label.deleted"]);
+      }
+    },
+  );
   it("renames, adopts, and deletes workspace labels across projects in one versioned write", async () => {
     const first = await project(),
       second = await project();
@@ -495,9 +733,9 @@ describe("workspace boundaries and inherited project access", () => {
         owner,
       ),
     ).rejects.toMatchObject({ code: "version_conflict" });
-    // A claimed ticket blocks another agent's rename, and nothing in any project changes.
+    // Ticket ownership does not grant label administration; a missing admin scope rolls back.
     const claimer = await domain.actor(owner.id, { ownerId: "agent-a", scopes: ["admin"] });
-    const other = await domain.actor(owner.id, { ownerId: "agent-b", scopes: ["admin"] });
+    const other = await domain.actor(owner.id, { ownerId: "agent-b", scopes: ["write", "claim"] });
     const claim = await domain.execute(
       "claim_ticket",
       { projectId: second.id, ticketId: two.id, workerId: "a", expectedVersion: 2 },
@@ -515,7 +753,7 @@ describe("workspace boundaries and inherited project access", () => {
         },
         other,
       ),
-    ).rejects.toMatchObject({ code: "claim_conflict" });
+    ).rejects.toMatchObject({ status: 403, code: "insufficient_scope" });
     expect(await read(first.id, one.id)).toMatchObject({ labels: ["common", "local"], version: 2 });
     expect(
       (await domain.execute("list_workspace_labels", { workspaceId: workspace.id }, owner))[0],

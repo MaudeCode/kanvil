@@ -175,7 +175,7 @@ export const families: readonly Family[] = [
       "apps/server/src/workflow.test.ts": 6,
       "apps/server/src/workspace-ownership.test.ts": 5,
       "apps/server/src/workspace-roles.test.ts": 16,
-      "apps/server/src/workspaces.test.ts": 12,
+      "apps/server/src/workspaces.test.ts": 14,
     },
   },
   {
