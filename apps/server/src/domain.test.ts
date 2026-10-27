@@ -1085,6 +1085,83 @@ describe("ticket operations on PostgreSQL", () => {
     expect(events[1]!.id - events[0]!.id).toBe(1n);
     expect(events.map((event) => event.data.key)).toEqual([first.key, second.key]);
   });
+  it("bulk-edits a worker's claimed tickets with each claim and rejects any ownership gap whole", async () => {
+    const first = await ticket("Claimed one"),
+      second = await ticket("Claimed two"),
+      free = await ticket("Never claimed");
+    const scopes = ["read", "write", "claim"] as const;
+    const worker = await domain.actor(owner.id, { ownerId: "bulk-worker", scopes: [...scopes] });
+    const other = await domain.actor(owner.id, { ownerId: "other-worker", scopes: [...scopes] });
+    const claim = (current: typeof first) =>
+      domain.execute(
+        "claim_ticket",
+        { projectId: project.id, ticketId: current.id, workerId: "w", expectedVersion: 1 },
+        worker,
+      );
+    const [one, two] = [await claim(first), await claim(second)];
+    const owned = [
+      { ticketId: first.id, expectedVersion: 2, claimId: one.id },
+      { ticketId: second.id, expectedVersion: 2, claimId: two.id },
+      { ticketId: free.id, expectedVersion: 1 },
+    ];
+    const bulk = (tickets: typeof owned, actor: Actor) =>
+      domain.execute(
+        "bulk_update_tickets",
+        { projectId: project.id, tickets, changes: { priority: "urgent" } },
+        actor,
+      );
+    const state = async () =>
+      Promise.all(
+        [first, second, free].map(
+          async ({ id }) =>
+            (await domain.execute("get_ticket", { projectId: project.id, ticketId: id }, owner))
+              .ticket,
+        ),
+      ).then((rows) => rows.map(({ version, priority }) => [version, priority]));
+    const before = await state();
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    const [a, b, c] = owned;
+    for (const [tickets, actor, code] of [
+      [[a!, { ticketId: second.id, expectedVersion: 2 }, c!], worker, "claim_conflict"],
+      [[a!, { ...b!, claimId: one.id }, c!], worker, "claim_conflict"],
+      [[a!, { ...b!, claimId: crypto.randomUUID() }, c!], worker, "claim_conflict"],
+      [owned, other, "claim_conflict"],
+      [[a!, { ...b!, expectedVersion: 1 }, c!], worker, "version_conflict"],
+      [[a!, b!, { ...c!, claimId: one.id }], worker, "claim_conflict"],
+    ] as const)
+      await expect(bulk([...tickets], actor)).rejects.toMatchObject({ code });
+    await fixture.database.pool.query(
+      "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+      [two.id],
+    );
+    await expect(bulk(owned, worker)).rejects.toMatchObject({ code: "claim_conflict" });
+    await fixture.database.pool.query(
+      "UPDATE claims SET expires_at = now() + interval '1 hour' WHERE id = $1",
+      [two.id],
+    );
+    expect(await state()).toEqual(before);
+    expect((await domain.readEvents(owner, cursor, project.id)).items).toEqual([]);
+    const rows = await bulk(owned, worker);
+    expect(rows.map(({ id, version, priority }) => [id, version, priority])).toEqual([
+      [first.id, 3, "urgent"],
+      [second.id, 3, "urgent"],
+      [free.id, 2, "urgent"],
+    ]);
+    expect(
+      (await domain.readEvents(owner, cursor, project.id)).items.map((event) => event.ticketId),
+    ).toEqual([first.id, second.id, free.id]);
+    // A person's bulk edit needs no claim, as before.
+    const people = await domain.execute(
+      "bulk_update_tickets",
+      {
+        projectId: project.id,
+        tickets: rows.map(({ id, version }) => ({ ticketId: id, expectedVersion: version })),
+        changes: { priority: "low" },
+      },
+      owner,
+    );
+    expect(people.map(({ priority }) => priority)).toEqual(["low", "low", "low"]);
+  });
   it("deletes a selection atomically after validating every ticket", async () => {
     const parent = await ticket("Parent"),
       stays = await ticket("Child that stays"),

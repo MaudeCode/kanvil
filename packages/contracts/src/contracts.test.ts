@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { z } from "zod";
 import {
   capabilitiesOf,
   credentialInput,
@@ -197,6 +198,26 @@ describe("agent write contracts", () => {
     expect(
       operations.list_tickets.input.safeParse({ projectId: "p", limit: 1_000_000 }).success,
     ).toBe(false);
+  });
+  it("carries each selected ticket's worker claim through a bulk edit, HTTP, and MCP", () => {
+    const claimId = "10000000-0000-4000-8000-000000000000";
+    const changes = { priority: "high" as const };
+    const tickets = [
+      { ticketId: "a", expectedVersion: 2, claimId },
+      { ticketId: "b", expectedVersion: 1 },
+    ];
+    expect(
+      operations.bulk_update_tickets.input.parse({ projectId: "p", tickets, changes }).tickets,
+    ).toEqual(tickets);
+    expect(
+      operations.bulk_update_tickets.input.safeParse({
+        projectId: "p",
+        tickets: [{ ticketId: "a", expectedVersion: 2, claimId: "not-a-claim" }],
+        changes,
+      }).success,
+    ).toBe(false);
+    const schema = z.toJSONSchema(operations.bulk_update_tickets.input, { io: "input" });
+    expect(JSON.stringify(schema)).toContain('"claimId":{"type":"string","format":"uuid"');
   });
   it("leaves claim duration policy to the server and grants recovery through claim scope", () => {
     const input = {
