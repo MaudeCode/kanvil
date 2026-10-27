@@ -223,3 +223,60 @@ test("stable failure codes and messages exclude echoed secrets, payloads and tra
   expect(JSON.parse(redacted.stderr)).toMatchObject({ error: { code: "[redacted]" } });
   expect((await h.run(["task", "--help"])).stdout).toContain("task create");
 });
+
+test("claim recover sends only the registered recovery operation with explicit confirmation", async () => {
+  const h = await harness();
+  await h.configure();
+  expect((await h.run(["--help"])).stdout).toContain("claim recover");
+  const claimId = crypto.randomUUID();
+  const recovery = { claimId, reason: "Confirmed the old worker has stopped" };
+  for (const input of [
+    recovery,
+    { ...recovery, confirmedStopped: false },
+    { ...recovery, confirmedStopped: true, reschedule: true },
+    { ...recovery, confirmedStopped: true, reason: "short" },
+  ])
+    expect(
+      (await h.run(["claim", "recover", "CLI-1", "--input", JSON.stringify(input)])).code,
+    ).toBe(2);
+  const seen: { method: string | undefined; url: string; body: unknown }[] = [];
+  const request: typeof fetch = async (url, init) => {
+    seen.push({
+      method: init?.method,
+      url: url instanceof Request ? url.url : url.toString(),
+      body: JSON.parse(typeof init?.body === "string" ? init.body : "{}"),
+    });
+    return Response.json({ ok: true });
+  };
+  const requestId = crypto.randomUUID();
+  const result = await h.run(
+    [
+      "claim",
+      "recover",
+      "CLI-1",
+      "--expected-version",
+      "4",
+      "--request-id",
+      requestId,
+      "--json",
+      "--input",
+      "-",
+    ],
+    JSON.stringify({ ...recovery, confirmedStopped: true, reschedule: true }),
+    request,
+  );
+  expect(result).toMatchObject({ code: 0, stdout: '{"ok":true}\n' });
+  expect(seen).toEqual([
+    {
+      method: "POST",
+      url: "https://kanvil.example.test/api/v1/projects/project-a/tickets/CLI-1/claim/recover",
+      body: {
+        ...recovery,
+        confirmedStopped: true,
+        reschedule: true,
+        expectedVersion: 4,
+        requestId,
+      },
+    },
+  ]);
+});

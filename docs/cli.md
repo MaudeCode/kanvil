@@ -52,10 +52,18 @@ kanvil task update APP-12 --profile work --expected-version 3 \
 kanvil claim acquire APP-12 --profile work --input '{"expectedVersion":4,"workerId":"worker-1"}'
 kanvil claim renew APP-12 --profile work --input '{"claimId":"CLAIM_UUID","leaseSeconds":300}'
 kanvil claim release APP-12 --profile work --input '{"claimId":"CLAIM_UUID"}'
+kanvil claim recover APP-12 --profile work --expected-version 5 --input - <<'JSON'
+{
+  "claimId": "EXPIRED_CLAIM_UUID",
+  "reason": "Confirmed the old worker has stopped",
+  "confirmedStopped": true,
+  "reschedule": true
+}
+JSON
 kanvil task delete APP-12 --profile work --expected-version 7 --yes
 ```
 
-Use the version returned by a read or write. The CLI never fetches a newer version to bypass a conflict. Claims retain the server's readiness, ownership and lease rules; include `claimId` in an update when the operation requires it. Deletion requires an explicit version and `--yes`; noninteractive invocations receive no confirmation prompt.
+Use the version returned by a read or write. The CLI never fetches a newer version to bypass a conflict. Claims retain the server's readiness, ownership and lease rules; include `claimId` in an update when the operation requires it. Once a lease expires, renew and release refuse it; after confirming the old worker stopped, any writer with `claim` scope can run `claim recover` with the claim ID, a reason and `confirmedStopped: true`. Recovery never reschedules or reclaims on its own: pass `reschedule: true` with the ticket's current version to return it to To do, then read the ticket and `claim acquire` at the new version. `cancelActive: true` cancels a live claim only for project managers whose credential has `admin` scope. See [writes and ownership](api.md#writes-and-ownership) for the full policy. Deletion requires an explicit version and `--yes`; noninteractive invocations receive no confirmation prompt.
 
 The typed client retries a transport failure once for reads and receipted writes, using the identical request body, request ID and expected version. HTTP errors, including conflicts, are never retried. For a retry across CLI invocations, supply the original `--request-id UUID` (or `requestId` in JSON) and unchanged input. If both transport attempts fail, the outcome may be unknown: reconcile by reading or replaying that same request ID; do not submit a new write identity blindly. Requests have a finite transport timeout.
 
