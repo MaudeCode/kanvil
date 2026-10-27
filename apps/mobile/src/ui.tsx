@@ -4,6 +4,7 @@ import SegmentedControl from "@expo/ui/community/segmented-control";
 import { inlineItemCount } from "./pane-layout.ts";
 import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
+import { HeaderHeightContext } from "@react-navigation/elements";
 import {
   lazy,
   Suspense,
@@ -132,6 +133,7 @@ const ScrollingHeader = createContext<ReactNode>(null);
 export const GroupedSurface = createContext(false);
 const InsideGroupedSection = createContext(false);
 const ScrollEdgeAttachment = createContext<(() => void) | null>(null);
+const ScrollHeaderInset = createContext(0);
 
 function useScrollEdgeAttachment(onLayout: ComponentProps<typeof ScrollView>["onLayout"]) {
   const attach = useContext(ScrollEdgeAttachment),
@@ -182,6 +184,7 @@ export function ViewportPane({
   viewportWidth: number;
   visible?: boolean;
 }) {
+  const headerInset = useContext(ScrollHeaderInset);
   return (
     <View
       pointerEvents={visible ? "auto" : "none"}
@@ -197,7 +200,7 @@ export function ViewportPane({
         overflow: "hidden",
       }}
     >
-      {children}
+      <ScrollHeaderInset value={Math.max(0, headerInset - rect.y)}>{children}</ScrollHeaderInset>
     </View>
   );
 }
@@ -1433,11 +1436,13 @@ export function Heading({
   disclosure,
   leading,
   count,
+  sticky = false,
 }: {
   children: ReactNode;
   compact?: boolean;
   leading?: ReactNode;
   count?: number;
+  sticky?: boolean;
   disclosure?: {
     expanded: boolean;
     count?: number;
@@ -1481,7 +1486,7 @@ export function Heading({
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-        backgroundColor: pressed ? color.accentSurface : "transparent",
+        backgroundColor: pressed ? color.accentSurface : sticky ? color.surface : "transparent",
       })}
     >
       {disclosure.leading}
@@ -1623,6 +1628,8 @@ export function Screen({
     live = useContext(LiveStatus),
     boundary = !useContext(InsetsConsumed);
   const navigation = useContext(NavigationContext),
+    headerHeight = useContext(HeaderHeightContext) ?? 0,
+    inheritedScrollInset = useContext(ScrollHeaderInset),
     inheritedHeader = useContext(ScrollingHeader),
     inheritedEdges = useContext(ScrollEdgeAttachment),
     inheritedGroup = useContext(InsideGroupedSection),
@@ -1685,42 +1692,46 @@ export function Screen({
         {background && (
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
-        <ContentArea
-          enabled={!!navigation && safeArea}
-          allowDivision={allowDivision}
-          scrollInsets={nativeScroll}
+        <ScrollHeaderInset
+          value={boundary ? (nativeScroll ? headerHeight : 0) : inheritedScrollInset}
         >
-          <InsideGroupedSection value={boundary ? false : inheritedGroup}>
-            <GroupedSurface value={groupedSurface}>
-              <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
-                <ScrollingHeader value={top}>
-                  <PaddedContent value={scroll}>
-                    {scroll ? (
-                      <Scroll
-                        ref={scrollRef}
-                        keyboardShouldPersistTaps="handled"
-                        keyboardDismissMode="interactive"
-                        contentContainerStyle={{
-                          paddingHorizontal: 16,
-                          paddingTop: 12,
-                          paddingBottom: 40,
-                          gap: 12,
-                          width: "100%",
-                          maxWidth: navigation ? 720 : 560,
-                          alignSelf: "center",
-                        }}
-                      >
-                        {children}
-                      </Scroll>
-                    ) : (
-                      children
-                    )}
-                  </PaddedContent>
-                </ScrollingHeader>
-              </ScrollEdgeAttachment>
-            </GroupedSurface>
-          </InsideGroupedSection>
-        </ContentArea>
+          <ContentArea
+            enabled={!!navigation && safeArea}
+            allowDivision={allowDivision}
+            scrollInsets={nativeScroll}
+          >
+            <InsideGroupedSection value={boundary ? false : inheritedGroup}>
+              <GroupedSurface value={groupedSurface}>
+                <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
+                  <ScrollingHeader value={top}>
+                    <PaddedContent value={scroll}>
+                      {scroll ? (
+                        <Scroll
+                          ref={scrollRef}
+                          keyboardShouldPersistTaps="handled"
+                          keyboardDismissMode="interactive"
+                          contentContainerStyle={{
+                            paddingHorizontal: 16,
+                            paddingTop: 12,
+                            paddingBottom: 40,
+                            gap: 12,
+                            width: "100%",
+                            maxWidth: navigation ? 720 : 560,
+                            alignSelf: "center",
+                          }}
+                        >
+                          {children}
+                        </Scroll>
+                      ) : (
+                        children
+                      )}
+                    </PaddedContent>
+                  </ScrollingHeader>
+                </ScrollEdgeAttachment>
+              </GroupedSurface>
+            </InsideGroupedSection>
+          </ContentArea>
+        </ScrollHeaderInset>
       </View>
     </ImageSurface>
   );
@@ -1825,6 +1836,7 @@ export function List<T>({
   onRefresh?: () => Promise<unknown>;
 }) {
   const onLayout = useScrollEdgeAttachment(props.onLayout);
+  const headerInset = useContext(ScrollHeaderInset);
   const [refreshing, setRefreshing] = useState(false),
     header = useContext(ScrollingHeader);
   const original = props.ListHeaderComponent;
@@ -1855,6 +1867,14 @@ export function List<T>({
         keyboardShouldPersistTaps="handled"
         {...scrollInsetsDefaults}
         {...props}
+        {...(props.stickyHeaderIndices?.length
+          ? {
+              stickyHeaderConfig: {
+                ...props.stickyHeaderConfig,
+                offset: props.stickyHeaderConfig?.offset ?? headerInset,
+              },
+            }
+          : {})}
         onLayout={onLayout}
         ListHeaderComponent={listHeader}
         // Recycled rows memoize data; renderer state also owns selection and active styling.

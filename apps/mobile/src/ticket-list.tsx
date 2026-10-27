@@ -808,6 +808,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : (
       <List
         data={entries}
+        stickyHeaderIndices={entries.flatMap((entry, index) => ("heading" in entry ? [index] : []))}
         ListHeaderComponent={collectionHeader}
         {...(initial?.scrollOffset === undefined
           ? {}
@@ -833,6 +834,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           ) : (
             <Heading
               compact
+              sticky
               disclosure={{
                 expanded: !collapsed.has(item.sectionId),
                 count: item.count,
