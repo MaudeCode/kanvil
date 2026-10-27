@@ -6,7 +6,7 @@ import {
   ApiError,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
-import { createHeaderAction } from "./navigation-actions.tsx";
+import { ticketHeaderItems } from "./navigation-actions.tsx";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
@@ -78,31 +78,20 @@ export function TicketContent({
       nativeHeaderOptions({
         title: result.data?.ticket.key ?? t("native.screen.ticket"),
         unstable_headerRightItems: () =>
-          result.data
-            ? [
-                ...(access.canWrite
-                  ? [
-                      createHeaderAction(
-                        t("common.action.edit"),
-                        () => navigation.navigate("Edit", { projectId, ticketId }),
-                        { type: "sfSymbol", name: "square.and.pencil" },
-                        false,
-                        { visibilityPriority: "high", identifier: "ticket-edit" },
-                      ),
-                    ]
-                  : []),
-                createHeaderAction(
-                  t("ticket.selection.more"),
-                  () => setActions(true),
-                  {
-                    type: "sfSymbol",
-                    name: "ticket",
-                  },
-                  false,
-                  { visibilityPriority: "low", identifier: "ticket-actions" },
-                ),
-              ]
-            : [],
+          ticketHeaderItems(
+            !result.data || access.canWrite
+              ? {
+                  title: t("common.action.edit"),
+                  onPress: () => navigation.navigate("Edit", { projectId, ticketId }),
+                  disabled: !result.data || !access.canWrite,
+                }
+              : undefined,
+            {
+              title: t("ticket.selection.more"),
+              onPress: () => setActions(true),
+              disabled: !result.data,
+            },
+          ),
       }),
     );
   }, [preview, navigation, projectId, ticketId, result.data, access.canWrite]);

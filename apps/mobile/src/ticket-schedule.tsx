@@ -161,6 +161,7 @@ export function TicketSchedule({
       >
         <Button
           compact
+          plain
           title=""
           accessibilityLabel={t(
             layout === "calendar"
@@ -175,9 +176,15 @@ export function TicketSchedule({
           }
           onPress={() => moveAnchor(shiftAnchor(layout, anchor, -1))}
         />
-        <Button compact title={t("ticket.schedule.today")} onPress={() => moveAnchor(today)} />
         <Button
           compact
+          plain
+          title={t("ticket.schedule.today")}
+          onPress={() => moveAnchor(today)}
+        />
+        <Button
+          compact
+          plain
           title=""
           accessibilityLabel={t(
             layout === "calendar" ? "ticket.schedule.nextMonth" : "ticket.schedule.nextWeeks",
@@ -440,26 +447,43 @@ function CalendarMonth({
                     justifyContent: "center",
                     gap: 3,
                     borderRadius: 8,
-                    borderWidth: isToday ? 1 : 0,
-                    borderColor: color.accent,
-                    backgroundColor: active || pressed ? color.accentSurface : "transparent",
+                    backgroundColor: pressed ? color.accentSurface : "transparent",
                     opacity: day.getMonth() === anchor.getMonth() ? 1 : 0.45,
                   })}
                 >
-                  <Text
+                  <View
                     style={{
-                      color: active || isToday ? color.accent : color.foreground,
-                      fontSize: 16,
-                      fontWeight: active || isToday ? "600" : "400",
+                      minWidth: 34,
+                      minHeight: 34,
+                      paddingHorizontal: 6,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 999,
+                      backgroundColor: active ? color.accent : "transparent",
                     }}
                   >
-                    {formatNumber(day.getDate())}
-                  </Text>
-                  {count > 0 && (
-                    <Text style={{ color: color.accent, fontSize: 10, fontWeight: "600" }}>
-                      {formatNumber(count)}
+                    <Text
+                      style={{
+                        color: active
+                          ? color.accentForeground
+                          : isToday
+                            ? color.accent
+                            : color.foreground,
+                        fontWeight: active || isToday ? "600" : "400",
+                      }}
+                    >
+                      {formatNumber(day.getDate())}
                     </Text>
-                  )}
+                  </View>
+                  <View
+                    accessible={false}
+                    style={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor: count ? color.accent : "transparent",
+                    }}
+                  />
                 </Pressable>
               );
             })}

@@ -1,5 +1,10 @@
 import { hasAdminRole } from "@kanvil/contracts";
-import { createHeaderAction, projectHeaderItems } from "./navigation-actions.tsx";
+import {
+  createHeaderAction,
+  createHeaderMenu,
+  projectHeaderItems,
+  ticketHeaderItems,
+} from "./navigation-actions.tsx";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -56,6 +61,7 @@ import {
   Heading,
   Loading,
   Screen,
+  GroupedSurface,
   Sheet,
   usePalette,
 } from "./ui.tsx";
@@ -173,7 +179,7 @@ function ServerSetup({
     [pending, setPending] = useState(false);
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <Screen>
+      <Screen grouped>
         <Brand />
         <Field
           label={t("native.server.url")}
@@ -304,7 +310,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   if (flow)
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <Screen>
+        <Screen grouped>
           <Brand />
           <Heading>
             {flow === "reset" ? t("common.signIn.resetTitle") : t("common.signIn.codeTitle")}
@@ -378,7 +384,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     );
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <Screen>
+      <Screen grouped>
         <Brand />
         <Heading>{setup ? t("native.login.setupTitle") : t("native.login.signIn")}</Heading>
         <Body muted>{baseUrl}</Body>
@@ -747,6 +753,9 @@ function BrowsingLayout({
 }) {
   return <MainNavigation value={navigation}>{children}</MainNavigation>;
 }
+function GroupedLayout({ children }: { children: ReactNode }) {
+  return <GroupedSurface value>{children}</GroupedSurface>;
+}
 function BrowsingStack({
   tab,
   onDisconnect,
@@ -770,7 +779,7 @@ function BrowsingStack({
       screenOptions={nativeHeaderOptions({
         headerShadowVisible: false,
         headerTintColor: color.accent,
-        headerTitleStyle: { fontSize: 17, fontWeight: "600" },
+        headerTitleStyle: { color: color.foreground, fontWeight: "600" },
         headerBackButtonDisplayMode: "minimal",
         headerBackVisible: true,
         contentStyle: { backgroundColor: color.surface },
@@ -789,11 +798,14 @@ function BrowsingStack({
           ) : tab === "Search" ? (
             <Search key={workspace.active?.id} />
           ) : (
-            <Settings onDisconnect={onDisconnect} />
+            <GroupedSurface value>
+              <Settings onDisconnect={onDisconnect} />
+            </GroupedSurface>
           )
         }
       </Stack.Screen>
       <Stack.Group
+        screenLayout={GroupedLayout}
         screenOptions={({ navigation }) =>
           nativeHeaderOptions({
             presentation: "modal",
@@ -822,7 +834,30 @@ function BrowsingStack({
           options={{ title: t("shell.workspace.new") }}
         />
       </Stack.Group>
-      <Stack.Screen name="Tickets" getId={({ params }) => params.projectId}>
+      <Stack.Screen
+        name="Tickets"
+        getId={({ params }) => params.projectId}
+        options={({ route, navigation }) =>
+          nativeHeaderOptions({
+            title: route.params.name ?? t("ticket.list.tickets"),
+            unstable_headerRightItems: () => [
+              createHeaderAction(
+                t("native.screen.newTicket"),
+                () => navigation.navigate("Edit", { projectId: route.params.projectId }),
+                { type: "sfSymbol", name: "plus" },
+                true,
+                { identifier: "ticket-create" },
+              ),
+              createHeaderMenu(
+                t("ticket.list.views"),
+                { type: "sfSymbol", name: "rectangle.3.group" },
+                [],
+                { identifier: "ticket-views", visibilityPriority: "default" },
+              ),
+            ],
+          })
+        }
+      >
         {(props) => (
           <Tickets
             key={`${props.route.params.projectId}:${props.route.params.collection ?? "all"}`}
@@ -833,31 +868,46 @@ function BrowsingStack({
       <Stack.Screen
         name="Ticket"
         component={TicketDetail}
-        options={{ title: t("native.screen.ticket") }}
+        options={({ route, navigation }) =>
+          nativeHeaderOptions({
+            title: t("native.screen.ticket"),
+            unstable_headerRightItems: () =>
+              ticketHeaderItems(
+                {
+                  title: t("common.action.edit"),
+                  onPress: () => navigation.navigate("Edit", route.params),
+                  disabled: true,
+                },
+                { title: t("ticket.selection.more"), onPress: () => {}, disabled: true },
+              ),
+          })
+        }
       />
-      <Stack.Screen
-        name="WorkspaceSettings"
-        component={WorkspaceSettings}
-        options={{ title: t("shell.workspace.settings") }}
-      />
-      <Stack.Screen
-        name="ProjectSettings"
-        component={ProjectSettings}
-        options={{ title: t("shell.settingsNav.projectSettings") }}
-      />
-      <Stack.Screen name="AccountSettings" options={{ title: t("shell.page.settings") }}>
-        {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
-      </Stack.Screen>
-      <Stack.Screen
-        name="Administration"
-        component={Administration}
-        options={{ title: t("shell.settingsNav.administration") }}
-      />
-      <Stack.Screen
-        name="Import"
-        component={ImportProject}
-        options={{ title: t("admin.import.title") }}
-      />
+      <Stack.Group screenLayout={GroupedLayout}>
+        <Stack.Screen
+          name="WorkspaceSettings"
+          component={WorkspaceSettings}
+          options={{ title: t("shell.workspace.settings") }}
+        />
+        <Stack.Screen
+          name="ProjectSettings"
+          component={ProjectSettings}
+          options={{ title: t("shell.settingsNav.projectSettings") }}
+        />
+        <Stack.Screen name="AccountSettings" options={{ title: t("shell.page.settings") }}>
+          {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
+        </Stack.Screen>
+        <Stack.Screen
+          name="Administration"
+          component={Administration}
+          options={{ title: t("shell.settingsNav.administration") }}
+        />
+        <Stack.Screen
+          name="Import"
+          component={ImportProject}
+          options={{ title: t("admin.import.title") }}
+        />
+      </Stack.Group>
     </Stack.Navigator>
   );
 }

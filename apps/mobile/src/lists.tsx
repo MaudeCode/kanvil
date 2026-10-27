@@ -195,7 +195,7 @@ export function Projects({ picker = false }: { picker?: boolean }) {
               onClear={() => changeQuery("")}
             />
           )}
-          <ErrorNotice error={projects.error} />
+          <ErrorNotice error={projects.error} background={!!projects.data} />
         </>
       }
     >

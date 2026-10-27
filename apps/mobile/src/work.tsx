@@ -15,9 +15,7 @@ import {
   Button,
   Markdown,
   Sheet,
-  Choice,
   ErrorNotice,
-  Field,
   List,
   Loading,
   Row,
@@ -145,7 +143,7 @@ export function MyWork() {
               onClear={() => changeQuery("")}
             />
           )}
-          <ErrorNotice error={work.error ?? workspace.error} />
+          <ErrorNotice error={work.error ?? workspace.error} background={!!work.data} />
         </>
       }
     >
@@ -236,6 +234,42 @@ export function Search() {
       navigation.navigate("Ticket", { projectId: item.project.id, ticketId: item.ticket.id });
     else selectProject(item.project.id);
   }
+  const { options: searchOptions } = useHeaderSearch(
+    query,
+    setQuery,
+    t("shell.search.placeholder"),
+    true,
+  );
+  useLayoutEffect(
+    () =>
+      navigation.setOptions(
+        nativeHeaderOptions({
+          headerSearchBarOptions: searchOptions,
+          unstable_headerRightItems: () => [
+            createHeaderMenu(
+              t("ticket.filter.filters"),
+              { type: "sfSymbol", name: "line.3.horizontal.decrease" },
+              [
+                {
+                  type: "action",
+                  label: t("shell.search.tab.all"),
+                  state: type === undefined ? "on" : "off",
+                  onPress: () => setType(undefined),
+                },
+                ...searchResultTypes.map((value) => ({
+                  type: "action" as const,
+                  label: t(`shell.search.tab.${value}`),
+                  state: type === value ? ("on" as const) : ("off" as const),
+                  onPress: () => setType(value),
+                })),
+              ],
+              { identifier: "search-options", ...(type ? { badge: { value: 1 } } : {}) },
+            ),
+          ],
+        }),
+      ),
+    [navigation, searchOptions, type],
+  );
   const q = useDeferredValue(query.trim());
   const input = { workspaceId: workspace.active?.id, q, type, limit: 50 };
   const results = useInfiniteQuery({
@@ -254,33 +288,8 @@ export function Search() {
       scrollInsets
       header={
         <>
-          <WorkspaceScope>
-            <Choice
-              label={t("shell.page.search")}
-              compact
-              value={type ?? "all"}
-              options={[
-                { value: "all", label: t("shell.search.tab.all") },
-                ...searchResultTypes.map((value) => ({
-                  value,
-                  label: t(`shell.search.tab.${value}`),
-                })),
-              ]}
-              onChange={(value) => setType(searchResultTypes.find((item) => item === value))}
-            />
-          </WorkspaceScope>
-          <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
-            <Field
-              label={t("shell.search.field")}
-              labelHidden
-              variant="search"
-              placeholder={t("shell.search.placeholder")}
-              value={query}
-              onChangeText={setQuery}
-              returnKeyType="search"
-            />
-            <ErrorNotice error={results.error} />
-          </View>
+          <WorkspaceScope />
+          <ErrorNotice error={results.error} background={!!results.data} />
         </>
       }
     >

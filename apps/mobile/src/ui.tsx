@@ -18,12 +18,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
   type ComponentProps,
   type ComponentRef,
   type ReactNode,
 } from "react";
 import {
   ActivityIndicator,
+  InputAccessoryView,
   Switch,
   I18nManager,
   Button as SystemButton,
@@ -98,6 +100,7 @@ import { useConnection, useWorkspace, useAllProjects, useNow, LiveStatus } from 
 import { AfterSheet, useProjectNavigation } from "./navigation.ts";
 import {
   errorMessage,
+  ApiError,
   mentionScheme,
   isPresetColor,
   projectIconColors,
@@ -126,6 +129,27 @@ const ImageSurface = createContext(false);
 const InsetsConsumed = createContext(false);
 const PaddedContent = createContext(false);
 const ScrollingHeader = createContext<ReactNode>(null);
+export const GroupedSurface = createContext(false);
+const InsideGroupedSection = createContext(false);
+const ScrollEdgeAttachment = createContext<(() => void) | null>(null);
+
+function useScrollEdgeAttachment(onLayout: ComponentProps<typeof ScrollView>["onLayout"]) {
+  const attach = useContext(ScrollEdgeAttachment),
+    attached = useRef(false);
+  useLayoutEffect(() => {
+    if (attached.current) attach?.();
+  }, [attach]);
+  return useCallback<NonNullable<typeof onLayout>>(
+    (event) => {
+      if (!attached.current && attach) {
+        attached.current = true;
+        attach();
+      }
+      onLayout?.(event);
+    },
+    [attach, onLayout],
+  );
+}
 const scrollInsetsDefaults: Pick<
   ComponentProps<typeof ScrollView>,
   | "contentInsetAdjustmentBehavior"
@@ -638,12 +662,36 @@ export function MarkdownField({
     color = usePalette();
   const [selection, setSelection] = useState({ start: 0, end: 0 }),
     [preview, setPreview] = useState(false);
+  const accessoryId = useId();
   function apply(format: MarkdownFormat) {
     const edit = formatMarkdown(value, selection.start, selection.end, format);
     onChangeText(value.slice(0, edit.from) + edit.text + value.slice(edit.to));
     setSelection({ start: edit.start, end: edit.end });
     input.current?.focus();
   }
+  const toolbar = (
+    <ScrollView
+      horizontal
+      keyboardShouldPersistTaps="always"
+      showsHorizontalScrollIndicator={false}
+      style={{ backgroundColor: color.background, borderRadius: 10 }}
+      contentContainerStyle={{ gap: 0, paddingHorizontal: 2 }}
+    >
+      {markdownFormats.map((format) => (
+        <Button
+          compact
+          plain
+          dismissKeyboard={false}
+          key={format}
+          title=""
+          accessibilityLabel={formats[format].label}
+          leading={<TicketGlyph name={markdownIcons[format]} color={color.muted} />}
+          disabled={format === "link" && selection.start === selection.end}
+          onPress={() => apply(format)}
+        />
+      ))}
+    </ScrollView>
+  );
   return (
     <View style={{ gap: 6 }}>
       <View
@@ -667,34 +715,20 @@ export function MarkdownField({
           style={{ minWidth: 168, height: 32 }}
         />
       </View>
-      {!preview && (
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="always"
-          showsHorizontalScrollIndicator={false}
-          style={{ backgroundColor: color.background, borderRadius: 10 }}
-          contentContainerStyle={{ gap: 0, paddingHorizontal: 2 }}
-        >
-          {markdownFormats.map((format) => (
-            <Button
-              compact
-              plain
-              dismissKeyboard={false}
-              key={format}
-              title=""
-              accessibilityLabel={formats[format].label}
-              leading={<TicketGlyph name={markdownIcons[format]} color={color.muted} />}
-              disabled={format === "link" && selection.start === selection.end}
-              onPress={() => apply(format)}
-            />
-          ))}
-        </ScrollView>
-      )}
+      {!preview &&
+        (Platform.OS === "ios" ? (
+          <InputAccessoryView nativeID={accessoryId} backgroundColor={color.background}>
+            {toolbar}
+          </InputAccessoryView>
+        ) : (
+          toolbar
+        ))}
       {preview ? (
         <Markdown>{value}</Markdown>
       ) : (
         <Field
           ref={input}
+          inputAccessoryViewID={Platform.OS === "ios" ? accessoryId : undefined}
           label={label}
           labelHidden
           autoFocus={autoFocus}
@@ -850,6 +884,7 @@ export function Sheet({
               contentStyle: { backgroundColor: color.surface },
               headerStyle: { backgroundColor: color.surface },
               headerTintColor: color.accent,
+              headerTitleStyle: { color: color.foreground },
             }}
           >
             <SheetStack.Screen
@@ -1003,8 +1038,8 @@ export function Choice({
   const trigger = compact ? (
     <Button
       compact
-      plain={!!summary}
-      title={current}
+      plain
+      title={selected?.length === 0 && emptyLabel === t("ticket.field.noValue") ? label : current}
       disabled={disabled}
       leading={summary ? undefined : options.find((option) => option.value === value)?.leading}
       accessibilityLabel={t("native.labelValue", { label, value: current })}
@@ -1325,18 +1360,23 @@ export function ErrorNotice({
   error,
   onRetry,
   retrying = false,
+  background = false,
 }: {
   error: unknown;
   onRetry?: () => void;
   retrying?: boolean;
+  background?: boolean;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    live = useContext(LiveStatus);
   if (!error) return null;
+  if (background && live === "offline" && !(error instanceof ApiError && error.status < 500))
+    return null;
   const message = (
     <Text
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
-      style={{ color: color.danger, marginVertical: 12 }}
+      style={{ color: background ? color.muted : color.danger, marginVertical: 12 }}
     >
       {errorMessage(error)}
     </Text>
@@ -1352,14 +1392,18 @@ export function ErrorNotice({
   );
 }
 export function Loading() {
-  const color = usePalette();
-  return (
+  const color = usePalette(),
+    navigation = useContext(NavigationContext),
+    insideScreen = useContext(InsetsConsumed);
+  const indicator = (
     <ActivityIndicator
       accessibilityLabel={t("native.ui.loading")}
       color={color.accent}
       style={{ margin: 24 }}
     />
   );
+  // Initial reads use the same screen boundary as their loaded content.
+  return navigation && !insideScreen ? <Screen>{indicator}</Screen> : indicator;
 }
 export function Body({
   children,
@@ -1438,8 +1482,6 @@ export function Heading({
         alignItems: "center",
         gap: 8,
         backgroundColor: pressed ? color.accentSurface : "transparent",
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: color.line,
       })}
     >
       {disclosure.leading}
@@ -1488,7 +1530,7 @@ export function Section({
   count,
   countLabel,
 }: {
-  title: string;
+  title?: string;
   children: ReactNode;
   count?: number | undefined;
   countLabel?: string;
@@ -1497,6 +1539,10 @@ export function Section({
   summary?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(initiallyOpen);
+  const color = usePalette(),
+    groupedSurface = useContext(GroupedSurface),
+    insideGroup = useContext(InsideGroupedSection),
+    grouped = groupedSurface && !insideGroup;
   return (
     <View
       style={{
@@ -1504,24 +1550,47 @@ export function Section({
         gap: 8,
       }}
     >
-      <Heading
-        compact
-        {...(collapsible
-          ? {
-              disclosure: {
-                expanded,
-                ...(count === undefined
-                  ? {}
-                  : { count, countLabel: countLabel ?? formatNumber(count) }),
-                label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", { label: title }),
-                onPress: () => setExpanded((value) => !value),
-              },
+      {title && (
+        <Heading
+          compact
+          {...(collapsible
+            ? {
+                disclosure: {
+                  expanded,
+                  ...(count === undefined
+                    ? {}
+                    : { count, countLabel: countLabel ?? formatNumber(count) }),
+                  label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", {
+                    label: title,
+                  }),
+                  onPress: () => setExpanded((value) => !value),
+                },
+              }
+            : {})}
+        >
+          {title}
+        </Heading>
+      )}
+      {(!title || !collapsible || expanded || !!summary) && (
+        <InsideGroupedSection value={grouped || insideGroup}>
+          <View
+            style={
+              grouped
+                ? {
+                    backgroundColor: color.surface,
+                    borderRadius: 12,
+                    paddingHorizontal: 14,
+                    paddingVertical: 4,
+                    gap: 8,
+                    overflow: "hidden",
+                  }
+                : { gap: 8 }
             }
-          : {})}
-      >
-        {title}
-      </Heading>
-      {!collapsible || expanded ? children : summary}
+          >
+            {!collapsible || expanded ? children : summary}
+          </View>
+        </InsideGroupedSection>
+      )}
     </View>
   );
 }
@@ -1536,6 +1605,7 @@ export function Screen({
   scrollRef,
   header,
   scrollInsets = scroll,
+  grouped,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -1547,26 +1617,46 @@ export function Screen({
   scrollRef?: ComponentProps<typeof ScrollView>["ref"];
   header?: ReactNode;
   scrollInsets?: boolean;
+  grouped?: boolean;
 }) {
   const color = usePalette(),
     live = useContext(LiveStatus),
     boundary = !useContext(InsetsConsumed);
   const navigation = useContext(NavigationContext),
-    inheritedHeader = useContext(ScrollingHeader);
+    inheritedHeader = useContext(ScrollingHeader),
+    inheritedEdges = useContext(ScrollEdgeAttachment),
+    inheritedGroup = useContext(InsideGroupedSection),
+    inheritedGrouped = useContext(GroupedSurface),
+    groupedSurface = grouped ?? inheritedGrouped;
   const ios = Platform.OS === "ios",
     modern = ios && Number.parseInt(String(Platform.Version), 10) >= 26;
   const nativeScroll = !!navigation && ios && scrollInsets && !background;
+  const transparentHeader = !!navigation && ios && (modern || nativeScroll);
+  const edgeFrame = useRef<number | undefined>(undefined);
+  const attachEdges = useCallback(() => {
+    if (!navigation || !nativeScroll || !modern) return;
+    if (edgeFrame.current !== undefined) cancelAnimationFrame(edgeFrame.current);
+    navigation.setOptions({ scrollEdgeEffects: { top: "automatic", bottom: "automatic" } });
+    edgeFrame.current = requestAnimationFrame(() => {
+      navigation.setOptions({ scrollEdgeEffects: { top: "soft", bottom: "soft" } });
+    });
+  }, [navigation, nativeScroll, modern]);
+  useEffect(
+    () => () => {
+      if (edgeFrame.current !== undefined) cancelAnimationFrame(edgeFrame.current);
+    },
+    [],
+  );
   useLayoutEffect(() => {
     if (!navigation || !boundary || !ios) return;
     navigation.setOptions(
       nativeHeaderOptions({
-        headerTransparent: nativeScroll,
-        headerStyle: { backgroundColor: nativeScroll ? "transparent" : color.surface },
+        headerTransparent: transparentHeader,
+        headerStyle: { backgroundColor: transparentHeader ? "transparent" : color.surface },
         headerBlurEffect: nativeScroll && !modern ? "systemMaterial" : "none",
-        ...(modern ? { scrollEdgeEffects: { top: "soft", bottom: "soft" } } : {}),
       }),
     );
-  }, [navigation, boundary, ios, nativeScroll, modern, color.surface]);
+  }, [navigation, boundary, ios, nativeScroll, transparentHeader, modern, color.surface]);
   const status =
     boundary && (live === "offline" || live === "signedOut") ? (
       <View style={{ paddingHorizontal: 16, paddingVertical: 6 }} accessibilityLiveRegion="polite">
@@ -1585,7 +1675,13 @@ export function Screen({
     ) : null;
   const content = (
     <ImageSurface value={!!background}>
-      <View style={[{ flex: 1, backgroundColor: color.surface }, style]}>
+      <View
+        collapsable={false}
+        style={[
+          { flex: 1, backgroundColor: groupedSurface ? color.background : color.surface },
+          style,
+        ]}
+      >
         {background && (
           <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
         )}
@@ -1594,30 +1690,36 @@ export function Screen({
           allowDivision={allowDivision}
           scrollInsets={nativeScroll}
         >
-          <ScrollingHeader value={top}>
-            <PaddedContent value={scroll}>
-              {scroll ? (
-                <Scroll
-                  ref={scrollRef}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="interactive"
-                  contentContainerStyle={{
-                    paddingHorizontal: 16,
-                    paddingTop: 12,
-                    paddingBottom: 40,
-                    gap: 12,
-                    width: "100%",
-                    maxWidth: navigation ? 720 : 560,
-                    alignSelf: "center",
-                  }}
-                >
-                  {children}
-                </Scroll>
-              ) : (
-                children
-              )}
-            </PaddedContent>
-          </ScrollingHeader>
+          <InsideGroupedSection value={boundary ? false : inheritedGroup}>
+            <GroupedSurface value={groupedSurface}>
+              <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
+                <ScrollingHeader value={top}>
+                  <PaddedContent value={scroll}>
+                    {scroll ? (
+                      <Scroll
+                        ref={scrollRef}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
+                        contentContainerStyle={{
+                          paddingHorizontal: 16,
+                          paddingTop: 12,
+                          paddingBottom: 40,
+                          gap: 12,
+                          width: "100%",
+                          maxWidth: navigation ? 720 : 560,
+                          alignSelf: "center",
+                        }}
+                      >
+                        {children}
+                      </Scroll>
+                    ) : (
+                      children
+                    )}
+                  </PaddedContent>
+                </ScrollingHeader>
+              </ScrollEdgeAttachment>
+            </GroupedSurface>
+          </InsideGroupedSection>
         </ContentArea>
       </View>
     </ImageSurface>
@@ -1627,8 +1729,13 @@ export function Screen({
 // Screen's scrolling primitive also serves layouts that own their scrolling content.
 export function Scroll({ children, ...props }: ComponentProps<typeof ScrollView>) {
   const header = useContext(ScrollingHeader);
+  const onLayout = useScrollEdgeAttachment(props.horizontal ? undefined : props.onLayout);
   return (
-    <ScrollView {...scrollInsetsDefaults} {...props}>
+    <ScrollView
+      {...scrollInsetsDefaults}
+      {...props}
+      onLayout={props.horizontal ? props.onLayout : onLayout}
+    >
       <ScrollingHeader value={props.horizontal ? header : null}>
         {!props.horizontal && header}
         {children}
@@ -1717,6 +1824,7 @@ export function List<T>({
 }: Omit<LegendListProps<T>, "onRefresh" | "refreshing"> & {
   onRefresh?: () => Promise<unknown>;
 }) {
+  const onLayout = useScrollEdgeAttachment(props.onLayout);
   const [refreshing, setRefreshing] = useState(false),
     header = useContext(ScrollingHeader);
   const original = props.ListHeaderComponent;
@@ -1747,6 +1855,7 @@ export function List<T>({
         keyboardShouldPersistTaps="handled"
         {...scrollInsetsDefaults}
         {...props}
+        onLayout={onLayout}
         ListHeaderComponent={listHeader}
         // Recycled rows memoize data; renderer state also owns selection and active styling.
         extraData={props.extraData ?? props.renderItem}
@@ -1802,6 +1911,9 @@ export function Row({
   captionLines?: number;
 }) {
   const color = usePalette();
+  const suppliedPadding = StyleSheet.flatten(style)?.paddingVertical;
+  const verticalPadding =
+    typeof suppliedPadding === "number" ? suppliedPadding : compact || dense ? 10 : 12;
   const imageSurface = useContext(ImageSurface),
     padded = useContext(PaddedContent);
   return (
@@ -1823,11 +1935,9 @@ export function Row({
           flexDirection: "row",
           alignItems: "center",
           minHeight: 44,
-          paddingVertical: compact || dense ? 10 : 12,
+          paddingVertical: verticalPadding,
           paddingHorizontal: compact || padded ? 0 : 16,
           gap: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderColor: color.line,
           borderStartWidth: 2,
           borderStartColor: active || selected ? color.accent : "transparent",
           backgroundColor:
@@ -1844,6 +1954,17 @@ export function Row({
     >
       {leading}
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            start: 0,
+            end: 0,
+            bottom: -verticalPadding,
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: color.line,
+          }}
+        />
         {overline && (
           <Text
             style={{
@@ -1993,99 +2114,99 @@ export function TicketRow({
         )
       }
       metadata={
-        <View style={{ gap: 4, width: "100%" }}>
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              alignItems: "center",
-              columnGap: schedule ? 6 : 10,
-              rowGap: 4,
-            }}
-          >
-            {project && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <ProjectIcon project={project} size={14} />
-                <Body muted small>
-                  {project.name}
-                </Body>
-              </View>
-            )}
-            <Body muted small>
-              {ticket.key}
-            </Body>
-            {showStatus && (
-              <PropertyValue
-                projectId={ticket.projectId}
-                property="status"
-                value={ticket.status}
-                stateId={ticket.stateId ?? null}
-                iconOnly
-              />
-            )}
-            {ticket.priority !== undefined && ticket.priority !== "none" && (
-              <PropertyValue
-                projectId={ticket.projectId}
-                property="priority"
-                value={ticket.priority}
-                iconOnly
-              />
-            )}
-            {!schedule && ticket.kind !== undefined && (
-              <PropertyValue
-                projectId={ticket.projectId}
-                property="kind"
-                value={ticket.kind}
-                iconOnly
-              />
-            )}
-            {density === "standard" && ticket.difficulty && (
-              <PropertyValue
-                projectId={ticket.projectId}
-                property="difficulty"
-                value={ticket.difficulty}
-                iconOnly
-              />
-            )}
-            {ticket.assigneeId && (
-              <PropertyValue
-                projectId={ticket.projectId}
-                property="assignee"
-                value={ticket.assigneeId ?? null}
-                iconOnly
-              />
-            )}
-            {!schedule && (ticket.dueAt || ticket.startAt) && (
-              <View
-                accessible
-                accessibilityLabel={
-                  ticket.dueAt
-                    ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
-                    : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
-                }
-                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-              >
-                <TicketGlyph
-                  name="calendar-clock"
-                  color={overdue ? color.danger : color.muted}
-                  size={14}
+        <TicketTags
+          projectId={ticket.projectId}
+          tags={ticket.labels ?? []}
+          scopes={ticket.scopes ?? []}
+          preview={density !== "standard"}
+          prefix={
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                alignItems: "center",
+                columnGap: schedule ? 6 : 10,
+                rowGap: 4,
+              }}
+            >
+              {project && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <ProjectIcon project={project} size={14} />
+                  <Body muted small>
+                    {project.name}
+                  </Body>
+                </View>
+              )}
+              <Body muted small>
+                {ticket.key}
+              </Body>
+              {showStatus && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="status"
+                  value={ticket.status}
+                  stateId={ticket.stateId ?? null}
+                  iconOnly
                 />
-                <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
-                  {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-              </View>
-            )}
-          </View>
-          <TicketTags
-            projectId={ticket.projectId}
-            tags={ticket.labels ?? []}
-            scopes={ticket.scopes ?? []}
-            preview={density !== "standard"}
-          />
-        </View>
+              )}
+              {ticket.priority !== undefined && ticket.priority !== "none" && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="priority"
+                  value={ticket.priority}
+                  iconOnly
+                />
+              )}
+              {!schedule && ticket.kind !== undefined && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="kind"
+                  value={ticket.kind}
+                  iconOnly
+                />
+              )}
+              {density === "standard" && ticket.difficulty && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="difficulty"
+                  value={ticket.difficulty}
+                  iconOnly
+                />
+              )}
+              {ticket.assigneeId && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="assignee"
+                  value={ticket.assigneeId ?? null}
+                  iconOnly
+                />
+              )}
+              {!schedule && (ticket.dueAt || ticket.startAt) && (
+                <View
+                  accessible
+                  accessibilityLabel={
+                    ticket.dueAt
+                      ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
+                      : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
+                  }
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <TicketGlyph
+                    name="calendar-clock"
+                    color={overdue ? color.danger : color.muted}
+                    size={14}
+                  />
+                  <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
+                    {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </Text>
+                </View>
+              )}
+            </View>
+          }
+        />
       }
       onPress={onPress}
       onLongPress={onLongPress}
@@ -2100,11 +2221,13 @@ export function TicketTags({
   tags,
   scopes = [],
   preview = false,
+  prefix,
 }: {
   projectId: string;
   tags: string[];
   scopes?: string[];
   preview?: boolean;
+  prefix?: ReactNode;
 }) {
   const { api } = useConnection(),
     color = usePalette(),
@@ -2114,6 +2237,7 @@ export function TicketTags({
     enabled: tags.length > 0,
   });
   const [available, setAvailable] = useState(0),
+    [prefixWidth, setPrefixWidth] = useState(0),
     [widths, setWidths] = useState<Record<string, number>>({});
   const items = [
     ...tags.map((tag) => ({ tag, kind: "label" as const })),
@@ -2128,7 +2252,7 @@ export function TicketTags({
     : measured
       ? inlineItemCount(
           items.map((item) => widths[keyOf(item)] ?? 0),
-          available,
+          Math.max(0, available - (prefix ? prefixWidth + 5 : 0)),
           widths[overflowKey] ?? 0,
         )
       : 0;
@@ -2148,13 +2272,14 @@ export function TicketTags({
       key={keyOf(item)}
       tag={item.tag}
       kind={item.kind}
+      plain={preview}
       color={catalog.data?.find((entry) => entry.name === item.tag)?.color ?? "gray"}
       {...(measuring
         ? { onLayout: (event) => measure(keyOf(item), event.nativeEvent.layout.width) }
         : {})}
     />
   );
-  if (!items.length) return null;
+  if (!items.length && !prefix) return null;
   return (
     <View
       accessible
@@ -2165,6 +2290,14 @@ export function TicketTags({
         preview && { width: "100%", minHeight: 22 },
       ]}
     >
+      {prefix && (
+        <View
+          style={{ maxWidth: "100%" }}
+          onLayout={(event) => setPrefixWidth(event.nativeEvent.layout.width)}
+        >
+          {prefix}
+        </View>
+      )}
       {items.slice(0, count).map((item) => chip(item))}
       {count < items.length && (
         <Text

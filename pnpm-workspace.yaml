@@ -15,3 +15,4 @@ overrides:
 saveExact: true
 patchedDependencies:
   "@react-navigation/native-stack@7.21.0": patches/@react-navigation__native-stack@7.21.0.patch
+  react-native-screens@4.30.0: patches/react-native-screens@4.30.0.patch

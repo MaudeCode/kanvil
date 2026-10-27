@@ -293,12 +293,14 @@ export function TicketTag({
   color: labelColor = "gray",
   kind = "label",
   indicatorOnly = false,
+  plain = false,
   onLayout,
 }: {
   tag: string;
   color?: LabelColor;
   kind?: "label" | "scope";
   indicatorOnly?: boolean;
+  plain?: boolean;
   onLayout?: ComponentProps<typeof View>["onLayout"];
 }) {
   const color = useNativePalette(),
@@ -323,13 +325,13 @@ export function TicketTag({
         flexDirection: "row",
         alignItems: "center",
         gap: 5,
-        paddingHorizontal: 7,
-        paddingVertical: 2,
+        paddingHorizontal: plain ? 0 : 7,
+        paddingVertical: plain ? 0 : 2,
         borderRadius: 5,
-        borderWidth: kind === "scope" ? 0.5 : 0,
+        borderWidth: !plain && kind === "scope" ? 0.5 : 0,
         borderColor: color.line,
         backgroundColor:
-          kind === "label"
+          !plain && kind === "label"
             ? tintedSurface(
                 color.surface,
                 color.foreground,
@@ -342,8 +344,8 @@ export function TicketTag({
         <View
           accessible={false}
           style={{
-            width: 5,
-            height: 5,
+            width: 6,
+            height: 6,
             borderRadius: 3,
             flexShrink: 0,
             backgroundColor: nativeAccentColor(labelColor, mode, color),
@@ -351,7 +353,14 @@ export function TicketTag({
         />
       )}
       {kind === "scope" && <TicketGlyph name="hash" color={color.muted} size={11} />}
-      <Text style={{ color: color.foreground, fontSize: 12, lineHeight: 18, flexShrink: 1 }}>
+      <Text
+        style={{
+          color: plain ? color.muted : color.foreground,
+          fontSize: 12,
+          lineHeight: 18,
+          flexShrink: 1,
+        }}
+      >
         {tag}
       </Text>
     </View>

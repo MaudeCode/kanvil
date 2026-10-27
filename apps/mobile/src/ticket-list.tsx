@@ -65,12 +65,15 @@ import {
   usePalette,
   RemovableSummary,
   Row,
-  Menu,
-  ContextBar,
   PropertyValue,
   TicketGlyph,
 } from "./ui.tsx";
-import { createHeaderAction, projectHeaderItems, createHeaderMenu } from "./navigation-actions.tsx";
+import {
+  createHeaderAction,
+  projectHeaderItems,
+  createHeaderMenu,
+  ticketHeaderItems,
+} from "./navigation-actions.tsx";
 import { TicketActions, BulkProperties } from "./ticket-actions.tsx";
 import { TicketSchedule } from "./ticket-schedule.tsx";
 import { TicketContent } from "./ticket-detail.tsx";
@@ -540,30 +543,22 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           ]
         : [
             ...(selectedTicket && split && (!splitState.collapsed || splitState.secondaryVisible)
-              ? [
-                  ...(access.canWrite
-                    ? [
-                        createHeaderAction(
-                          t("common.action.edit"),
-                          () =>
-                            navigation.navigate("Edit", { projectId, ticketId: selectedTicket.id }),
-                          { type: "sfSymbol", name: "square.and.pencil" },
-                          false,
-                          { identifier: "ticket-edit", visibilityPriority: "high" },
-                        ),
-                      ]
-                    : []),
-                  createHeaderAction(
-                    t("ticket.selection.more"),
-                    () =>
+              ? ticketHeaderItems(
+                  access.canWrite
+                    ? {
+                        title: t("common.action.edit"),
+                        onPress: () =>
+                          navigation.navigate("Edit", { projectId, ticketId: selectedTicket.id }),
+                      }
+                    : undefined,
+                  {
+                    title: t("ticket.selection.more"),
+                    onPress: () =>
                       setFocused(
                         rows.find((ticket) => ticket.id === selectedTicket.id) ?? selectedTicket,
                       ),
-                    { type: "sfSymbol", name: "ticket" },
-                    false,
-                    { identifier: "ticket-actions", visibilityPriority: "low" },
-                  ),
-                ]
+                  },
+                )
               : []),
             ...(split && splitState.collapsed && splitState.secondaryVisible
               ? []
@@ -577,11 +572,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                           false,
                           {
                             identifier: "ticket-create",
-                            visibilityPriority: searching
-                              ? "low"
-                              : selectedTicket && split && !splitState.collapsed
-                                ? "default"
-                                : "high",
+                            visibilityPriority:
+                              selectedTicket && split && !splitState.collapsed ? "default" : "high",
                           },
                         ),
                       ]
@@ -595,7 +587,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                       ...(filterCount || query.trim()
                         ? { badge: { value: filterCount + (query.trim() ? 1 : 0) } }
                         : {}),
-                      visibilityPriority: searching ? "low" : "default",
+                      visibilityPriority: "default",
                     },
                   ),
                 ] satisfies NativeStackHeaderItem[])),
@@ -616,7 +608,6 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       split,
       rows,
       selecting,
-      searching,
       viewItems,
       query,
       filterCount,
@@ -685,45 +676,6 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     <>
       {!(split && splitState.collapsed && splitState.secondaryVisible) && (
         <>
-          {!selecting && (
-            <ContextBar>
-              <Menu title={t("ticket.list.views")} items={viewItems}>
-                <Button
-                  compact
-                  plain
-                  title={
-                    views.data?.find((view) => view.id === route.params.viewId)?.name ??
-                    (planning
-                      ? t("ticket.list.planningLink")
-                      : layout === "calendar" || layout === "timeline"
-                        ? t(`ticket.schedule.${layout}`)
-                        : t(`ticket.display.${layout}`))
-                  }
-                  leading={<TicketGlyph name="panels-top-left" color={color.accent} />}
-                  onPress={() => {}}
-                />
-              </Menu>
-              <Button
-                compact
-                plain
-                title={
-                  filterCount
-                    ? t("ticket.list.sectionCount", {
-                        n: filterCount,
-                        section: t("ticket.filter.filters"),
-                      })
-                    : t("ticket.filter.filters")
-                }
-                leading={
-                  <TicketGlyph
-                    name="list-filter"
-                    color={filterCount ? color.accent : color.muted}
-                  />
-                }
-                onPress={() => setFiltering(true)}
-              />
-            </ContextBar>
-          )}
           {!searching && (
             <RemovableSummary
               label={t("shell.app.clearSearch")}
@@ -747,7 +699,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           )}
         </>
       )}
-      <ErrorNotice error={views.error ?? listError} />
+      <ErrorNotice error={views.error ?? listError} background={!!tickets.data || !!backlog.data} />
     </>
   );
   const collectionView =
@@ -806,6 +758,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : layout === "board" ? (
       <Scroll
         horizontal
+        decelerationRate="fast"
+        snapToInterval={Math.min(340, Math.max(260, width - 100)) + 12}
         contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingVertical: 8 }}
       >
         {sections.map((state) => (

@@ -170,6 +170,7 @@ export function useHeaderSearch(
   query: string,
   onChange: (value: string) => void,
   placeholder: string,
+  persistent = false,
 ) {
   const [handle] = useState(() => createSearchBarHandle(query));
   const [searching, setSearching] = useState(false),
@@ -187,7 +188,7 @@ export function useHeaderSearch(
     () => ({
       ref: handle.ref,
       placement: "stacked",
-      hideWhenScrolling: true,
+      hideWhenScrolling: !persistent,
       hideNavigationBar: false,
       autoCapitalize: "none",
       autoFocus: true,
@@ -211,7 +212,7 @@ export function useHeaderSearch(
         setVisible(false);
       },
     }),
-    [handle, onChange, placeholder],
+    [handle, onChange, placeholder, persistent],
   );
   const setText = useCallback(
     (value: string) => {
@@ -224,7 +225,7 @@ export function useHeaderSearch(
     handle.focus();
     setVisible(true);
   }, [handle]);
-  return { options: visible ? options : undefined, setText, searching, open };
+  return { options: visible || persistent ? options : undefined, setText, searching, open };
 }
 
 declare global {

@@ -156,27 +156,8 @@ export function Inbox() {
       scrollInsets
       header={
         <>
-          <WorkspaceScope>
-            <Choice
-              compact
-              label={t("shell.page.inbox")}
-              value={view}
-              options={["unread", "mentions", "all"].map((value) => ({
-                value,
-                label: t(
-                  value === "unread"
-                    ? "shell.inbox.unread"
-                    : value === "mentions"
-                      ? "shell.inbox.mentions"
-                      : "shell.inbox.all",
-                ),
-              }))}
-              onChange={(value) =>
-                setView(value === "mentions" ? "mentions" : value === "all" ? "all" : "unread")
-              }
-            />
-          </WorkspaceScope>
-          <ErrorNotice error={items.error} />
+          <WorkspaceScope />
+          <ErrorNotice error={items.error} background={!!items.data} />
         </>
       }
     >
@@ -523,12 +504,14 @@ export function Settings({
   if (!activeSection)
     return (
       <Screen>
-        <Row
-          title={identity.name}
-          leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
-          caption={identity.email}
-          onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
-        />
+        <Section>
+          <Row
+            title={identity.name}
+            leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
+            caption={identity.email}
+            onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
+          />
+        </Section>
         <Section title={t("shell.settingsNav.account")}>
           {accountSections
             .filter((value) => value !== "account")
@@ -571,11 +554,13 @@ export function Settings({
           />
         </Section>
         {identity.admin && (
-          <Row
-            title={t("shell.settingsNav.administration")}
-            leading={<TicketGlyph name="shield-check" color={color.accent} />}
-            onPress={() => navigation.navigate("Administration", {})}
-          />
+          <Section>
+            <Row
+              title={t("shell.settingsNav.administration")}
+              leading={<TicketGlyph name="shield-check" color={color.accent} />}
+              onPress={() => navigation.navigate("Administration", {})}
+            />
+          </Section>
         )}
         <Section title={baseUrl}>
           <Button
@@ -621,7 +606,7 @@ export function Settings({
       </Screen>
     );
   return (
-    <Screen>
+    <Screen form={activeSection === "account"}>
       <ErrorNotice error={error} />
       {message && <Body>{message}</Body>}
       {activeSection === "account" && (

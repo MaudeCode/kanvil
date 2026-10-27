@@ -110,7 +110,7 @@ export function ProfileSettings({ onDeleted }: { onDeleted: () => Promise<void> 
       <Button
         title={t("common.action.save")}
         primary
-        disabled={!name.trim() || pending}
+        disabled={!name.trim() || name.trim() === identity.name.trim() || pending}
         onPress={() => {
           setPending(true);
           setError(undefined);
