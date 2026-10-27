@@ -24,6 +24,7 @@ const commands = {
   "claim acquire": "claim_ticket",
   "claim renew": "renew_claim",
   "claim release": "release_claim",
+  "claim recover": "recover_claim",
 } satisfies Record<string, Operation>;
 
 export const clientHelp = `Usage: kanvil <namespace> <action> [ticket-key] [options]
@@ -36,7 +37,7 @@ profile list | profile remove <name> --yes
 --input <json|->       Operation input as a JSON object; - reads stdin
 --title <text>         Ticket title
 --body <markdown>      Comment body
---expected-version <n> Required version for update, delete and acquire
+--expected-version <n> Required version for update, delete, acquire and rescheduling recovery
 --changes <json>       Ticket update changes as a JSON object
 --request-id <uuid>    Reuse for a deliberate retry across invocations
 --json                Compact JSON output (default: indented JSON)

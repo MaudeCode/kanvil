@@ -204,6 +204,91 @@ test("CLI discovers work and creates, edits, comments, claims, renews, releases 
   expect((await run(["task", "get", created.key])).code).toBe(4);
 });
 
+test("CLI recovers an expired claim, reschedules it at the observed version and claims it again", async () => {
+  const project = await owner().call("create_project", { key: "REC", name: "CLI recovery" });
+  await configure("recovery-admin", project.id);
+  await configure("recovery-worker", project.id, ["read", "write", "claim"]);
+  await configure("recovery-unclaimed", project.id, ["read", "write"]);
+  const worker = (args: string[], input?: object) =>
+    call([...args, "--profile", "recovery-worker"], input);
+  const read = async (key: string) =>
+    z
+      .object({ ticket: ticketSchema, claim: claimSchema.nullable() })
+      .parse(await worker(["task", "get", key]));
+  const created = ticketSchema.parse(
+    await worker(["task", "create"], {
+      title: "Recover through the CLI",
+      description: "A stopped worker leaves an expired claim",
+      acceptanceCriteria: "A new worker claims it again",
+      automationReady: true,
+      difficulty: "low",
+    }),
+  );
+  const attempt = (profile: string, input: object) =>
+    run(["claim", "recover", created.key, "--profile", profile, "--input", JSON.stringify(input)]);
+  const stopped = claimSchema.parse(
+    await worker(["claim", "acquire", created.key], {
+      expectedVersion: created.version,
+      workerId: "stopped-worker",
+    }),
+  );
+  const claimed = await read(created.key);
+  const recovery = {
+    claimId: stopped.id,
+    reason: "Confirmed the old worker has stopped",
+    confirmedStopped: true,
+  };
+  expect((await attempt("recovery-worker", recovery)).stderr).toContain("claim_not_expired");
+  expect((await attempt("recovery-worker", { ...recovery, cancelActive: true })).code).toBe(3);
+  await fixture.database.pool.query(
+    "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+    [stopped.id],
+  );
+  const reschedule = { ...recovery, reschedule: true };
+  for (const [profile, input, code] of [
+    ["recovery-worker", { ...recovery, confirmedStopped: false }, 2],
+    ["recovery-worker", reschedule, 2],
+    ["recovery-worker", { ...reschedule, expectedVersion: created.version }, 5],
+    ["recovery-unclaimed", { ...reschedule, expectedVersion: claimed.ticket.version }, 3],
+  ] as const)
+    expect((await attempt(profile, input)).code).toBe(code);
+  const unchanged = await read(created.key);
+  expect(unchanged.ticket).toEqual(claimed.ticket);
+  expect(unchanged.claim?.id).toBe(stopped.id);
+  const retry = [
+    "claim",
+    "recover",
+    created.key,
+    "--expected-version",
+    String(claimed.ticket.version),
+    "--request-id",
+    crypto.randomUUID(),
+  ];
+  expect(await worker(retry, reschedule)).toEqual({ ok: true });
+  expect(await worker(retry, reschedule)).toEqual({ ok: true });
+  const rescheduled = await read(created.key);
+  expect(rescheduled.claim).toBeNull();
+  expect(rescheduled.ticket).toMatchObject({
+    status: "todo",
+    version: claimed.ticket.version + 1,
+  });
+  const fresh = claimSchema.parse(
+    await worker(["claim", "acquire", created.key], {
+      expectedVersion: rescheduled.ticket.version,
+      workerId: "replacement-worker",
+    }),
+  );
+  expect(fresh.id).not.toBe(stopped.id);
+  expect(
+    await call(["claim", "recover", created.key, "--profile", "recovery-admin"], {
+      ...recovery,
+      claimId: fresh.id,
+      cancelActive: true,
+    }),
+  ).toEqual({ ok: true });
+  expect((await read(created.key)).claim).toBeNull();
+});
+
 test("CLI enforces server credential permissions and project isolation", async () => {
   const project = await owner().call("create_project", { key: "READ", name: "Read-only CLI" });
   const other = await owner().call("create_project", { key: "OTHER", name: "Other project" });
