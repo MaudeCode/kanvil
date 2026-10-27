@@ -245,3 +245,16 @@ index bc9c64436da76959ecdc22539b94ce459e1e4ed2..a7821301f32e83319fa3c91808b4b942
  /// Shared handling for the `shouldSelect` delegate callbacks - the legacy
  /// `tabBarController:shouldSelectViewController:` and the `UITab` `tabBarController:shouldSelectTab:`.
  - (BOOL)interceptUserSelectionOfViewController:(nonnull UIViewController *)viewController
+diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
+index 69bd2fc9cde3b064eda587703386bd98009e13d3..2a71b5662d858d576918cddc3e2037116517b099 100644
+--- a/ios/tabs/host/RNSTabsHostComponentView.mm
++++ b/ios/tabs/host/RNSTabsHostComponentView.mm
+@@ -129,6 +129,8 @@ - (void)invalidateImpl
+ - (void)didMoveToWindow
+ {
+   if (self.window != nil && _controller.parentViewController == nil) {
++    // UIKit must see the active display size before constructing its native bars.
++    _controller.view.frame = self.bounds;
+     BOOL mountResult = [RNSContainerHelpers addChildViewController:_controller
+                                           toViewControllerManaging:self.reactSuperview
+                                                  withContainerView:self];
