@@ -865,6 +865,7 @@ describe("HTTP, realtime, and MCP", () => {
           "create_workspace_label",
           "update_workspace_label",
           "delete_workspace_label",
+          "update_ticket_labels",
           "archive_project",
           "get_project_impact",
           "transfer_project",
@@ -888,6 +889,30 @@ describe("HTTP, realtime, and MCP", () => {
           arguments: { projectId: project.id, name: "Requires admin" },
         });
         expect(deniedLabel.isError).toBe(true);
+        // Relabeling one ticket is label administration: a write credential cannot, a session can.
+        const labeled = await client().call("create_ticket", {
+          projectId: project.id,
+          title: "Relabeled over HTTP",
+          labels: ["before"],
+        });
+        const deniedRelabel = await sdk.callTool({
+          name: "update_ticket_labels",
+          arguments: {
+            projectId: project.id,
+            ticketId: labeled.id,
+            expectedVersion: labeled.version,
+            labels: ["denied"],
+          },
+        });
+        expect(deniedRelabel.isError).toBe(true);
+        expect(
+          await client().call("update_ticket_labels", {
+            projectId: project.id,
+            ticketId: labeled.id,
+            expectedVersion: labeled.version,
+            labels: ["after"],
+          }),
+        ).toMatchObject({ labels: ["after"], version: labeled.version + 1 });
         const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
         const discovered = z
           .object({ result: z.array(z.object({ id: z.string(), role: z.string().nullable() })) })
