@@ -24,4 +24,9 @@ runs:
       run: pnpm install --frozen-lockfile
     - if: inputs.browser == 'true'
       shell: bash
-      run: pnpm exec playwright install --with-deps chromium
+      run: |
+        # Azure archive stalls can exhaust the browser job before its tests start.
+        if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+          sudo sed -i 's|://azure\.archive\.ubuntu\.com/ubuntu|://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+        fi
+        pnpm exec playwright install --with-deps chromium
