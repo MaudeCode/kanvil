@@ -639,6 +639,13 @@ async function relocation(
       code: "claimed",
       message: `Claimed by ${claim.workerId}; release or recover the claim first`,
     });
+  // A ticket a worker once claimed keeps fencing worker writes after the claim ends.
+  else if (ctx.actor.machine && ticket.claimRequired)
+    blockers.push({
+      code: "claim_conflict",
+      message:
+        "A worker needs a claim to move this ticket once it has been claimed; a person can move it, or return it to To do so a worker can claim it again",
+    });
   const [parent] = ticket.parentId
     ? await ctx.db
         .select({ id: tickets.id, key: tickets.key })
@@ -931,8 +938,6 @@ export const ticketHandlers: Pick<
       fail(409, "relocation_blocked", blockers.map((item) => item.message).join(". "), {
         blockers,
       });
-    // After the blockers, so a claimed ticket answers every caller with the same blocker.
-    await assertWorkerClaim(ctx, current);
     const state = requireRow(
       await resolveState(target, {
         status: input.status ?? (input.stateId ? undefined : z.enum(states).parse(current.status)),
