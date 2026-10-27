@@ -4,7 +4,7 @@ import { z } from "zod";
 import { tickets, workflowStates } from "./schema.ts";
 import {
   assertVersion,
-  assertWorkerClaim,
+  assertDefinitionMigration,
   fail,
   one,
   project,
@@ -13,7 +13,7 @@ import {
   type Context,
   type Handlers,
 } from "./domain.ts";
-import { updateTicketRow } from "./ticket-operations.ts";
+import { migrateTicketRow } from "./ticket-operations.ts";
 import { reassignTransitions } from "./repository-operations.ts";
 
 type Category = (typeof states)[number];
@@ -192,11 +192,11 @@ export const workflowHandlers: Pick<
         input.position ?? (moving ? siblings.length : current.position),
         siblings.length,
       );
-    // The tickets in a recategorized state change status; their ownership is checked first.
+    // The tickets in a recategorized state change status under the definition migration policy.
     const held = moving
       ? await ctx.db.select().from(tickets).where(eq(tickets.stateId, current.id))
       : [];
-    for (const ticket of held) await assertWorkerClaim(ctx, ticket);
+    await assertDefinitionMigration(ctx, held);
     const row = one(
       await ctx.db
         .update(workflowStates)
@@ -243,14 +243,13 @@ export const workflowHandlers: Pick<
       invalid("reassignTo", "Choose a workflow state of this project");
     const all = await projectStates(ctx);
     assertNotLast(all, current, "delete");
-    // Each ticket moves through the shared ticket update: versions, claims, and events included.
+    // Each ticket moves through the shared versioned write under the definition migration policy.
     const held = await ctx.db.select().from(tickets).where(eq(tickets.stateId, current.id));
     const pending = [];
     for (const ticket of held)
       pending.push(
         (
-          await updateTicketRow(ctx, {
-            projectId: project(ctx).id,
+          await migrateTicketRow(ctx, {
             ticketId: ticket.id,
             expectedVersion: ticket.version,
             changes: { stateId: target.id },

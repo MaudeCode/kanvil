@@ -14,8 +14,8 @@ import { customFields, tickets } from "./schema.ts";
 import { customFieldPositions, endPosition, positionNear } from "./ordering.ts";
 import { rememberLabelColor, rewriteViewFilters } from "./label-operations.ts";
 import {
+  assertDefinitionMigration,
   assertVersion,
-  assertWorkerClaim,
   fail,
   one,
   project,
@@ -199,7 +199,7 @@ async function rewriteTicketValues(
     if (value === undefined) continue;
     const next = map(value);
     if (JSON.stringify(next) === JSON.stringify(value)) continue;
-    await assertWorkerClaim(ctx, ticket);
+    await assertDefinitionMigration(ctx, [ticket]);
     const values = { ...ticket.customFields };
     if (next === null) delete values[fieldId];
     else values[fieldId] = next;

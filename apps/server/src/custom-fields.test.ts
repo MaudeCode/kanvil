@@ -550,6 +550,200 @@ describe("custom fields on PostgreSQL", () => {
     const [view] = await domain.execute("list_views", { projectId: project.id }, owner);
     expect(view?.filters).not.toHaveProperty("customField");
   });
+
+  it("migrates values on released machine work while any claim still blocks", async () => {
+    const severity = await select("Severity"),
+      area = await select("Area");
+    const high = option(severity, "High"),
+      low = option(severity, "Low");
+    const manager = await domain.actor(owner.id, { ownerId: "fields-manager", scopes: ["admin"] });
+    const worker = await domain.actor(owner.id, {
+      ownerId: "fields-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const detail = (ticketId: string) =>
+      domain.execute("get_ticket", { projectId: project.id, ticketId }, owner);
+    // Machine work holding both fields, completed and released unless `keep`, archived when asked.
+    const finish = async (
+      title: string,
+      {
+        keep = false,
+        archive = false,
+        by = worker,
+      }: { keep?: boolean; archive?: boolean; by?: Actor } = {},
+    ) => {
+      const ticket = await domain.execute(
+        "create_ticket",
+        {
+          projectId: project.id,
+          title,
+          description: "Synthetic claim-protected work.",
+          acceptanceCriteria: "Keep ownership and readiness.",
+          difficulty: "low",
+          automationReady: true,
+          customFields: { [severity.id]: high, [area.id]: option(area, "Low") },
+        },
+        owner,
+      );
+      const claim = await domain.execute(
+        "claim_ticket",
+        { projectId: project.id, ticketId: ticket.id, expectedVersion: 1, workerId: title },
+        by,
+      );
+      await domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: ticket.id,
+          expectedVersion: (await read(ticket.id)).version,
+          changes: { status: "done" },
+          claimId: claim.id,
+        },
+        by,
+      );
+      if (!keep)
+        await domain.execute(
+          "release_claim",
+          { projectId: project.id, ticketId: ticket.id, claimId: claim.id },
+          by,
+        );
+      if (archive)
+        await domain.execute(
+          "update_ticket",
+          {
+            projectId: project.id,
+            ticketId: ticket.id,
+            expectedVersion: (await read(ticket.id)).version,
+            changes: { archived: true },
+          },
+          owner,
+        );
+      return claim;
+    };
+    const historical = [
+      await finish("Historical"),
+      await finish("Archived", { archive: true }),
+      {
+        ticketId: (await create("Plain", { [severity.id]: high, [area.id]: option(area, "Low") }))
+          .id,
+      },
+      // Untouched by the reassignment, but still holds the deleted field.
+      {
+        ticketId: (
+          await create("Medium", {
+            [severity.id]: option(severity, "Medium"),
+            [area.id]: option(area, "Low"),
+          })
+        ).id,
+      },
+    ];
+    const before = await Promise.all(historical.map(({ ticketId }) => detail(ticketId)));
+    expect(before.map(({ ticket }) => [ticket.claimRequired, ticket.archived])).toEqual([
+      [true, false],
+      [true, true],
+      [false, false],
+      [false, false],
+    ]);
+    const reassign = (actor: Actor, expectedVersion: number) =>
+      domain.execute(
+        "update_custom_field",
+        {
+          projectId: project.id,
+          fieldId: severity.id,
+          expectedVersion,
+          options: without(severity, high),
+          reassign: { [high]: low },
+        },
+        actor,
+      );
+    const remove = (actor: Actor, expectedVersion: number) =>
+      domain.execute(
+        "delete_custom_field",
+        { projectId: project.id, fieldId: area.id, expectedVersion },
+        actor,
+      );
+
+    // A live claim, an expired one, and the manager's own claim each block the whole migration.
+    for (const kind of ["live", "expired", "own"]) {
+      const claim = await finish(kind, { keep: true, by: kind === "own" ? manager : worker });
+      if (kind === "expired")
+        await fixture.database.pool.query(
+          "UPDATE claims SET expires_at = '2000-01-01' WHERE id = $1",
+          [claim.id],
+        );
+      const held = await detail(claim.ticketId);
+      await expect(reassign(manager, severity.version)).rejects.toMatchObject({
+        code: "claim_conflict",
+      });
+      await expect(remove(manager, area.version)).rejects.toMatchObject({
+        code: "claim_conflict",
+      });
+      // Nothing changed and the claim was neither cancelled nor recovered.
+      expect(await detail(claim.ticketId)).toEqual(held);
+      for (const original of before) expect(await detail(original.ticket.id)).toEqual(original);
+      const fields = await domain.execute("list_custom_fields", { projectId: project.id }, owner);
+      expect(fields.map((field) => [field.id, field.version])).toEqual([
+        [severity.id, severity.version],
+        [area.id, area.version],
+      ]);
+      // People are not workers: the owner clears the blocker's values.
+      await domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: claim.ticketId,
+          expectedVersion: held.ticket.version,
+          changes: { customFields: { [severity.id]: null, [area.id]: null } },
+        },
+        owner,
+      );
+    }
+
+    await expect(reassign(writer, severity.version)).rejects.toMatchObject({ status: 403 });
+    await expect(reassign(manager, severity.version + 1)).rejects.toMatchObject({
+      code: "version_conflict",
+    });
+    await expect(remove(manager, area.version + 1)).rejects.toMatchObject({
+      code: "version_conflict",
+    });
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    await reassign(manager, severity.version);
+    await remove(manager, area.version);
+    const expected = before.map(({ ticket }, index) => {
+      const reassigned = index < 3;
+      return {
+        ...ticket,
+        customFields: { [severity.id]: reassigned ? low : option(severity, "Medium") },
+        version: ticket.version + (reassigned ? 2 : 1),
+      };
+    });
+    for (const want of expected) {
+      const after = await detail(want.id);
+      expect(after.ticket).toEqual({ ...want, updatedAt: after.ticket.updatedAt });
+      expect(after.claim).toBeNull();
+    }
+    const published = (await domain.readEvents(owner, cursor, project.id)).items;
+    expect(published.map((event) => event.type)).toEqual([
+      ...[0, 1, 2].map(() => "ticket.updated"),
+      "custom_field.updated",
+      ...[0, 1, 2, 3].map(() => "ticket.updated"),
+      "custom_field.deleted",
+    ]);
+
+    // Ordinary worker writes on historical work still need a matching claim.
+    await expect(
+      domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: expected[0]!.id,
+          expectedVersion: expected[0]!.version,
+          changes: { title: "Worker edit" },
+        },
+        manager,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+  });
 });
 
 it("gives tickets from before custom fields an empty set of values", async () => {
