@@ -449,14 +449,19 @@ function rejectConflicts(filter: FilterValues, context: z.RefinementCtx) {
   }
 }
 // Up to 100 distinct tickets, each with the version the caller last saw.
-const ticketSelection = z
-  .array(z.object({ ticketId: id, expectedVersion: version }))
-  .min(1)
-  .max(100)
-  .refine(
-    (values) => new Set(values.map((v) => v.ticketId)).size === values.length,
-    "Tickets must be unique",
-  );
+const selectedTicket = z.object({ ticketId: id, expectedVersion: version });
+const selectionOf = <Item extends typeof selectedTicket>(item: Item) =>
+  z
+    .array(item)
+    .min(1)
+    .max(100)
+    .refine(
+      (values) => new Set(values.map((v) => v.ticketId)).size === values.length,
+      "Tickets must be unique",
+    );
+const ticketSelection = selectionOf(selectedTicket);
+// A bulk edit carries each worker's claim for the ticket it owns, as update_ticket does.
+const claimedTicketSelection = selectionOf(selectedTicket.extend({ claimId: z.uuid().optional() }));
 export const ticketFilter = z
   .object({
     q: z.string().trim().max(200).optional(),
@@ -2746,7 +2751,7 @@ export const operations = {
     projectInput
       .extend({
         ...mutation,
-        tickets: ticketSelection,
+        tickets: claimedTicketSelection,
         changes: ticketChanges,
       })
       .strict(),
@@ -2754,7 +2759,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/bulk",
     "write",
-    "Apply an atomic bulk edit using each ticket's current version.",
+    "Apply an atomic bulk edit using each ticket's current version. A worker passes each claimed ticket's active `claimId`.",
   ),
   delete_ticket: op(
     ticketInput.extend({ ...mutation, expectedVersion: version }).strict(),

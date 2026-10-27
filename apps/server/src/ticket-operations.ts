@@ -993,6 +993,7 @@ export const ticketHandlers: Pick<
         projectId: input.projectId,
         ticketId: item.ticketId,
         expectedVersion: item.expectedVersion,
+        claimId: item.claimId,
         changes: input.changes,
       });
       result.push(row);
