@@ -2721,8 +2721,8 @@ export const operations = {
       // The destination's workflow; `stateId` is the first state of the ticket's current status.
       states: z.array(workflowStateSchema),
       stateId: z.uuid(),
-      // Empty when the move can proceed. Codes: claimed, parent, children, relations, assignee,
-      // custom_fields, required_fields.
+      // Empty when the move can proceed. Codes: claimed, claim_conflict, parent, children,
+      // relations, assignee, custom_fields, required_fields.
       blockers: z.array(reason),
     }),
     "GET",
@@ -2745,7 +2745,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/relocate",
     "write",
-    "Move a ticket to another project of the same workspace. It keeps its ID, comments, attachments, evidence, links, and followers, takes the destination's next number as its new key, and its previous key keeps resolving. A claim, a parent or children, relationships, an assignee without destination access, custom field values, or a destination field that is required without a default block the move with `relocation_blocked`; the ticket takes the destination's custom field defaults. Activity before the move stays with the original project. Reuse requestId when retrying this write.",
+    "Move a ticket to another project of the same workspace. It keeps its ID, comments, attachments, evidence, links, and followers, takes the destination's next number as its new key, and its previous key keeps resolving. A claim (or, for a worker, a ticket that was claimed and has no claim now), a parent or children, relationships, an assignee without destination access, custom field values, or a destination field that is required without a default block the move with `relocation_blocked`; the ticket takes the destination's custom field defaults. Activity before the move stays with the original project. Reuse requestId when retrying this write.",
   ),
   resolve_ticket: op(
     z.object({ ticketId: id }).strict(),

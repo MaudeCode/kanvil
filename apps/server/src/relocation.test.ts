@@ -488,6 +488,120 @@ describe("project prefixes and ticket moves", () => {
     });
   });
 
+  it("previews the ownership a worker needs after its claim ends, and refuses nothing else", async () => {
+    const source = await newProject(),
+      destination = await newProject();
+    const worker = await domain.actor(owner.id, {
+      ownerId: owner.id,
+      scopes: ["read", "write", "claim"],
+      projectIds: [source.id, destination.id],
+    });
+    const ready = await domain.execute(
+      "create_ticket",
+      {
+        projectId: source.id,
+        title: "Delivered",
+        description: "Work",
+        acceptanceCriteria: "Done",
+        difficulty: "low",
+        automationReady: true,
+      },
+      owner,
+    );
+    const claim = await domain.execute(
+      "claim_ticket",
+      {
+        projectId: source.id,
+        ticketId: ready.id,
+        expectedVersion: ready.version,
+        workerId: "worker-1",
+        leaseSeconds: 600,
+      },
+      worker,
+    );
+    const claimed = await domain.execute(
+      "get_ticket",
+      { projectId: source.id, ticketId: ready.id },
+      worker,
+    );
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: source.id,
+        ticketId: ready.id,
+        expectedVersion: claimed.ticket.version,
+        claimId: claim.id,
+        changes: { status: "done" },
+      },
+      worker,
+    );
+    await domain.execute(
+      "release_claim",
+      { projectId: source.id, ticketId: ready.id, claimId: claim.id },
+      worker,
+    );
+    const done = await domain.execute(
+      "get_ticket",
+      { projectId: source.id, ticketId: ready.id },
+      worker,
+    );
+    expect(done).toMatchObject({ claim: null, ticket: { claimRequired: true } });
+    const check = (actor: Actor) =>
+      domain.execute(
+        "check_ticket_relocation",
+        { projectId: source.id, ticketId: ready.id, destinationProjectId: destination.id },
+        actor,
+      );
+    const preview = await check(worker);
+    expect(preview.blockers).toEqual([
+      {
+        code: "claim_conflict",
+        message:
+          "A worker needs a claim to move this ticket once it has been claimed; a person can move it, or return it to To do so a worker can claim it again",
+      },
+    ]);
+    // The move refuses with the predicted blocker and changes nothing.
+    const events = async () => [
+      ...(await domain.readEvents(owner, 0n, source.id)).items,
+      ...(await domain.readEvents(owner, 0n, destination.id)).items,
+    ];
+    const before = await events();
+    await expect(
+      domain.execute(
+        "relocate_ticket",
+        {
+          projectId: source.id,
+          ticketId: ready.id,
+          expectedVersion: done.ticket.version,
+          destinationProjectId: destination.id,
+        },
+        worker,
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "relocation_blocked",
+      details: { blockers: preview.blockers },
+    });
+    expect(await events()).toEqual(before);
+    expect(
+      await domain.execute("get_ticket", { projectId: source.id, ticketId: ready.key }, owner),
+    ).toMatchObject({ ticket: { projectId: source.id, version: done.ticket.version } });
+    // A person still moves the historical ticket.
+    expect((await check(owner)).blockers).toEqual([]);
+    expect(
+      await domain.execute(
+        "relocate_ticket",
+        {
+          projectId: source.id,
+          ticketId: ready.id,
+          expectedVersion: done.ticket.version,
+          destinationProjectId: destination.id,
+        },
+        owner,
+      ),
+    ).toMatchObject({ projectId: destination.id, version: done.ticket.version + 1 });
+  });
+
   it("keeps custom field values with their project and applies the destination's defaults", async () => {
     const source = await newProject(),
       destination = await newProject(),
