@@ -4,7 +4,7 @@ import { filterKey, filterList, isHexColor, ticketFilter } from "@kanvil/contrac
 import { renameFeedLabel } from "./calendar-operations.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { labelColors, projectLabels, projects, tickets, views, workspaceLabels } from "./schema.ts";
-import { labelOrder, labelUsage, updateTicketRow } from "./ticket-operations.ts";
+import { labelOrder, labelUsage, updateTicketLabelsForDefinition } from "./ticket-operations.ts";
 import { publishWorkspace } from "./workspace-operations.ts";
 import {
   assertVersion,
@@ -99,8 +99,8 @@ export async function rememberLabelColor(ctx: Context, color: string) {
       .values({ value: color, createdBy: ctx.actor.id })
       .onConflictDoNothing();
 }
-// Renames or removes a label in the context project: tickets through the versioned, claim-checked
-// update, then saved-view filters and calendar feeds.
+// Definition administration propagates only labels through the shared versioned writer;
+// saved views and calendar feeds follow in the same transaction.
 async function changeLabelUsage(ctx: Context, name: string, replacement?: string) {
   const affected = await ctx.db
     .select()
@@ -110,20 +110,17 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
   for (const ticket of affected)
     pending.push(
       (
-        await updateTicketRow(ctx, {
-          projectId: project(ctx).id,
+        await updateTicketLabelsForDefinition(ctx, {
           ticketId: ticket.id,
           expectedVersion: ticket.version,
-          changes: {
-            // An adopting rename can land on a name the ticket already carries.
-            labels: [
-              ...new Set(
-                replacement
-                  ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
-                  : ticket.labels.filter((tag) => tag !== name),
-              ),
-            ],
-          },
+          // An adopting rename can land on a name the ticket already carries.
+          labels: [
+            ...new Set(
+              replacement
+                ? ticket.labels.map((tag) => (tag === name ? replacement : tag))
+                : ticket.labels.filter((tag) => tag !== name),
+            ),
+          ],
         })
       ).event,
     );
