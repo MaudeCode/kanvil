@@ -439,6 +439,197 @@ describe("project workflows on PostgreSQL", () => {
       blocker.id,
     ]);
   });
+
+  it("migrates states over released machine work while any claim still blocks", async () => {
+    const legacy = await addState("Legacy", "done");
+    const manager = await domain.actor(owner.id, {
+      ownerId: "workflow-manager",
+      scopes: ["admin"],
+    });
+    const worker = await domain.actor(owner.id, {
+      ownerId: "workflow-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    // Machine work completed into Legacy: released unless `keep`, archived when asked.
+    const finish = async (
+      title: string,
+      {
+        keep = false,
+        archive = false,
+        by = worker,
+      }: { keep?: boolean; archive?: boolean; by?: Actor } = {},
+    ) => {
+      const ticket = await ready(title);
+      const claim = await domain.execute(
+        "claim_ticket",
+        { projectId: project.id, ticketId: ticket.id, expectedVersion: 1, workerId: title },
+        by,
+      );
+      await domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: ticket.id,
+          expectedVersion: (await read(ticket.id)).version,
+          changes: { stateId: legacy.id },
+          claimId: claim.id,
+        },
+        by,
+      );
+      if (!keep)
+        await domain.execute(
+          "release_claim",
+          { projectId: project.id, ticketId: ticket.id, claimId: claim.id },
+          by,
+        );
+      if (archive)
+        await domain.execute(
+          "update_ticket",
+          {
+            projectId: project.id,
+            ticketId: ticket.id,
+            expectedVersion: (await read(ticket.id)).version,
+            changes: { archived: true },
+          },
+          owner,
+        );
+      return claim;
+    };
+    const detail = (ticketId: string) =>
+      domain.execute("get_ticket", { projectId: project.id, ticketId }, owner);
+    const historical = [
+      await finish("Historical"),
+      await finish("Archived", { archive: true }),
+      { ticketId: (await ready("Plain", { stateId: legacy.id })).id },
+    ];
+    const before = await Promise.all(historical.map(({ ticketId }) => detail(ticketId)));
+    expect(before.map(({ ticket }) => [ticket.claimRequired, ticket.archived])).toEqual([
+      [true, false],
+      [true, true],
+      [false, false],
+    ]);
+    expect(before.every(({ claim }) => claim === null)).toBe(true);
+    const recategorize = (actor: Actor, expectedVersion: number) =>
+      domain.execute(
+        "update_workflow_state",
+        { projectId: project.id, stateId: legacy.id, expectedVersion, category: "cancelled" },
+        actor,
+      );
+
+    // A live claim, an expired one, and the manager's own claim each block the whole migration.
+    for (const kind of ["live", "expired", "own"]) {
+      const claim = await finish(kind, { keep: true, by: kind === "own" ? manager : worker });
+      if (kind === "expired")
+        await fixture.database.pool.query(
+          "UPDATE claims SET expires_at = '2000-01-01' WHERE id = $1",
+          [claim.id],
+        );
+      const held = await detail(claim.ticketId);
+      await expect(recategorize(manager, legacy.version)).rejects.toMatchObject({
+        code: "claim_conflict",
+      });
+      await expect(
+        domain.execute(
+          "delete_workflow_state",
+          {
+            projectId: project.id,
+            stateId: legacy.id,
+            expectedVersion: legacy.version,
+            reassignTo: byName(await states(), "Done").id,
+          },
+          manager,
+        ),
+      ).rejects.toMatchObject({ code: "claim_conflict" });
+      // Nothing moved and the claim was neither cancelled nor recovered.
+      expect(await detail(claim.ticketId)).toEqual(held);
+      for (const original of before) expect(await detail(original.ticket.id)).toEqual(original);
+      expect(byName(await states(), "Legacy")).toMatchObject({ version: legacy.version });
+      // People are not workers: the owner moves the blocker out of the way.
+      await domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: claim.ticketId,
+          expectedVersion: held.ticket.version,
+          changes: { stateId: byName(await states(), "Done").id },
+        },
+        owner,
+      );
+    }
+
+    const narrowed = await domain.actor(owner.id, {
+      ownerId: "workflow-writer",
+      scopes: ["read", "write", "claim"],
+    });
+    await expect(recategorize(narrowed, legacy.version)).rejects.toMatchObject({ status: 403 });
+    await expect(recategorize(manager, legacy.version + 1)).rejects.toMatchObject({
+      code: "version_conflict",
+    });
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    const moved = await recategorize(manager, legacy.version);
+    for (const original of before)
+      expect((await detail(original.ticket.id)).ticket).toEqual({
+        ...original.ticket,
+        status: "cancelled",
+        version: original.ticket.version + 1,
+        updatedAt: (await read(original.ticket.id)).updatedAt,
+      });
+    const done = byName(await states(), "Done");
+    await domain.execute(
+      "delete_workflow_state",
+      {
+        projectId: project.id,
+        stateId: legacy.id,
+        expectedVersion: moved.version,
+        reassignTo: done.id,
+      },
+      manager,
+    );
+    for (const original of before) {
+      const after = await detail(original.ticket.id);
+      expect(after.ticket).toEqual({
+        ...original.ticket,
+        status: "done",
+        stateId: done.id,
+        version: original.ticket.version + 2,
+        updatedAt: after.ticket.updatedAt,
+      });
+      expect(after.claim).toBeNull();
+    }
+    // Each migration publishes one ticket update per affected ticket, then its definition event.
+    const published = (await domain.readEvents(owner, cursor, project.id)).items;
+    const ids = before.map(({ ticket }) => ticket.id);
+    const updates = (from: number) =>
+      Object.fromEntries(
+        published
+          .slice(from, from + ids.length)
+          .map((event) => [event.ticketId, event.data.changedFields]),
+      );
+    const each = (changedFields: string[]) =>
+      Object.fromEntries(ids.map((id) => [id, changedFields]));
+    expect(published.map((event) => event.type)).toEqual([
+      ...ids.map(() => "ticket.updated"),
+      "workflow.updated",
+      ...ids.map(() => "ticket.updated"),
+      "workflow.deleted",
+    ]);
+    expect(updates(0)).toEqual(each(["status"]));
+    expect(updates(ids.length + 1)).toEqual(each(["stateId", "status"]));
+
+    // Ordinary worker writes on historical work still need a matching claim.
+    await expect(
+      domain.execute(
+        "update_ticket",
+        {
+          projectId: project.id,
+          ticketId: before[0]!.ticket.id,
+          expectedVersion: before[0]!.ticket.version + 2,
+          changes: { title: "Worker edit" },
+        },
+        manager,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+  });
 });
 
 it("moves existing tickets onto the default states when upgrading", async () => {

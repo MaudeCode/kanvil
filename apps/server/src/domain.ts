@@ -653,6 +653,25 @@ export async function assertWorkerClaim(
   if (!claim && (claimId || ticket.claimRequired))
     fail(409, "claim_conflict", "This ticket requires current ownership for worker writes");
 }
+// Workflow and custom-field definition changes rewrite their tickets as project administration.
+// A recorded ownership requirement without a claim does not stop them; any claim, live or expired
+// and whoever holds it, does, since the change can alter status or field meaning under its worker.
+export async function assertDefinitionMigration(ctx: Context, affected: readonly { id: string }[]) {
+  if (!can(ctx, "project.manage"))
+    fail(403, "forbidden", "Project administration permission is required");
+  if (!ctx.actor.machine || !affected.length) return;
+  const claimed = await ctx.db
+    .select({ id: claims.id })
+    .from(claims)
+    .where(
+      inArray(
+        claims.ticketId,
+        affected.map((ticket) => ticket.id),
+      ),
+    )
+    .limit(1);
+  if (claimed.length) fail(409, "claim_conflict", "A claimed ticket blocks this definition change");
+}
 
 export function createDomain(
   database: Database,

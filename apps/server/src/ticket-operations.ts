@@ -35,6 +35,7 @@ import {
 } from "./schema.ts";
 import { stagedUploadCutoff } from "./blob-storage.ts";
 import {
+  assertDefinitionMigration,
   assertVersion,
   assertWorkerClaim,
   can,
@@ -280,6 +281,17 @@ export async function updateTicketLabels(
   const current = await getTicket(ctx, input.ticketId);
   assertVersion(current, input.expectedVersion, "ticket");
   return persistTicketChanges(ctx, current, { labels: input.labels });
+}
+// A definition migration moves one ticket through the shared versioned write under the
+// definition-administration ownership policy instead of the worker claim check.
+export async function migrateTicketRow(
+  ctx: Context,
+  input: Pick<ParsedInput<"update_ticket">, "ticketId" | "expectedVersion" | "changes">,
+) {
+  const current = await getTicket(ctx, input.ticketId);
+  assertVersion(current, input.expectedVersion, "ticket");
+  await assertDefinitionMigration(ctx, [current]);
+  return persistTicketChanges(ctx, current, input.changes);
 }
 async function persistTicketChanges(
   ctx: Context,
