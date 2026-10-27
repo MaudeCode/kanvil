@@ -660,6 +660,194 @@ describe("workspace boundaries and inherited project access", () => {
       }
     },
   );
+  it("relabels one ticket for label administrators without taking worker claims", async () => {
+    const shared = await project(),
+      foreign = await project();
+    const admin = await domain.actor(owner.id, { ownerId: "label-admin", scopes: ["admin"] }),
+      worker = await domain.actor(owner.id, { ownerId: "ticket-worker", scopes: ["admin"] });
+    const selected = [];
+    for (const state of ["completed", "live", "expired"]) {
+      const ticket = await domain.execute(
+        "create_ticket",
+        {
+          projectId: shared.id,
+          title: state,
+          labels: ["managed", "keep"],
+          scopes: ["server"],
+          description: "Synthetic claim-protected work.",
+          acceptanceCriteria: "Keep ownership and readiness.",
+          difficulty: "low",
+          automationReady: true,
+        },
+        owner,
+      );
+      const claim = await domain.execute(
+        "claim_ticket",
+        {
+          projectId: shared.id,
+          ticketId: ticket.id,
+          expectedVersion: ticket.version,
+          workerId: `worker-${state}`,
+        },
+        worker,
+      );
+      if (state === "completed") {
+        const claimed = await domain.execute(
+          "get_ticket",
+          { projectId: shared.id, ticketId: ticket.id },
+          owner,
+        );
+        await domain.execute(
+          "update_ticket",
+          {
+            projectId: shared.id,
+            ticketId: ticket.id,
+            expectedVersion: claimed.ticket.version,
+            changes: { status: "done" },
+            claimId: claim.id,
+          },
+          worker,
+        );
+        await domain.execute(
+          "release_claim",
+          { projectId: shared.id, ticketId: ticket.id, claimId: claim.id },
+          worker,
+        );
+      } else if (state === "expired") {
+        await fixture.database.pool.query(
+          "UPDATE claims SET expires_at = '2000-01-01' WHERE id = $1",
+          [claim.id],
+        );
+      }
+      selected.push(
+        await domain.execute("get_ticket", { projectId: shared.id, ticketId: ticket.id }, owner),
+      );
+    }
+    const read = (ticketId: string) =>
+      domain.execute("get_ticket", { projectId: shared.id, ticketId }, owner);
+    const relabel = (
+      actor: Actor,
+      ticket: { id: string; version: number },
+      labels: string[],
+      extra: Record<string, unknown> = {},
+    ) =>
+      domain.execute(
+        "update_ticket_labels",
+        {
+          projectId: shared.id,
+          ticketId: ticket.id,
+          expectedVersion: ticket.version,
+          labels,
+          ...extra,
+        },
+        actor,
+      );
+    const cursor = BigInt((await domain.snapshot(owner, shared.id)).cursor);
+    const target = requireRow(selected[1]).ticket;
+    await membership("writer");
+    const writer = await domain.actor(member.id, { ownerId: "writer", scopes: ["admin"] }),
+      narrow = await domain.actor(owner.id, { ownerId: "narrow", scopes: ["write", "claim"] }),
+      elsewhere = await domain.actor(owner.id, {
+        ownerId: "elsewhere",
+        scopes: ["admin"],
+        projectIds: [foreign.id],
+      });
+    await expect(relabel(writer, target, ["denied"])).rejects.toMatchObject({ status: 403 });
+    await expect(relabel(narrow, target, ["denied"])).rejects.toMatchObject({
+      status: 403,
+      code: "insufficient_scope",
+    });
+    await expect(relabel(elsewhere, target, ["denied"])).rejects.toMatchObject({ status: 404 });
+    await expect(relabel(outsider, target, ["denied"])).rejects.toMatchObject({ status: 404 });
+    await expect(
+      domain.execute(
+        "update_ticket_labels",
+        { projectId: foreign.id, ticketId: target.id, expectedVersion: target.version, labels: [] },
+        admin,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      relabel(admin, { ...target, version: target.version + 1 }, ["stale"]),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    // Labels are the only change this operation carries.
+    for (const extra of [
+      { status: "done" },
+      { automationReady: false },
+      { holdReason: "Not mine to hold" },
+      { scopes: [] },
+      { title: "Renamed" },
+      { changes: { labels: ["denied"] } },
+      { claimId: crypto.randomUUID() },
+    ])
+      await expect(relabel(admin, target, ["denied"], extra)).rejects.toMatchObject({
+        name: "ZodError",
+      });
+    expect(await read(target.id)).toEqual(selected[1]);
+    for (const before of selected) {
+      const requestId = crypto.randomUUID();
+      const relabeled = await relabel(admin, before.ticket, ["relabeled", "keep"], { requestId });
+      // A retry returns the committed result instead of conflicting on the old version.
+      expect(await relabel(admin, before.ticket, ["relabeled", "keep"], { requestId })).toEqual(
+        relabeled,
+      );
+      const after = await read(before.ticket.id);
+      expect(after.ticket).toEqual({
+        ...before.ticket,
+        labels: ["relabeled", "keep"],
+        version: before.ticket.version + 1,
+        updatedAt: after.ticket.updatedAt,
+      });
+      expect(relabeled).toEqual(after.ticket);
+      expect(after.claim).toEqual(before.claim);
+      expect(after.readiness).toEqual(before.readiness);
+      const cleared = await relabel(admin, after.ticket, []);
+      expect(cleared).toEqual({
+        ...after.ticket,
+        labels: [],
+        version: after.ticket.version + 1,
+        updatedAt: cleared.updatedAt,
+      });
+      expect((await read(before.ticket.id)).claim).toEqual(before.claim);
+      // Ordinary edits keep enforcing worker ownership, even for labels alone.
+      await expect(
+        domain.execute(
+          "update_ticket",
+          {
+            projectId: shared.id,
+            ticketId: cleared.id,
+            expectedVersion: cleared.version,
+            changes: { labels: ["worker-edit"] },
+          },
+          admin,
+        ),
+      ).rejects.toMatchObject({ code: "claim_conflict" });
+      await expect(
+        domain.execute(
+          "bulk_update_tickets",
+          {
+            projectId: shared.id,
+            tickets: [{ ticketId: cleared.id, expectedVersion: cleared.version }],
+            changes: { labels: ["worker-edit"] },
+          },
+          admin,
+        ),
+      ).rejects.toMatchObject({ code: "claim_conflict" });
+    }
+    expect(
+      (await domain.execute("list_project_labels", { projectId: shared.id }, owner)).map(
+        (label) => label.name,
+      ),
+    ).toContain("relabeled");
+    const changed = (await domain.readEvents(owner, cursor, shared.id)).items.filter(
+      (event) => event.type === "ticket.updated",
+    );
+    expect(changed).toHaveLength(selected.length * 2);
+    expect(
+      changed.every(
+        (event) => JSON.stringify(event.data.changedFields) === JSON.stringify(["labels"]),
+      ),
+    ).toBe(true);
+  });
   it("renames, adopts, and deletes workspace labels across projects in one versioned write", async () => {
     const first = await project(),
       second = await project();

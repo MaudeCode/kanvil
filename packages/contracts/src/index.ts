@@ -2683,6 +2683,14 @@ export const operations = {
     "write",
     "Update a ticket with optimistic concurrency. Worker completion requires its active claim. `changes.customFields` sets only the named fields; null clears one.",
   ),
+  update_ticket_labels: op(
+    ticketInput.extend({ ...mutation, expectedVersion: version, labels: tags }).strict(),
+    ticketSchema,
+    "PATCH",
+    "/projects/{projectId}/tickets/{ticketId}/labels",
+    "admin",
+    "Replace one ticket's labels with optimistic concurrency, for label administration and triage. Takes no worker claim and leaves any claim, ownership requirement, readiness, and every other field unchanged; ordinary edits use update_ticket. Reuse requestId when retrying this write.",
+  ),
   move_ticket: op(
     ticketInput
       .extend({

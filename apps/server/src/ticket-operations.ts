@@ -270,10 +270,10 @@ export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_t
   await assertWorkerClaim(ctx, current, input.claimId);
   return persistTicketChanges(ctx, current, input.changes);
 }
-// Definition administration changes only labels and never takes or clears worker ownership.
-export async function updateTicketLabelsForDefinition(
+// Label administration changes only labels and never takes or clears worker ownership.
+export async function updateTicketLabels(
   ctx: Context,
-  input: Pick<ParsedInput<"update_ticket">, "ticketId" | "expectedVersion"> & { labels: string[] },
+  input: Pick<ParsedInput<"update_ticket_labels">, "ticketId" | "expectedVersion" | "labels">,
 ) {
   if (!can(ctx, "project.manage") && !can(ctx, "workspace.manage"))
     fail(403, "forbidden", "Label administration permission is required");
@@ -700,6 +700,7 @@ export const ticketHandlers: Pick<
   | "create_ticket"
   | "duplicate_ticket"
   | "update_ticket"
+  | "update_ticket_labels"
   | "move_ticket"
   | "check_ticket_relocation"
   | "relocate_ticket"
@@ -854,6 +855,11 @@ export const ticketHandlers: Pick<
     return row;
   },
   update_ticket: updateTicket,
+  async update_ticket_labels(ctx, input) {
+    const { row, event } = await updateTicketLabels(ctx, input);
+    await publish(ctx, event.type, event.ticketId, event.data);
+    return row;
+  },
   async move_ticket(ctx, input) {
     const current = await getTicket(ctx, input.ticketId);
     assertVersion(current, input.expectedVersion, "ticket", "moving");

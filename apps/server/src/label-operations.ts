@@ -4,7 +4,7 @@ import { filterKey, filterList, isHexColor, ticketFilter } from "@kanvil/contrac
 import { renameFeedLabel } from "./calendar-operations.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { labelColors, projectLabels, projects, tickets, views, workspaceLabels } from "./schema.ts";
-import { labelOrder, labelUsage, updateTicketLabelsForDefinition } from "./ticket-operations.ts";
+import { labelOrder, labelUsage, updateTicketLabels } from "./ticket-operations.ts";
 import { publishWorkspace } from "./workspace-operations.ts";
 import {
   assertVersion,
@@ -110,7 +110,7 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
   for (const ticket of affected)
     pending.push(
       (
-        await updateTicketLabelsForDefinition(ctx, {
+        await updateTicketLabels(ctx, {
           ticketId: ticket.id,
           expectedVersion: ticket.version,
           // An adopting rename can land on a name the ticket already carries.
