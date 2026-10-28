@@ -36,7 +36,7 @@ import {
   requireSession,
   requireInstanceAdmin,
 } from "./access.ts";
-import { createDomain, fail, json, requireRow, type Actor, one } from "./domain.ts";
+import { createDomain, errorEnvelope, fail, json, requireRow, type Actor, one } from "./domain.ts";
 import { createMcp } from "./mcp.ts";
 import { emailCodesAvailable, signInProviders } from "./auth.ts";
 import { deliverySecrets } from "./sealing.ts";
@@ -177,50 +177,24 @@ export async function createApplication(
         },
         { status: error.statusCode },
       );
-    if (error instanceof ApiError) {
-      const retry =
-        error.status === 429 &&
-        error.details &&
-        typeof error.details === "object" &&
-        "retryAfterSeconds" in error.details
-          ? String(error.details.retryAfterSeconds)
-          : undefined;
-      return Response.json(
-        {
-          error: {
-            status: error.status,
-            code: error.code,
-            message: error.message,
-            details: error.details,
-          },
-        },
-        { status: error.status, headers: retry ? { "Retry-After": retry } : {} },
-      );
-    }
-    if (error instanceof z.ZodError)
-      return Response.json(
-        {
-          error: {
-            code: "validation_error",
-            message: "Invalid request",
-            details: error.issues.map((issue) => ({
-              path: issue.path.join("."),
-              message: issue.message,
-            })),
-          },
-        },
-        { status: 400 },
-      );
     if (error instanceof SyntaxError || error instanceof HTTPException)
       return Response.json(
         { error: { code: "invalid_request", message: "The request could not be parsed" } },
         { status: error instanceof HTTPException ? error.status : 400 },
       );
-    console.error("Kanvil request failed", { name: error.name });
-    return Response.json(
-      { error: { code: "internal_error", message: "The request could not be completed" } },
-      { status: 500 },
-    );
+    const retry =
+      error instanceof ApiError &&
+      error.status === 429 &&
+      error.details &&
+      typeof error.details === "object" &&
+      "retryAfterSeconds" in error.details
+        ? String(error.details.retryAfterSeconds)
+        : undefined;
+    const envelope = errorEnvelope(error);
+    return Response.json(envelope.body, {
+      status: envelope.status,
+      headers: retry ? { "Retry-After": retry } : {},
+    });
   });
   app.notFound(() =>
     Response.json(

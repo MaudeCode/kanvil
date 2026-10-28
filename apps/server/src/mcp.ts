@@ -2,7 +2,7 @@ import { createMcpHandler, McpServer, type CallToolResult } from "@modelcontextp
 import { requireMcpAuth } from "@better-auth/mcp";
 import { z } from "zod";
 import { ApiError, operations, isOperation, scopes } from "@kanvil/contracts";
-import type { Actor, Domain } from "./domain.ts";
+import { errorEnvelope, type Actor, type Domain } from "./domain.ts";
 import type { Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { applicationVersion } from "./version.ts";
@@ -45,18 +45,9 @@ export function createMcp(
                   structuredContent: { result },
                 };
               } catch (error) {
-                if (!(error instanceof ApiError) && !(error instanceof z.ZodError)) throw error;
                 return {
                   isError: true,
-                  content: [
-                    {
-                      type: "text",
-                      text:
-                        error instanceof ApiError
-                          ? `${error.code}: ${error.message}`
-                          : "validation_error: Invalid tool arguments",
-                    },
-                  ],
+                  content: [{ type: "text", text: JSON.stringify(errorEnvelope(error).body) }],
                 };
               }
             },

@@ -273,7 +273,7 @@ While the connection is paused nothing syncs; issue changes reported meanwhile a
 
 ## MCP
 
-The authenticated Streamable HTTP endpoint is `/mcp`. Tool inputs use the shared HTTP contracts, including expected versions, request IDs, and claim IDs. Successful structured results have a `result` property. Business failures return an error result with a stable code.
+The authenticated Streamable HTTP endpoint is `/mcp`. Tool inputs use the shared HTTP contracts, including expected versions, request IDs, and claim IDs. Successful structured results have a `result` property. A rejected call returns an error result (`isError: true`) whose text content is the same JSON envelope an HTTP response carries, `{"error": {"status", "code", "message", "details"}}`, so claim readiness reasons, lease maximums, version conflicts, and validation paths read the same on both transports. Unexpected failures return only `internal_error`.
 
 Clients supporting custom headers can connect using a scoped API credential. Interactive clients can discover OAuth authorization through the endpoint's protected-resource metadata, then sign in and consent through Kanvil. Resource scopes are `kanvil:read`, `kanvil:write`, `kanvil:claim`, and `kanvil:admin`. The web app supplies the login and consent pages. Configure OIDC callback URLs as `/api/auth/callback/oidc` and explicitly link an existing local account from Settings before using OIDC sign-in. Protocol compatibility is tested using the official SDK, including discovery, tool listing, and writes.
 

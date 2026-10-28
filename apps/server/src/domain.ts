@@ -32,7 +32,9 @@ import {
   parsePublicOutput,
   type PublicOperation,
   type PublicOutput,
+  type errorSchema,
 } from "@kanvil/contracts";
+import { z } from "zod";
 import { createHash } from "node:crypto";
 import { user } from "./auth-schema.ts";
 import type { Sealer } from "./sealing.ts";
@@ -125,6 +127,46 @@ export type Handler<K extends Operation> = (
 export type Handlers = { [K in Operation]: Handler<K> };
 export function fail(status: number, code: string, message: string, details?: unknown): never {
   throw new ApiError(status, code, message, details);
+}
+// The one error envelope HTTP responses and MCP tool results carry. Anything that is not an
+// API or validation error stays internal: only its name is logged, never its message.
+export function errorEnvelope(error: unknown): {
+  status: number;
+  body: z.infer<typeof errorSchema>;
+} {
+  if (error instanceof ApiError)
+    return {
+      status: error.status,
+      body: {
+        error: {
+          status: error.status,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+      },
+    };
+  if (error instanceof z.ZodError)
+    return {
+      status: 400,
+      body: {
+        error: {
+          code: "validation_error",
+          message: "Invalid request",
+          details: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        },
+      },
+    };
+  console.error("Kanvil request failed", {
+    name: error instanceof Error ? error.name : typeof error,
+  });
+  return {
+    status: 500,
+    body: { error: { code: "internal_error", message: "The request could not be completed" } },
+  };
 }
 export function requireRow<T>(row: T | undefined): T {
   if (!row) fail(404, "not_found", "The requested record was not found");
