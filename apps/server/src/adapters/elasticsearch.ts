@@ -147,7 +147,8 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
     async find(identity, projectIds, query) {
       let scrollId: string | undefined;
       try {
-        const found: string[] = [];
+        const found: { id: string; rank: number }[] = [];
+        let score: number | undefined;
         let response = await accepted(
           await call(settings, `${settings.index}/_search?scroll=1m`, {
             method: "POST",
@@ -186,11 +187,16 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
           const result = z
             .object({
               _scroll_id: z.string().optional(),
-              hits: z.object({ hits: z.array(z.object({ _id: z.uuid() })) }),
+              hits: z.object({ hits: z.array(z.object({ _id: z.uuid(), _score: z.number() })) }),
             })
             .parse(await response.json());
           scrollId = result["_scroll_id"] ?? scrollId;
-          found.push(...result.hits.hits.map((hit) => hit["_id"]));
+          // Hits arrive by descending score; equal scores share a rank.
+          for (const hit of result.hits.hits) {
+            const rank = (found.at(-1)?.rank ?? 0) + (score === hit["_score"] ? 0 : 1);
+            score = hit["_score"];
+            found.push({ id: hit["_id"], rank });
+          }
           if (found.length > 10000) throw new Error("External search unavailable");
           if (!result.hits.hits.length || !scrollId) break;
           response = await accepted(

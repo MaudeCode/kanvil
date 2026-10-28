@@ -193,15 +193,18 @@ export function createTicketSearch(
       return fallback();
     const root = await instance.read();
     try {
-      const ids = await factory({ provider: "elasticsearch", config: settings }).find(
+      const hits = await factory({ provider: "elasticsearch", config: settings }).find(
         root.identity,
         projectIds,
         parseQuery(query),
       );
+      const ids = hits.map((hit) => hit.id),
+        ranks = hits.map((hit) => hit.rank);
       return {
         where: ids.length ? inArray(tickets.id, ids) : sql`false`,
-        // One array parameter keeps the index's order without a bind parameter per ID.
-        rank: sql<number>`array_position(${`{${ids.join(",")}}`}::uuid[], ${tickets.id})`,
+        // The index's rank of each ID, as two array parameters rather than one per ID; equally
+        // relevant tickets tie so the caller's recency order decides between them.
+        rank: sql<number>`(${`{${ranks.join(",")}}`}::int[])[array_position(${`{${ids.join(",")}}`}::uuid[], ${tickets.id})]`,
         engine: "index",
         indexing: false,
       };

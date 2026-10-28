@@ -152,6 +152,24 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
     );
     expect(results.engine).toBe("index");
     expect(results.items.map((item) => item.id)).toEqual([exact.id, fuzzy.id]);
+    // Equally relevant hits fall back to the most recently updated.
+    const older = await create("Inspect quillwort gauges");
+    const newer = await create("Inspect quillwort gauges");
+    await app.search.sync();
+    expect(
+      (await app.domain.execute("search_tickets", { q: "quillwort", ...scope }, actor)).items.map(
+        (item) => item.ticket.id,
+      ),
+    ).toEqual([newer.id, older.id]);
+    expect(
+      (
+        await app.domain.execute(
+          "search_workspace",
+          { q: "quillwort", type: "ticket", ...scope },
+          actor,
+        )
+      ).items.map((item) => item.id),
+    ).toEqual([newer.id, older.id]);
     const found = async (q: string) =>
       (
         await app.domain.execute(
