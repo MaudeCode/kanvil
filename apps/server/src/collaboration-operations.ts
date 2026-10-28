@@ -30,10 +30,12 @@ import {
   subscriptions,
   notifications,
   deliveries,
+  projects,
   stagedUploads,
   tickets,
 } from "./schema.ts";
-import { assertNoCycle } from "./ticket-operations.ts";
+import { accessibleProjectRows } from "./project-access.ts";
+import { assertNoCycle, readableTicket } from "./ticket-operations.ts";
 import { mentionedUserIds } from "./mentions.ts";
 import {
   assertVersion,
@@ -52,7 +54,9 @@ import {
   one,
 } from "./domain.ts";
 const sourceTicket = alias(tickets, "source_ticket"),
-  targetTicket = alias(tickets, "target_ticket");
+  targetTicket = alias(tickets, "target_ticket"),
+  sourceProject = alias(projects, "source_project"),
+  targetProject = alias(projects, "target_project");
 
 async function editableComment(ctx: Context, commentId: string, expectedVersion: number) {
   const row = one(
@@ -125,27 +129,57 @@ export const collaborationHandlers: Pick<
 > = {
   async list_relations(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    return ctx.db
+    const rows = await ctx.db
       .select({
         ...getTableColumns(relations),
         sourceKey: sourceTicket.key,
         sourceTitle: sourceTicket.title,
+        sourceProjectId: sourceTicket.projectId,
+        sourceProjectKey: sourceProject.key,
         targetKey: targetTicket.key,
         targetTitle: targetTicket.title,
+        targetProjectId: targetTicket.projectId,
+        targetProjectKey: targetProject.key,
       })
       .from(relations)
       .innerJoin(sourceTicket, eq(sourceTicket.id, relations.sourceId))
       .innerJoin(targetTicket, eq(targetTicket.id, relations.targetId))
-      .where(
-        and(
-          eq(relations.projectId, project(ctx).id),
-          or(eq(relations.sourceId, ticket.id), eq(relations.targetId, ticket.id)),
-        ),
-      );
+      .innerJoin(sourceProject, eq(sourceProject.id, sourceTicket.projectId))
+      .innerJoin(targetProject, eq(targetProject.id, targetTicket.projectId))
+      .where(or(eq(relations.sourceId, ticket.id), eq(relations.targetId, ticket.id)));
+    // The other side of an edge into another project shows only its key, unless the caller can
+    // read that project too.
+    const here = project(ctx).id,
+      elsewhere = rows.some((row) => row.sourceProjectId !== here || row.targetProjectId !== here),
+      readable = new Set([
+        here,
+        ...(elsewhere ? await accessibleProjectRows(ctx.db, ctx.actor) : []).map((row) => row.id),
+      ]);
+    return rows.map(
+      ({
+        sourceTitle,
+        sourceProjectId,
+        sourceProjectKey,
+        targetTitle,
+        targetProjectId,
+        targetProjectKey,
+        ...row
+      }) => {
+        const source = readable.has(sourceProjectId),
+          target = readable.has(targetProjectId);
+        return {
+          ...row,
+          ...(source && { sourceTitle, sourceProjectId, sourceProjectKey }),
+          ...(target && { targetTitle, targetProjectId, targetProjectKey }),
+          restricted: !source || !target,
+        };
+      },
+    );
   },
   async add_relation(ctx, input) {
+    // The other ticket may live in any project the caller can read.
     const current = await getTicket(ctx, input.ticketId),
-      other = await getTicket(ctx, input.targetId);
+      { ticket: other } = await readableTicket(ctx, input.targetId);
     const [source, target] = input.direction === "incoming" ? [other, current] : [current, other];
     if (source.id === target.id) fail(409, "invalid_relation", "Choose a different ticket");
     if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
@@ -166,17 +200,22 @@ export const collaborationHandlers: Pick<
         })
         .returning(),
     );
-    await publishMany(ctx, relationEvents("relation.added", row));
+    await publishMany(ctx, relationEvents("relation.added", row, [current, other]));
     return row;
   },
+  // Writers of either side's project can remove an edge.
   async remove_relation(ctx, input) {
-    const row = one(
-      await ctx.db
-        .delete(relations)
-        .where(and(eq(relations.projectId, project(ctx).id), eq(relations.id, input.relationId)))
-        .returning(),
+    const found = one(
+      await ctx.db.select().from(relations).where(eq(relations.id, input.relationId)),
     );
-    await publishMany(ctx, relationEvents("relation.removed", row));
+    const sides = await ctx.db
+      .select({ id: tickets.id, projectId: tickets.projectId })
+      .from(tickets)
+      .where(inArray(tickets.id, [found.sourceId, found.targetId]));
+    if (!sides.some((side) => side.projectId === project(ctx).id))
+      fail(404, "not_found", "The requested record was not found");
+    const row = one(await ctx.db.delete(relations).where(eq(relations.id, found.id)).returning());
+    await publishMany(ctx, relationEvents("relation.removed", row, sides));
     return { ok: true };
   },
   async list_comments(ctx, input) {

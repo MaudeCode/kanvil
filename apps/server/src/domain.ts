@@ -663,15 +663,17 @@ export async function publish(
 ) {
   return one(await publishMany(ctx, [{ type, ticketId, data }]));
 }
-// A relationship change appears in both tickets' activity.
+// A relationship change appears in both tickets' activity, each in its own project's feed.
 export const relationEvents = (
   type: "relation.added" | "relation.removed",
   relation: { sourceId: string; targetId: string },
+  sides: readonly { id: string; projectId: string }[],
 ): PendingEvent[] =>
   [relation.sourceId, relation.targetId].map((ticketId) => ({
     type,
     ticketId,
     data: { relation },
+    projectId: requireRow(sides.find((side) => side.id === ticketId)).projectId,
   }));
 export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
   return (

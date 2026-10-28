@@ -1003,6 +1003,8 @@ describe("ticket operations on PostgreSQL", () => {
     expect(related).toHaveLength(1);
     expect(relationReference(related[0]!, parent.id)).toEqual({
       id: peer.id,
+      projectId: project.id,
+      restricted: false,
       label: "Related to",
       title: `${peer.key} · ${peer.title}`,
     });
@@ -1016,6 +1018,8 @@ describe("ticket operations on PostgreSQL", () => {
     ).find((row) => row.type === "blocks");
     expect(relationReference(incoming!, peer.id)).toEqual({
       id: parent.id,
+      projectId: project.id,
+      restricted: false,
       label: "Is blocked by",
       title: `${parent.key} · ${parent.title}`,
     });
@@ -1583,6 +1587,178 @@ describe("ticket operations on PostgreSQL", () => {
       nextDueAt: soon,
     });
     expect(await list({ limit: 1, offset: 5 })).toEqual({ titles: [], total: 4 });
+  });
+  const projectTicket = (projectId: string, title: string) =>
+    domain.execute(
+      "create_ticket",
+      {
+        projectId,
+        title,
+        description: "Implement the described behavior.",
+        acceptanceCriteria: "The regression is covered and checks pass.",
+        difficulty: "med",
+        automationReady: true,
+      },
+      owner,
+    );
+  const otherProject = async (workspaceId?: string) =>
+    domain.execute(
+      "create_project",
+      {
+        ...(workspaceId ? { workspaceId } : {}),
+        key: `K${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        name: "Other project",
+      },
+      owner,
+    );
+  it("relates, orders, and announces tickets across projects and workspaces", async () => {
+    const sibling = await otherProject(),
+      space = await domain.execute(
+        "create_workspace",
+        { name: "Elsewhere", slug: `elsewhere-${crypto.randomUUID().slice(0, 8)}` },
+        owner,
+      ),
+      far = await otherProject(space.id);
+    const dependent = await ticket("Dependent here"),
+      blocker = await projectTicket(sibling.id, "Blocker in a sibling project"),
+      distant = await projectTicket(far.id, "Work in another workspace");
+    const cursors = await Promise.all(
+      [project, sibling].map(async (item) => (await domain.readEvents(owner, 0n, item.id)).cursor),
+    );
+    // The current ticket is blocked by a ticket of another project.
+    const edge = await domain.execute(
+      "add_relation",
+      {
+        projectId: project.id,
+        ticketId: dependent.id,
+        targetId: blocker.id,
+        type: "blocks",
+        direction: "incoming",
+      },
+      owner,
+    );
+    expect(edge).toMatchObject({ sourceId: blocker.id, targetId: dependent.id });
+    for (const [index, item] of [project, sibling].entries())
+      expect(
+        (await domain.readEvents(owner, cursors[index]!, item.id)).items.map((event) => [
+          event.type,
+          event.ticketId,
+        ]),
+      ).toEqual([["relation.added", item.id === project.id ? dependent.id : blocker.id]]);
+    for (const [projectId, ticketId] of [
+      [project.id, dependent.id],
+      [sibling.id, blocker.id],
+    ])
+      expect(await domain.execute("list_relations", { projectId, ticketId }, owner)).toEqual([
+        expect.objectContaining({
+          id: edge.id,
+          sourceKey: blocker.key,
+          sourceTitle: blocker.title,
+          sourceProjectId: sibling.id,
+          sourceProjectKey: sibling.key,
+          targetKey: dependent.key,
+          targetTitle: dependent.title,
+          targetProjectId: project.id,
+          targetProjectKey: project.key,
+          restricted: false,
+        }),
+      ]);
+    const eligible = async () =>
+      (await domain.execute("list_eligible_tickets", { projectId: project.id }, owner)).items.find(
+        (item) => item.ticket.id === dependent.id,
+      )?.readiness;
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: dependent.id }, owner))
+        .readiness,
+    ).toMatchObject({ ready: false, reasons: [{ code: "dependency", ticketId: blocker.id }] });
+    expect(await eligible()).toMatchObject({ ready: false });
+    // A cycle through a third project in another workspace, named by its key, is still a cycle.
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: dependent.id, targetId: distant.key, type: "blocks" },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "add_relation",
+        { projectId: far.id, ticketId: distant.id, targetId: blocker.id, type: "blocks" },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "dependency_cycle" });
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: sibling.id,
+        ticketId: blocker.id,
+        expectedVersion: blocker.version,
+        changes: { status: "done" },
+      },
+      owner,
+    );
+    expect(await eligible()).toEqual({ ready: true, reasons: [] });
+    // Either side's project can remove the edge, and both hear about it.
+    const before = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    await domain.execute("remove_relation", { projectId: sibling.id, relationId: edge.id }, owner);
+    expect(
+      (await domain.readEvents(owner, before, project.id)).items.map((event) => event.type),
+    ).toEqual(["relation.removed"]);
+    expect(
+      await domain.execute(
+        "list_relations",
+        { projectId: project.id, ticketId: dependent.id },
+        owner,
+      ),
+    ).toEqual([expect.objectContaining({ targetId: distant.id })]);
+  });
+  it("hides a cross-project relation's far side from callers who cannot read it", async () => {
+    const sibling = await otherProject();
+    const current = await ticket("Visible here"),
+      hidden = await projectTicket(sibling.id, "Private elsewhere");
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const bound = await domain.actor(owner.id, {
+      ownerId: "bound-relation-credential",
+      scopes: ["read", "write"],
+      projectIds: [project.id],
+    });
+    for (const caller of [writer, bound])
+      await expect(
+        domain.execute(
+          "add_relation",
+          { projectId: project.id, ticketId: current.id, targetId: hidden.id, type: "related" },
+          caller,
+        ),
+      ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    expect(
+      await domain.execute(
+        "list_relations",
+        { projectId: project.id, ticketId: current.id },
+        owner,
+      ),
+    ).toEqual([]);
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: current.id, targetId: hidden.id, type: "blocks" },
+      owner,
+    );
+    for (const caller of [writer, bound]) {
+      const [relation] = await domain.execute(
+        "list_relations",
+        { projectId: project.id, ticketId: current.id },
+        caller,
+      );
+      expect(relation).toMatchObject({
+        sourceKey: current.key,
+        sourceTitle: current.title,
+        targetKey: hidden.key,
+        restricted: true,
+      });
+      expect(relation).not.toHaveProperty("targetTitle");
+      expect(relation).not.toHaveProperty("targetProjectKey");
+    }
   });
   it("rejects cycles across blockers and parent relationships and explains readiness", async () => {
     const first = await ticket(),

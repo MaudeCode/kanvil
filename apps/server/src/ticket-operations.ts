@@ -239,30 +239,22 @@ async function validateReferences(
     await assertNoCycle(ctx, ticketId, changes.parentId);
   }
 }
+// Parents and blockers form one dependency graph across every project. The new edge closes a
+// cycle when its source is already reachable from its target.
 export async function assertNoCycle(ctx: Context, sourceId: string, targetId: string) {
   if (sourceId === targetId) fail(409, "dependency_cycle", "A ticket cannot depend on itself");
-  const all = await ctx.db
-    .select({ id: tickets.id, parentId: tickets.parentId })
-    .from(tickets)
-    .where(eq(tickets.projectId, project(ctx).id));
-  const links = await ctx.db
-    .select()
-    .from(relations)
-    .where(and(eq(relations.projectId, project(ctx).id), eq(relations.type, "blocks")));
-  const edges = new Map<string, string[]>();
-  const add = (from: string, to: string) => edges.set(from, [...(edges.get(from) ?? []), to]);
-  for (const row of all) if (row.parentId) add(row.id, row.parentId);
-  for (const row of links) add(row.sourceId, row.targetId);
-  const pending = [targetId],
-    visited = new Set<string>();
-  while (pending.length) {
-    const node = pending.pop();
-    if (!node || visited.has(node)) continue;
-    if (node === sourceId)
-      fail(409, "dependency_cycle", "This relationship would create a dependency cycle");
-    visited.add(node);
-    pending.push(...(edges.get(node) ?? []));
-  }
+  const { rows } = await ctx.db.execute(sql`WITH RECURSIVE reach(id) AS (
+      SELECT ${targetId}::uuid
+      UNION
+      SELECT edge.next FROM reach JOIN (
+        SELECT source_id AS id, target_id AS next FROM ${relations} WHERE type = 'blocks'
+        UNION ALL
+        SELECT id, parent_id FROM ${tickets} WHERE parent_id IS NOT NULL
+      ) edge ON edge.id = reach.id
+    )
+    SELECT 1 FROM reach WHERE id = ${sourceId}::uuid LIMIT 1`);
+  if (rows.length)
+    fail(409, "dependency_cycle", "This relationship would create a dependency cycle");
 }
 // Applies one update and returns its event so callers can publish singly or in a batch.
 export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_ticket">) {
@@ -631,7 +623,7 @@ async function relocation(
     fail(400, "validation_error", "Tickets move only between projects of one workspace");
   if (destination.archivedAt)
     fail(409, "project_archived", "Restore the destination project before moving tickets into it");
-  // Claims, hierarchy, and relationships live within one project; the move never severs them.
+  // A move never severs a claim, the hierarchy, or a relationship, wherever it reaches.
   const blockers: { code: string; message: string; ticketId?: string }[] = [];
   const [claim] = await ctx.db.select().from(claims).where(eq(claims.ticketId, ticket.id));
   if (claim)
@@ -709,6 +701,28 @@ async function relocation(
       message: `The destination requires fields without a default: ${unmet.map((field) => field.name).join(", ")}`,
     });
   return { target, blockers, fields };
+}
+// A ticket by ID or key in any project the caller can read; anything else reads as not found.
+export async function readableTicket(ctx: Context, identifier: string) {
+  const allowed = await accessibleProjectRows(ctx.db, ctx.actor);
+  const [ticket] = allowed.length
+    ? await ctx.db
+        .select()
+        .from(tickets)
+        .where(
+          and(
+            inArray(
+              tickets.projectId,
+              allowed.map((row) => row.id),
+            ),
+            ticketMatch(identifier),
+          ),
+        )
+        .limit(1)
+    : [];
+  const owner = allowed.find((row) => row.id === ticket?.projectId);
+  if (!ticket || !owner) fail(404, "not_found", "Ticket was not found");
+  return { ticket, project: owner };
 }
 export const ticketHandlers: Pick<
   Handlers,
@@ -869,7 +883,7 @@ export const ticketHandlers: Pick<
     );
     await publishMany(ctx, [
       { ...event, data: { ...event.data, duplicateOf: source.id } },
-      ...relationEvents("relation.added", relation),
+      ...relationEvents("relation.added", relation, [row, source]),
     ]);
     return row;
   },
@@ -988,24 +1002,7 @@ export const ticketHandlers: Pick<
     return row;
   },
   async resolve_ticket(ctx, input) {
-    const allowed = await accessibleProjectRows(ctx.db, ctx.actor);
-    const [ticket] = allowed.length
-      ? await ctx.db
-          .select()
-          .from(tickets)
-          .where(
-            and(
-              inArray(
-                tickets.projectId,
-                allowed.map((row) => row.id),
-              ),
-              ticketMatch(input.ticketId),
-            ),
-          )
-          .limit(1)
-      : [];
-    const owner = allowed.find((row) => row.id === ticket?.projectId);
-    if (!ticket || !owner) fail(404, "not_found", "Ticket was not found");
+    const { ticket, project: owner } = await readableTicket(ctx, input.ticketId);
     return { ticket, project: { id: owner.id, key: owner.key, name: owner.name } };
   },
   async bulk_update_tickets(ctx, input) {

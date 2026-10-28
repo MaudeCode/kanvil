@@ -751,8 +751,15 @@ export const relationSchema = z.object({
   type: z.enum(["blocks", "related", "duplicate", "causes", "clones", "implements", "reviews"]),
   sourceKey: z.string().optional(),
   sourceTitle: z.string().optional(),
+  sourceProjectId: z.uuid().optional(),
+  sourceProjectKey: z.string().optional(),
   targetKey: z.string().optional(),
   targetTitle: z.string().optional(),
+  targetProjectId: z.uuid().optional(),
+  targetProjectKey: z.string().optional(),
+  // A listed edge whose other ticket is in a project the caller cannot read carries only that
+  // ticket's ID and key.
+  restricted: z.boolean().optional(),
 });
 export const relationDirections = z.enum(["outgoing", "incoming"]);
 const relationLabel = (type: z.output<typeof relationSchema>["type"], outgoing: boolean) =>
@@ -778,8 +785,15 @@ export function relationReference(relation: z.output<typeof relationSchema>, tic
   const referenceId = outgoing ? relation.targetId : relation.sourceId;
   const key = (outgoing ? relation.targetKey : relation.sourceKey) ?? referenceId;
   const title = outgoing ? relation.targetTitle : relation.sourceTitle;
+  const projectId = outgoing ? relation.targetProjectId : relation.sourceProjectId;
   const label = relationLabel(relation.type, outgoing);
-  return { id: referenceId, label, title: `${key}${title ? ` · ${title}` : ""}` };
+  return {
+    id: referenceId,
+    projectId,
+    restricted: relation.restricted ?? false,
+    label,
+    title: `${key}${title ? ` · ${title}` : ""}`,
+  };
 }
 export const commentSchema = z.object({
   id: z.uuid(),
@@ -2864,13 +2878,14 @@ export const operations = {
     "GET",
     "/projects/{projectId}/tickets/{ticketId}/relations",
     "read",
-    "List incoming and outgoing ticket relationships.",
+    "List incoming and outgoing ticket relationships with each side's key, title, and project. A ticket in a project the caller cannot read appears by ID and key alone, with `restricted: true`.",
   ),
   add_relation: op(
     ticketInput
       .extend({
         ...mutation,
-        targetId: z.uuid(),
+        // A ticket ID or key, in this project or any other project the caller can read.
+        targetId: id,
         type: relationSchema.shape.type,
         direction: relationDirections.optional(),
       })
@@ -2879,7 +2894,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/relations",
     "write",
-    "Relate tickets while rejecting dependency cycles.",
+    "Relate a ticket to another by ID or key, in this project or any project the caller can read, while rejecting dependency cycles across projects. Both projects' feeds record the change.",
   ),
   remove_relation: op(
     projectInput.extend({ ...mutation, relationId: z.uuid() }).strict(),
@@ -2887,7 +2902,7 @@ export const operations = {
     "DELETE",
     "/projects/{projectId}/relations/{relationId}",
     "write",
-    "Remove a ticket relationship.",
+    "Remove a ticket relationship that names a ticket of this project.",
   ),
   list_comments: op(
     ticketInput.extend(pagination),
