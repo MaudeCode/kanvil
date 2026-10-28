@@ -90,6 +90,19 @@ A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unn
 
 Increment `ios.buildNumber` and `android.versionCode` in `app.config.ts` for subsequent distributed builds. Keep signing material outside the repository. Building a simulator app or preview APK does not publish to an app store or install on a physical device.
 
+## Local startup diagnostics
+
+For a native startup failure that cannot be reproduced on the available simulator, make an explicit diagnostic candidate with `EXPO_PUBLIC_STARTUP_DIAGNOSTICS=1` set during prebuild, JavaScript export, and native compilation:
+
+```sh
+EXPO_PUBLIC_STARTUP_DIAGNOSTICS=1 pnpm --filter @kanvil/mobile exec expo prebuild --platform ios
+EXPO_PUBLIC_STARTUP_DIAGNOSTICS=1 pnpm --filter @kanvil/mobile exec expo run:ios --configuration Release
+```
+
+The config plugin starts the recorder before JavaScript. It records app-owned window/scene geometry, loaded controller and native-bar geometry, item counts, OS/build versions, and lifecycle events. It avoids loading controller views and never reads labels, titles, ticket text, URLs, credentials, or account identifiers. Sampling is bounded after startup/activation, and unchanged samples are omitted. The atomically replaced `kanvil-native-startup.json` file in the app cache is capped at 1 MiB and retained across process launches so cold and foreground-return states can be compared.
+
+Only diagnostic candidates expose Settings → Share in the server section. After reproducing the failure, background and return if needed to restore navigation, then share that JSON file. Sharing is manual; the recorder has no network transport. Rebuild without the variable to disable recording and remove the export action. Simulator results remain separate from physical-device confirmation, and the simulator OS must match the affected device before claiming a reproduction.
+
 ## Native OIDC fixture
 
 The Expo authentication proxy requires an HTTPS identity provider, including during local development. For simulator checks, start the disposable TLS provider and backend with:

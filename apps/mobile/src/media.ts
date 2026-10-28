@@ -1,7 +1,8 @@
-import { Image } from "react-native";
+import { Image, Platform } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImageManipulator from "expo-image-manipulator";
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { attachmentLimit } from "@kanvil/contracts";
 import { photoInputSchema } from "@kanvil/contracts/instance";
 import { t } from "@kanvil/contracts/i18n";
@@ -38,4 +39,12 @@ export async function chooseImage() {
     if (prepared?.exists) prepared.delete();
     if (source.exists) source.delete();
   }
+}
+
+// Enabled only in explicit diagnostic candidates; the file contains native geometry only.
+export const startupDiagnosticsEnabled =
+  Platform.OS === "ios" && process.env.EXPO_PUBLIC_STARTUP_DIAGNOSTICS === "1";
+export async function shareStartupDiagnostics() {
+  const file = new File(Paths.cache, "kanvil-native-startup.json");
+  await Sharing.shareAsync(file.uri, { mimeType: "application/json", UTI: "public.json" });
 }

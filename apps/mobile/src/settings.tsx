@@ -26,6 +26,7 @@ import {
   settingsSectionLabel,
   settingsSectionSymbols,
 } from "@kanvil/contracts/navigation";
+import { startupDiagnosticsEnabled, shareStartupDiagnostics } from "./media.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { UserAvatar } from "./ticket-values.tsx";
 import { useProjectNavigation } from "./navigation.ts";
@@ -589,6 +590,14 @@ export function Settings({
           </Section>
         )}
         <Section title={baseUrl}>
+          {startupDiagnosticsEnabled && (
+            <Button
+              title={t("native.detail.share")}
+              onPress={() => {
+                void shareStartupDiagnostics().catch(setError);
+              }}
+            />
+          )}
           <Button
             title={t("native.settings.signOut.action")}
             disabled={pending}

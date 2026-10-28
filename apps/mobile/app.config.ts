@@ -14,9 +14,12 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "13",
+    buildNumber: "14",
     supportsTablet: true,
-    infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
+    infoPlist: {
+      NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
+      KanvilStartupDiagnostics: process.env.EXPO_PUBLIC_STARTUP_DIAGNOSTICS === "1",
+    },
   },
   android: {
     package: "com.maudecode.kanvil",
@@ -45,6 +48,7 @@ const config: ExpoConfig = {
       },
     ],
     "expo-font",
+    "./plugins/with-startup-diagnostics.cjs",
   ],
 };
 export default config;
