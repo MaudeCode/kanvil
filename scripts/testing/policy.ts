@@ -196,6 +196,14 @@ export const families: readonly Family[] = [
     },
   },
   {
+    name: "Loopback fixture isolation and disconnects",
+    layer: "unit",
+    boundaries: ["loopback"],
+    property:
+      "HTTP fixture ownership and HTTP/SMTP peer resets require real request framing and socket error delivery.",
+    cases: { "apps/server/src/test-fixture.test.ts": 3 },
+  },
+  {
     name: "Release publisher process",
     layer: "unit",
     boundaries: ["process"],

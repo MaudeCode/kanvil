@@ -1,5 +1,10 @@
 import pg from "pg";
-import { createServer } from "node:net";
+import { createServer, type Server } from "node:net";
+import {
+  createServer as createHttpServer,
+  type IncomingHttpHeaders,
+  type ServerResponse,
+} from "node:http";
 import { createDatabase, type Database } from "./database.ts";
 import { migrateDatabase } from "./migrate.ts";
 import { readConfig } from "./config.ts";
@@ -50,6 +55,18 @@ export async function createFixture({
   };
 }
 
+// Discovery probes and senders can disconnect before a fake finishes its reply.
+async function listenLoopback(server: Server) {
+  server.on("connection", (socket) => socket.on("error", () => socket.destroy()));
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
+  return {
+    port: address.port,
+    close: () => new Promise<void>((done) => server.close(() => done())),
+  };
+}
+
 // A local SMTP server that accepts every message, so email never leaves the machine. Quoted-printable
 // messages are kept decoded.
 export async function startMailbox(onMessage?: (message: string) => void) {
@@ -93,13 +110,45 @@ export async function startMailbox(onMessage?: (message: string) => void) {
       }
     });
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
-  return {
-    messages,
-    state,
-    url: `smtp://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>((done) => server.close(() => done())),
-  };
+  const listener = await listenLoopback(server);
+  return { messages, server, state, ...listener, url: `smtp://127.0.0.1:${listener.port}` };
+}
+
+export interface ReceivedRequest {
+  method: string;
+  url: string;
+  headers: IncomingHttpHeaders;
+  body: string;
+}
+
+// A loopback HTTP peer shared by delivery and repository protocol tests.
+export async function startHttpReceiver(
+  reply: (request: ReceivedRequest, response: ServerResponse) => void,
+) {
+  const prefix = `/${crypto.randomUUID()}`;
+  const server = createHttpServer((request, response) => {
+    request.on("error", () => request.destroy());
+    const path = request.url ?? "";
+    // Only the fake's own URL reaches its script; root GETs from port discovery do not.
+    if (path !== prefix && !path.startsWith(`${prefix}/`) && !path.startsWith(`${prefix}?`)) {
+      request.resume();
+      response.writeHead(404).end();
+      return;
+    }
+    let body = "";
+    request.on("data", (chunk: Buffer) => (body += chunk.toString()));
+    request.on("end", () =>
+      reply(
+        {
+          method: request.method ?? "",
+          url: path.slice(prefix.length) || "/",
+          headers: request.headers,
+          body,
+        },
+        response,
+      ),
+    );
+  });
+  const listener = await listenLoopback(server);
+  return { server, ...listener, url: `http://127.0.0.1:${listener.port}${prefix}` };
 }

@@ -1,10 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createHmac } from "node:crypto";
-import { createServer, type IncomingHttpHeaders } from "node:http";
-import type { AddressInfo } from "node:net";
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { Project, RepositoryConnection, Ticket } from "@kanvil/contracts";
-import { createFixture } from "./test-fixture.ts";
+import { createFixture, startHttpReceiver, type ReceivedRequest } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createHttpSender } from "./adapters/outbound.ts";
@@ -15,32 +13,15 @@ import { deliverySecrets } from "./sealing.ts";
 import { deliveries, events, receivedWebhooks, repositoryConnections } from "./schema.ts";
 import type { Actor } from "./domain.ts";
 
-function portOf(address: string | AddressInfo | null) {
-  if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
-  return address.port;
-}
-type Received = { method: string; url: string; headers: IncomingHttpHeaders; body: string };
-// A loopback stand-in for the GitHub, Gitea, and GitLab REST APIs. `statuses` answers each request in turn, then 200.
+// A loopback stand-in for GitHub, Gitea, and GitLab. `statuses` answers each request in turn, then 200.
 async function fakeGitHub() {
-  const state = { statuses: [] as number[], received: [] as Received[] };
-  const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk: Buffer) => (body += chunk.toString()));
-    request.on("end", () => {
-      state.received.push({
-        method: request.method ?? "",
-        url: request.url ?? "",
-        headers: request.headers,
-        body,
-      });
-      response.writeHead(state.statuses.shift() ?? 200, { "Content-Type": "application/json" });
-      response.end("{}");
-    });
+  const state = { statuses: [] as number[], received: [] as ReceivedRequest[] };
+  const http = await startHttpReceiver((request, response) => {
+    state.received.push(request);
+    response.writeHead(state.statuses.shift() ?? 200, { "Content-Type": "application/json" });
+    response.end("{}");
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const port = portOf(server.address());
-  const origin = `http://127.0.0.1:${port}`;
-  return { state, origin, url: `${origin}/api/v3`, close: () => server.close() };
+  return { state, ...http, origin: http.url, url: `${http.url}/api/v3` };
 }
 const repository = { full_name: "acme/widgets", html_url: "https://github.com/acme/widgets" };
 const pullRequest = (
@@ -159,7 +140,7 @@ describe("repository connections", () => {
     writer = await user("repository-writer@example.test");
   });
   afterAll(async () => {
-    github?.close();
+    await github?.close();
     await app?.close();
     await fixture?.close();
   });
