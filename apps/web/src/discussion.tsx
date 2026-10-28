@@ -4,7 +4,7 @@ import { useInlineUpload } from "./ticket-resources.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Ticket } from "@kanvil/contracts";
+import type { Output, Ticket } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import {
@@ -114,7 +114,7 @@ function Comment({
   comment,
   linked,
 }: {
-  comment: Awaited<ReturnType<typeof api.call<"list_comments">>>["items"][number];
+  comment: Output<"list_comments">["items"][number];
   linked: boolean;
 }) {
   const identity = useIdentity(),

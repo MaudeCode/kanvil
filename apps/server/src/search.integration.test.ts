@@ -127,6 +127,64 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
       (await app.domain.execute("list_tickets", { projectId: a.id, q: "recoverr" }, reader)).total,
     ).toBe(0);
   });
+  it("orders index matches by relevance and matches quoted phrases exactly", async () => {
+    const project = await app.domain.execute(
+      "create_project",
+      { key: "SEARCHD", name: "Search D" },
+      actor,
+    );
+    const create = (title: string, description = "") =>
+      app.domain.execute("create_ticket", { projectId: project.id, title, description }, actor);
+    const exact = await create("Calibrate zephyrine sensors");
+    const fuzzy = await create("Calibrate zephyrina sensors");
+    const live = await create("Mark sessions done", "Leave the live activity after acknowledge.");
+    const titled = await create("End the live activity on completion");
+    const native = await create("Refine native activity screens");
+    const like = await create("Feels like activity tracking");
+    await app.search.sync();
+    const scope = { workspaceId: project.workspaceId };
+    const ranked = await app.domain.execute("search_tickets", { q: "zephyrine", ...scope }, actor);
+    expect(ranked.items.map((item) => item.ticket.id)).toEqual([exact.id, fuzzy.id]);
+    const results = await app.domain.execute(
+      "search_workspace",
+      { q: "zephyrine", type: "ticket", ...scope },
+      actor,
+    );
+    expect(results.engine).toBe("index");
+    expect(results.items.map((item) => item.id)).toEqual([exact.id, fuzzy.id]);
+    // Equally relevant hits fall back to the most recently updated.
+    const older = await create("Inspect quillwort gauges");
+    const newer = await create("Inspect quillwort gauges");
+    await app.search.sync();
+    expect(
+      (await app.domain.execute("search_tickets", { q: "quillwort", ...scope }, actor)).items.map(
+        (item) => item.ticket.id,
+      ),
+    ).toEqual([newer.id, older.id]);
+    expect(
+      (
+        await app.domain.execute(
+          "search_workspace",
+          { q: "quillwort", type: "ticket", ...scope },
+          actor,
+        )
+      ).items.map((item) => item.id),
+    ).toEqual([newer.id, older.id]);
+    const found = async (q: string) =>
+      (
+        await app.domain.execute(
+          "list_tickets",
+          { projectId: project.id, q, sort: "number" },
+          actor,
+        )
+      ).items.map((row) => row.id);
+    expect(await found('"live activity"')).toEqual([live.id, titled.id]);
+    expect(await found('"live activity" acknowledge')).toEqual([live.id]);
+    // Outside quotes terms stay fuzzy; an unpaired quote is a literal character.
+    expect(await found("live activity")).toEqual([live.id, titled.id, like.id]);
+    expect(await found('live "activity')).toEqual([live.id, titled.id, like.id]);
+    expect(await found('"activity"')).toContain(native.id);
+  });
   it("reindexes every ticket of a project whose prefix changes", async () => {
     const project = await app.domain.execute(
       "create_project",

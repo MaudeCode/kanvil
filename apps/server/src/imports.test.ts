@@ -415,9 +415,9 @@ describe("ticket export and import runs", () => {
   it("resumes after an interruption without writing anything twice", async () => {
     let interrupted = false;
     // The write commits, then the worker dies before it records the outcome.
-    async function execute<K extends Operation>(
+    async function execute<K extends Operation, I>(
       name: K,
-      value: unknown,
+      value: I,
       actor: Actor,
       provenance?: { importRun: string },
     ) {
@@ -453,9 +453,9 @@ describe("ticket export and import runs", () => {
     let interrupted = false;
     const fallback = z.object({ title: z.literal("Parent work"), assigneeId: z.null() }).loose();
     // The fallback write commits, then the worker dies before it records the outcome.
-    async function execute<K extends Operation>(
+    async function execute<K extends Operation, I>(
       name: K,
-      value: unknown,
+      value: I,
       actor: Actor,
       provenance?: { importRun: string },
     ) {
@@ -491,9 +491,9 @@ describe("ticket export and import runs", () => {
 
   it("stops a run whose project stops accepting writes instead of failing every record", async () => {
     // The project is archived right after the run creates it.
-    async function execute<K extends Operation>(
+    async function execute<K extends Operation, I>(
       name: K,
-      value: unknown,
+      value: I,
       actor: Actor,
       provenance?: { importRun: string },
     ) {

@@ -37,6 +37,7 @@ import {
   type CustomFieldValue as StoredValue,
   type Ticket,
   type Output,
+  type OutputOf,
   type WorkflowState,
   presentWorkflow,
 } from "@kanvil/contracts";
@@ -481,7 +482,7 @@ export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "vers
         api.query("list_tickets", { projectId: target.projectId }).queryKey.slice(0, 3),
         api.query("list_my_work", {}).queryKey.slice(0, 3),
       ])
-        cache.setQueriesData<Pick<Output<"list_tickets">, "items">>(
+        cache.setQueriesData<Pick<OutputOf<"list_tickets", { view: "full" }>, "items">>(
           { queryKey },
           (page) =>
             page && {

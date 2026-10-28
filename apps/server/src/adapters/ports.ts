@@ -29,11 +29,22 @@ export interface TicketIndexDocument {
   labels: string[];
   scopes: string[];
 }
+// A search: exact `phrases` from double-quoted segments, and the free-text `terms` around them.
+export interface SearchQuery {
+  phrases: string[];
+  terms: string;
+}
 export interface TicketIndex {
   initialize(instanceId: string): Promise<void>;
   reset(instanceId: string): Promise<void>;
   write(instanceId: string, documents: TicketIndexDocument[], deletedIds?: string[]): Promise<void>;
-  find(instanceId: string, projectIds: readonly string[], query: string): Promise<string[]>;
+  // Matching ticket IDs, most relevant first. Equally relevant hits share a `rank`, which only
+  // grows down the list.
+  find(
+    instanceId: string,
+    projectIds: readonly string[],
+    query: SearchQuery,
+  ): Promise<{ id: string; rank: number }[]>;
   probe(instanceId: string): Promise<void>;
 }
 export type TicketIndexFactory = (configuration: {

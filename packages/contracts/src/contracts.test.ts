@@ -27,6 +27,7 @@ import {
   ticketPredicates,
   ticketFields,
   ticketSchema,
+  ticketSummarySchema,
 } from "./index.ts";
 import { createTicketDraft, ticketDefaults, ticketDraftSchema } from "./drafts.ts";
 
@@ -280,6 +281,51 @@ describe("agent write contracts", () => {
   });
 });
 
+it("keeps whole tickets unless a ticket list or search asks for summary rows", () => {
+  const ticket = ticketSchema.parse({
+    title: "Whole ticket",
+    description: "Body",
+    acceptanceCriteria: "Criteria",
+    status: "todo",
+    priority: "none",
+    kind: "feature",
+    difficulty: null,
+    labels: [],
+    scopes: [],
+    assigneeId: null,
+    parentId: null,
+    automationReady: false,
+    holdReason: null,
+    dueAt: null,
+    archived: false,
+    claimRequired: false,
+    id: "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+    projectId: "7f9619ff-8b86-4011-b42d-00c04fc964ff",
+    key: "OLD-1",
+    number: 1,
+    version: 1,
+    createdBy: "user",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const project = { id: ticket.projectId, key: "OLD", name: "Old" };
+  expect(operations.list_tickets.input.parse({ projectId: "p" }).view).toBe("full");
+  expect(operations.search_tickets.input.parse({ q: "x" }).view).toBe("full");
+  expect(operations.search_workspace.input.parse({ q: "x" }).view).toBe("full");
+  expect(operations.search_tickets.input.safeParse({ q: "x", view: "brief" }).success).toBe(false);
+  expect(operations.list_tickets.output.parse({ items: [ticket], total: 1 }).items[0]).toEqual(
+    ticket,
+  );
+  expect(operations.search_tickets.output.parse({ items: [{ ticket, project }] })).toEqual({
+    items: [{ ticket, project }],
+  });
+  const summary = ticketSummarySchema.parse(ticket);
+  expect(summary).not.toHaveProperty("description");
+  expect(
+    operations.search_tickets.output.parse({ items: [{ ticket: summary, project, snippet: "" }] })
+      .items[0],
+  ).toEqual({ ticket: summary, project, snippet: "" });
+});
 it("reads tickets and drafts from before start dates and workflows and keeps edits partial", () => {
   const legacy = ticketSchema.parse({
     title: "Older server",
