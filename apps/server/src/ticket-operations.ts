@@ -639,7 +639,7 @@ async function relocation(
       code: "claimed",
       message: `Claimed by ${claim.workerId}; release or recover the claim first`,
     });
-  // A ticket a worker once claimed keeps fencing worker writes after the claim ends.
+  // A ticket a worker once claimed keeps fencing worker writes after its claim is released.
   else if (ctx.actor.machine && ticket.claimRequired)
     blockers.push({
       code: "claim_conflict",
@@ -1308,6 +1308,20 @@ export const ticketHandlers: Pick<
       await publish(ctx, "ticket.updated", ticket.id, {
         version: row.version,
         changedFields: ["status", "stateId"],
+      });
+    } else if (ticket.claimRequired) {
+      // Ownership was required only while the claim held the ticket. Left in place outside To do,
+      // it strands the ticket: no worker can claim it, and no worker write passes without a claim.
+      const row = one(
+        await ctx.db
+          .update(tickets)
+          .set({ claimRequired: false, version: ticket.version + 1, updatedAt: new Date() })
+          .where(eq(tickets.id, ticket.id))
+          .returning(),
+      );
+      await publish(ctx, "ticket.updated", ticket.id, {
+        version: row.version,
+        changedFields: ["claimRequired"],
       });
     }
     await ctx.db.delete(claims).where(eq(claims.id, current.id));
