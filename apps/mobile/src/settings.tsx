@@ -471,9 +471,13 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
     navigation = useNavigation<NativeStackNavigationProp<Routes>>(),
     route = useRoute<RouteProp<Routes>>();
   const { currentProjectId } = useProjectNavigation();
+  const [projectChoice, setProjectChoice] = useState<string>();
+  const selectedProjectId = projects.data?.find(
+    (project) => project.id === (projectChoice ?? currentProjectId),
+  )?.id;
   const params = route.params;
   const section = params && "section" in params ? params.section : undefined;
-  const projectId = params && "projectId" in params ? params.projectId : undefined;
+  const projectId = params && "projectId" in params ? params.projectId : selectedProjectId;
   const workspaceId = params && "workspaceId" in params ? params.workspaceId : undefined;
   const access = useProjectAccess(projectId ?? currentProjectId ?? "");
   const projectOptions = projectSettingsSections(access);
@@ -481,11 +485,20 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
     values: readonly SettingsSection[],
     active: string | undefined,
     onSelect: (value: SettingsSection) => void,
+    parent?: string,
   ) {
     return values.map((value) => (
       <Row
         key={value}
         title={settingsSectionLabel(value)}
+        {...(parent
+          ? {
+              accessibilityLabel: t("settings.layout.nested", {
+                parent,
+                child: settingsSectionLabel(value),
+              }),
+            }
+          : {})}
         leading={
           <TicketGlyph
             name={settingsSectionSymbols[value]}
@@ -494,7 +507,7 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
         }
         active={value === active}
         sidebar={sidebar}
-        interaction="action"
+        interaction={sidebar ? "action" : "navigate"}
         onPress={() => onSelect(value)}
       />
     ));
@@ -534,26 +547,15 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
               : workspace.active.name
           }
         >
-          {(sidebar || route.name === "WorkspaceSettings") &&
-          (workspaceId ?? workspace.active.id) ? (
-            sections(
-              workspaceSections,
-              route.name === "WorkspaceSettings" ? (section ?? workspaceSections[0]) : undefined,
-              (value) =>
-                navigation.navigate("WorkspaceSettings", {
-                  workspaceId: workspaceId ?? workspace.active?.id ?? "",
-                  section: value,
-                }),
-            )
-          ) : (
-            <Row
-              title={t("shell.workspace.settings")}
-              leading={<TicketGlyph name="building-2" color={color.accent} />}
-              onPress={() => {
-                if (workspace.active)
-                  navigation.navigate("WorkspaceSettings", { workspaceId: workspace.active.id });
-              }}
-            />
+          {sections(
+            workspaceSections,
+            route.name === "WorkspaceSettings" ? (section ?? workspaceSections[0]) : undefined,
+            (value) =>
+              navigation.navigate("WorkspaceSettings", {
+                workspaceId: workspaceId ?? workspace.active?.id ?? "",
+                section: value,
+              }),
+            t("shell.workspace.settings"),
           )}
         </Section>
       )}
@@ -575,20 +577,21 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
             label: project.name,
             leading: <ProjectIcon project={project} size={20} />,
           }))}
-          onChange={(chosenProjectId) =>
-            navigation.navigate("ProjectSettings", { projectId: chosenProjectId })
-          }
+          onChange={(chosenProjectId) => {
+            setProjectChoice(chosenProjectId);
+            if (sidebar) navigation.navigate("ProjectSettings", { projectId: chosenProjectId });
+          }}
         />
-        {(sidebar || route.name === "ProjectSettings") &&
-          (projectId ?? currentProjectId) &&
+        {projectId &&
           sections(
             projectOptions,
             route.name === "ProjectSettings" ? (section ?? projectOptions[0]) : undefined,
             (value) =>
               navigation.navigate("ProjectSettings", {
-                projectId: projectId ?? currentProjectId ?? "",
+                projectId,
                 section: value,
               }),
+            t("shell.settingsNav.projectSettings"),
           )}
       </Section>
     </>
@@ -596,19 +599,12 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
   const adminNavigation = (
     <>
       {identity.admin && (
-        <Section>
-          {sidebar || route.name === "Administration" ? (
-            sections(
-              adminSections,
-              route.name === "Administration" ? (section ?? adminSections[0]) : undefined,
-              (value) => navigation.navigate("Administration", { section: value }),
-            )
-          ) : (
-            <Row
-              title={t("shell.settingsNav.administration")}
-              leading={<TicketGlyph name="shield-check" color={color.accent} />}
-              onPress={() => navigation.navigate("Administration", {})}
-            />
+        <Section title={t("shell.settingsNav.administration")}>
+          {sections(
+            adminSections,
+            route.name === "Administration" ? (section ?? adminSections[0]) : undefined,
+            (value) => navigation.navigate("Administration", { section: value }),
+            t("shell.settingsNav.administration"),
           )}
         </Section>
       )}

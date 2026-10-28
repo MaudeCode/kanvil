@@ -1,4 +1,3 @@
-import { createHeaderMenu } from "./navigation-actions.tsx";
 import { parseCustomFieldDraft } from "@kanvil/contracts/drafts";
 import { useLayoutEffect, useState, useMemo } from "react";
 import { Alert, Share, View } from "react-native";
@@ -39,7 +38,6 @@ import {
   useWorkspace,
 } from "./data.tsx";
 import {
-  nativeHeaderOptions,
   Body,
   Button,
   Check,
@@ -67,31 +65,14 @@ export { ImportProject } from "./imports.tsx";
 // The web SettingsLayout needs DOM controls. Native settings share its section catalog and use
 // the existing Screen, Sheet, Row and field renderers instead.
 export function useSettingsSection(
-  navigation: Pick<ScreenProps<"WorkspaceSettings">["navigation"], "setOptions" | "setParams">,
+  navigation: Pick<ScreenProps<"WorkspaceSettings">["navigation"], "setOptions">,
   sections: readonly SettingsSection[],
   initial?: string,
 ) {
   const section = sections.find((value) => value === initial) ?? sections[0] ?? "general";
   useLayoutEffect(() => {
-    navigation.setOptions(
-      nativeHeaderOptions({
-        title: settingsSectionLabel(section),
-        unstable_headerRightItems: () => [
-          createHeaderMenu(
-            t("settings.layout.section"),
-            { type: "sfSymbol", name: "list.bullet" },
-            sections.map((value) => ({
-              type: "action",
-              label: settingsSectionLabel(value),
-              state: value === section ? "on" : "off",
-              onPress: () => navigation.setParams({ section: value }),
-            })),
-            { identifier: "settings-sections", visibilityPriority: "default" },
-          ),
-        ],
-      }),
-    );
-  }, [navigation, section, sections]);
+    navigation.setOptions({ title: settingsSectionLabel(section) });
+  }, [navigation, section]);
   return section;
 }
 
