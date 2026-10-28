@@ -1,9 +1,10 @@
 import { dueWindows, dueWindow, dueWindowLabel } from "@kanvil/contracts/schedule";
 import { createHeaderMenu } from "./navigation-actions.tsx";
-import { sectionEntries } from "./ticket-sections.ts";
+import { sectionEntries, sectionHeaderIndices } from "./ticket-sections.ts";
 import { ProjectIcon } from "./project-icon.tsx";
-import { useDeferredValue, useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { ProjectRow } from "./lists.tsx";
 import { View } from "react-native";
+import { useDeferredValue, useLayoutEffect, useState, useEffect, useMemo } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { searchResultTypes, type SearchResult } from "@kanvil/contracts";
@@ -11,11 +12,11 @@ import { t } from "@kanvil/contracts/i18n";
 import { useHeaderSearch, useSectionDisclosure, useProjectNavigation } from "./navigation.ts";
 import { useConnection, useWorkspace, useAllProjects, useFetchRemaining, useNow } from "./data.tsx";
 import {
-  Body,
   Button,
   Markdown,
   Sheet,
   ErrorNotice,
+  EmptyState,
   List,
   Loading,
   Row,
@@ -149,6 +150,7 @@ export function MyWork() {
     >
       <List
         data={entries}
+        stickyHeaderIndices={sectionHeaderIndices(entries)}
         keyExtractor={(item) => item.id}
         onRefresh={() => work.refetch()}
         onEndReached={() => {
@@ -158,11 +160,10 @@ export function MyWork() {
           work.isLoading ? (
             <Loading />
           ) : (
-            <View style={{ padding: 20 }}>
-              <Body muted>
-                {t(query.trim() ? "ticket.list.emptyFiltered" : "shell.app.noAssigned")}
-              </Body>
-            </View>
+            <EmptyState
+              icon="circle-check"
+              title={t(query.trim() ? "ticket.list.emptyFiltered" : "shell.app.noAssigned")}
+            />
           )
         }
         ListFooterComponent={work.hasNextPage ? <Loading /> : undefined}
@@ -181,6 +182,7 @@ export function MyWork() {
           ) : (
             <Heading
               compact
+              sticky
               disclosure={{
                 expanded: !collapsed.has(item.sectionId),
                 count: item.count,
@@ -221,7 +223,8 @@ export function MyWork() {
 }
 
 export function Search() {
-  const { selectProject } = useProjectNavigation();
+  const { selectProject, contexts, currentProjectId } = useProjectNavigation();
+  const projects = useAllProjects();
   const { api } = useConnection(),
     workspace = useWorkspace(),
     navigation = useNavigation();
@@ -271,6 +274,13 @@ export function Search() {
     [navigation, searchOptions, type],
   );
   const q = useDeferredValue(query.trim());
+  const available = (projects.data ?? []).filter(
+    (project) => project.workspaceId === workspace.active?.id && !project.archivedAt,
+  );
+  const recent = contexts
+    .recent()
+    .flatMap((id) => available.filter((project) => project.id === id));
+  const suggestions = (recent.length ? recent : available).slice(0, 5);
   const input = { workspaceId: workspace.active?.id, q, type, limit: 50 };
   const results = useInfiniteQuery({
     queryKey: [...api.query("search_workspace", input).queryKey, "pages"],
@@ -294,7 +304,28 @@ export function Search() {
       }
     >
       <List
+        dataKey={q}
         data={results.data?.pages.flatMap((page) => page.items) ?? []}
+        ListHeaderComponent={
+          !q && suggestions.length > 0 ? (
+            <View style={{ paddingTop: 12 }}>
+              <View style={{ paddingHorizontal: 20 }}>
+                <Heading compact>
+                  {t(recent.length ? "native.navigation.recentProjects" : "shell.page.projects")}
+                </Heading>
+              </View>
+              {suggestions.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  picker
+                  selected={project.id === currentProjectId}
+                  onPress={() => selectProject(project.id)}
+                />
+              ))}
+            </View>
+          ) : undefined
+        }
         keyExtractor={(item) => `${item.type}:${item.id}`}
         onEndReached={() => {
           if (results.hasNextPage && !results.isFetchingNextPage) void results.fetchNextPage();
@@ -303,9 +334,7 @@ export function Search() {
           !q ? null : results.isLoading ? (
             <Loading />
           ) : (
-            <View style={{ padding: 20 }}>
-              <Body muted>{t("shell.search.noResults", { query: q })}</Body>
-            </View>
+            <EmptyState icon="search" title={t("shell.search.noResults", { query: q })} />
           )
         }
         renderItem={({ item }) =>

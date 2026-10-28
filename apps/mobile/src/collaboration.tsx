@@ -4,7 +4,7 @@ import {
   relationChoices,
   parseRelationChoice,
 } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatRelativeTime } from "@kanvil/contracts/i18n";
 import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,7 +21,7 @@ import {
   Section,
   Sheet,
   Row,
-  Status,
+  TicketRow,
   styles,
   Pager,
   MarkdownField,
@@ -39,7 +39,8 @@ export function Relations({
   ticket: Ticket;
   navigation: Pick<ScreenProps<"Ticket">["navigation"], "navigate" | "push">;
 }) {
-  const access = useProjectAccess(ticket.projectId);
+  const access = useProjectAccess(ticket.projectId),
+    color = usePalette();
   const { api } = useConnection(),
     [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -72,7 +73,17 @@ export function Relations({
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
   return (
-    <Section title={t("native.relations.title")}>
+    <Section
+      title={t("native.relations.title")}
+      count={
+        (relations.data?.length ?? 0) + (children.data?.total ?? 0) + (ticket.parentId ? 1 : 0)
+      }
+      action={
+        access.canWrite && (
+          <Button compact plain title={t("native.relations.add")} onPress={() => setOpen(true)} />
+        )
+      }
+    >
       {ticket.parentId && (
         <Button
           title={
@@ -92,10 +103,9 @@ export function Relations({
         <>
           <Body>{t("native.relations.children")}</Body>
           {children.data.items.map((child) => (
-            <Row
+            <TicketRow
               key={child.id}
-              title={`${child.key} · ${child.title}`}
-              trailing={<Status ticket={child} />}
+              ticket={child}
               onPress={() =>
                 navigation.push("Ticket", { projectId: ticket.projectId, ticketId: child.id })
               }
@@ -120,39 +130,44 @@ export function Relations({
       {relations.data?.map((relation) => {
         const reference = relationReference(relation, ticket.id);
         return (
-          <View key={relation.id} style={{ gap: 8 }}>
-            <Button
-              title={`${reference.label} · ${reference.title}`}
-              disabled={reference.restricted}
-              onPress={() =>
-                navigation.push("Ticket", {
-                  projectId: reference.projectId ?? ticket.projectId,
-                  ticketId: reference.id,
-                })
-              }
-            />
-            {access.canWrite && (
-              <Button
-                title={t("native.relations.remove")}
-                onPress={() =>
-                  Alert.alert(t("native.relations.removeTitle"), "", [
-                    { text: t("common.action.cancel"), style: "cancel" },
-                    {
-                      text: t("common.action.remove"),
-                      style: "destructive",
-                      onPress: () =>
-                        remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
-                    },
-                  ])
-                }
-              />
-            )}
-          </View>
+          <Row
+            key={relation.id}
+            overline={reference.label}
+            title={reference.title}
+            disabled={reference.restricted}
+            onPress={() =>
+              navigation.push("Ticket", {
+                projectId: reference.projectId ?? ticket.projectId,
+                ticketId: reference.id,
+              })
+            }
+            trailing={
+              access.canWrite ? (
+                <Button
+                  compact
+                  plain
+                  title=""
+                  accessibilityLabel={t("native.relations.remove")}
+                  leading={<TicketGlyph name="x" color={color.muted} size={18} />}
+                  onPress={() =>
+                    Alert.alert(t("native.relations.removeTitle"), "", [
+                      { text: t("common.action.cancel"), style: "cancel" },
+                      {
+                        text: t("common.action.remove"),
+                        style: "destructive",
+                        onPress: () =>
+                          remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
+                      },
+                    ])
+                  }
+                />
+              ) : (
+                <View />
+              )
+            }
+          />
         );
       })}
-      {access.canWrite && (
-        <Button title={t("native.relations.add")} onPress={() => setOpen(true)} />
-      )}
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
       <Sheet
         title={t("native.relations.add")}
@@ -224,7 +239,20 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     };
   }, [key]);
   return (
-    <Section title={t("native.discussion.title")}>
+    <Section
+      title={t("native.discussion.title")}
+      count={comments.data?.total}
+      action={
+        access.canWrite && (
+          <Button
+            compact
+            plain
+            title={t("native.discussion.submit")}
+            onPress={() => setReplying(true)}
+          />
+        )
+      }
+    >
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}
@@ -235,9 +263,6 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
         noun={t("native.discussion.title")}
         onChange={setOffset}
       />
-      {access.canWrite && (
-        <Button title={t("native.discussion.submit")} onPress={() => setReplying(true)} />
-      )}
       {body.trim() && (
         <Body muted small>
           {t("detail.editor.savedLocally")}
@@ -306,8 +331,8 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
               ? t("native.discussion.you")
               : memberName(members.data, deleted.data, comment.actorId)}
           </Body>
-          <Body muted small>
-            {formatTimestamp(comment.createdAt)}
+          <Body muted small accessibilityLabel={formatTimestamp(comment.createdAt)}>
+            {formatRelativeTime(comment.createdAt)}
           </Body>
         </View>
         {(comment.actorId === identity.id || identity.admin) && (

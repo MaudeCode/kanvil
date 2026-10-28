@@ -227,10 +227,22 @@ const relativeUnits: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1],
 ];
 // "3 minutes ago" or "in 2 days": the largest whole unit, rounded, like date-fns' strict distance.
-// Runtimes without `Intl.RelativeTimeFormat`, such as Hermes, show the date and time instead.
+// Runtimes without RelativeTimeFormat use a compact calendar value; full timestamps remain available.
 export function formatRelativeTime(value: Date | string | number, now = Date.now()): string {
-  if (typeof Intl.RelativeTimeFormat !== "function")
-    return formatDate(value, { dateStyle: "medium", timeStyle: "short" });
+  if (typeof Intl.RelativeTimeFormat !== "function") {
+    const date = new Date(value),
+      current = new Date(now);
+    return formatDate(
+      value,
+      date.toDateString() === current.toDateString()
+        ? { timeStyle: "short" }
+        : {
+            month: "short",
+            day: "numeric",
+            ...(date.getFullYear() === current.getFullYear() ? {} : { year: "numeric" }),
+          },
+    );
+  }
   const seconds = (new Date(value).getTime() - now) / 1000,
     [unit, size] = relativeUnits.find(([, length]) => Math.abs(seconds) >= length) ?? ["second", 1];
   return relativeFormats({ numeric: "always" }).format(Math.round(seconds / size), unit);

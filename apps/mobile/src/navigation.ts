@@ -189,7 +189,7 @@ export function useHeaderSearch(
       ref: handle.ref,
       placement: "stacked",
       hideWhenScrolling: !persistent,
-      hideNavigationBar: false,
+      hideNavigationBar: true,
       autoCapitalize: "none",
       autoFocus: true,
       placeholder,

@@ -14,13 +14,13 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "12",
+    buildNumber: "13",
     supportsTablet: true,
     infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
   },
   android: {
     package: "com.maudecode.kanvil",
-    versionCode: 12,
+    versionCode: 13,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       monochromeImage: "./assets/adaptive-icon.png",

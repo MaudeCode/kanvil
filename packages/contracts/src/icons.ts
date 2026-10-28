@@ -1,5 +1,15 @@
-import type { Ticket } from "./index.ts";
+import type { Ticket, NotificationCategory } from "./index.ts";
 import type { palettes } from "./theme.ts";
+
+export const notificationCategorySymbols = {
+  assignment: "user-round",
+  status: "circle-dot",
+  comment: "message-square",
+  mention: "at-sign",
+  update: "pencil",
+  due_soon: "clock",
+  overdue: "triangle-alert",
+} as const satisfies Record<NotificationCategory, string>;
 
 // Both apps use the exact icon library already installed for the web project picker.
 export const loadProjectIcons = async () => (await import("@iconify-json/lucide")).icons;

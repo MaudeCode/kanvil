@@ -1,5 +1,9 @@
 import { states, stateLabels, type Ticket, type WorkflowState } from "@kanvil/contracts";
 
+export function sectionHeaderIndices(entries: readonly { id: string }[]) {
+  return entries.flatMap((entry, index) => ("heading" in entry ? [index] : []));
+}
+
 // List and board share workflow membership, including tickets from older servers without stateId.
 export function ticketSections<T extends Pick<Ticket, "id" | "status" | "stateId">>(
   tickets: readonly T[],

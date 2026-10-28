@@ -1,14 +1,16 @@
 import { formatEvent, formatTimestamp } from "@kanvil/contracts";
+import { notificationCategorySymbols } from "@kanvil/contracts/icons";
 import {
   localeDetails,
   localePreference,
   locales,
   t,
   formatRelativeTime,
+  formatNumber,
   type LocalePreference,
 } from "@kanvil/contracts/i18n";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -47,6 +49,7 @@ import {
   Check,
   Choice,
   ErrorNotice,
+  EmptyState,
   Field,
   Loading,
   Row,
@@ -170,15 +173,16 @@ export function Inbox() {
           items.isPending || projects.isPending ? (
             <Loading />
           ) : (
-            <View style={{ padding: 20 }}>
-              <Body muted>
-                {view === "unread"
+            <EmptyState
+              icon="inbox"
+              title={
+                view === "unread"
                   ? t("shell.inbox.noUnread")
                   : view === "mentions"
                     ? t("shell.inbox.noMentions")
-                    : t("shell.inbox.noNotifications")}
-              </Body>
-            </View>
+                    : t("shell.inbox.noNotifications")
+              }
+            />
           )
         }
         renderItem={({ item }) => (
@@ -186,13 +190,14 @@ export function Inbox() {
             title={
               typeof item.event.data.title === "string"
                 ? item.event.data.title
-                : formatEvent(item.event, true)
+                : formatEvent(item.event)
             }
+            {...(typeof item.event.data.key === "string" ? { overline: item.event.data.key } : {})}
             emphasized={!item.readAt}
             interaction="action"
             leading={
               <TicketGlyph
-                name={item.readAt ? "circle-check" : "circle-dot"}
+                name={notificationCategorySymbols[item.category]}
                 color={item.readAt ? color.muted : color.accent}
               />
             }
@@ -203,8 +208,7 @@ export function Inbox() {
               ),
             })}
             caption={[
-              typeof item.event.data.key === "string" ? item.event.data.key : "",
-              formatEvent(item.event),
+              typeof item.event.data.title === "string" ? formatEvent(item.event) : "",
               formatRelativeTime(item.event.createdAt),
             ]
               .filter(Boolean)
@@ -250,6 +254,7 @@ export function Inbox() {
 }
 function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) {
   const [reminderOpen, setReminderOpen] = useState(false);
+  const color = usePalette();
   const connection = useConnection(),
     { api } = connection,
     identity = useIdentity(),
@@ -282,56 +287,67 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
     },
   });
   return (
-    <Section title={t("native.notifications.title")}>
+    <>
       <ErrorNotice
         error={preferences.error ?? update.error ?? registration.error ?? device.error}
       />
-      {preferences.data && (
-        <Check
-          label={t("native.notifications.inApp")}
-          checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
-          disabled={update.isPending || registration.isPending}
-          onChange={(inApp) => {
-            if (!update.isPending) update.mutate({ ...preferences.data, inApp });
-          }}
-        />
-      )}
-      {pushAvailable && preferences.data && (
-        <>
+      {preferences.isPending && <Loading />}
+      <Section>
+        {preferences.data && (
           <Check
-            label={t("native.notifications.push")}
-            checked={
-              update.isPending
-                ? (update.variables.push ?? preferences.data.push)
-                : preferences.data.push
-            }
+            label={t("native.notifications.inApp")}
+            checked={update.isPending ? update.variables.inApp : preferences.data.inApp}
             disabled={update.isPending || registration.isPending}
-            onChange={(push) => update.mutate({ inApp: preferences.data?.inApp ?? true, push })}
+            onChange={(inApp) => {
+              if (!update.isPending) update.mutate({ ...preferences.data, inApp });
+            }}
           />
-          {typeof pushProjectId === "string" ? (
-            <Button
-              title={
-                device.data
-                  ? t("native.notifications.disableDevice")
-                  : t("native.notifications.enableDevice")
+        )}
+        {pushAvailable && preferences.data && (
+          <>
+            <Check
+              label={t("native.notifications.push")}
+              checked={
+                update.isPending
+                  ? (update.variables.push ?? preferences.data.push)
+                  : preferences.data.push
               }
-              disabled={registration.isPending || update.isPending || device.isPending}
-              onPress={() => registration.mutate(!device.data)}
+              disabled={update.isPending || registration.isPending}
+              onChange={(push) => update.mutate({ inApp: preferences.data?.inApp ?? true, push })}
             />
-          ) : (
-            <Body muted>{t("native.notifications.unconfigured")}</Body>
-          )}
-        </>
-      )}
+            {typeof pushProjectId === "string" ? (
+              <Button
+                title={
+                  device.data
+                    ? t("native.notifications.disableDevice")
+                    : t("native.notifications.enableDevice")
+                }
+                disabled={registration.isPending || update.isPending || device.isPending}
+                onPress={() => registration.mutate(!device.data)}
+              />
+            ) : (
+              <Body muted>{t("native.notifications.unconfigured")}</Body>
+            )}
+          </>
+        )}
+      </Section>
       {preferences.data && (
         <>
           <Section title={t("settings.notifications.categories")}>
             {notificationCategories.map((category) => (
               <Check
                 key={category}
-                label={t("settings.notifications.categorySwitch", {
+                label={notificationCategoryLabels[category]}
+                accessibilityLabel={t("settings.notifications.categorySwitch", {
                   label: notificationCategoryLabels[category],
                 })}
+                leading={
+                  <TicketGlyph
+                    name={notificationCategorySymbols[category]}
+                    color={color.muted}
+                    size={20}
+                  />
+                }
                 checked={
                   update.isPending
                     ? (update.variables.categories?.[category] ??
@@ -348,10 +364,18 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
               />
             ))}
           </Section>
-          <Button
-            title={t("settings.notifications.reminder")}
-            onPress={() => setReminderOpen(true)}
-          />
+          <Section>
+            <Row
+              title={t("settings.notifications.reminder")}
+              leading={<TicketGlyph name="clock" color={color.muted} size={20} />}
+              caption={formatNumber(preferences.data.reminderLead.amount, {
+                style: "unit",
+                unit: preferences.data.reminderLead.unit.slice(0, -1),
+                unitDisplay: "long",
+              })}
+              onPress={() => setReminderOpen(true)}
+            />
+          </Section>
           <Sheet
             title={t("settings.notifications.reminder")}
             open={reminderOpen}
@@ -369,7 +393,7 @@ function NotificationPreferences({ pushAvailable }: { pushAvailable: boolean }) 
           </Sheet>
         </>
       )}
-    </Section>
+    </>
   );
 }
 function ReminderPreference({
@@ -385,21 +409,23 @@ function ReminderPreference({
     [error, setError] = useState<unknown>();
   return (
     <>
-      <Field
-        label={t("settings.notifications.reminderAmount")}
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="number-pad"
-      />
-      <Choice
-        label={t("settings.notifications.reminderUnit")}
-        value={unit}
-        options={reminderUnits.map((value) => ({
-          value,
-          label: t(`settings.notifications.unit.${value}`),
-        }))}
-        onChange={(value) => setUnit(reminderUnitSchema.parse(value))}
-      />
+      <Section>
+        <Field
+          label={t("settings.notifications.reminderAmount")}
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="number-pad"
+        />
+        <Choice
+          label={t("settings.notifications.reminderUnit")}
+          value={unit}
+          options={reminderUnits.map((value) => ({
+            value,
+            label: t(`settings.notifications.unit.${value}`),
+          }))}
+          onChange={(value) => setUnit(reminderUnitSchema.parse(value))}
+        />
+      </Section>
       <ErrorNotice error={error} />
       <Button
         title={t("common.action.save")}
@@ -667,20 +693,22 @@ export function Settings({
       )}
       {activeSection === "appearance" && <AppearanceSettings />}
       {activeSection === "preferences" && (
-        <Choice
-          label={t("common.language.label")}
-          value={language}
-          options={[
-            { value: "system", label: t("common.language.system") },
-            ...locales.map((locale) => ({ value: locale, label: localeDetails[locale].name })),
-          ]}
-          onChange={(value) => {
-            const choice = localePreference.parse(value);
-            setLanguage(choice);
-            setError(undefined);
-            void setLocalePreference(choice).catch(setError);
-          }}
-        />
+        <Section>
+          <Choice
+            label={t("common.language.label")}
+            value={language}
+            options={[
+              { value: "system", label: t("common.language.system") },
+              ...locales.map((locale) => ({ value: locale, label: localeDetails[locale].name })),
+            ]}
+            onChange={(value) => {
+              const choice = localePreference.parse(value);
+              setLanguage(choice);
+              setError(undefined);
+              void setLocalePreference(choice).catch(setError);
+            }}
+          />
+        </Section>
       )}
       {activeSection === "credentials" && <CredentialsSettings />}
       {activeSection === "notifications" && (

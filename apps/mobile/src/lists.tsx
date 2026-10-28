@@ -17,6 +17,7 @@ import {
   Choice,
   Sheet,
   ErrorNotice,
+  EmptyState,
   Field,
   Loading,
   List,
@@ -230,11 +231,10 @@ export function Projects({ picker = false }: { picker?: boolean }) {
           projects.isPending ? (
             <Loading />
           ) : recent.length ? undefined : (
-            <View style={{ padding: 20 }}>
-              <Body muted>
-                {t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
-              </Body>
-            </View>
+            <EmptyState
+              icon="folder-open"
+              title={t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
+            />
           )
         }
         renderItem={({ item }) => (
@@ -261,7 +261,7 @@ export function Projects({ picker = false }: { picker?: boolean }) {
     </Screen>
   );
 }
-function ProjectRow({
+export function ProjectRow({
   project,
   workspaceName = "",
   picker,

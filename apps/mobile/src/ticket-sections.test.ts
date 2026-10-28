@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { sectionEntries, ticketSections } from "./ticket-sections.ts";
+import { sectionEntries, ticketSections, sectionHeaderIndices } from "./ticket-sections.ts";
 
 const tickets = [
   { id: "one", stateId: "ready", status: "todo" as const },
@@ -57,4 +57,13 @@ it("falls back to canonical states when the workflow is unavailable", () => {
   const sections = ticketSections(tickets);
   expect(sections.find((section) => section.id === "todo")?.tickets).toHaveLength(2);
   expect(sections.find((section) => section.id === "done")?.tickets).toHaveLength(1);
+});
+
+it("keeps sticky headings attached to the visible groups after collapse and search", () => {
+  const sections = ticketSections(tickets, workflow);
+  expect(sectionHeaderIndices(sectionEntries(sections, new Set(), false))).toEqual([0, 3, 4]);
+  expect(sectionHeaderIndices(sectionEntries(sections, new Set(["ready"]), false))).toEqual([
+    0, 1, 2,
+  ]);
+  expect(sectionHeaderIndices(sectionEntries(sections, new Set(), true))).toEqual([0, 3]);
 });

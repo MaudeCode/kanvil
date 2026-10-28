@@ -120,21 +120,23 @@ export function DetailsForm({
   const stale = version !== entity.version;
   return (
     <>
-      <Field
-        label={t("settings.layout.name")}
-        value={name}
-        onChangeText={setName}
-        editable={!disabled && !pending}
-        maxLength={120}
-      />
-      <Field
-        label={t("settings.layout.description")}
-        value={description}
-        onChangeText={setDescription}
-        editable={!disabled && !pending}
-        multiline
-        maxLength={5000}
-      />
+      <Section>
+        <Field
+          label={t("settings.layout.name")}
+          value={name}
+          onChangeText={setName}
+          editable={!disabled && !pending}
+          maxLength={120}
+        />
+        <Field
+          label={t("settings.layout.description")}
+          value={description}
+          onChangeText={setDescription}
+          editable={!disabled && !pending}
+          multiline
+          maxLength={5000}
+        />
+      </Section>
       <ErrorNotice error={error} />
       {stale && (
         <>

@@ -273,6 +273,7 @@ function Editor({
         initiallyOpen={!!fields.acceptanceCriteria}
       >
         <MarkdownField
+          labelHidden
           label={t("native.detail.acceptanceCriteria")}
           value={fields.acceptanceCriteria}
           onChangeText={(value) => set("acceptanceCriteria", value)}

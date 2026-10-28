@@ -54,6 +54,7 @@ import {
   Button,
   Choice,
   ErrorNotice,
+  EmptyState,
   Field,
   Heading,
   List,
@@ -84,7 +85,7 @@ import {
   useProjectNavigation,
   type ScreenProps,
 } from "./navigation.ts";
-import { ticketSections, sectionEntries } from "./ticket-sections.ts";
+import { ticketSections, sectionEntries, sectionHeaderIndices } from "./ticket-sections.ts";
 
 function useTicketPages(input: Input<"list_tickets">, enabled: boolean) {
   const { api } = useConnection();
@@ -730,16 +731,15 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : !rows.length ? (
       <Scroll>
         {collectionHeader}
-        <View style={{ padding: 16, gap: 12 }}>
-          <Body muted>
-            {t(
-              filtered
-                ? "ticket.list.emptyFiltered"
-                : planning
-                  ? "ticket.list.emptyPlanning"
-                  : "ticket.list.emptyProject",
-            )}
-          </Body>
+        <EmptyState
+          title={t(
+            filtered
+              ? "ticket.list.emptyFiltered"
+              : planning
+                ? "ticket.list.emptyPlanning"
+                : "ticket.list.emptyProject",
+          )}
+        >
           {query.trim() && (
             <Button plain title={t("shell.app.clearSearch")} onPress={() => changeQuery("")} />
           )}
@@ -753,7 +753,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
               onPress={() => navigation.navigate("Edit", { projectId })}
             />
           )}
-        </View>
+        </EmptyState>
       </Scroll>
     ) : layout === "board" ? (
       <Scroll
@@ -808,7 +808,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ) : (
       <List
         data={entries}
-        stickyHeaderIndices={entries.flatMap((entry, index) => ("heading" in entry ? [index] : []))}
+        stickyHeaderIndices={sectionHeaderIndices(entries)}
         ListHeaderComponent={collectionHeader}
         {...(initial?.scrollOffset === undefined
           ? {}

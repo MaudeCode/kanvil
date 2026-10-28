@@ -9,13 +9,22 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { NotificationCategory } from "@kanvil/contracts";
-// One icon per category, shared by notification settings and the Inbox; labels live in contracts.
+import { notificationCategorySymbols } from "@kanvil/contracts/icons";
+const glyphs = {
+  "user-round": UserRound,
+  "circle-dot": CircleDot,
+  "message-square": MessageSquare,
+  "at-sign": AtSign,
+  pencil: Pencil,
+  clock: Clock,
+  "triangle-alert": TriangleAlert,
+};
 export const notificationCategoryIcons: Record<NotificationCategory, LucideIcon> = {
-  assignment: UserRound,
-  status: CircleDot,
-  comment: MessageSquare,
-  mention: AtSign,
-  update: Pencil,
-  due_soon: Clock,
-  overdue: TriangleAlert,
+  assignment: glyphs[notificationCategorySymbols.assignment],
+  status: glyphs[notificationCategorySymbols.status],
+  comment: glyphs[notificationCategorySymbols.comment],
+  mention: glyphs[notificationCategorySymbols.mention],
+  update: glyphs[notificationCategorySymbols.update],
+  due_soon: glyphs[notificationCategorySymbols.due_soon],
+  overdue: glyphs[notificationCategorySymbols.overdue],
 };

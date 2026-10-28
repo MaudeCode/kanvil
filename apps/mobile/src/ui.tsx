@@ -3,7 +3,7 @@ import { nativeMenuSymbol } from "./native-menu-symbols.ts";
 import SegmentedControl from "@expo/ui/community/segmented-control";
 import { inlineItemCount } from "./pane-layout.ts";
 import { ticketScheduleText } from "@kanvil/contracts/schedule";
-import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
+import { LegendList, type LegendListProps, type LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import {
   lazy,
@@ -126,7 +126,6 @@ type SheetRoutes = { Hidden: undefined; Sheet: undefined };
 const SheetStack = createNativeStackNavigator<SheetRoutes>();
 type ButtonAction = HeaderAction;
 const FormAction = createContext<((action: ButtonAction | undefined) => void) | null>(null);
-const ImageSurface = createContext(false);
 const InsetsConsumed = createContext(false);
 const PaddedContent = createContext(false);
 const ScrollingHeader = createContext<ReactNode>(null);
@@ -385,6 +384,7 @@ export function Menu({
   fill?: boolean;
 }) {
   const [width, setWidth] = useState(0);
+  const grouped = useContext(InsideGroupedSection);
   const handlers = new Map<string, () => void>();
   function actions(entries: NativeStackHeaderItemMenu["menu"]["items"], prefix = ""): MenuAction[] {
     return entries.map((item, index) => {
@@ -429,7 +429,7 @@ export function Menu({
   // SwiftUI measures menu labels intrinsically; form rows take their measured RN container width.
   return fill ? (
     <View
-      style={{ alignSelf: "stretch", minHeight: 44 }}
+      style={{ alignSelf: "stretch", minHeight: grouped ? 52 : 44 }}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
       {width > 0 && menu}
@@ -566,6 +566,10 @@ export function Field({
 }) {
   const color = usePalette(),
     [focused, setFocused] = useState(false);
+  const colorScheme = useColorScheme();
+  const readOnly = !props.secureTextEntry && (props.editable === false || props.readOnly === true);
+  const staticValue =
+    props.value || props.defaultValue || props.placeholder || t("ticket.field.noValue");
   return (
     <View
       style={
@@ -578,7 +582,7 @@ export function Field({
               borderBottomWidth: StyleSheet.hairlineWidth,
               borderBottomColor: focused ? color.accent : color.line,
             }
-          : styles.field
+          : [styles.field, props.multiline && variant === "standard" && { paddingVertical: 12 }]
       }
     >
       {!labelHidden && (
@@ -588,61 +592,88 @@ export function Field({
             { color: props.multiline ? color.muted : color.foreground },
             !props.multiline &&
               variant === "standard" && {
-                width: "34%",
-                maxWidth: 180,
-                fontSize: 15,
-                lineHeight: 21,
+                maxWidth: "50%",
+                flexShrink: 1,
+                fontSize: 16,
+                lineHeight: 22,
+                fontWeight: "400",
               },
           ]}
         >
           {label}
         </Text>
       )}
-      <TextInput
-        autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
-        autoCorrect={!props.secureTextEntry}
-        {...props}
-        accessibilityLabel={label}
-        onFocus={(event) => {
-          setFocused(true);
-          props.onFocus?.(event);
-        }}
-        onBlur={(event) => {
-          setFocused(false);
-          props.onBlur?.(event);
-        }}
-        placeholderTextColor={color.muted}
-        keyboardAppearance={useColorScheme() === "dark" ? "dark" : "light"}
-        style={[
-          styles.input,
-          {
-            color: color.foreground,
-            borderColor: focused ? color.accent : color.line,
-            backgroundColor: "transparent",
-            ...(!props.multiline && !labelHidden && variant === "standard"
-              ? { flex: 1, minWidth: 0, textAlign: I18nManager.isRTL ? "left" : "right" }
-              : {}),
-            ...(variant === "search"
-              ? { paddingHorizontal: 12, backgroundColor: color.background, borderRadius: 10 }
-              : {}),
-          },
-          props.multiline && {
-            minHeight: variant === "title" ? 42 : 88,
-            textAlignVertical: "top",
-          },
-          variant === "title" && {
-            paddingHorizontal: 0,
-            paddingVertical: 8,
-            borderWidth: 0,
-            backgroundColor: "transparent",
-            fontSize: 24,
-            lineHeight: 30,
-            fontWeight: "600",
-            letterSpacing: -0.4,
-          },
-          props.style,
-        ]}
-      />
+      {readOnly ? (
+        <View
+          style={
+            !props.multiline && !labelHidden && variant === "standard"
+              ? { flex: 1, minWidth: 0 }
+              : undefined
+          }
+        >
+          <Text
+            selectable
+            accessibilityLabel={t("native.labelValue", { label, value: staticValue })}
+            style={[
+              { color: color.foreground, fontSize: 16, lineHeight: 24, paddingVertical: 10 },
+              !props.multiline &&
+                !labelHidden &&
+                variant === "standard" && {
+                  textAlign: I18nManager.isRTL ? "left" : "right",
+                },
+              props.style,
+            ]}
+          >
+            {staticValue}
+          </Text>
+        </View>
+      ) : (
+        <TextInput
+          autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
+          autoCorrect={!props.secureTextEntry}
+          {...props}
+          accessibilityLabel={label}
+          onFocus={(event) => {
+            setFocused(true);
+            props.onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            props.onBlur?.(event);
+          }}
+          placeholderTextColor={color.muted}
+          keyboardAppearance={colorScheme === "dark" ? "dark" : "light"}
+          style={[
+            styles.input,
+            {
+              color: color.foreground,
+              borderColor: focused ? color.accent : color.line,
+              backgroundColor: "transparent",
+              ...(!props.multiline && !labelHidden && variant === "standard"
+                ? { flex: 1, minWidth: 0, textAlign: I18nManager.isRTL ? "left" : "right" }
+                : {}),
+              ...(variant === "search"
+                ? { paddingHorizontal: 12, backgroundColor: color.background, borderRadius: 10 }
+                : {}),
+            },
+            props.multiline && {
+              minHeight: variant === "title" ? 42 : 88,
+              textAlignVertical: "top",
+            },
+            variant === "title" && {
+              paddingHorizontal: 0,
+              paddingVertical: 8,
+              borderWidth: 0,
+              backgroundColor: "transparent",
+              fontSize: 24,
+              lineHeight: 30,
+              fontWeight: "600",
+              letterSpacing: -0.4,
+            },
+            props.style,
+          ]}
+        />
+      )}
     </View>
   );
 }
@@ -653,6 +684,7 @@ export function MarkdownField({
   maxLength,
   status,
   autoFocus = false,
+  labelHidden = false,
 }: {
   label: string;
   value: string;
@@ -660,6 +692,7 @@ export function MarkdownField({
   maxLength?: number;
   status?: ReactNode;
   autoFocus?: boolean;
+  labelHidden?: boolean;
 }) {
   const input = useRef<ComponentRef<typeof TextInput>>(null),
     color = usePalette();
@@ -707,7 +740,7 @@ export function MarkdownField({
         }}
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
+          {!labelHidden && <Text style={[styles.label, { color: color.muted }]}>{label}</Text>}
           {status}
         </View>
         <SegmentedControl
@@ -1158,6 +1191,7 @@ export function ColorChoice({
 }
 export function Check({
   label,
+  accessibilityLabel = label,
   checked,
   onChange,
   disabled = false,
@@ -1165,6 +1199,7 @@ export function Check({
   variant = "switch",
 }: {
   label: string;
+  accessibilityLabel?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
@@ -1174,33 +1209,48 @@ export function Check({
   const color = usePalette();
   if (variant === "switch")
     return (
-      <View
-        style={{
+      <Pressable
+        accessible={false}
+        disabled={disabled}
+        onPress={() => onChange(!checked)}
+        style={({ pressed }) => ({
           minHeight: 52,
+          paddingVertical: Platform.OS === "ios" ? 10 : 0,
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: color.line,
-        }}
+          backgroundColor: pressed ? color.accentSurface : "transparent",
+        })}
       >
         {leading}
-        <Text style={{ color: color.foreground, fontSize: 15, lineHeight: 22, flex: 1 }}>
-          {label}
-        </Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            accessible={false}
+            style={{
+              color: disabled ? color.muted : color.foreground,
+              fontSize: 16,
+              lineHeight: 22,
+            }}
+          >
+            {label}
+          </Text>
+        </View>
         <Switch
-          accessibilityLabel={label}
+          accessibilityLabel={accessibilityLabel}
+          style={{ alignSelf: "center", flexShrink: 0 }}
           disabled={disabled}
           value={checked}
           onValueChange={onChange}
           trackColor={{ true: color.accent }}
         />
-      </View>
+      </Pressable>
     );
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ checked, disabled }}
       disabled={disabled}
       onPress={() => onChange(!checked)}
@@ -1212,9 +1262,9 @@ export function Check({
         color={checked ? color.accent : color.muted}
       />
       {leading}
-      <Text style={{ color: color.foreground, flex: 1, fontSize: 15, lineHeight: 22 }}>
-        {label}
-      </Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: color.foreground, fontSize: 16, lineHeight: 22 }}>{label}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -1376,13 +1426,28 @@ export function ErrorNotice({
   if (background && live === "offline" && !(error instanceof ApiError && error.status < 500))
     return null;
   const message = (
-    <Text
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      style={{ color: background ? color.muted : color.danger, marginVertical: 12 }}
-    >
-      {errorMessage(error)}
-    </Text>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginVertical: 12 }}>
+      <View style={{ paddingTop: 1 }}>
+        <DecorativeIcon
+          name="alert-circle-outline"
+          size={18}
+          color={background ? color.muted : color.danger}
+          accessible={false}
+        />
+      </View>
+      <Text
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={{
+          color: background ? color.muted : color.danger,
+          flexShrink: 1,
+          fontSize: 14,
+          lineHeight: 20,
+        }}
+      >
+        {errorMessage(error)}
+      </Text>
+    </View>
   );
   return onRetry ? (
     <View>
@@ -1408,18 +1473,62 @@ export function Loading() {
   // Initial reads use the same screen boundary as their loaded content.
   return navigation && !insideScreen ? <Screen>{indicator}</Screen> : indicator;
 }
+// Collections share one empty presentation; forms and reading screens retain their own content.
+export function EmptyState({
+  title,
+  icon = "ticket",
+  children,
+}: {
+  title: string;
+  icon?: string;
+  children?: ReactNode;
+}) {
+  const color = usePalette();
+  return (
+    <View
+      style={{
+        paddingHorizontal: 24,
+        paddingVertical: 48,
+        gap: 16,
+        alignItems: "center",
+        maxWidth: 420,
+        width: "100%",
+        alignSelf: "center",
+      }}
+    >
+      <View
+        accessible={false}
+        style={{
+          width: 60,
+          height: 60,
+          borderRadius: 18,
+          backgroundColor: color.accentSurface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <TicketGlyph name={icon} size={30} color={color.accent} weight={1.5} />
+      </View>
+      <Heading align="center">{title}</Heading>
+      {children}
+    </View>
+  );
+}
 export function Body({
   children,
   muted = false,
   small = false,
+  accessibilityLabel,
 }: {
   children: ReactNode;
   muted?: boolean;
   small?: boolean;
+  accessibilityLabel?: string;
 }) {
   const color = usePalette();
   return (
     <Text
+      accessibilityLabel={accessibilityLabel}
       style={{
         color: muted ? color.muted : color.foreground,
         lineHeight: small ? 20 : 24,
@@ -1437,12 +1546,14 @@ export function Heading({
   leading,
   count,
   sticky = false,
+  align = "auto",
 }: {
   children: ReactNode;
   compact?: boolean;
   leading?: ReactNode;
   count?: number;
   sticky?: boolean;
+  align?: "auto" | "center";
   disclosure?: {
     expanded: boolean;
     count?: number;
@@ -1459,7 +1570,7 @@ export function Heading({
       accessibilityRole="header"
       style={[
         styles.heading,
-        { color: compact && !disclosure ? color.muted : color.foreground },
+        { color: compact && !disclosure ? color.muted : color.foreground, textAlign: align },
         compact && { fontSize: 13, lineHeight: 20, letterSpacing: 0, fontWeight: "600" },
       ]}
     >
@@ -1534,11 +1645,13 @@ export function Section({
   summary,
   count,
   countLabel,
+  action,
 }: {
   title?: string;
   children: ReactNode;
   count?: number | undefined;
   countLabel?: string;
+  action?: ReactNode;
   collapsible?: boolean;
   initiallyOpen?: boolean;
   summary?: ReactNode;
@@ -1551,30 +1664,36 @@ export function Section({
   return (
     <View
       style={{
-        paddingTop: 8,
+        paddingTop: insideGroup ? 8 : 12,
         gap: 8,
       }}
     >
       {title && (
-        <Heading
-          compact
-          {...(collapsible
-            ? {
-                disclosure: {
-                  expanded,
-                  ...(count === undefined
-                    ? {}
-                    : { count, countLabel: countLabel ?? formatNumber(count) }),
-                  label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", {
-                    label: title,
-                  }),
-                  onPress: () => setExpanded((value) => !value),
-                },
-              }
-            : {})}
-        >
-          {title}
-        </Heading>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Heading
+              compact
+              {...(!collapsible && count !== undefined ? { count } : {})}
+              {...(collapsible
+                ? {
+                    disclosure: {
+                      expanded,
+                      ...(count === undefined
+                        ? {}
+                        : { count, countLabel: countLabel ?? formatNumber(count) }),
+                      label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", {
+                        label: title,
+                      }),
+                      onPress: () => setExpanded((value) => !value),
+                    },
+                  }
+                : {})}
+            >
+              {title}
+            </Heading>
+          </View>
+          {action}
+        </View>
       )}
       {(!title || !collapsible || expanded || !!summary) && (
         <InsideGroupedSection value={grouped || insideGroup}>
@@ -1585,8 +1704,8 @@ export function Section({
                     backgroundColor: color.surface,
                     borderRadius: 12,
                     paddingHorizontal: 14,
-                    paddingVertical: 4,
-                    gap: 8,
+                    paddingVertical: 0,
+                    gap: 0,
                     overflow: "hidden",
                   }
                 : { gap: 8 }
@@ -1681,59 +1800,57 @@ export function Screen({
       </>
     ) : null;
   const content = (
-    <ImageSurface value={!!background}>
-      <View
-        collapsable={false}
-        style={[
-          { flex: 1, backgroundColor: groupedSurface ? color.background : color.surface },
-          style,
-        ]}
+    <View
+      collapsable={false}
+      style={[
+        { flex: 1, backgroundColor: groupedSurface ? color.background : color.surface },
+        style,
+      ]}
+    >
+      {background && (
+        <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
+      )}
+      <ScrollHeaderInset
+        value={boundary ? (nativeScroll ? headerHeight : 0) : inheritedScrollInset}
       >
-        {background && (
-          <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
-        )}
-        <ScrollHeaderInset
-          value={boundary ? (nativeScroll ? headerHeight : 0) : inheritedScrollInset}
+        <ContentArea
+          enabled={!!navigation && safeArea}
+          allowDivision={allowDivision}
+          scrollInsets={nativeScroll}
         >
-          <ContentArea
-            enabled={!!navigation && safeArea}
-            allowDivision={allowDivision}
-            scrollInsets={nativeScroll}
-          >
-            <InsideGroupedSection value={boundary ? false : inheritedGroup}>
-              <GroupedSurface value={groupedSurface}>
-                <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
-                  <ScrollingHeader value={top}>
-                    <PaddedContent value={scroll}>
-                      {scroll ? (
-                        <Scroll
-                          ref={scrollRef}
-                          keyboardShouldPersistTaps="handled"
-                          keyboardDismissMode="interactive"
-                          contentContainerStyle={{
-                            paddingHorizontal: 16,
-                            paddingTop: 12,
-                            paddingBottom: 40,
-                            gap: 12,
-                            width: "100%",
-                            maxWidth: navigation ? 720 : 560,
-                            alignSelf: "center",
-                          }}
-                        >
-                          {children}
-                        </Scroll>
-                      ) : (
-                        children
-                      )}
-                    </PaddedContent>
-                  </ScrollingHeader>
-                </ScrollEdgeAttachment>
-              </GroupedSurface>
-            </InsideGroupedSection>
-          </ContentArea>
-        </ScrollHeaderInset>
-      </View>
-    </ImageSurface>
+          <InsideGroupedSection value={boundary ? false : inheritedGroup}>
+            <GroupedSurface value={groupedSurface}>
+              <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
+                <ScrollingHeader value={top}>
+                  <PaddedContent value={scroll}>
+                    {scroll ? (
+                      <Scroll
+                        ref={scrollRef}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
+                        contentContainerStyle={{
+                          paddingHorizontal: 16,
+                          paddingTop: 12,
+                          paddingBottom: 40,
+                          gap: 12,
+                          width: "100%",
+                          maxWidth: navigation ? 720 : 560,
+                          alignSelf: "center",
+                        }}
+                      >
+                        {children}
+                      </Scroll>
+                    ) : (
+                      children
+                    )}
+                  </PaddedContent>
+                </ScrollingHeader>
+              </ScrollEdgeAttachment>
+            </GroupedSurface>
+          </InsideGroupedSection>
+        </ContentArea>
+      </ScrollHeaderInset>
+    </View>
   );
   return form ? <NativeForm>{content}</NativeForm> : content;
 }
@@ -1837,6 +1954,43 @@ export function List<T>({
 }) {
   const onLayout = useScrollEdgeAttachment(props.onLayout);
   const headerInset = useContext(ScrollHeaderInset);
+  const list = useRef<LegendListRef>(null),
+    resetFrame = useRef<number | undefined>(undefined),
+    interacted = useRef(false),
+    collectionKey = useRef(props.dataKey);
+  const resetCollectionScroll = useCallback(() => {
+    if (props.dataKey === undefined || interacted.current) return;
+    if (resetFrame.current !== undefined) cancelAnimationFrame(resetFrame.current);
+    resetFrame.current = requestAnimationFrame(() => {
+      // UIKit's search/keyboard presentation can reset the raw offset to zero. Legend's
+      // public scrollToOffset and RN's default command both clamp against unadjusted
+      // contentInset. Permit the measured negative bar offset on replaceable collections;
+      // UIKit retains automatic keyboard and bottom-bar adjustment.
+      if (!interacted.current)
+        list.current?.getNativeScrollRef()?.scrollTo({ y: -headerInset, animated: false });
+    });
+  }, [headerInset, props.dataKey]);
+  useLayoutEffect(() => {
+    if (collectionKey.current !== props.dataKey) {
+      interacted.current = false;
+      collectionKey.current = props.dataKey;
+    }
+  }, [props.dataKey]);
+  useLayoutEffect(resetCollectionScroll, [resetCollectionScroll]);
+  useEffect(() => {
+    if (props.dataKey === undefined || Platform.OS !== "ios") return undefined;
+    const keyboard = Keyboard.addListener("keyboardDidShow", resetCollectionScroll);
+    return () => keyboard.remove();
+  }, [props.dataKey, resetCollectionScroll]);
+  useEffect(
+    () => () => {
+      if (resetFrame.current !== undefined) cancelAnimationFrame(resetFrame.current);
+    },
+    [],
+  );
+  // Legend starts its animated offset at zero before UIKit supplies the adjusted inset.
+  // Attach sticky positioning after native scrolling begins so it cannot cover initial rows.
+  const [stickyReady, setStickyReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false),
     header = useContext(ScrollingHeader);
   const original = props.ListHeaderComponent;
@@ -1867,6 +2021,24 @@ export function List<T>({
         keyboardShouldPersistTaps="handled"
         {...scrollInsetsDefaults}
         {...props}
+        ref={list}
+        scrollToOverflowEnabled={
+          props.scrollToOverflowEnabled ?? (props.dataKey !== undefined && headerInset > 0)
+        }
+        onContentSizeChange={(width, height) => {
+          resetCollectionScroll();
+          props.onContentSizeChange?.(width, height);
+        }}
+        stickyHeaderIndices={stickyReady ? (props.stickyHeaderIndices ?? []) : []}
+        onScrollBeginDrag={(event) => {
+          interacted.current = true;
+          setStickyReady(true);
+          props.onScrollBeginDrag?.(event);
+        }}
+        onScroll={(event) => {
+          if (event.nativeEvent.contentOffset.y > 0) setStickyReady(true);
+          props.onScroll?.(event);
+        }}
         {...(props.stickyHeaderIndices?.length
           ? {
               stickyHeaderConfig: {
@@ -1934,8 +2106,8 @@ export function Row({
   const suppliedPadding = StyleSheet.flatten(style)?.paddingVertical;
   const verticalPadding =
     typeof suppliedPadding === "number" ? suppliedPadding : compact || dense ? 10 : 12;
-  const imageSurface = useContext(ImageSurface),
-    padded = useContext(PaddedContent);
+  const padded = useContext(PaddedContent),
+    grouped = useContext(InsideGroupedSection);
   return (
     <Pressable
       accessibilityRole="button"
@@ -1954,20 +2126,14 @@ export function Row({
         {
           flexDirection: "row",
           alignItems: "center",
-          minHeight: 44,
+          minHeight: grouped ? 52 : 44,
           paddingVertical: verticalPadding,
           paddingHorizontal: compact || padded ? 0 : 16,
           gap: 12,
           borderStartWidth: 2,
           borderStartColor: active || selected ? color.accent : "transparent",
           backgroundColor:
-            selected || active
-              ? color.accentSurface
-              : pressed
-                ? color.background
-                : imageSurface
-                  ? "transparent"
-                  : color.surface,
+            selected || active ? color.accentSurface : pressed ? color.background : "transparent",
         },
         style,
       ]}
@@ -2000,9 +2166,9 @@ export function Row({
         <Text
           style={{
             color: color.foreground,
-            fontSize: compact ? 15 : 16,
-            fontWeight: emphasized ? "600" : "500",
-            lineHeight: 23,
+            fontSize: compact && !grouped ? 15 : 16,
+            fontWeight: emphasized ? "600" : grouped ? "400" : "500",
+            lineHeight: grouped ? 22 : 23,
             letterSpacing: -0.2,
           }}
         >
@@ -2021,7 +2187,7 @@ export function Row({
       {trailing ??
         ((selected || interaction === "navigate") && (
           <DecorativeIcon
-            name={selected ? "checkmark" : "chevron-forward"}
+            name={selected ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
             size={16}
             color={selected ? color.accent : color.muted}
             accessible={false}
@@ -2491,7 +2657,7 @@ export const styles = StyleSheet.create({
     minHeight: 48,
     fontSize: 16,
   },
-  heading: { fontSize: 21, fontWeight: "600", letterSpacing: -0.4 },
+  heading: { fontSize: 21, lineHeight: 28, fontWeight: "600", letterSpacing: -0.4 },
   check: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: 10 },
   modal: { flex: 1, justifyContent: "flex-end" },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

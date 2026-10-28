@@ -30,6 +30,7 @@ import {
   Choice,
   DateField,
   ErrorNotice,
+  EmptyState,
   Field,
   Loading,
   Row,
@@ -99,13 +100,20 @@ export function ProfileSettings({ onDeleted }: { onDeleted: () => Promise<void> 
           )}
         </View>
       </View>
-      <Field
-        label={t("settings.profile.displayName")}
-        value={name}
-        onChangeText={setName}
-        maxLength={120}
-      />
-      <Body muted>{identity.email}</Body>
+      <Section>
+        <Field
+          label={t("settings.profile.displayName")}
+          value={name}
+          onChangeText={setName}
+          maxLength={120}
+        />
+        <Field
+          label={t("native.login.email")}
+          value={identity.email}
+          editable={false}
+          autoCapitalize="none"
+        />
+      </Section>
       <ErrorNotice error={error} />
       <Button
         title={t("common.action.save")}
@@ -269,8 +277,11 @@ export function CredentialsSettings() {
     onSuccess: () => cache.invalidateQueries({ queryKey: ["kanvil", "credentials"] }),
   });
   return (
-    <Section title={t("settings.credentials.title")}>
+    <Section>
       <ErrorNotice error={list.error ?? revoke.error} />
+      {list.data?.length === 0 && (
+        <EmptyState icon="key-round" title={t("settings.credentials.empty")} />
+      )}
       {list.isPending ? (
         <Loading />
       ) : (
@@ -448,92 +459,98 @@ export function AppearanceSettings() {
   }
   return (
     <>
-      <Choice
-        label={t("settings.appearance.colorScheme")}
-        value={settings.mode}
-        options={(["system", "light", "dark"] as const).map((value) => ({
-          value,
-          label: t(`settings.theme.mode.${value}`),
-        }))}
-        onChange={(value) => {
-          const mode = value === "dark" || value === "light" ? value : "system";
-          void setAppearance({ mode }).catch(setError);
-        }}
-      />
-      <Choice
-        label={t("settings.appearance.colorTheme")}
-        value={settings.theme}
-        options={themes.map((theme) => ({ value: theme.id, label: theme.name }))}
-        onChange={(theme) => {
-          void setAppearance({ theme, light: null, dark: null }).catch(setError);
-        }}
-      />
-      {(["light", "dark"] as const).map((mode) => (
+      <Section>
         <Choice
-          key={mode}
-          label={t("settings.appearance.paletteColor", {
-            mode: t(`settings.theme.mode.${mode}`),
-            color: t("settings.appearance.colorTheme"),
-          })}
-          value={settings[mode] ?? settings.theme}
-          options={themes.map((theme) => ({ value: theme.id, label: theme.name }))}
-          onChange={(id) => {
-            void setAppearance({ [mode]: id }).catch(setError);
+          label={t("settings.appearance.colorScheme")}
+          value={settings.mode}
+          options={(["system", "light", "dark"] as const).map((value) => ({
+            value,
+            label: t(`settings.theme.mode.${value}`),
+          }))}
+          onChange={(value) => {
+            const mode = value === "dark" || value === "light" ? value : "system";
+            void setAppearance({ mode }).catch(setError);
           }}
         />
-      ))}
-      <ErrorNotice error={error} />
-      <Button
-        title={t("settings.appearance.importFile")}
-        onPress={() => {
-          void importFile();
-        }}
-      />
-      <Button
-        title={t("settings.appearance.create")}
-        onPress={() => {
-          const theme = themes.find((item) => item.id === settings.theme) ?? builtInThemes[0];
-          setEditing({
-            ...theme,
-            id: `custom-${Crypto.randomUUID()}`,
-            name: t("settings.appearance.copyName", { name: theme.name }),
-          });
-        }}
-      />
-      {themes.map((theme) => (
-        <Row
-          key={theme.id}
-          title={theme.name}
-          onPress={() =>
-            Alert.alert(theme.name, undefined, [
-              { text: t("common.action.cancel"), style: "cancel" },
-              {
-                text: t("settings.appearance.export"),
-                onPress: () => {
-                  void exportFile(theme);
-                },
-              },
-              ...(theme.id.startsWith("custom-")
-                ? [
-                    { text: t("settings.appearance.edit"), onPress: () => setEditing(theme) },
-                    {
-                      text: t("settings.appearance.delete"),
-                      style: "destructive" as const,
-                      onPress: () => {
-                        void setAppearance({
-                          custom: settings.custom.filter((item) => item.id !== theme.id),
-                          theme: settings.theme === theme.id ? "aligned" : settings.theme,
-                          light: settings.light === theme.id ? null : settings.light,
-                          dark: settings.dark === theme.id ? null : settings.dark,
-                        }).catch(setError);
-                      },
-                    },
-                  ]
-                : []),
-            ])
-          }
+        <Choice
+          label={t("settings.appearance.colorTheme")}
+          value={settings.theme}
+          options={themes.map((theme) => ({ value: theme.id, label: theme.name }))}
+          onChange={(theme) => {
+            void setAppearance({ theme, light: null, dark: null }).catch(setError);
+          }}
         />
-      ))}
+        {(["light", "dark"] as const).map((mode) => (
+          <Choice
+            key={mode}
+            label={t("settings.appearance.paletteColor", {
+              mode: t(`settings.theme.mode.${mode}`),
+              color: t("settings.appearance.colorTheme"),
+            })}
+            value={settings[mode] ?? settings.theme}
+            options={themes.map((theme) => ({ value: theme.id, label: theme.name }))}
+            onChange={(id) => {
+              void setAppearance({ [mode]: id }).catch(setError);
+            }}
+          />
+        ))}
+      </Section>
+      <ErrorNotice error={error} />
+      <Section>
+        <Button
+          title={t("settings.appearance.importFile")}
+          onPress={() => {
+            void importFile();
+          }}
+        />
+        <Button
+          title={t("settings.appearance.create")}
+          onPress={() => {
+            const theme = themes.find((item) => item.id === settings.theme) ?? builtInThemes[0];
+            setEditing({
+              ...theme,
+              id: `custom-${Crypto.randomUUID()}`,
+              name: t("settings.appearance.copyName", { name: theme.name }),
+            });
+          }}
+        />
+      </Section>
+      <Section title={t("settings.appearance.themes")}>
+        {themes.map((theme) => (
+          <Row
+            key={theme.id}
+            title={theme.name}
+            onPress={() =>
+              Alert.alert(theme.name, undefined, [
+                { text: t("common.action.cancel"), style: "cancel" },
+                {
+                  text: t("settings.appearance.export"),
+                  onPress: () => {
+                    void exportFile(theme);
+                  },
+                },
+                ...(theme.id.startsWith("custom-")
+                  ? [
+                      { text: t("settings.appearance.edit"), onPress: () => setEditing(theme) },
+                      {
+                        text: t("settings.appearance.delete"),
+                        style: "destructive" as const,
+                        onPress: () => {
+                          void setAppearance({
+                            custom: settings.custom.filter((item) => item.id !== theme.id),
+                            theme: settings.theme === theme.id ? "aligned" : settings.theme,
+                            light: settings.light === theme.id ? null : settings.light,
+                            dark: settings.dark === theme.id ? null : settings.dark,
+                          }).catch(setError);
+                        },
+                      },
+                    ]
+                  : []),
+              ])
+            }
+          />
+        ))}
+      </Section>
       <Sheet
         title={t("settings.appearance.edit")}
         open={!!editing}

@@ -776,16 +776,25 @@ function BrowsingStack({
   return (
     <Stack.Navigator
       screenLayout={BrowsingLayout}
-      screenOptions={nativeHeaderOptions({
-        headerShadowVisible: false,
-        headerTintColor: color.accent,
-        headerTitleStyle: { color: color.foreground, fontWeight: "600" },
-        headerBackButtonDisplayMode: "minimal",
-        headerBackVisible: true,
-        contentStyle: { backgroundColor: color.surface },
-        unstable_headerLeftItems: () =>
-          projectHeaderItems(projectNavigation.showPicker, t("native.navigation.switchProject")),
-      })}
+      screenOptions={({ route }) =>
+        nativeHeaderOptions({
+          headerShadowVisible: false,
+          headerTintColor: color.accent,
+          headerTitleStyle: { color: color.foreground, fontWeight: "600" },
+          headerBackButtonDisplayMode: "minimal",
+          headerBackVisible: true,
+          contentStyle: { backgroundColor: color.surface },
+          unstable_headerLeftItems: () =>
+            route.name === "Tickets" ||
+            route.name === "Ticket" ||
+            (route.name === "Home" && tab !== "Settings")
+              ? projectHeaderItems(
+                  projectNavigation.showPicker,
+                  t("native.navigation.switchProject"),
+                )
+              : [],
+        })
+      }
     >
       <Stack.Screen name="Home" options={{ title: titles[tab] }}>
         {() =>
