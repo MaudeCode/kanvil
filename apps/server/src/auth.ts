@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createOIDCUserInfo } from "./adapters/oidc.ts";
 import { createMailSender } from "./adapters/outbound.ts";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -66,6 +67,10 @@ const googleProfileSchema = z.object({
 
 export function createAuth(database: Database, config: Config) {
   const adapter = drizzleAdapter(database.db, { provider: "pg", schema, transaction: true });
+  // The key row the current API-key verification last consumed, scoped to that one verification.
+  // Typed `any` because the adapter methods that return it are generic in their row type.
+  const verification = new AsyncLocalStorage<{ row?: any }>();
+  const consumed = () => verification.getStore()?.row ?? null;
   const instance = createInstance(database, config);
   const credentials = socialCredentials(config);
   const mail =
@@ -118,13 +123,16 @@ export function createAuth(database: Database, config: Config) {
       disableIdTokenSignIn: true,
     };
   };
-  return betterAuth({
+  const auth = betterAuth({
     appName: "Kanvil",
     baseURL: config.KANVIL_URL,
     secret: config.BETTER_AUTH_SECRET,
     database: (options: Parameters<typeof adapter>[0]) => {
       const base = adapter(options);
-      const update: typeof base.update = (input) => {
+      // After a verification consumed a use, its key vanishes when a concurrent verification found
+      // it exhausted and deleted it. The admitted request finishes with the row it consumed; a
+      // guard that fails against a key that still exists rejects as before.
+      const update: typeof base.update = async (input) => {
         const fields = Object.keys(input.update);
         // Verification timestamps serialize unlimited keys; enforcement uses atomic increments.
         if (
@@ -132,10 +140,25 @@ export function createAuth(database: Database, config: Config) {
           fields.length > 0 &&
           fields.every((field) => field === "lastRequest" || field === "updatedAt")
         )
-          return base.findOne({ model: input.model, where: input.where });
+          return (await base.findOne({ model: input.model, where: input.where })) ?? consumed();
         return base.update(input);
       };
-      return { ...base, update };
+      const incrementOne: typeof base.incrementOne = async (input) => {
+        const row = await base.incrementOne(input);
+        const store = input.model === "apikey" ? verification.getStore() : undefined;
+        if (!store) return row;
+        if (row) store.row = row;
+        else if (
+          store.row &&
+          !(await base.findOne({
+            model: input.model,
+            where: input.where.filter(({ field }) => field === "id"),
+          }))
+        )
+          return store.row;
+        return row;
+      };
+      return { ...base, update, incrementOne };
     },
     trustedOrigins: config.trustedOrigins,
     emailAndPassword: {
@@ -320,5 +343,11 @@ export function createAuth(database: Database, config: Config) {
       }),
     ],
   });
+  const verifyApiKey = Object.assign(
+    (input: Parameters<typeof auth.api.verifyApiKey>[0]) =>
+      verification.run({}, () => auth.api.verifyApiKey(input)),
+    auth.api.verifyApiKey,
+  );
+  return { ...auth, api: { ...auth.api, verifyApiKey } };
 }
 export type Auth = ReturnType<typeof createAuth>;

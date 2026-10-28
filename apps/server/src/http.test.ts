@@ -1197,6 +1197,49 @@ describe("HTTP, realtime, and MCP", () => {
       expect(responses.filter((response) => response.status === 401)).toHaveLength(4);
     }
   });
+  it.each([false, true])(
+    "admits the request that took a key's last use while another deletes the exhausted key, rateLimited=%s",
+    async (rateLimited) => {
+      const project = await newProject(),
+        token = await credential(project.id);
+      await fixture.database.pool.query(
+        `UPDATE apikey SET rate_limit_enabled = $2, rate_limit_max = 2,
+          request_count = 0, last_request = NULL, remaining = 1 WHERE id = $1`,
+        [token.id, rateLimited],
+      );
+      const { adapter } = await application.auth.$context;
+      const incrementOne = adapter.incrementOne.bind(adapter);
+      let decremented!: () => void, release!: () => void;
+      const reached = new Promise<void>((resolve) => (decremented = resolve)),
+        held = new Promise<void>((resolve) => (release = resolve));
+      // Hold the admitted request between taking the last use and its following steps.
+      const spy = vi.spyOn(adapter, "incrementOne").mockImplementation(async (input) => {
+        const row = await incrementOne(input);
+        if (input.increment.remaining === -1) {
+          decremented();
+          await held;
+        }
+        return row;
+      });
+      const read = () =>
+        request("/api/v1/projects", { headers: { Authorization: `Bearer ${token.key}` } });
+      try {
+        const admitted = read();
+        await reached;
+        expect((await read()).status).toBe(401);
+        expect(
+          (await fixture.database.pool.query("SELECT 1 FROM apikey WHERE id = $1", [token.id]))
+            .rowCount,
+        ).toBe(0);
+        release();
+        expect((await admitted).status).toBe(200);
+        expect((await read()).status).toBe(401);
+      } finally {
+        release();
+        spy.mockRestore();
+      }
+    },
+  );
   it("never treats missing or malformed credential project metadata as global access", async () => {
     const project = await newProject(),
       token = await credential(project.id);
