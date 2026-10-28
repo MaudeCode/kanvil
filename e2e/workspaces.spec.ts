@@ -218,9 +218,7 @@ test("workspace switching, deep links, and offline project icons remain consiste
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const image = page.locator(`#main img[src^="/api/v1/projects/${projectId}/icon"]`).first();
   await expect(image).toBeVisible();
-  expect(
-    await image.evaluate((node) => (node instanceof HTMLImageElement ? node.naturalWidth : 0)),
-  ).toBe(256);
+  await expect(image).toHaveJSProperty("naturalWidth", 256);
   await page.reload();
   await expect(image).toBeVisible();
   await page.getByRole("button", { name: "Change icon", exact: true }).click();
