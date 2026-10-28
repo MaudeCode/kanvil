@@ -20,7 +20,7 @@ import {
   parsePublicOutput,
   type Input,
   type Operation,
-  type Output,
+  type OutputOf,
   type PublicInput,
   type PublicOperation,
   type PublicOutput,
@@ -53,6 +53,8 @@ async function decode(response: Response): Promise<unknown> {
   return data;
 }
 
+// The inferred input of a call, with the excess-key check a plain `Input<K>` parameter gives.
+type Exact<T, I> = I & Record<Exclude<keyof I, keyof T>, never>;
 export function createClient(options: {
   baseUrl: string;
   headers?: () =>
@@ -139,8 +141,11 @@ export function createClient(options: {
         ),
       );
     },
-    async call<K extends Operation>(name: K, input: Input<K>): Promise<Output<K>> {
-      return parseOutput(name, await send(operations[name], input, "/api/v1"));
+    async call<K extends Operation, const I extends Input<K>>(
+      name: K,
+      input: Exact<Input<K>, I>,
+    ): Promise<OutputOf<K, I>> {
+      return parseOutput<K, I>(name, await send(operations[name], input, "/api/v1"));
     },
     // Reads a shared project's public projection; the server ignores any session or credential.
     async callPublic<K extends PublicOperation>(
@@ -311,7 +316,7 @@ export function createClient(options: {
         },
       });
     },
-    query<K extends Operation>(name: K, input: Input<K>) {
+    query<K extends Operation, const I extends Input<K>>(name: K, input: Exact<Input<K>, I>) {
       return {
         queryKey: ["kanvil", options.baseUrl, name, input] as const,
         queryFn: () => api.call(name, input),

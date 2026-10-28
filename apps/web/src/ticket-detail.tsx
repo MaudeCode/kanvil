@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { SheetTitle } from "@/components/ui/sheet";
 import { Trans } from "react-i18next";
-import { type Ticket, ApiError, readinessReasonText } from "@kanvil/contracts";
+import { type Output, type Ticket, ApiError, readinessReasonText } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { api, date, ActorName, useProjectAccess, useOperation } from "./data.tsx";
 import {
@@ -494,7 +494,7 @@ function ClaimActions({
   ticket: Ticket;
   canRelease: boolean;
   canRecover: boolean;
-  claim: NonNullable<Awaited<ReturnType<typeof api.call<"get_ticket">>>["claim"]>;
+  claim: NonNullable<Output<"get_ticket">["claim"]>;
 }) {
   const release = useOperation("release_claim"),
     recover = useOperation("recover_claim");

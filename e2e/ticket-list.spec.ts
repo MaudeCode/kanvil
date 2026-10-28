@@ -14,7 +14,7 @@ import {
   ticketRows,
   toggleDisplay,
 } from "./controls.ts";
-import { operations, priorities, priorityLabels } from "../packages/contracts/src/index.ts";
+import { parseOutput, priorities, priorityLabels } from "../packages/contracts/src/index.ts";
 
 async function expectFullWidth(table: Locator) {
   expect(
@@ -570,7 +570,8 @@ test("bulk edits replace labels, set and clear due dates, and change difficulty"
       ).ok(),
     ).toBe(true);
   const stored = async () =>
-    operations.list_tickets.output.parse(
+    parseOutput<"list_tickets", { view: "full" }>(
+      "list_tickets",
       await (await page.request.get(`/api/v1/projects/${project.id}/tickets`)).json(),
     ).items;
   await page.goto(`/projects/${project.id}`);

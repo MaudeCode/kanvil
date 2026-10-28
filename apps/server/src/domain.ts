@@ -11,7 +11,7 @@ import {
   parseOutput,
   type Operation,
   type ParsedInput,
-  type Output,
+  type OutputOf,
   type Project,
   type Ticket,
   type Workspace,
@@ -872,12 +872,12 @@ export function createDomain(
       }),
     );
   // `provenance` marks the writes of an import run; see import-operations.ts.
-  async function execute<K extends Operation>(
+  async function execute<K extends Operation, I = unknown>(
     name: K,
-    value: unknown,
+    value: I,
     actor: Actor,
     provenance?: { importRun: string },
-  ): Promise<Output<K>> {
+  ): Promise<OutputOf<K, I>> {
     const spec = operations[name];
     const input = spec.input.parse(value);
     const projectId = "projectId" in input ? input.projectId : undefined;
@@ -903,7 +903,7 @@ export function createDomain(
       if (read !== undefined) ctx.read = read;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The operation registry and mapped handler type enforce the same key/input pairing.
       const handler = handlers[name] as (ctx: Context, payload: typeof input) => Promise<unknown>;
-      return parseOutput(name, json(await handler(ctx, input)));
+      return parseOutput<K, I>(name, json(await handler(ctx, input)));
     };
     const permission = operationPermission(name);
     if (spec.method === "GET" || remoteReads.has(name))
@@ -963,7 +963,7 @@ export function createDomain(
       // A deleted project or workspace authorizes no one, so a retried deletion replays its
       // author's receipt.
       if (receipt && (name === "delete_project" || name === "delete_workspace"))
-        return parseOutput(name, receipt.result);
+        return parseOutput<K, I>(name, receipt.result);
       const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission, name);
       if (receipt) {
         // Time-entry receipts must not disclose a moved or deleted ticket through its old project.
@@ -974,7 +974,7 @@ export function createDomain(
           "ticketId" in input
         )
           await getTicket(ctx, input.ticketId);
-        const prior = parseOutput(name, receipt.result);
+        const prior = parseOutput<K, I>(name, receipt.result);
         // Creation has no input subject ID, so its stored result must also be authorized on replay.
         if (name === "create_project")
           await context(tx, actor, "read", projectSchema.parse(prior).id);

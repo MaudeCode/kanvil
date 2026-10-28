@@ -25,12 +25,12 @@ const listTickets = async (
   ctx: Context,
   input: Partial<z.input<typeof operations.list_tickets.input>>,
 ) =>
-  parseOutput(
+  parseOutput<"list_tickets", { view: "full" }>(
     "list_tickets",
     json(
       await ticketHandlers.list_tickets(
         ctx,
-        operations.list_tickets.input.parse({ ...input, projectId: project(ctx).id }),
+        operations.list_tickets.input.parse({ ...input, projectId: project(ctx).id, view: "full" }),
       ),
     ),
   );

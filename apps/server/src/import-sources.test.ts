@@ -470,9 +470,9 @@ describe("imports from other trackers", () => {
 
   it("resumes a source import after a restart without writing anything twice", async () => {
     let interrupted = false;
-    async function execute<K extends Operation>(
+    async function execute<K extends Operation, I>(
       name: K,
-      value: unknown,
+      value: I,
       actor: Actor,
       provenance?: { importRun: string },
     ) {
@@ -943,9 +943,9 @@ describe("imports from other trackers", () => {
 
   it("writes the staged board after the source changes, and resumes without duplicates", async () => {
     let interrupted = false;
-    async function execute<K extends Operation>(
+    async function execute<K extends Operation, I>(
       name: K,
-      value: unknown,
+      value: I,
       actor: Actor,
       provenance?: { importRun: string },
     ) {

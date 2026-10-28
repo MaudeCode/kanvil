@@ -5,6 +5,7 @@ import {
   type SearchSettings,
 } from "@kanvil/contracts/instance";
 import type { TicketIndex, TicketIndexDocument } from "./ports.ts";
+const fields = ["title^3", "key^3", "description", "acceptanceCriteria", "labels", "scopes"];
 function fail(_status: number, _code: string, message: string): never {
   throw new Error(message);
 }
@@ -153,7 +154,6 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
             body: JSON.stringify({
               size: 1000,
               _source: false,
-              sort: ["_doc"],
               query: {
                 bool: {
                   filter: [
@@ -161,21 +161,21 @@ export function createElasticsearchIndex(configuration: unknown): TicketIndex {
                     { term: { instanceId: identity } },
                   ],
                   must: [
-                    {
-                      multi_match: {
-                        query,
-                        fields: [
-                          "title^3",
-                          "key^3",
-                          "description",
-                          "acceptanceCriteria",
-                          "labels",
-                          "scopes",
-                        ],
-                        operator: "and",
-                        fuzziness: "AUTO",
-                      },
-                    },
+                    ...(query.terms
+                      ? [
+                          {
+                            multi_match: {
+                              query: query.terms,
+                              fields,
+                              operator: "and",
+                              fuzziness: "AUTO",
+                            },
+                          },
+                        ]
+                      : []),
+                    ...query.phrases.map((phrase) => ({
+                      multi_match: { query: phrase, fields, type: "phrase" },
+                    })),
                   ],
                 },
               },

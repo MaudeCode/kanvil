@@ -723,6 +723,31 @@ export const ticketSchema = z.object({
   updatedAt: timestamp,
 });
 export type Ticket = z.output<typeof ticketSchema>;
+// The compact row `view: "summary"` returns from ticket lists and searches: enough to triage a
+// result without its description and acceptance criteria.
+export const ticketSummarySchema = ticketSchema.pick({
+  id: true,
+  key: true,
+  number: true,
+  projectId: true,
+  title: true,
+  status: true,
+  stateId: true,
+  kind: true,
+  difficulty: true,
+  priority: true,
+  labels: true,
+  scopes: true,
+  archived: true,
+  automationReady: true,
+  updatedAt: true,
+  version: true,
+});
+export type TicketSummary = z.output<typeof ticketSummarySchema>;
+// `full` (the default) returns whole tickets; `summary` returns `ticketSummarySchema` rows.
+const ticketView = { view: z.enum(["summary", "full"]).default("full") };
+// A full ticket, or its summary when the request asked for `view: "summary"`.
+const ticketRow = z.union([ticketSchema, ticketSummarySchema]);
 export type Project = z.output<typeof projectSchema>;
 export const snapshotSchema = z.object({
   project: projectSchema,
@@ -950,12 +975,19 @@ export const searchResultSchema = z.object({
   id: z.string(),
   project: projectRef,
   // The ticket a result belongs to; null for projects and activity without a live ticket.
+  // With `view: "summary"` a ticket result carries its summary row instead.
   ticket: z
-    .object({ id: z.uuid(), key: z.string(), title: z.string(), status: z.enum(states) })
+    .union([
+      ticketSummarySchema,
+      z.object({ id: z.uuid(), key: z.string(), title: z.string(), status: z.enum(states) }),
+    ])
     .nullable(),
   title: z.string(),
   // Matching text around the first occurrence of the query, when the result has body text.
   excerpt: z.string(),
+  // Only with `view: "summary"`: up to 240 characters of body text centred on the first match,
+  // empty when only the title or key matched.
+  snippet: z.string().optional(),
   actorId: z.string().nullable(),
   at: timestamp,
 });
@@ -2422,13 +2454,14 @@ export const operations = {
         // overlaps [scheduledFrom, scheduledTo). Either bound alone also excludes undated tickets.
         scheduledFrom: timestamp.optional(),
         scheduledTo: timestamp.optional(),
+        ...ticketView,
       })
       .superRefine(rejectConflicts),
-    page(ticketSchema),
+    page(ticketRow),
     "GET",
     "/projects/{projectId}/tickets",
     "read",
-    "Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values.",
+    'Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values. Double-quoted segments of `q` match as exact phrases. Pass `view: "summary"` when scanning results: rows then omit the description and acceptance criteria.',
   ),
   list_ticket_labels: op(
     projectInput.extend({ archived: ticketFilter.shape.archived }),
@@ -2811,20 +2844,23 @@ export const operations = {
         q: z.string().trim().min(1).max(200),
         workspaceId: z.uuid().optional(),
         limit: z.coerce.number().int().min(1).max(50).default(20),
+        ...ticketView,
       })
       .strict(),
     z.object({
       items: z.array(
         z.object({
-          ticket: ticketSchema,
+          ticket: ticketRow,
           project: projectRef,
+          // Only with `view: "summary"`; see `searchResultSchema.snippet`.
+          snippet: z.string().optional(),
         }),
       ),
     }),
     "GET",
     "/tickets/search",
     "read",
-    "Search unarchived tickets by key or text across every accessible project, optionally within one workspace.",
+    'Search unarchived tickets by key or text across every accessible project, optionally within one workspace. Results order by exact key match, then relevance, then recency. Double-quoted segments of `q` match as exact phrases. Pass `view: "summary"` when scanning results: each ticket is then a compact row and the result carries a `snippet` of the matching text.',
   ),
   search_workspace: op(
     z
@@ -2835,6 +2871,7 @@ export const operations = {
         ...filterShape,
         limit: z.coerce.number().int().min(1).max(50).default(20),
         offset: z.coerce.number().int().min(0).max(1000).default(0),
+        ...ticketView,
       })
       .strict()
       .superRefine(rejectConflicts),
@@ -2850,7 +2887,7 @@ export const operations = {
     "GET",
     "/search",
     "read",
-    "Search accessible tickets, projects, comments, and activity by text or ticket key, optionally within one workspace or one result type. Property filters restrict results to matching tickets. Results order by exact key match, then type, then recency.",
+    'Search accessible tickets, projects, comments, and activity by text or ticket key, optionally within one workspace or one result type. Property filters restrict results to matching tickets. Results order by exact key match, then type, then ticket relevance, then recency. Double-quoted segments of `q` match ticket text as exact phrases. Pass `view: "summary"` when scanning results: ticket results then carry their summary row and each result a `snippet` of the matching text.',
   ),
   list_my_work: op(
     z
@@ -3643,6 +3680,29 @@ export const permissionScope = (permission: Permission): (typeof scopes)[number]
 export type Input<K extends Operation> = z.input<(typeof operations)[K]["input"]>;
 export type ParsedInput<K extends Operation> = z.output<(typeof operations)[K]["input"]>;
 export type Output<K extends Operation> = z.output<(typeof operations)[K]["output"]>;
+// Narrows an output to whole tickets: summary rows only answer `view: "summary"`.
+type FullTickets<T> = T extends Ticket
+  ? T
+  : T extends TicketSummary
+    ? never
+    : T extends readonly (infer U)[]
+      ? FullTickets<U>[]
+      : T extends object
+        ? { [P in keyof T]: FullTickets<T[P]> }
+        : T;
+type ViewOperation = {
+  [K in Operation]: "view" extends keyof ParsedInput<K> ? K : never;
+}[Operation];
+// What a request with input `I` returns: whole tickets unless it may ask for summaries.
+export type OutputOf<K extends Operation, I> = K extends ViewOperation
+  ? unknown extends I
+    ? Output<K>
+    : "view" extends keyof I
+      ? "summary" extends I["view" & keyof I]
+        ? Output<K>
+        : FullTickets<Output<K>>
+      : FullTickets<Output<K>>
+  : Output<K>;
 export function isOperation(name: string): name is Operation {
   return Object.hasOwn(operations, name);
 }
@@ -3673,9 +3733,13 @@ export class ApiError extends Error {
   }
 }
 
-export function parseOutput<K extends Operation>(name: K, value: unknown): Output<K> {
+// `I` is the request's input type, so a request without `view: "summary"` reads whole tickets.
+export function parseOutput<K extends Operation, I = Input<K>>(
+  name: K,
+  value: unknown,
+): OutputOf<K, I> {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The registry key selects and validates the generic result schema.
-  return operations[name].output.parse(value) as Output<K>;
+  return operations[name].output.parse(value) as OutputOf<K, I>;
 }
 
 export function errorMessage(error: unknown): string {

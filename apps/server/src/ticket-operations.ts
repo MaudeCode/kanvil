@@ -46,6 +46,7 @@ import {
   getTicket,
   intakeOnly,
   intakeHoldReason,
+  json,
   project,
   publish,
   publishMany,
@@ -62,7 +63,7 @@ import {
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
 import { projectStates, resolveState } from "./workflow-operations.ts";
-import { likePattern } from "./search.ts";
+import { likePattern, parseQuery, querySegments } from "./search.ts";
 import {
   applyCustomFieldValues,
   assertCustomFieldFilters,
@@ -81,6 +82,7 @@ import {
   priorities,
   states,
   ticketPredicates,
+  ticketSummarySchema,
   type TicketPredicate,
   type ParsedInput,
   type Output,
@@ -559,6 +561,31 @@ const hitRow = z.object({
   title: z.string().nullable(),
   status: z.enum(states).nullable(),
 });
+// The row `view: "summary"` returns in place of the whole ticket.
+const summarize = (ticket: typeof tickets.$inferSelect) => ticketSummarySchema.parse(json(ticket));
+const snippetLength = 240;
+// Up to 240 characters of `body` centred on the earliest literal match of a quoted phrase, the
+// free text, or one of its words; nothing when only the title, key, or a fuzzy term matched.
+function snippet(body: string | null, query: string) {
+  const text = body?.replace(/\s+/gu, " ").trim() ?? "",
+    lower = text.toLowerCase(),
+    parsed = parseQuery(query);
+  let at = -1,
+    size = 0;
+  for (const needle of [...querySegments(parsed), ...parsed.terms.split(" ")]) {
+    const found = needle ? lower.indexOf(needle.toLowerCase()) : -1;
+    if (found >= 0 && (at < 0 || found < at)) [at, size] = [found, needle.length];
+  }
+  if (at < 0) return "";
+  if (text.length <= snippetLength) return text;
+  const start = Math.max(
+      0,
+      Math.min(at + Math.floor((size - snippetLength) / 2), text.length - snippetLength),
+    ),
+    end = start + snippetLength;
+  // The ellipses take the place of the outermost characters, so the result stays within the limit.
+  return `${start > 0 ? "…" : ""}${text.slice(start > 0 ? start + 1 : start, end < text.length ? end - 1 : end)}${end < text.length ? "…" : ""}`;
+}
 // The text around the first literal match, or nothing when only the title or index matched.
 function excerpt(body: string | null, query: string, radius = 80) {
   const text = body?.replace(/\s+/gu, " ").trim() ?? "",
@@ -796,7 +823,8 @@ export const ticketHandlers: Pick<
       input.scheduledTo ? sql`${scheduleStart} < ${input.scheduledTo}::timestamptz` : undefined,
       search?.where,
     );
-    return pageOf(ctx, where, ticketOrder(input), input);
+    const page = await pageOf(ctx, where, ticketOrder(input), input);
+    return input.view === "summary" ? { ...page, items: page.items.map(summarize) } : page;
   },
   async list_my_work(ctx, input) {
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
@@ -1074,7 +1102,8 @@ export const ticketHandlers: Pick<
   async search_tickets(ctx, input) {
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
     if (!allowed.length) return { items: [] };
-    const ids = allowed.map((row) => row.id);
+    const ids = allowed.map((row) => row.id),
+      match = await ctx.search.where(ctx.db, ids, input.q);
     const rows = await ctx.db
       .select()
       .from(tickets)
@@ -1082,17 +1111,28 @@ export const ticketHandlers: Pick<
         and(
           inArray(tickets.projectId, ids),
           eq(tickets.archived, false),
-          or(ticketMatch(input.q), (await ctx.search.where(ctx.db, ids, input.q)).where),
+          or(ticketMatch(input.q), match.where),
         ),
       )
-      .orderBy(sql`CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END`, desc(tickets.updatedAt))
+      .orderBy(
+        sql`CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END`,
+        sql`${match.rank} NULLS LAST`,
+        desc(tickets.updatedAt),
+      )
       .limit(input.limit);
     return {
       items: rows.flatMap((ticket) => {
         const owner = allowed.find((row) => row.id === ticket.projectId);
-        return owner
-          ? [{ ticket, project: { id: owner.id, key: owner.key, name: owner.name } }]
-          : [];
+        if (!owner) return [];
+        const summary = input.view === "summary",
+          body = `${ticket.description} ${ticket.acceptanceCriteria}`;
+        return [
+          {
+            ticket: summary ? summarize(ticket) : ticket,
+            project: { id: owner.id, key: owner.key, name: owner.name },
+            ...(summary && { snippet: snippet(body, input.q) }),
+          },
+        ];
       }),
     };
   },
@@ -1122,24 +1162,27 @@ export const ticketHandlers: Pick<
           : sql`SELECT 'project' AS type, projects.id::text AS id, projects.id AS project_id,
               NULL::uuid AS ticket_id, NULL::text AS actor_id, projects.description AS body,
               NULL::text AS event_type, NULL::jsonb AS data, projects.updated_at AS at,
-              CASE WHEN projects.key = ${key} THEN 0 ELSE 1 END AS rank, 0 AS family
+              CASE WHEN projects.key = ${key} THEN 0 ELSE 1 END AS rank, 0 AS family,
+              NULL::int AS score
             FROM projects WHERE ${inArray(projects.id, ids)}
               AND (projects.name ILIKE ${like} OR projects.key ILIKE ${like} OR projects.description ILIKE ${like})`,
         sql`SELECT 'ticket' AS type, tickets.id::text AS id, tickets.project_id,
               tickets.id AS ticket_id, NULL::text AS actor_id,
               concat_ws(' ', tickets.description, tickets.acceptance_criteria) AS body,
               NULL::text AS event_type, NULL::jsonb AS data, tickets.updated_at AS at,
-              CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END AS rank, 1 AS family
+              CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END AS rank, 1 AS family,
+              ${match.rank}::int AS score
             FROM tickets WHERE ${and(ticketScope, or(ticketMatch(input.q), match.where))}`,
         sql`SELECT 'comment' AS type, comments.id::text AS id, comments.project_id,
               comments.ticket_id, comments.actor_id, comments.body, NULL::text AS event_type,
-              NULL::jsonb AS data, comments.created_at AS at, 1 AS rank, 2 AS family
+              NULL::jsonb AS data, comments.created_at AS at, 1 AS rank, 2 AS family,
+              NULL::int AS score
             FROM comments JOIN tickets ON tickets.id = comments.ticket_id
             WHERE ${and(ticketScope, sql`comments.body ILIKE ${like}`)}`,
         // Activity matches its label, its ticket key, or an active actor's name.
         sql`SELECT 'activity' AS type, events.id::text AS id, events.project_id,
               events.ticket_id, events.actor_id, NULL::text AS body, events.type AS event_type,
-              events.data, events.created_at AS at, 1 AS rank, 3 AS family
+              events.data, events.created_at AS at, 1 AS rank, 3 AS family, NULL::int AS score
             FROM events
             LEFT JOIN tickets ON tickets.id = events.ticket_id AND tickets.project_id = events.project_id
             LEFT JOIN "user" ON "user".id = events.actor_id
@@ -1170,17 +1213,31 @@ export const ticketHandlers: Pick<
         FROM (${hits}) AS hits
         LEFT JOIN tickets ON tickets.id = hits.ticket_id AND tickets.project_id = hits.project_id
         WHERE ${input.type ? sql`hits.type = ${input.type}` : sql`true`}
-        ORDER BY hits.rank, hits.family, hits.at DESC, hits.id DESC
+        ORDER BY hits.rank, hits.family, hits.score NULLS LAST, hits.at DESC, hits.id DESC
         LIMIT ${input.limit} OFFSET ${input.offset}`)
     ).rows.map((row) => hitRow.parse(row));
     const projectsById = new Map(allowed.map((row) => [row.id, row]));
+    const ticketIds = rows.flatMap((row) => (row.ticket_id ? [row.ticket_id] : [])),
+      summaries =
+        input.view === "summary" && ticketIds.length
+          ? new Map(
+              (await ctx.db.select().from(tickets).where(inArray(tickets.id, ticketIds))).map(
+                (row) => [row.id, summarize(row)],
+              ),
+            )
+          : undefined;
     return {
       items: rows.flatMap((row) => {
         const owner = projectsById.get(row.project_id);
         if (!owner) return [];
         const ticket =
           row.ticket_id && row.key && row.title && row.status
-            ? { id: row.ticket_id, key: row.key, title: row.title, status: row.status }
+            ? (summaries?.get(row.ticket_id) ?? {
+                id: row.ticket_id,
+                key: row.key,
+                title: row.title,
+                status: row.status,
+              })
             : null;
         const at = row.at.toISOString();
         return [
@@ -1207,6 +1264,7 @@ export const ticketHandlers: Pick<
                     )
                   : (ticket?.title ?? ""),
             excerpt: excerpt(row.body, input.q),
+            ...(input.view === "summary" && { snippet: snippet(row.body, input.q) }),
             actorId: row.actor_id,
             at,
           },

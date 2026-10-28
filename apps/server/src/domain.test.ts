@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createFixture } from "./test-fixture.ts";
 import { notifications } from "./schema.ts";
 import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
@@ -1283,6 +1283,127 @@ describe("ticket operations on PostgreSQL", () => {
       [],
     );
   });
+  it("ranks title matches above newer text-only matches on PostgreSQL", async () => {
+    const token = `rank${crypto.randomUUID().slice(0, 8)}`;
+    const create = (title: string, description = "") =>
+      domain.execute("create_ticket", { projectId: project.id, title, description }, owner);
+    const titled = await create(`Rotate ${token} credentials`);
+    const described = await create("Unrelated title", `Mentions ${token} only in the body.`);
+    const order = [titled.id, described.id];
+    expect(
+      (await domain.execute("search_tickets", { q: token }, owner)).items.map(
+        (item) => item.ticket.id,
+      ),
+    ).toEqual(order);
+    expect(
+      (await domain.execute("search_workspace", { q: token, type: "ticket" }, owner)).items.map(
+        (item) => item.ticket?.id,
+      ),
+    ).toEqual(order);
+  });
+  it("matches double-quoted segments as exact phrases alongside the other terms", async () => {
+    const create = (title: string, description = "") =>
+      domain.execute("create_ticket", { projectId: project.id, title, description }, owner);
+    const live = await create("Mark sessions done", "Leave the live activity after acknowledge.");
+    const titled = await create("End the live activity on completion");
+    const native = await create("Refine native activity screens");
+    const like = await create("Feels like activity tracking");
+    const mine = new Set([live.id, titled.id, native.id, like.id]);
+    const found = async (q: string) =>
+      (await domain.execute("search_tickets", { q, limit: 50 }, owner)).items
+        .map((item) => item.ticket.id)
+        .filter((id) => mine.has(id))
+        .toSorted();
+    expect(await found('"live activity"')).toEqual([live.id, titled.id].toSorted());
+    expect(await found('"live activity" acknowledge')).toEqual([live.id]);
+    expect(await found('live "activity')).toEqual([]);
+    const listed = await domain.execute(
+      "list_tickets",
+      { projectId: project.id, q: '"live activity"' },
+      owner,
+    );
+    expect(listed.items.map((row) => row.id).toSorted()).toEqual([live.id, titled.id].toSorted());
+  });
+  it("returns compact summary rows with a snippet of the matching text", async () => {
+    const token = `sum${crypto.randomUUID().slice(0, 8)}`;
+    const body = "x".repeat(5000);
+    const created: { id: string }[] = [];
+    for (let index = 0; index < 50; index++)
+      created.push(
+        await domain.execute(
+          "create_ticket",
+          {
+            projectId: project.id,
+            title: index === 0 ? `Title match ${token}` : `Ticket ${index}`,
+            description: index === 0 ? body : `${body} the ${token} detail ${body}`,
+            acceptanceCriteria: "Covered by tests.",
+            labels: ["search"],
+          },
+          owner,
+        ),
+      );
+    const summary = await domain.execute(
+      "search_tickets",
+      { q: token, view: "summary", limit: 50 },
+      owner,
+    );
+    expect(summary.items).toHaveLength(50);
+    expect(JSON.stringify(summary).length).toBeLessThan(40_000);
+    const fields = [
+      "archived",
+      "automationReady",
+      "difficulty",
+      "id",
+      "key",
+      "kind",
+      "labels",
+      "number",
+      "priority",
+      "projectId",
+      "scopes",
+      "stateId",
+      "status",
+      "title",
+      "updatedAt",
+      "version",
+    ];
+    for (const item of summary.items) expect(Object.keys(item.ticket).toSorted()).toEqual(fields);
+    const snippets = new Map(summary.items.map((item) => [item.ticket.id, item.snippet]));
+    expect(snippets.get(created[0]!.id)).toBe("");
+    const snippet = snippets.get(created[1]!.id) ?? "";
+    expect(snippet).toContain(`the ${token} detail`);
+    expect(snippet.length).toBeLessThanOrEqual(240);
+    // Omitting `view` keeps whole tickets without snippets.
+    const full = await domain.execute("search_tickets", { q: token, limit: 50 }, owner);
+    expect(full.items[0]?.ticket.description).toBeDefined();
+    expect(full.items[0]).not.toHaveProperty("snippet");
+    const page = await domain.execute(
+      "list_tickets",
+      { projectId: project.id, q: token, view: "summary", limit: 50 },
+      owner,
+    );
+    expect(page.total).toBe(50);
+    for (const row of page.items) expect(Object.keys(row).toSorted()).toEqual(fields);
+    const results = await domain.execute(
+      "search_workspace",
+      { q: token, type: "ticket", view: "summary", limit: 50 },
+      owner,
+    );
+    expect(results.items).toHaveLength(50);
+    for (const item of results.items)
+      expect(Object.keys(item.ticket ?? {}).toSorted()).toEqual(fields);
+    expect(results.items.find((item) => item.id === created[1]!.id)?.snippet).toContain(
+      `the ${token} detail`,
+    );
+    const plain = await domain.execute("search_workspace", { q: token, type: "ticket" }, owner);
+    expect(Object.keys(plain.items[0]?.ticket ?? {}).toSorted()).toEqual([
+      "id",
+      "key",
+      "status",
+      "title",
+    ]);
+    expect(plain.items[0]).not.toHaveProperty("snippet");
+  });
   it("filters tickets by any-of and none-of values through one predicate catalog", async () => {
     const create = (title: string, fields: Record<string, unknown>) =>
       domain.execute("create_ticket", { projectId: project.id, title, ...fields }, owner);
@@ -1457,7 +1578,9 @@ describe("ticket operations on PostgreSQL", () => {
   });
   it("reports when PostgreSQL answers while an external index is behind", async () => {
     const lagging = createDomain(fixture.database, {
-      search: { where: async () => ({ where: undefined, engine: "postgres", indexing: true }) },
+      search: {
+        where: async () => ({ where: undefined, rank: sql`0`, engine: "postgres", indexing: true }),
+      },
     });
     const result = await lagging.execute("search_workspace", { q: "anything" }, owner);
     expect(result).toMatchObject({ engine: "postgres", indexing: true });
