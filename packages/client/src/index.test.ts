@@ -1,6 +1,36 @@
 import { expect, it, vi } from "vite-plus/test";
 import { createClient } from "./index.ts";
 
+it("passes query cancellation to fetch and does not retry an aborted read", async () => {
+  const controller = new AbortController();
+  let start: ((signal: AbortSignal | null | undefined) => void) | undefined;
+  const started = new Promise<AbortSignal | null | undefined>((resolve) => {
+    start = resolve;
+  });
+  const failure = new Error("Query cancelled");
+  let attempts = 0;
+  const client = createClient({
+    baseUrl: "http://localhost:5180",
+    fetch: async (_input, init) => {
+      attempts++;
+      start?.(init?.signal);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    },
+  });
+  const query: (context: { signal: AbortSignal }) => Promise<unknown> = client.query(
+    "list_projects",
+    {},
+  ).queryFn;
+  const pending = query({ signal: controller.signal });
+  expect(await started).toBe(controller.signal);
+  const rejected = expect(pending).rejects.toBe(failure);
+  controller.abort(failure);
+  await rejected;
+  expect(attempts).toBe(1);
+});
+
 it("creates valid, retry-stable write IDs when an HTTP browser has no randomUUID", async () => {
   const getRandomValues = crypto.getRandomValues.bind(crypto);
   vi.stubGlobal("crypto", { getRandomValues });

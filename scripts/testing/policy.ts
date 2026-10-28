@@ -354,6 +354,11 @@ export const families: readonly Family[] = [
     "List selection, the bulk toolbar, keyboard highlight, the preview sheet, labels, and saved views.",
   ),
   spec(
+    "ticket-list-scale.spec.ts",
+    4,
+    "Real 10,000-ticket DOM, layout, focus and collection completeness.",
+  ),
+  spec(
     "users.spec.ts",
     5,
     "Account administration dialogs, filters, cache purges on role changes, the workspace directory sheet, and the detail sheets' entry and exit transitions with normal and reduced motion.",

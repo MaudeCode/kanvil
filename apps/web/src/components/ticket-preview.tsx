@@ -3,6 +3,8 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useMemo,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentType,
@@ -78,7 +80,7 @@ export function usePreviewCollection(
   useEffect(() => {
     handlers.current = { open, returnFocus };
   });
-  const key = order.join("\n");
+  const key = useMemo(() => order.join("\n"), [order]);
   useEffect(
     () =>
       register?.({
@@ -126,6 +128,39 @@ export function PreviewActions({
   );
 }
 const previewEntry = "kanvilPreview";
+type PreviewNavigation = {
+  navigate: ReturnType<typeof useNavigate>;
+  routeProject: string | undefined;
+  replace: boolean;
+};
+// Retaining this navigation port must not retain a render's old collection/model.
+class PreviewOpener {
+  #navigation: PreviewNavigation;
+  #setOrigin: (origin: HTMLElement | null) => void;
+  constructor(navigation: PreviewNavigation, setOrigin: (origin: HTMLElement | null) => void) {
+    this.#navigation = navigation;
+    this.#setOrigin = setOrigin;
+  }
+  update(navigation: PreviewNavigation) {
+    this.#navigation = navigation;
+  }
+  open = (next: PreviewTarget, from?: HTMLElement | null) => {
+    const { navigate, routeProject, replace } = this.#navigation;
+    if (!replace) this.#setOrigin(from ?? null);
+    void navigate({
+      to: ".",
+      search: (current) => ({
+        ...current,
+        peek: next.ticketId,
+        peekProject: next.projectId === routeProject ? undefined : next.projectId,
+      }),
+      hash: next.hash ?? "",
+      state: (current) => (replace ? current : { ...current, [previewEntry]: true }),
+      replace,
+    });
+  };
+}
+
 // The one ticket sheet of a layout. The previewed ticket rides in the URL (`peek`, plus
 // `peekProject` when it is not the route's project, and the anchor as the hash), so refresh,
 // history, and a copied link agree, and the page below stays mounted with its own state.
@@ -156,21 +191,14 @@ export function TicketPreviewController({
   // A sheet already open changes its ticket in place; opening one adds a history entry marked in
   // its state, which survives a reload. Closing steps back over a marked entry, so Back and
   // Escape agree; a copied link has no entry below it to return to.
-  function open(next: PreviewTarget, from?: HTMLElement | null) {
-    const replace = !!search.peek;
-    if (!replace) setOrigin(from ?? null);
-    void navigate({
-      to: ".",
-      search: (current) => ({
-        ...current,
-        peek: next.ticketId,
-        peekProject: next.projectId === routeProject ? undefined : next.projectId,
-      }),
-      hash: next.hash ?? "",
-      state: (current) => (replace ? current : { ...current, [previewEntry]: true }),
-      replace,
-    });
-  }
+  const [opener] = useState(
+    () => new PreviewOpener({ navigate, routeProject, replace: !!search.peek }, setOrigin),
+  );
+  useLayoutEffect(
+    () => opener.update({ navigate, routeProject, replace: !!search.peek }),
+    [opener, navigate, routeProject, search.peek],
+  );
+  const open = opener.open;
   function close() {
     if (previewEntry in router.history.location.state) router.history.back();
     else

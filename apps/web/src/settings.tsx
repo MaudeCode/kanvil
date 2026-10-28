@@ -140,8 +140,8 @@ export function AccountSettings({ section }: { section: (typeof accountSections)
             account={identity}
             // The deletion ended every session; leave with the private data cleared.
             onDeleted={() =>
-              signOut(identity).catch(() => {
-                identity.clearPrivateData();
+              signOut(identity).catch(async () => {
+                await identity.clearPrivateData();
                 window.location.assign("/login");
               })
             }

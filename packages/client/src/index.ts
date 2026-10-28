@@ -90,6 +90,7 @@ export function createClient(options: {
     },
     input: unknown,
     base: string,
+    signal?: AbortSignal,
   ) => {
     const values: Record<string, unknown> = { ...spec.input.parse(input) };
     const path = spec.path.replace(/\{(\w+)\}/g, (_, key: string) => {
@@ -105,6 +106,7 @@ export function createClient(options: {
       method: spec.method,
       credentials: options.credentials ?? "include",
       headers,
+      ...(signal ? { signal } : {}),
     };
     if (spec.method === "GET") {
       for (const [key, value] of Object.entries(values))
@@ -144,15 +146,20 @@ export function createClient(options: {
     async call<K extends Operation, const I extends Input<K>>(
       name: K,
       input: Exact<Input<K>, I>,
+      signal?: AbortSignal,
     ): Promise<OutputOf<K, I>> {
-      return parseOutput<K, I>(name, await send(operations[name], input, "/api/v1"));
+      return parseOutput<K, I>(name, await send(operations[name], input, "/api/v1", signal));
     },
     // Reads a shared project's public projection; the server ignores any session or credential.
     async callPublic<K extends PublicOperation>(
       name: K,
       input: PublicInput<K>,
+      signal?: AbortSignal,
     ): Promise<PublicOutput<K>> {
-      return parsePublicOutput(name, await send(publicOperations[name], input, "/api/public"));
+      return parsePublicOutput(
+        name,
+        await send(publicOperations[name], input, "/api/public", signal),
+      );
     },
     async subscribe(subscription: {
       projectId?: string;
@@ -319,7 +326,7 @@ export function createClient(options: {
     query<K extends Operation, const I extends Input<K>>(name: K, input: Exact<Input<K>, I>) {
       return {
         queryKey: ["kanvil", options.baseUrl, name, input] as const,
-        queryFn: () => api.call(name, input),
+        queryFn: ({ signal }: { signal?: AbortSignal } = {}) => api.call(name, input, signal),
       };
     },
     // Public reads live outside the account's "kanvil" namespace: never persisted, and realtime
@@ -327,7 +334,7 @@ export function createClient(options: {
     publicQuery<K extends PublicOperation>(name: K, input: PublicInput<K>) {
       return {
         queryKey: ["kanvil-public", options.baseUrl, name, input] as const,
-        queryFn: () => api.callPublic(name, input),
+        queryFn: ({ signal }: { signal?: AbortSignal } = {}) => api.callPublic(name, input, signal),
       };
     },
     action<K extends Operation>(name: K) {

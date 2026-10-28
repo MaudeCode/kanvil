@@ -1,7 +1,11 @@
 import { toast } from "sonner";
+import { createQuerySnapshot } from "./lib/query-snapshot.ts";
+import { VirtualTicketRows } from "./components/virtual-ticket-rows.tsx";
 import { TicketContextMenu } from "./components/object-context-menu.tsx";
 import {
   useEffect,
+  useMemo,
+  memo,
   useRef,
   useState,
   type ComponentProps,
@@ -29,6 +33,8 @@ import {
   rowSelectionFeature,
   columnVisibilityFeature,
   type ColumnDef,
+  type Row as DataRow,
+  type ReactTable,
 } from "@tanstack/react-table";
 import {
   capabilitiesOf,
@@ -43,7 +49,7 @@ import {
   type Project,
   type Output,
 } from "@kanvil/contracts";
-import { formatList, t } from "@kanvil/contracts/i18n";
+import { activeLocale, formatList, t } from "@kanvil/contracts/i18n";
 import { api, useIdentity, useProjectAccess, useProjects, useOperation } from "./data.tsx";
 import { ProjectIcon } from "./components/project-icon.tsx";
 import {
@@ -132,7 +138,10 @@ const features = tableFeatures({
   rowSelectionFeature,
   columnVisibilityFeature,
 });
+const emptyWorkflow: Output<"list_workflow_states"> = [];
+const emptyPages: Record<string, number> = {};
 const pageSize = 100;
+const ticketRowId = (ticket: Ticket) => ticket.id;
 // A collapsible group of rows: a status, a project, or a due-date window.
 interface Section {
   id: string;
@@ -199,7 +208,7 @@ function dueWindow(ticket: Ticket, now: number) {
   return dueWindows.find(([, within]) => left < within)?.[0] ?? "later";
 }
 // Inline property editing on a row; readers see the plain value.
-function PropertyCell<P extends PropertyName>({
+const PropertyCell = memo(function TicketPropertyCell<P extends PropertyName>({
   ticket,
   property,
   value,
@@ -227,9 +236,11 @@ function PropertyCell<P extends PropertyName>({
       onChange={(next) => void change({ [property]: next })}
     />
   );
-}
+});
 // Built at render, so headers and accessible names follow the interface language.
-const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
+const ticketColumns = (
+  locale: ReturnType<typeof activeLocale>,
+): ColumnDef<typeof features, Ticket>[] => [
   {
     id: "select",
     size: 44,
@@ -256,7 +267,7 @@ const ticketColumns = (): ColumnDef<typeof features, Ticket>[] => [
   { accessorKey: "key", header: ticketColumnLabels.key, size: 100, minSize: 90 },
   {
     accessorKey: "title",
-    header: t("ticket.list.title"),
+    header: t("ticket.list.title", { lng: locale }),
     size: 400,
     enableHiding: false,
     minSize: 200,
@@ -459,6 +470,49 @@ const rowClass =
 const densityClass =
   "data-[density=comfortable]:[&_[data-priority]_svg]:size-5! data-[density=comfortable]:[&_[data-slot=badge]]:h-6 data-[density=comfortable]:[&_[data-slot=badge]]:px-2 data-[density=comfortable]:[&_[data-slot=badge]]:text-xs data-[density=comfortable]:[&_.status]:text-sm data-[density=comfortable]:[&_[data-slot=checkbox]]:size-5 data-[density=comfortable]:[&_.ticket-title]:text-[15px] data-[density=comfortable]:[&_.ticket-title]:leading-6";
 const tableClass = "min-w-full table-fixed @min-[1051px]:w-(--table-width)";
+// Extends the existing table cell composition; highlight changes do not rerender its controls.
+const TicketCells = memo(
+  function Cells({
+    row,
+    render: Render,
+  }: {
+    row: DataRow<typeof features, Ticket>;
+    render: ReactTable<typeof features, Ticket>["FlexRender"];
+    selected: boolean;
+    visibility: string;
+    columns: ColumnDef<typeof features, Ticket>[];
+  }) {
+    return (
+      <>
+        {row.getVisibleCells().map((cell) => (
+          <TableCell
+            className={cn(
+              "px-3 py-2 align-middle text-xs whitespace-normal in-data-[density=comfortable]:py-4",
+              cell.column.id === "key" && "font-mono text-[11px] text-muted-foreground",
+            )}
+            key={cell.id}
+            role="cell"
+            data-column={cell.column.id}
+            data-label={
+              typeof cell.column.columnDef.header === "string"
+                ? cell.column.columnDef.header
+                : undefined
+            }
+          >
+            <Render cell={cell} />
+          </TableCell>
+        ))}
+      </>
+    );
+  },
+  (previous, next) =>
+    previous.row === next.row &&
+    previous.render === next.render &&
+    previous.selected === next.selected &&
+    previous.visibility === next.visibility &&
+    previous.columns === next.columns,
+);
+
 // Every section table shares the header table's column widths.
 function ColumnGroup({ leaves }: { leaves: { id: string; getSize: () => number }[] }) {
   return (
@@ -484,7 +538,18 @@ export function TicketList({
 }) {
   // The previewed ticket and the calendar or timeline period ride in the URL beside the filters;
   // neither is part of a saved view.
-  const { peek, peekProject: _peekProject, period, ...search } = route;
+  const { peek, peekProject: _peekProject, period, ...filters } = route;
+  const filterRoute = JSON.stringify(filters);
+  const [combinePages] = useState(() => createQuerySnapshot<{ items: Ticket[]; total: number }>());
+  const search = useMemo(() => {
+    const {
+      peek: _peek,
+      peekProject: _project,
+      period: _period,
+      ...parsed
+    } = searchSchema.parse(JSON.parse(filterRoute));
+    return parsed;
+  }, [filterRoute]);
   const project = "project" in scope ? scope.project : undefined;
   const projectAccess = useProjectAccess(project?.id ?? "", !!project);
   // My work spans projects: rows edit inline through their own project's access, and
@@ -528,63 +593,72 @@ export function TicketList({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   // A move in flight shows at once: the ticket in its new status, next to its new neighbor.
   const [placing, setPlacing] = useState<Placement & { id: string }>();
-  const pages = paging.filterKey === filterKey ? paging.pages : {};
+  const pages = paging.filterKey === filterKey ? paging.pages : emptyPages;
   // A project's status sections and board lanes follow its workflow states; My work, which spans
   // projects, groups by category.
   // Status steps walk the same states, so a project list always reads its workflow.
   const workflowQuery = useWorkflow(project?.id ?? ""),
-    workflow = workflowQuery.data ?? [],
+    workflow = workflowQuery.data ?? emptyWorkflow,
     // Sections wait for the workflow rather than fetching by category first.
     workflowPending = !!project && grouping === "status" && workflowQuery.isPending;
   // Status sections and planning groups fetch one series of pages each; other lists fetch one
   // series and group it here.
-  const fetches: Fetch[] =
-    grouping === "planning"
-      ? planningGroups().filter(
-          (entry) => !entry.status || matchesFilter(search, "status", entry.status),
-        )
-      : workflowPending
-        ? []
-        : grouping === "status" && project && workflow.length
-          ? workflow
-              .filter((state) => matchesFilter(search, "status", state.category))
-              .map((state) => ({
-                id: state.id,
-                label: state.name,
-                heading: (
-                  <PropertyValue
-                    property="status"
-                    value={stateValue(state)}
-                    projectId={project.id}
-                  />
-                ),
-                status: state.category,
-                stateId: state.id,
-                has: (ticket: Ticket) => ticket.stateId === state.id,
-              }))
-          : grouping === "status"
-            ? states
-                .filter((status) => matchesFilter(search, "status", status))
-                .map((status) => ({
-                  id: status,
-                  label: stateLabels[status],
-                  heading: <TicketIndicator property="status" value={status} />,
-                  status,
-                  has: (ticket: Ticket) => ticket.status === status,
+  const fetches: Fetch[] = useMemo(
+    () =>
+      grouping === "planning"
+        ? planningGroups().filter(
+            (entry) => !entry.status || matchesFilter(search, "status", entry.status),
+          )
+        : workflowPending
+          ? []
+          : grouping === "status" && project && workflow.length
+            ? workflow
+                .filter((state) => matchesFilter(search, "status", state.category))
+                .map((state) => ({
+                  id: state.id,
+                  label: state.name,
+                  heading: (
+                    <PropertyValue
+                      property="status"
+                      value={stateValue(state)}
+                      projectId={project.id}
+                    />
+                  ),
+                  status: state.category,
+                  stateId: state.id,
+                  has: (ticket: Ticket) => ticket.stateId === state.id,
                 }))
-            : [allTickets()];
-  const pageQueries = fetches.flatMap((entry) =>
-    Array.from({ length: pages[entry.id] ?? 1 }, (_, page) => ({
-      entry,
-      offset: page * pageSize,
-    })),
+            : grouping === "status"
+              ? states
+                  .filter((status) => matchesFilter(search, "status", status))
+                  .map((status) => ({
+                    id: status,
+                    label: stateLabels[status],
+                    heading: <TicketIndicator property="status" value={status} />,
+                    status,
+                    has: (ticket: Ticket) => ticket.status === status,
+                  }))
+              : [allTickets()],
+    [grouping, search, workflowPending, project, workflow],
   );
-  const queries = useQueries({
+  const pageQueries = useMemo(
+    () =>
+      fetches.flatMap((entry) =>
+        Array.from({ length: pages[entry.id] ?? 1 }, (_, page) => ({
+          entry,
+          offset: page * pageSize,
+        })),
+      ),
+    [fetches, pages],
+  );
+  const queryState = useQueries({
+    combine: combinePages,
     queries: pageQueries.map(({ entry, offset }) =>
       project
         ? api.query("list_tickets", {
             projectId: project.id,
             ...search,
+            view: "full",
             ...(entry.status ? { status: entry.status, statusNot: undefined } : {}),
             ...(entry.stateId ? { stateId: entry.stateId } : {}),
             ...(range
@@ -609,44 +683,69 @@ export function TicketList({
           }),
     ),
   });
-  const groups = fetches.map((entry) => ({
-    entry,
-    data: {
-      items: pageQueries.flatMap((query, index) =>
-        query.entry.id === entry.id ? (queries[index]?.data?.items ?? []) : [],
-      ),
-      total:
-        queries[pageQueries.findIndex((query) => query.entry.id === entry.id)]?.data?.total ?? 0,
-    },
-  }));
-  const requiredPages = Object.fromEntries(
-    groups.map((group) => [group.entry.id, Math.max(1, Math.ceil(group.data.total / pageSize))]),
-  );
-  const missingPages = fetches.some(
-    (entry) => (pages[entry.id] ?? 1) < (requiredPages[entry.id] ?? 1),
-  );
-  // Load the remaining pages of a section as soon as its total is known.
-  if (missingPages) setPaging({ filterKey, pages: requiredPages });
-  const latest = new Map<string, Ticket>();
-  for (const group of groups)
-    for (const ticket of group.data?.items ?? []) {
-      const previous = latest.get(ticket.id);
-      if (!previous || ticket.version > previous.version) latest.set(ticket.id, ticket);
-    }
-  const placed = placing && latest.get(placing.id);
-  if (placing?.status && placed)
-    latest.set(placed.id, { ...placed, ...propertyChange("status", placing.status) });
-  // Rows that arrive through realtime after the first load get a short highlight.
-  const loading = workflowPending || missingPages || queries.some((query) => query.isPending);
-  const currentIds = [...latest.keys()].join("\n");
+  const queries = queryState.states;
+  const pageData = queryState.pages;
   const [seen, setSeen] = useState<{ filterKey: string; ids: string | null; fresh: Set<string> }>({
     filterKey,
     ids: null,
     fresh: new Set(),
   });
+  const totals = useMemo(
+    () =>
+      new Map(
+        fetches.map((entry) => [
+          entry.id,
+          pageData[pageQueries.findIndex((query) => query.entry.id === entry.id)]?.total ?? 0,
+        ]),
+      ),
+    [fetches, pageQueries, pageData],
+  );
+  const requiredPages = Object.fromEntries(
+    fetches.map((entry) => [
+      entry.id,
+      Math.max(1, Math.ceil((totals.get(entry.id) ?? 0) / pageSize)),
+    ]),
+  );
+  const missingPages = fetches.some(
+    (entry) => (pages[entry.id] ?? 1) < (requiredPages[entry.id] ?? 1),
+  );
+  // Load every page immediately, but build the initial row model only once all pages arrive.
+  if (missingPages) setPaging({ filterKey, pages: requiredPages });
+  const loading = workflowPending || missingPages || queries.some((query) => query.isPending);
+  const failed = queries.some((query) => query.error);
+  const renderPages = (seen.filterKey === filterKey && seen.ids !== null) || (!loading && !failed);
+  const groups = useMemo(
+    () =>
+      fetches.map((entry) => ({
+        entry,
+        data: {
+          items: renderPages
+            ? pageQueries.flatMap((query, index) =>
+                query.entry.id === entry.id ? (pageData[index]?.items ?? []) : [],
+              )
+            : [],
+          total: totals.get(entry.id) ?? 0,
+        },
+      })),
+    [fetches, pageQueries, pageData, renderPages, totals],
+  );
+  const latest = useMemo(() => {
+    const records = new Map<string, Ticket>();
+    for (const group of groups)
+      for (const ticket of group.data?.items ?? []) {
+        const previous = records.get(ticket.id);
+        if (!previous || ticket.version > previous.version) records.set(ticket.id, ticket);
+      }
+    const placed = placing && records.get(placing.id);
+    if (placing?.status && placed)
+      records.set(placed.id, { ...placed, ...propertyChange("status", placing.status) });
+    return records;
+  }, [groups, placing]);
+  // Rows that arrive through realtime after the first load get a short highlight.
+  const currentIds = useMemo(() => [...latest.keys()].join("\n"), [latest]);
   if (seen.filterKey !== filterKey) setSeen({ filterKey, ids: null, fresh: new Set() });
   else if (seen.ids === null) {
-    if (!loading) setSeen({ filterKey, ids: currentIds, fresh: new Set() });
+    if (!loading && !failed) setSeen({ filterKey, ids: currentIds, fresh: new Set() });
   } else if (seen.ids !== currentIds) {
     const known = new Set(seen.ids.split("\n"));
     setSeen({
@@ -655,9 +754,13 @@ export function TicketList({
       fresh: new Set([...latest.keys()].filter((id) => !known.has(id))),
     });
   }
-  const all = placing?.anchor
-    ? placeNear([...latest.values()], placing.id, placing.anchor, !!placing.below)
-    : [...latest.values()];
+  const all = useMemo(
+    () =>
+      placing?.anchor
+        ? placeNear([...latest.values()], placing.id, placing.anchor, !!placing.below)
+        : [...latest.values()],
+    [latest, placing],
+  );
   const total = groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0);
   // Due windows move with the clock, so a ticket passes into Overdue while the list stays open.
   const [now, setNow] = useState(() => Date.now());
@@ -667,55 +770,68 @@ export function TicketList({
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [grouping]);
-  const sections: Section[] =
-    grouping === "project"
-      ? // Sections come from the tickets, so a project missing from the cached list never hides one.
-        [...new Set(all.map((ticket) => ticket.projectId))]
-          .map((id) => ({ id, owner: projects.data?.find((item) => item.id === id) }))
-          .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
-          .map(({ id, owner }) => ({
-            id,
-            label: owner?.name ?? t("ticket.project.label"),
-            heading: (
-              <span className="flex min-w-0 items-center gap-2 text-xs">
-                {owner && <ProjectIcon project={owner} className="size-4" />}
-                <span dir={owner ? "auto" : undefined} className="truncate">
-                  {owner?.name ?? t("ticket.project.label")}
+  const sections: Section[] = useMemo(
+    () =>
+      grouping === "project"
+        ? // Sections come from the tickets, so a project missing from the cached list never hides one.
+          [...new Set(all.map((ticket) => ticket.projectId))]
+            .map((id) => ({ id, owner: projects.data?.find((item) => item.id === id) }))
+            .toSorted((a, b) => (a.owner?.name ?? "").localeCompare(b.owner?.name ?? ""))
+            .map(({ id, owner }) => ({
+              id,
+              label: owner?.name ?? t("ticket.project.label"),
+              heading: (
+                <span className="flex min-w-0 items-center gap-2 text-xs">
+                  {owner && <ProjectIcon project={owner} className="size-4" />}
+                  <span dir={owner ? "auto" : undefined} className="truncate">
+                    {owner?.name ?? t("ticket.project.label")}
+                  </span>
                 </span>
-              </span>
+              ),
+              total: all.filter((ticket) => ticket.projectId === id).length,
+              has: (ticket: Ticket) => ticket.projectId === id,
+            }))
+        : grouping === "due"
+          ? [...dueWindows.map(([id]) => id), "none" as const].flatMap((id) => {
+              const count = all.filter((ticket) => dueWindow(ticket, now) === id).length,
+                label = dueWindowLabel(id);
+              return count
+                ? [
+                    {
+                      id,
+                      label,
+                      heading: <span className="text-xs">{label}</span>,
+                      total: count,
+                      has: (ticket: Ticket) => dueWindow(ticket, now) === id,
+                    },
+                  ]
+                : [];
+            })
+          : groups.flatMap(({ entry: { id, label, heading, has }, data }) =>
+              data.total > 0 || board ? [{ id, label, heading, has, total: data.total }] : [],
             ),
-            total: all.filter((ticket) => ticket.projectId === id).length,
-            has: (ticket: Ticket) => ticket.projectId === id,
-          }))
-      : grouping === "due"
-        ? [...dueWindows.map(([id]) => id), "none" as const].flatMap((id) => {
-            const count = all.filter((ticket) => dueWindow(ticket, now) === id).length,
-              label = dueWindowLabel(id);
-            return count
-              ? [
-                  {
-                    id,
-                    label,
-                    heading: <span className="text-xs">{label}</span>,
-                    total: count,
-                    has: (ticket: Ticket) => dueWindow(ticket, now) === id,
-                  },
-                ]
-              : [];
-          })
-        : groups.flatMap(({ entry: { id, label, heading, has }, data }) =>
-            data.total > 0 || board ? [{ id, label, heading, has, total: data.total }] : [],
-          );
+    [grouping, all, projects.data, now, groups, board],
+  );
   const grouped = grouping !== "none";
   // Board lanes never collapse; the list keeps its collapsed sections for when it returns.
   const hidden = (id: string) => grouped && !board && collapsed.has(id);
+  const visibleTickets = useMemo(
+    () =>
+      all.filter(
+        (ticket) =>
+          !sections.some(
+            (section) => grouped && !board && collapsed.has(section.id) && section.has(ticket),
+          ),
+      ),
+    [all, sections, grouped, board, collapsed],
+  );
   const tickets = {
-    isPending: loading,
+    // A realtime count can add a page after initial completion. Keep the scroll owner and
+    // virtualizers mounted while that page arrives, rather than replaying active-row reveals.
+    isPending: loading && (seen.filterKey !== filterKey || seen.ids === null),
     error: queries.find((query) => query.error)?.error,
     data: {
-      items: all.filter(
-        (ticket) => !sections.some((section) => hidden(section.id) && section.has(ticket)),
-      ),
+      items: visibleTickets,
       total,
     },
   };
@@ -735,38 +851,90 @@ export function TicketList({
   const viewLabel =
     activeView?.name ?? (isDefault ? t("ticket.list.allTickets") : t("ticket.list.customView"));
   const fields = useCustomFields(project?.id);
+  const locale = activeLocale();
+  const columns = useMemo(
+    () => [...ticketColumns(locale), ...(fields.data ?? []).map(fieldColumn), ...timeColumns()],
+    [fields.data, locale],
+  );
+  const columnVisibility = useMemo(
+    () => ({
+      ...Object.fromEntries(
+        (fields.data ?? []).map((field) => [customFieldColumn(field.id), false]),
+      ),
+      ...visibility,
+      title: true,
+      select: canWrite,
+    }),
+    [fields.data, visibility, canWrite],
+  );
   const table = useTable({
     features,
-    columns: [...ticketColumns(), ...(fields.data ?? []).map(fieldColumn), ...timeColumns()],
+    columns,
     data: tickets.data?.items ?? [],
-    getRowId: (row) => row.id,
+    getRowId: ticketRowId,
     columnResizeMode: "onChange",
     enableRowSelection: canWrite,
     // Field columns start hidden, like the less common built-in ones.
     state: {
-      columnVisibility: {
-        ...Object.fromEntries(
-          (fields.data ?? []).map((field) => [customFieldColumn(field.id), false]),
-        ),
-        ...visibility,
-        title: true,
-        select: canWrite,
-      },
+      columnVisibility,
     },
     onColumnVisibilityChange: (change) =>
       setVisibility(typeof change === "function" ? change(visibility) : change),
   });
-  const selected = table.getSelectedRowModel().rows.map((row) => row.original);
-  const sectionRows = (section: Section) =>
-    table.getRowModel().rows.filter((row) => section.has(row.original));
-  // Rows in the order they render: sections top to bottom, skipping collapsed ones.
-  const orderedIds = sections.flatMap((section) =>
-    hidden(section.id) ? [] : sectionRows(section).map((row) => row.id),
+  const selectedRows = table.getSelectedRowModel().rows;
+  const selected = useMemo(() => selectedRows.map((row) => row.original), [selectedRows]);
+  const modelRows = table.getRowModel().rows;
+  const rowsBySection = useMemo(
+    () =>
+      new Map(
+        sections.map((section) => [
+          section.id,
+          modelRows.filter((row) => section.has(row.original)),
+        ]),
+      ),
+    [sections, modelRows],
   );
-  const orderKey = orderedIds.join("\n");
+  const sectionRows = (section: Section) => rowsBySection.get(section.id) ?? [];
+  // Rows in the order they render: sections top to bottom, skipping collapsed ones.
+  const orderedIds = useMemo(
+    () =>
+      sections.flatMap((section) =>
+        grouped && !board && collapsed.has(section.id)
+          ? []
+          : (rowsBySection.get(section.id) ?? []).map((row) => row.id),
+      ),
+    [sections, rowsBySection, grouped, board, collapsed],
+  );
+  const indexById = useMemo(
+    () => new Map(orderedIds.map((id, index) => [id, index])),
+    [orderedIds],
+  );
+  const orderKey = useMemo(() => orderedIds.join("\n"), [orderedIds]);
+  const sectionIndices = useMemo(() => {
+    const indices = new Map<string, number>();
+    let next = 2;
+    for (const section of sections) {
+      indices.set(section.id, next);
+      next +=
+        (grouped ? 1 : 0) +
+        (grouped && !board && collapsed.has(section.id)
+          ? 0
+          : (rowsBySection.get(section.id)?.length ?? 0));
+    }
+    return indices;
+  }, [sections, rowsBySection, grouped, board, collapsed]);
+  const selectionCounts = useMemo(() => {
+    const ids = new Set(selectedRows.map((row) => row.id));
+    return new Map(
+      [...rowsBySection].map(([id, rows]) => [
+        id,
+        ids.size ? rows.reduce((count, row) => count + Number(ids.has(row.id)), 0) : 0,
+      ]),
+    );
+  }, [selectedRows, rowsBySection]);
   const sectionSelection = (section: Section) => {
     const rows = sectionRows(section),
-      count = rows.filter((row) => row.getIsSelected()).length;
+      count = selectionCounts.get(section.id) ?? 0;
     return {
       checked: count > 0 && count === rows.length,
       indeterminate: count > 0 && count < rows.length,
@@ -803,6 +971,7 @@ export function TicketList({
   // Keyboard highlight: J/K or arrows move it, Enter opens, Space previews, X selects, S/P/A edit
   // a property.
   const [active, setActive] = useState<string | null>(peek ?? null);
+  const [focused, setFocused] = useState<string | null>(null);
   // The highlight follows the previewed ticket as J and K step through it in the sheet; the last
   // one shown keeps its row for focus while the sheet closes.
   const [peeked, setPeeked] = useState(peek);
@@ -833,7 +1002,7 @@ export function TicketList({
   }, [active]);
   const move = (delta: number) => {
     if (!orderedIds.length) return;
-    const index = active ? orderedIds.indexOf(active) : -1;
+    const index = active ? (indexById.get(active) ?? -1) : -1;
     const next =
       index < 0
         ? delta > 0
@@ -930,13 +1099,19 @@ export function TicketList({
   const manual = search.sort === "manual",
     reorderable = canWrite && manual,
     descending = (search.order ?? defaultOrder[search.sort]) === "desc";
-  const moveTicket = useOperation("move_ticket"),
+  const moveTicket = useOperation("move_ticket", (saved) => {
+      savedVersions.current.set(saved.id, saved.version);
+      const release = releaseWrite.current;
+      releaseWrite.current = undefined;
+      release?.();
+    }),
     cache = useQueryClient(),
     [announcement, setAnnouncement] = useState(""),
     followActive = useRef(false);
   // Moves made before the previous one is saved wait their turn and use the version it returned,
   // so quick repeated keys are neither dropped nor rejected as stale.
   const queue = useRef(Promise.resolve()),
+    releaseWrite = useRef<(() => void) | undefined>(undefined),
     savedVersions = useRef(new Map<string, number>());
   const statusName = (value: StatusValue) => {
     const { status, stateId } = parseStatus(value);
@@ -973,22 +1148,31 @@ export function TicketList({
     );
     // A descending list shows the manual order reversed.
     const after = below !== descending;
-    queue.current = queue.current
-      .then(async () => {
-        const saved = await moveTicket.mutateAsync({
-          projectId: ticket.projectId,
-          ticketId: ticket.id,
-          expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
-          ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
-          ...(changed ? propertyChange("status", changed) : {}),
-        });
-        savedVersions.current.set(saved.id, saved.version);
-      })
-      .catch((error: unknown) => {
-        void cache.invalidateQueries({ queryKey: ["kanvil"] });
-        reportError(error);
-      })
-      .finally(() => setPlacing((current) => (current === shown ? undefined : current)));
+    queue.current = queue.current.then(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWrite.current = resolve;
+          // Only the versioned server write blocks the next command. Its refresh still owns
+          // optimistic placement until the canonical list has settled.
+          void moveTicket
+            .mutateAsync({
+              projectId: ticket.projectId,
+              ticketId: ticket.id,
+              expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
+              ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
+              ...(changed ? propertyChange("status", changed) : {}),
+            })
+            .catch((error: unknown) => {
+              void cache.invalidateQueries({ queryKey: ["kanvil"] });
+              reportError(error);
+            })
+            .finally(() => {
+              if (releaseWrite.current === resolve) releaseWrite.current = undefined;
+              resolve();
+              setPlacing((current) => (current === shown ? undefined : current));
+            });
+        }),
+    );
   };
   const sectionOf = (ticket: Ticket) => sections.find((section) => section.has(ticket));
   // Status steps work in any order; in the manual order the ticket arrives on top of its new
@@ -1303,17 +1487,17 @@ export function TicketList({
           onClear={() => table.resetRowSelection()}
         />
       )}
-      {tickets.isPending ? (
-        <Loading />
-      ) : tickets.error ? (
+      {tickets.error ? (
         <Button
-          disabled={queries.some((query) => query.isFetching)}
+          disabled={queries.some((query) => query.error && query.isFetching)}
           onClick={() => {
             for (const query of queries) if (query.error) void query.refetch();
           }}
         >
           {t("ticket.list.retry")}
         </Button>
+      ) : tickets.isPending ? (
+        <Loading />
       ) : board ? (
         <div
           role="region"
@@ -1365,78 +1549,93 @@ export function TicketList({
                     <span className="tabular-nums text-muted-foreground">{section.total}</span>
                   </h2>
                   <ul className="m-0 flex flex-1 list-none flex-col p-0">
-                    {sectionRows(section).map((row) => {
-                      const cells = row.getVisibleCells(),
-                        cell = (id: string) => cells.find((item) => item.column.id === id);
-                      const select = cell("select"),
-                        key = cell("key"),
-                        title = cell("title");
-                      return (
-                        <TicketContextMenu
-                          key={row.id}
-                          ticket={row.original}
-                          onPreview={() => showPreview(row.id)}
-                          moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
-                        >
-                          <li
-                            className={cn(
-                              rowClass,
-                              "flex flex-col gap-1.5 border-b px-2 py-2.5 transition-colors hover:bg-muted/40 data-[active=true]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:shadow-[inset_0_2px_0_var(--primary)] in-data-[density=comfortable]:gap-2.5 in-data-[density=comfortable]:py-4",
-                            )}
-                            data-id={row.id}
-                            data-selected={row.getIsSelected()}
-                            data-active={active === row.id || undefined}
-                            data-fresh={seen.fresh.has(row.id) || undefined}
-                            {...drag.item(row.id, {
-                              draggable: canWrite,
-                              accepts: accepts(section),
-                            })}
-                            onDragEnd={() => {
-                              drag.end();
-                              setDropLane(null);
-                            }}
-                            onClick={(event) => openRow(row.original, event)}
+                    <VirtualTicketRows
+                      rows={sectionRows(section)}
+                      board
+                      pins={[active, peeked, drag.dragging, focused]}
+                    >
+                      {(row, index, virtualProps) => {
+                        const cells = row.getVisibleCells(),
+                          cell = (id: string) => cells.find((item) => item.column.id === id);
+                        const select = cell("select"),
+                          key = cell("key"),
+                          title = cell("title");
+                        return (
+                          <TicketContextMenu
+                            key={row.id}
+                            ticket={row.original}
+                            onPreview={() => showPreview(row.id)}
+                            moves={
+                              writable(row.original) ? () => menuMoves(row.original) : undefined
+                            }
                           >
-                            <div className="flex min-h-6 items-center gap-2">
-                              {select && <table.FlexRender cell={select} />}
-                              {key && (
-                                <span
-                                  data-column="key"
-                                  className="font-mono text-[11px] text-muted-foreground"
-                                >
-                                  <table.FlexRender cell={key} />
-                                </span>
+                            <li
+                              {...virtualProps}
+                              aria-setsize={section.total}
+                              aria-posinset={index + 1}
+                              onFocusCapture={() => setFocused(row.id)}
+                              onContextMenu={() => setFocused(row.id)}
+                              className={cn(
+                                rowClass,
+                                "flex flex-col gap-1.5 border-b px-2 py-2.5 transition-colors hover:bg-muted/40 data-[active=true]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:shadow-[inset_0_2px_0_var(--primary)] in-data-[density=comfortable]:gap-2.5 in-data-[density=comfortable]:py-4",
                               )}
-                              <span data-column="status" className="ml-auto">
-                                <PropertyCell
-                                  ticket={row.original}
-                                  property="status"
-                                  value={statusValue(row.original)}
-                                  iconOnly
-                                />
-                              </span>
-                            </div>
-                            {title && <table.FlexRender cell={title} />}
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs empty:hidden">
-                              {cells
-                                .filter(
-                                  (item) =>
-                                    !["select", "key", "title", "status"].includes(item.column.id),
-                                )
-                                .map((item) => (
+                              data-id={row.id}
+                              data-selected={row.getIsSelected()}
+                              data-active={active === row.id || undefined}
+                              data-fresh={seen.fresh.has(row.id) || undefined}
+                              {...drag.item(row.id, {
+                                draggable: canWrite,
+                                accepts: accepts(section),
+                              })}
+                              onDragEnd={() => {
+                                drag.end();
+                                setDropLane(null);
+                              }}
+                              onClick={(event) => openRow(row.original, event)}
+                            >
+                              <div className="flex min-h-6 items-center gap-2">
+                                {select && <table.FlexRender cell={select} />}
+                                {key && (
                                   <span
-                                    key={item.id}
-                                    data-column={item.column.id}
-                                    className="min-w-0 max-w-full empty:hidden"
+                                    data-column="key"
+                                    className="font-mono text-[11px] text-muted-foreground"
                                   >
-                                    <table.FlexRender cell={item} />
+                                    <table.FlexRender cell={key} />
                                   </span>
-                                ))}
-                            </div>
-                          </li>
-                        </TicketContextMenu>
-                      );
-                    })}
+                                )}
+                                <span data-column="status" className="ml-auto">
+                                  <PropertyCell
+                                    ticket={row.original}
+                                    property="status"
+                                    value={statusValue(row.original)}
+                                    iconOnly
+                                  />
+                                </span>
+                              </div>
+                              {title && <table.FlexRender cell={title} />}
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs empty:hidden">
+                                {cells
+                                  .filter(
+                                    (item) =>
+                                      !["select", "key", "title", "status"].includes(
+                                        item.column.id,
+                                      ),
+                                  )
+                                  .map((item) => (
+                                    <span
+                                      key={item.id}
+                                      data-column={item.column.id}
+                                      className="min-w-0 max-w-full empty:hidden"
+                                    >
+                                      <table.FlexRender cell={item} />
+                                    </span>
+                                  ))}
+                              </div>
+                            </li>
+                          </TicketContextMenu>
+                        );
+                      }}
+                    </VirtualTicketRows>
                   </ul>
                 </section>
               ))}
@@ -1459,6 +1658,7 @@ export function TicketList({
               wrapper is the single accessible table. */}
           <div
             role="table"
+            aria-rowcount={orderedIds.length + (grouped ? sections.length : 0) + 1}
             aria-label={t("ticket.list.tickets")}
             className={cn(
               "ticket-table",
@@ -1474,7 +1674,12 @@ export function TicketList({
                 <ColumnGroup leaves={table.getVisibleLeafColumns()} />
                 <TableHeader role="rowgroup">
                   {table.getHeaderGroups().map((group) => (
-                    <TableRow key={group.id} role="row" className="hover:bg-transparent">
+                    <TableRow
+                      key={group.id}
+                      role="row"
+                      aria-rowindex={1}
+                      className="hover:bg-transparent"
+                    >
                       {group.headers.map((header) => {
                         const sort = sortBy[header.column.id],
                           sorted = sort !== undefined && search.sort === sort,
@@ -1581,6 +1786,7 @@ export function TicketList({
                 >
                   {grouped && (
                     <TableRow
+                      aria-rowindex={sectionIndices.get(section.id)}
                       className="ticket-status-heading hover:bg-transparent"
                       data-status={grouping === "status" ? section.id : undefined}
                     >
@@ -1600,52 +1806,56 @@ export function TicketList({
                       </TableHead>
                     </TableRow>
                   )}
-                  {!hidden(section.id) &&
-                    sectionRows(section).map((row) => (
-                      <TicketContextMenu
-                        key={row.id}
-                        ticket={row.original}
-                        onPreview={() => showPreview(row.id)}
-                        moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
-                      >
-                        <TableRow
-                          className={cn(
-                            rowClass,
-                            "data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:[&>td]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:[&>td]:shadow-[inset_0_2px_0_var(--primary)]",
-                          )}
-                          role="row"
-                          data-id={row.id}
-                          data-selected={row.getIsSelected()}
-                          data-active={active === row.id || undefined}
-                          data-fresh={seen.fresh.has(row.id) || undefined}
-                          {...drag.item(row.id, {
-                            draggable: reorderable,
-                            accepts: accepts(section),
-                          })}
-                          onClick={(event) => openRow(row.original, event)}
+                  {!hidden(section.id) && (
+                    <VirtualTicketRows
+                      rows={sectionRows(section)}
+                      columns={table.getVisibleLeafColumns().length}
+                      pins={[active, peeked, drag.dragging, focused]}
+                    >
+                      {(row, index, virtualProps) => (
+                        <TicketContextMenu
+                          key={row.id}
+                          ticket={row.original}
+                          onPreview={() => showPreview(row.id)}
+                          moves={writable(row.original) ? () => menuMoves(row.original) : undefined}
                         >
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell
-                              className={cn(
-                                "px-3 py-2 align-middle text-xs whitespace-normal in-data-[density=comfortable]:py-4",
-                                cell.column.id === "key" &&
-                                  "font-mono text-[11px] text-muted-foreground",
-                              )}
-                              key={cell.id}
-                              role="cell"
-                              data-column={cell.column.id}
-                              data-label={
-                                typeof cell.column.columnDef.header === "string"
-                                  ? cell.column.columnDef.header
-                                  : undefined
-                              }
-                            >
-                              <table.FlexRender cell={cell} />
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TicketContextMenu>
-                    ))}
+                          <TableRow
+                            {...virtualProps}
+                            aria-rowindex={
+                              (sectionIndices.get(section.id) ?? 2) + (grouped ? 1 : 0) + index
+                            }
+                            onFocusCapture={() => setFocused(row.id)}
+                            onContextMenu={() => setFocused(row.id)}
+                            className={cn(
+                              rowClass,
+                              "data-[active=true]:[&>td:first-child]:shadow-[inset_2px_0_0_var(--primary)] data-[dragging=true]:opacity-50 data-[drop=after]:[&>td]:shadow-[inset_0_-2px_0_var(--primary)] data-[drop=before]:[&>td]:shadow-[inset_0_2px_0_var(--primary)]",
+                            )}
+                            role="row"
+                            data-id={row.id}
+                            data-selected={row.getIsSelected()}
+                            data-active={active === row.id || undefined}
+                            data-fresh={seen.fresh.has(row.id) || undefined}
+                            {...drag.item(row.id, {
+                              draggable: reorderable,
+                              accepts: accepts(section),
+                            })}
+                            onClick={(event) => openRow(row.original, event)}
+                          >
+                            <TicketCells
+                              row={row}
+                              render={table.FlexRender}
+                              columns={columns}
+                              selected={row.getIsSelected()}
+                              visibility={table
+                                .getVisibleLeafColumns()
+                                .map((column) => column.id)
+                                .join("\n")}
+                            />
+                          </TableRow>
+                        </TicketContextMenu>
+                      )}
+                    </VirtualTicketRows>
+                  )}
                 </TableBody>
               </Table>
             ))}

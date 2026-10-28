@@ -3,6 +3,7 @@ import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 import {
   choose,
+  expectTicketCount,
   chooseTicketView,
   holdRequests,
   expectMotion,
@@ -277,7 +278,14 @@ test("list properties persist and labels filter and sort the entire project", as
     expect((await table.locator('th[data-column="key"]').boundingBox())!.width).toBeCloseTo(100, 0);
   }
   await expect(table.locator('td[data-column="labels"]').first()).toContainText("standard");
+  await expectTicketCount(page, 51);
+  await page.locator(".table-scroll").evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
   await expect(table.getByText("rare, quoted 'label'", { exact: true })).toBeVisible();
+  await page.locator(".table-scroll").evaluate((node) => {
+    node.scrollTop = 0;
+  });
   await page.getByRole("button", { name: "Display", exact: true }).click();
   for (const property of ["Ticket", "Labels", "Status", "Priority", "Difficulty", "Due"])
     await page.getByRole("checkbox", { name: property, exact: true }).uncheck();
@@ -316,7 +324,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await toggleDisplay(page, "None");
   await expect(page.getByRole("rowgroup", { name: "To do tickets" })).toHaveCount(0);
-  await expect(ticketRows(page)).toHaveCount(51);
+  await expectTicketCount(page, 51);
   await page.getByRole("button", { name: "Reset display", exact: true }).click();
   await expect(page.getByRole("rowgroup", { name: "To do tickets" })).toBeVisible();
   await expect(ticketHeader).not.toHaveAttribute("aria-sort");
@@ -339,7 +347,7 @@ test("list properties persist and labels filter and sort the entire project", as
   await page.reload();
   await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await expect(ticketRows(page)).toHaveCount(51);
+  await expectTicketCount(page, 51);
   await chooseTicketView(page, "Rare labels");
   await expect(ticketRows(page)).toHaveCount(1);
   for (const width of [390, 320]) {
@@ -687,8 +695,13 @@ test("a preview sheet opens the highlighted ticket over the list and returns to 
   page,
 }) => {
   await signIn(page);
+  const workspace = await (
+    await page.request.post("/api/v1/workspaces", { data: { name: "Peek", slug: "peek" } })
+  ).json();
   const project = await (
-    await page.request.post("/api/v1/projects", { data: { key: "PEEK", name: "Peek" } })
+    await page.request.post("/api/v1/projects", {
+      data: { key: "PEEK", name: "Peek", workspaceId: workspace.id },
+    })
   ).json();
   const created: { id: string }[] = [];
   for (const title of ["Alpha", "Bravo", "Charlie"])

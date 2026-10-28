@@ -354,7 +354,6 @@ export function TicketProperty<P extends PropertyName>({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const options = usePropertyOptions(property, projectId, open || property !== "assignee");
   const label = propertyLabels[property];
   const trigger = (
     <PopoverTrigger
@@ -379,25 +378,53 @@ export function TicketProperty<P extends PropertyName>({
     <Popover open={open} onOpenChange={setOpen}>
       {variant === "row" ? <PropertyRow label={label}>{trigger}</PropertyRow> : trigger}
       <PopoverContent align={align} className="w-60 p-0">
-        <ChoiceList
-          placeholder={
-            property === "assignee"
-              ? t("ticket.property.assignTo")
-              : t("ticket.property.set", { label })
-          }
-          searchLabel={t("ticket.property.search", { label })}
-          choices={options.map((option) => ({
-            ...option,
-            node: <PropertyValue {...pair(property, option.value)} projectId={projectId} />,
-            checked: !mixed && option.value === value,
-          }))}
-          onPick={(next) => {
-            setOpen(false);
-            if (mixed || next !== value) onChange(next);
-          }}
-        />
+        {open && (
+          <PropertyChoices
+            property={property}
+            value={value}
+            projectId={projectId}
+            mixed={mixed}
+            onPick={(next) => {
+              setOpen(false);
+              if (mixed || next !== value) onChange(next);
+            }}
+          />
+        )}
       </PopoverContent>
     </Popover>
+  );
+}
+// Extends the picker content so closed controls do not subscribe to option queries.
+function PropertyChoices<P extends PropertyName>({
+  property,
+  value,
+  projectId,
+  mixed,
+  onPick,
+}: {
+  property: P;
+  value: PropertyValues[P];
+  projectId: string;
+  mixed: boolean;
+  onPick: (next: PropertyValues[P]) => void;
+}) {
+  const options = usePropertyOptions(property, projectId, true);
+  const label = propertyLabels[property];
+  return (
+    <ChoiceList
+      placeholder={
+        property === "assignee"
+          ? t("ticket.property.assignTo")
+          : t("ticket.property.set", { label })
+      }
+      searchLabel={t("ticket.property.search", { label })}
+      choices={options.map((option) => ({
+        ...option,
+        node: <PropertyValue {...pair(property, option.value)} projectId={projectId} />,
+        checked: !mixed && option.value === value,
+      }))}
+      onPick={onPick}
+    />
   );
 }
 // The searchable list inside every property popover. With nine choices or fewer, a digit picks one.

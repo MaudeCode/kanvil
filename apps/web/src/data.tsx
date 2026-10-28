@@ -1,4 +1,5 @@
 import { UserAvatar } from "./components/user-avatar.tsx";
+import { affectedBy, createRefreshQueue } from "./lib/refresh-queue.ts";
 import { createContext, useContext, useEffect, useState } from "react";
 import { createAuthClient } from "better-auth/react";
 import { adminClient, emailOTPClient } from "better-auth/client/plugins";
@@ -9,14 +10,14 @@ import {
   infoSchema,
   memberName,
   permissions,
-  type ChangeEvent,
   type Operation,
+  type Input,
+  type OutputOf,
   type Permission,
   type Workspace,
 } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
-import type { Query } from "@tanstack/react-query";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsRestoring, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const auth = createAuthClient({
   plugins: [adminClient(), emailOTPClient(), oauthProviderClient()],
@@ -28,26 +29,33 @@ export const Identity = createContext<{
   email: string;
   admin: boolean;
   image: string | null;
-  clearPrivateData: () => void;
+  clearPrivateData: () => void | Promise<void>;
 }>({ id: "", name: "", email: "", admin: false, image: null, clearPrivateData: () => {} });
 export const useIdentity = () => useContext(Identity);
 // Public instance details and sign-in options, shared by signed-out and signed-in screens.
 export const useInfo = () =>
   useQuery({ queryKey: ["info"], queryFn: () => api.request("/api/v1/info", infoSchema) });
 // Ends the session, clears this account's cached data, and loads `next` signed out.
-export async function signOut(identity: { clearPrivateData: () => void }, next = "/login") {
-  const result = await auth.signOut();
+export async function signOut(
+  identity: { clearPrivateData: () => void | Promise<void> },
+  next = "/login",
+) {
+  // A provider redirect must not unload the page before private-cache removal finishes.
+  const result = await auth.signOut({ disableRedirect: true });
   if (result.error) throw new Error(result.error.message);
-  identity.clearPrivateData();
+  await identity.clearPrivateData();
   window.location.assign(next);
 }
 // `before` runs ahead of the refetch, such as leaving a page whose subject the write removed.
-export function useOperation<K extends Operation>(name: K, before?: () => Promise<unknown>) {
+export function useOperation<K extends Operation>(
+  name: K,
+  before?: (saved: OutputOf<K, Input<K>>) => unknown,
+) {
   const cache = useQueryClient();
   return useMutation({
     ...api.action(name),
-    onSuccess: async () => {
-      await before?.();
+    onSuccess: async (saved) => {
+      await before?.(saved);
       return cache.invalidateQueries({ queryKey: ["kanvil"] });
     },
   });
@@ -81,67 +89,32 @@ export function useProject(projectId: string) {
     select: (projects) => projects.find((project) => project.id === projectId),
   });
 }
-// Project-wide reads that only change on these event families; ticket traffic leaves them alone.
-const settledBy: Record<string, string[]> = {
-  // A role edit rewrites the stand-in role of everyone holding it.
-  list_members: ["membership.", "role.", "project."],
-  list_workspace_members: ["membership.", "role.", "project."],
-  list_workspace_roles: ["role.", "membership.", "project."],
-  list_project_roles: ["role.", "membership.", "project."],
-  // An acceptance announces the new membership rather than an invitation change.
-  list_invitations: ["invitation.", "membership."],
-  list_project_labels: ["label.", "project."],
-  // Its ticket counts move with ticket traffic.
-  list_workflow_states: ["workflow.", "project.", "ticket."],
-  list_workspace_labels: ["label.", "project."],
-  // Its usage counts move with ticket traffic.
-  list_custom_fields: ["custom_field.", "project.", "ticket."],
-  list_calendar_feeds: ["calendar_feed.", "label.", "membership.", "project."],
-  list_label_colors: ["label."],
-  list_views: ["label.", "custom_field.", "project."],
-  get_project: ["project.", "label."],
-  list_project_destinations: ["destination.", "project."],
-  // Personal; writes invalidate it and pending sends poll it.
-  list_notification_channels: [],
-  // Personal; running imports poll them instead of refreshing on each record they write.
-  list_imports: [],
-  get_import: [],
-  // An account deletion announces itself as a membership change in every project it reached.
-  list_deleted_accounts: ["membership."],
-};
-// Decides which cached queries a realtime event can have changed.
-export function affectedBy(event: ChangeEvent) {
-  return (query: Query) => {
-    const [namespace, , name, input] = query.queryKey;
-    if (namespace !== "kanvil") return false;
-    if (typeof name !== "string" || !input || typeof input !== "object") return true;
-    const families = settledBy[name];
-    if (families && !families.some((family) => event.type.startsWith(family))) return false;
-    const scope = input as { projectId?: unknown; ticketId?: unknown };
-    if (typeof scope.projectId !== "string") return true;
-    if (scope.projectId !== event.projectId) return false;
-    if (!event.ticketId || typeof scope.ticketId !== "string") return true;
-    return scope.ticketId === event.ticketId || scope.ticketId === event.data.key;
-  };
-}
 export function useLive(projectId?: string) {
   const cache = useQueryClient();
+  const restoring = useIsRestoring();
   const [state, setState] = useState("connecting");
   useEffect(() => {
+    if (restoring) return undefined;
     const controller = new AbortController();
+    const refresh = createRefreshQueue(
+      (events) =>
+        cache.invalidateQueries(
+          events
+            ? { predicate: (query) => events.some((event) => affectedBy(event)(query)) }
+            : { queryKey: ["kanvil"] },
+        ),
+      controller.signal,
+    );
     void api
       .watch({
         ...(projectId ? { projectId } : {}),
         signal: controller.signal,
-        invalidate: (event) =>
-          cache.invalidateQueries(
-            event ? { predicate: affectedBy(event) } : { queryKey: ["kanvil"] },
-          ),
+        invalidate: (event) => (event ? refresh.push(event) : refresh.flush()),
         onState: setState,
       })
       .catch(() => setState(t("shell.connection.signIn")));
     return () => controller.abort();
-  }, [cache, projectId]);
+  }, [cache, projectId, restoring]);
   return state;
 }
 export function clearPrivateStorage(userId: string) {

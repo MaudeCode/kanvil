@@ -2,6 +2,7 @@ import { expect, test } from "./test.ts";
 import { ownerEmail, signIn, useEmailLogin } from "./auth.ts";
 import {
   accountMenu,
+  privateCache,
   choose,
   expectMotion,
   openSearch,
@@ -149,12 +150,8 @@ test("role changes discard cached administrator-only project data", async ({ pag
     await admin.keyboard.press("Escape");
     await expect
       .poll(() =>
-        admin.evaluate(
-          (id) =>
-            localStorage
-              .getItem(`kanvil:${id}:cache`)
-              ?.includes("Private administrator-only project") ?? false,
-          userId,
+        privateCache(admin, `kanvil:${userId}:cache`).then((value) =>
+          value.includes("Private administrator-only project"),
         ),
       )
       .toBe(true);
@@ -179,12 +176,8 @@ test("role changes discard cached administrator-only project data", async ({ pag
     ).toHaveCount(0);
     await expect
       .poll(() =>
-        admin.evaluate(
-          (id) =>
-            localStorage
-              .getItem(`kanvil:${id}:cache`)
-              ?.includes("Private administrator-only project") ?? false,
-          userId,
+        privateCache(admin, `kanvil:${userId}:cache`).then((value) =>
+          value.includes("Private administrator-only project"),
         ),
       )
       .toBe(false);
