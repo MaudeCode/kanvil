@@ -1796,6 +1796,70 @@ describe("ticket operations on PostgreSQL", () => {
       expect(relation).not.toHaveProperty("targetTitle");
       expect(relation).not.toHaveProperty("targetProjectKey");
     }
+    // Reading the other project lets a writer depend on its tickets, never constrain them.
+    await domain.execute(
+      "set_member",
+      { projectId: sibling.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    const mine = await ticket("Depends on the other project"),
+      theirs = await projectTicket(sibling.id, "Owned by the other project");
+    const [constraining] = await domain.execute(
+      "list_relations",
+      { projectId: project.id, ticketId: current.id },
+      writer,
+    );
+    for (const [name, input] of [
+      ["remove_relation", { projectId: project.id, relationId: constraining!.id }],
+      [
+        "add_relation",
+        { projectId: project.id, ticketId: mine.id, targetId: theirs.id, type: "blocks" },
+      ],
+      [
+        "add_relation",
+        {
+          projectId: project.id,
+          ticketId: mine.id,
+          targetId: theirs.id,
+          type: "duplicate",
+          direction: "incoming",
+        },
+      ],
+    ] as const)
+      await expect(domain.execute(name, input, writer)).rejects.toMatchObject({
+        status: 403,
+        code: "forbidden",
+      });
+    const dependency = await domain.execute(
+      "add_relation",
+      {
+        projectId: project.id,
+        ticketId: mine.id,
+        targetId: theirs.id,
+        type: "blocks",
+        direction: "incoming",
+      },
+      writer,
+    );
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: mine.id, targetId: theirs.id, type: "related" },
+      writer,
+    );
+    await domain.execute(
+      "remove_relation",
+      { projectId: project.id, relationId: dependency.id },
+      writer,
+    );
+    expect(
+      (
+        await domain.execute(
+          "list_relations",
+          { projectId: sibling.id, ticketId: theirs.id },
+          owner,
+        )
+      ).map((relation) => relation.type),
+    ).toEqual(["related"]);
   });
   it("rejects cycles across blockers and parent relationships and explains readiness", async () => {
     const first = await ticket(),

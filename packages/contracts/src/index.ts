@@ -2894,7 +2894,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/relations",
     "write",
-    "Relate a ticket to another by ID or key, in this project or any project the caller can read, while rejecting dependency cycles across projects. Both projects' feeds record the change.",
+    "Relate a ticket to another by ID or key, in this project or any project the caller can read, while rejecting dependency cycles across projects. Blocking or marking as duplicate a ticket of another project also needs write there. Both projects' feeds record the change.",
   ),
   remove_relation: op(
     projectInput.extend({ ...mutation, relationId: z.uuid() }).strict(),

@@ -40,6 +40,7 @@ import { mentionedUserIds } from "./mentions.ts";
 import {
   assertVersion,
   assertWorkerClaim,
+  context,
   fail,
   getTicket,
   project,
@@ -58,6 +59,24 @@ const sourceTicket = alias(tickets, "source_ticket"),
   sourceProject = alias(projects, "source_project"),
   targetProject = alias(projects, "target_project");
 
+// Reading another project lets a writer here depend on its tickets and link to them. An edge that
+// constrains one of its tickets, as the blocked side of `blocks` or the duplicate, needs write
+// there too, to add or to remove.
+async function assertMayConstrain(
+  ctx: Context,
+  relation: { type: string; sourceId: string; targetId: string },
+  sides: readonly { id: string; projectId: string }[],
+) {
+  const constrained =
+    relation.type === "blocks"
+      ? relation.targetId
+      : relation.type === "duplicate"
+        ? relation.sourceId
+        : null;
+  const side = sides.find((item) => item.id === constrained);
+  if (side && side.projectId !== project(ctx).id)
+    await context(ctx.db, ctx.actor, "write", side.projectId);
+}
 async function editableComment(ctx: Context, commentId: string, expectedVersion: number) {
   const row = one(
     await ctx.db
@@ -182,6 +201,10 @@ export const collaborationHandlers: Pick<
       { ticket: other } = await readableTicket(ctx, input.targetId);
     const [source, target] = input.direction === "incoming" ? [other, current] : [current, other];
     if (source.id === target.id) fail(409, "invalid_relation", "Choose a different ticket");
+    await assertMayConstrain(ctx, { type: input.type, sourceId: source.id, targetId: target.id }, [
+      current,
+      other,
+    ]);
     if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
     const [sourceId, targetId] =
       input.type === "related" ? [source.id, target.id].toSorted() : [source.id, target.id];
@@ -203,7 +226,8 @@ export const collaborationHandlers: Pick<
     await publishMany(ctx, relationEvents("relation.added", row, [current, other]));
     return row;
   },
-  // Writers of either side's project can remove an edge.
+  // Either ticket's project can remove an edge; one that constrains a ticket elsewhere needs write
+  // there too.
   async remove_relation(ctx, input) {
     const found = one(
       await ctx.db.select().from(relations).where(eq(relations.id, input.relationId)),
@@ -214,6 +238,7 @@ export const collaborationHandlers: Pick<
       .where(inArray(tickets.id, [found.sourceId, found.targetId]));
     if (!sides.some((side) => side.projectId === project(ctx).id))
       fail(404, "not_found", "The requested record was not found");
+    await assertMayConstrain(ctx, found, sides);
     const row = one(await ctx.db.delete(relations).where(eq(relations.id, found.id)).returning());
     await publishMany(ctx, relationEvents("relation.removed", row, sides));
     return { ok: true };
