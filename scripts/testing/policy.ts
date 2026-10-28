@@ -189,7 +189,7 @@ export const families: readonly Family[] = [
       "apps/server/src/http.test.ts": 39,
       "apps/server/src/import-sources.test.ts": 26,
       "apps/server/src/instance.test.ts": 6,
-      "apps/server/src/issue-sync.test.ts": 14,
+      "apps/server/src/issue-sync.test.ts": 18,
       "apps/server/src/oidc-policy.test.ts": 25,
       "apps/server/src/repositories.test.ts": 15,
       "apps/server/src/sign-in-methods.test.ts": 26,

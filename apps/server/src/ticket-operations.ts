@@ -45,6 +45,7 @@ import {
   fail,
   getTicket,
   intakeOnly,
+  intakeHoldReason,
   project,
   publish,
   publishMany,
@@ -843,7 +844,7 @@ export const ticketHandlers: Pick<
       input = {
         ...input,
         automationReady: false,
-        holdReason: "Untrusted intake: human triage required",
+        holdReason: intakeHoldReason,
         status: "todo",
         stateId: undefined,
         assigneeId: null,
