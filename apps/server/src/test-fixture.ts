@@ -10,31 +10,45 @@ import { createCleanup } from "./cleanup.ts";
 export async function createFixture({
   beforeMigrate,
 }: { beforeMigrate?: (database: Database) => Promise<void> } = {}) {
-  const url = new URL(
-    process.env.TEST_DATABASE_URL ?? "postgres://kanvil:kanvil@127.0.0.1:55462/kanvil",
-  );
-  const admin = new pg.Pool({ connectionString: url.toString() });
-  const cleanup = createCleanup();
-  cleanup.add("fixture admin pool", () => admin.end());
+  const server = process.env.TEST_DATABASE_URL ?? "postgres://kanvil:kanvil@127.0.0.1:55462/kanvil";
   const name = `kanvil_test_${crypto.randomUUID().replaceAll("-", "")}`;
-  try {
-    await admin.query(`CREATE DATABASE "${name}"`);
-    cleanup.add("fixture database", async () => {
-      await admin.query(`DROP DATABASE "${name}"`);
+  // The maintenance connection lives only for one CREATE or DROP, not the fixture's lifetime.
+  const admin = async (statement: string) => {
+    const client = new pg.Client({
+      connectionString: server,
+      application_name: `kanvil-fixture ${name}`,
     });
+    await client.connect();
+    try {
+      await client.query(statement);
+    } finally {
+      await client.end();
+    }
+  };
+  const cleanup = createCleanup();
+  try {
+    await admin(`CREATE DATABASE "${name}"`);
+    cleanup.add("fixture database", () => admin(`DROP DATABASE "${name}"`));
     recordBoundary("databases");
+    const url = new URL(server);
     url.pathname = `/${name}`;
-    const database = createDatabase(url.toString());
-    cleanup.add("fixture application pool", () => database.pool.end());
     const config = readConfig({
       NODE_ENV: "test",
       DATABASE_URL: url.toString(),
+      // The test budget: with the realtime LISTEN connection, a fixture and one application open at
+      // most seven connections, so every Vitest worker fits in a default PostgreSQL server. See
+      // CONTRIBUTING.md.
+      KANVIL_DATABASE_POOL_MAX: "4",
+      KANVIL_INTEGRATION_POOL_MAX: "2",
+      KANVIL_DATABASE_ACQUIRE_TIMEOUT_MS: "10000",
       KANVIL_URL: "http://localhost:5180",
       BETTER_AUTH_SECRET: crypto.randomUUID(),
       KANVIL_SETUP_TOKEN: crypto.randomUUID(),
       // Repository connections in tests never reach GitHub; suites that need a host run a fake one.
       KANVIL_GITHUB_API_URL: "https://api.github.kanvil.invalid",
     });
+    const database = createDatabase(config);
+    cleanup.add("fixture application pool", () => database.pool.end());
     await beforeMigrate?.(database);
     await migrateDatabase(database);
     recordBoundary("migrations");

@@ -2,6 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { createFixture } from "./test-fixture.ts";
 import { recoverLocalPassword } from "./recover-account.ts";
 import { readConfig } from "./config.ts";
+import pg from "pg";
+import { sql } from "drizzle-orm";
+import { createApplication } from "./app.ts";
+import { createDatabase } from "./database.ts";
 
 describe("self-hosted foundation", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>;
@@ -129,5 +133,106 @@ describe("self-hosted foundation", () => {
     expect(() => readConfig({ ...env, NODE_ENV: "production" })).toThrow(
       "Production KANVIL_URL must use HTTPS",
     );
+  });
+});
+
+const total = (counts: Record<string, number>) =>
+  Object.values(counts).reduce((sum, count) => sum + count, 0);
+describe("database connection budget", () => {
+  let fixture: Awaited<ReturnType<typeof createFixture>>, observer: pg.Client;
+  beforeAll(async () => {
+    fixture = await createFixture();
+    observer = new pg.Client({ connectionString: fixture.config.DATABASE_URL });
+    await observer.connect();
+  });
+  afterAll(async () => {
+    await observer?.end();
+    await fixture?.close();
+  });
+  // Server connections to the fixture database other than this observer, by application name.
+  const backends = async () =>
+    Object.fromEntries(
+      (
+        await observer.query<{ name: string; count: number }>(
+          "SELECT application_name AS name, count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() GROUP BY 1",
+        )
+      ).rows.map((row) => [row.name, row.count]),
+    );
+  // Held or awaited global write locks in the fixture database; pg_locks spans every database.
+  const writeLocks = async (granted: boolean) =>
+    (
+      await observer.query(
+        "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = 7361080 AND granted = $1 AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+        [granted],
+      )
+    ).rowCount;
+
+  it("keeps a fixture and its application inside the test budget while writes queue for the lock", async () => {
+    const application = await createApplication(fixture.database, fixture.config);
+    const pool = fixture.database.pool;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const holder = fixture.database.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+        await held;
+      });
+      await expect.poll(() => writeLocks(true)).toBe(1);
+      // Twenty writes contend for the global write lock as domain writes do.
+      const contenders = Array.from({ length: 20 }, () =>
+        fixture.database.db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+        }),
+      );
+      await expect.poll(() => pool.waitingCount).toBeGreaterThan(0);
+      await expect.poll(() => writeLocks(false)).toBe(pool.totalCount - 1);
+      // Four domain and authentication, two integration, and one realtime LISTEN connection.
+      expect(total(await backends())).toBeLessThanOrEqual(7);
+      release();
+      await Promise.all([holder, ...contenders]);
+      expect(pool.waitingCount).toBe(0);
+    } finally {
+      release();
+      await application.close();
+    }
+    await expect.poll(async () => total(await backends())).toBeLessThanOrEqual(pool.totalCount);
+  });
+  it("queues checkouts past a pool's budget, reuses released clients, and fails a wait past the acquisition timeout", async () => {
+    // The fixture's maintenance connection ended after CREATE DATABASE.
+    const name = new URL(fixture.config.DATABASE_URL).pathname.slice(1);
+    expect(
+      (
+        await observer.query("SELECT 1 FROM pg_stat_activity WHERE application_name = $1", [
+          `kanvil-fixture ${name}`,
+        ])
+      ).rowCount,
+    ).toBe(0);
+    const database = createDatabase(
+      {
+        ...fixture.config,
+        KANVIL_INTEGRATION_POOL_MAX: 2,
+        KANVIL_DATABASE_ACQUIRE_TIMEOUT_MS: 200,
+      },
+      "integration",
+    );
+    try {
+      const held = [await database.pool.connect(), await database.pool.connect()];
+      expect((await backends())["kanvil-integration"]).toBe(2);
+      await expect(database.pool.connect()).rejects.toThrow("timeout");
+      const queued = database.pool.connect();
+      await expect.poll(() => database.pool.waitingCount).toBe(1);
+      held.pop()?.release();
+      const reused = await queued;
+      expect(database.pool.waitingCount).toBe(0);
+      expect(database.pool.totalCount).toBe(2);
+      reused.release();
+      held.pop()?.release();
+      expect((await backends())["kanvil-integration"]).toBe(2);
+    } finally {
+      await database.pool.end();
+    }
+    await expect.poll(async () => (await backends())["kanvil-integration"]).toBeUndefined();
   });
 });

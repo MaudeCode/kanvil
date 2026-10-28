@@ -103,7 +103,7 @@ export function createBlobStorage(
           .limit(10)
           .for("update", { of: blobObjects, skipLocked: true });
         for (const row of rows) {
-          const backend = await instance.backend(requireRow(row.backendId ?? undefined)),
+          const backend = await instance.backend(requireRow(row.backendId ?? undefined), tx),
             key = requireRow(row.objectKey ?? undefined),
             bytes = requireRow(row.data ?? undefined);
           await transfer(backend.spec, async (store) => {
@@ -178,7 +178,7 @@ export function createBlobStorage(
         .for("update", { of: blobObjects, skipLocked: true });
       for (const { object } of rows) {
         if (object.backendId && object.objectKey) {
-          const backend = await instance.backend(object.backendId),
+          const backend = await instance.backend(object.backendId, tx),
             key = object.objectKey;
           await transfer(backend.spec, (store) => store.remove(key));
         }

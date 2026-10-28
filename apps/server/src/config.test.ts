@@ -1,5 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import { readConfig } from "./config.ts";
+import { poolOptions } from "./database.ts";
 const base = {
   DATABASE_URL: "postgres://kanvil:fixture@localhost/fixture",
   BETTER_AUTH_SECRET: "isolated-configuration-test-secret-234",
@@ -16,6 +17,10 @@ it.each([
     "KANVIL_CLAIM_MAX_LEASE_SECONDS",
     value,
   ]),
+  ["KANVIL_DATABASE_POOL_MAX", "1"],
+  ["KANVIL_DATABASE_POOL_MAX", "many"],
+  ["KANVIL_INTEGRATION_POOL_MAX", "0"],
+  ["KANVIL_DATABASE_ACQUIRE_TIMEOUT_MS", "99"],
 ])("rejects invalid deployment %s at startup: %s", (key, value) => {
   expect(() => readConfig({ ...base, [key]: value })).toThrow();
 });
@@ -77,4 +82,35 @@ it("defaults the configurable claim lease cap to 24 hours", () => {
       readConfig({ ...base, KANVIL_CLAIM_MAX_LEASE_SECONDS: String(seconds) })
         .KANVIL_CLAIM_MAX_LEASE_SECONDS,
     ).toBe(seconds);
+});
+
+it("budgets production pools by role and honors explicit overrides", () => {
+  const defaults = readConfig({
+    ...base,
+    NODE_ENV: "production",
+    KANVIL_URL: "https://kanvil.example",
+  });
+  expect(poolOptions(defaults, "domain")).toEqual({
+    connectionString: base.DATABASE_URL,
+    application_name: "kanvil",
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 30_000,
+  });
+  expect(poolOptions(defaults, "integration")).toMatchObject({
+    application_name: "kanvil-integration",
+    max: 4,
+    connectionTimeoutMillis: 30_000,
+  });
+  const tuned = readConfig({
+    ...base,
+    KANVIL_DATABASE_POOL_MAX: "20",
+    KANVIL_INTEGRATION_POOL_MAX: "1",
+    KANVIL_DATABASE_ACQUIRE_TIMEOUT_MS: "5000",
+  });
+  expect(poolOptions(tuned, "domain")).toMatchObject({ max: 20, connectionTimeoutMillis: 5000 });
+  expect(poolOptions(tuned, "integration")).toMatchObject({
+    max: 1,
+    connectionTimeoutMillis: 5000,
+  });
 });
