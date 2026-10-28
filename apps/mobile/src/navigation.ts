@@ -49,6 +49,7 @@ export function projectSettingsSections(access: { canManage: boolean; canShare: 
   );
 }
 export type ScreenProps<K extends keyof Routes> = NativeStackScreenProps<Routes, K>;
+export const SettingsSidebarVisible = createContext(false);
 // Independent sheets target the browsing stack that opened them.
 export const MainNavigation = createContext<Pick<
   NativeStackNavigationProp<Routes>,

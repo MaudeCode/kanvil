@@ -8,6 +8,7 @@ type SplitProps = {
   secondary: ReactNode;
   secondaryActive: boolean;
   primaryHidden?: boolean;
+  enabled?: boolean;
   onChange?: (state: { collapsed: boolean; secondaryVisible: boolean }) => void;
 };
 
@@ -24,10 +25,11 @@ function Panes({
   secondary,
   secondaryActive,
   primaryHidden = false,
+  enabled = true,
   onChange,
 }: SplitProps) {
   const { bounds, regions } = useNativeViewport();
-  const layout = paneLayout(bounds, regions),
+  const layout = paneLayout(bounds, regions, enabled),
     collapsed = layout.collapsed,
     detailOnly = secondaryActive && (collapsed || primaryHidden);
   useEffect(() => {

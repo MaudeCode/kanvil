@@ -32,6 +32,19 @@ it("keeps both panes outside the native fold, in either orientation", () => {
     secondary: { x: 0, y: 494, width: 669, height: 457 },
   });
 });
+it("leaves the full viewport to a nested navigator when its sidebar is inactive", () => {
+  const bounds = { width: 867, height: 587 };
+  const layout = paneLayout(
+    bounds,
+    [{ kind: "division", frame: { x: 430, y: 0, width: 24, height: 587 }, occludesContent: false }],
+    false,
+  );
+  expect(layout).toEqual({
+    collapsed: true,
+    primary: { x: 0, y: 0, ...bounds },
+    secondary: { x: 0, y: 0, ...bounds },
+  });
+});
 it("collapses onto the usable side of a constrained fold and ignores stale display geometry", () => {
   const layout = paneLayout({ width: 867, height: 587 }, [
     { kind: "division", frame: { x: 40, y: 0, width: 24, height: 587 }, occludesContent: false },

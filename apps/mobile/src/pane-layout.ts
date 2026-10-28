@@ -41,7 +41,8 @@ export function usableViewport(bounds: Bounds, regions: readonly ReservedRegion[
     : larger(division.primary, division.secondary);
 }
 // Region frames and the viewport use the same provider-local coordinates, after bar insets.
-export function paneLayout(bounds: Bounds, regions: readonly ReservedRegion[]) {
+export function paneLayout(bounds: Bounds, regions: readonly ReservedRegion[], enabled = true) {
+  if (!enabled) return collapsed(fullRect(bounds));
   const division = divisionLayout(bounds, regions);
   if (division) {
     const { primary, secondary, primarySpace, secondarySpace } = division;

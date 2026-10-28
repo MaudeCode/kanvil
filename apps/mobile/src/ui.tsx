@@ -1735,6 +1735,7 @@ export function Screen({
   header,
   scrollInsets = scroll,
   grouped,
+  connectionStatus = true,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -1747,6 +1748,7 @@ export function Screen({
   header?: ReactNode;
   scrollInsets?: boolean;
   grouped?: boolean;
+  connectionStatus?: boolean;
 }) {
   const color = usePalette(),
     live = useContext(LiveStatus),
@@ -1789,7 +1791,7 @@ export function Screen({
     );
   }, [navigation, boundary, ios, nativeScroll, transparentHeader, modern, color.surface]);
   const status =
-    boundary && (live === "offline" || live === "signedOut") ? (
+    connectionStatus && boundary && (live === "offline" || live === "signedOut") ? (
       <View style={{ paddingHorizontal: 16, paddingVertical: 6 }} accessibilityLiveRegion="polite">
         <Body small muted>
           {t(`native.connection.${live}`)}

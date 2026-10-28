@@ -5,7 +5,7 @@ import {
   projectHeaderItems,
   ticketHeaderItems,
 } from "./navigation-actions.tsx";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +28,8 @@ import {
   DefaultTheme,
   useNavigationContainerRef,
   TabActions,
+  NavigationContext,
+  NavigationRouteContext,
   type NavigationState,
   type PathConfig,
 } from "@react-navigation/native";
@@ -69,12 +71,14 @@ import { Projects, Tickets } from "./lists.tsx";
 import { MyWork, Search } from "./work.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
-import { Inbox, Settings, SettingsLayout } from "./settings.tsx";
+import { Inbox, Settings, SettingsLayout, SettingsNavigation } from "./settings.tsx";
+import { SplitView } from "./split-view.tsx";
 import {
   MainNavigation,
   ProjectNavigation,
   createProjectContexts,
   useProjectNavigation,
+  SettingsSidebarVisible,
   type Routes,
   type TabRoutes,
 } from "./navigation.ts";
@@ -763,6 +767,62 @@ function SettingsScreenLayout({ children, navigation }: Parameters<typeof Browsi
     </BrowsingLayout>
   );
 }
+type StackLayoutProps = Parameters<
+  NonNullable<ComponentProps<typeof Stack.Navigator>["layout"]>
+>[0];
+// Keep the sidebar outside native screen transitions and the detail controller's scroll handling.
+function SettingsNavigatorLayout({
+  state,
+  descriptors,
+  children,
+  settingsRoot,
+}: StackLayoutProps & { settingsRoot: boolean }) {
+  const route = state.routes[state.index];
+  const focused = route ? descriptors[route.key] : undefined;
+  const enabled =
+    !!route &&
+    ((settingsRoot && route.name === "Home") ||
+      [
+        "WorkspaceSettings",
+        "ProjectSettings",
+        "AccountSettings",
+        "Administration",
+        "Import",
+      ].includes(route.name));
+  const [layout, setLayout] = useState({ collapsed: true, secondaryVisible: true });
+  return (
+    <SettingsSidebarVisible value={enabled && !layout.collapsed}>
+      <View style={{ flex: 1 }}>
+        <SplitView
+          enabled={enabled}
+          secondaryActive
+          onChange={setLayout}
+          primary={
+            focused && enabled ? (
+              <SafeAreaView edges={["left", "top", "bottom"]} style={{ flex: 1 }}>
+                <NavigationContext value={undefined}>
+                  <GroupedSurface value>
+                    <Screen safeArea={false} connectionStatus={false}>
+                      <Heading>{t("native.screen.settings")}</Heading>
+                      <NavigationContext value={focused.navigation}>
+                        <NavigationRouteContext value={focused.route}>
+                          <MainNavigation value={focused.navigation}>
+                            <SettingsNavigation sidebar />
+                          </MainNavigation>
+                        </NavigationRouteContext>
+                      </NavigationContext>
+                    </Screen>
+                  </GroupedSurface>
+                </NavigationContext>
+              </SafeAreaView>
+            ) : null
+          }
+          secondary={children}
+        />
+      </View>
+    </SettingsSidebarVisible>
+  );
+}
 function BrowsingStack({
   tab,
   onDisconnect,
@@ -780,8 +840,15 @@ function BrowsingStack({
     Search: t("shell.page.search"),
     Settings: t("native.screen.settings"),
   };
+  const navigatorLayout = useCallback(
+    (props: StackLayoutProps) => (
+      <SettingsNavigatorLayout {...props} settingsRoot={tab === "Settings"} />
+    ),
+    [tab],
+  );
   return (
     <Stack.Navigator
+      layout={navigatorLayout}
       screenLayout={BrowsingLayout}
       screenOptions={({ route }) =>
         nativeHeaderOptions({
@@ -814,9 +881,9 @@ function BrowsingStack({
           ) : tab === "Search" ? (
             <Search key={workspace.active?.id} />
           ) : (
-            <SettingsLayout root>
+            <GroupedSurface value>
               <Settings onDisconnect={onDisconnect} />
-            </SettingsLayout>
+            </GroupedSurface>
           )
         }
       </Stack.Screen>

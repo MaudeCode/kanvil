@@ -9,7 +9,7 @@ import {
   formatNumber,
   type LocalePreference,
 } from "@kanvil/contracts/i18n";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
@@ -39,7 +39,12 @@ import {
 import { startupDiagnosticsEnabled, shareStartupDiagnostics } from "./media.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { UserAvatar } from "./ticket-values.tsx";
-import { useProjectNavigation, projectSettingsSections, type Routes } from "./navigation.ts";
+import {
+  useProjectNavigation,
+  projectSettingsSections,
+  SettingsSidebarVisible,
+  type Routes,
+} from "./navigation.ts";
 import { AppearanceSettings, CredentialsSettings, ProfileSettings } from "./account-settings.tsx";
 import { createHeaderAction, createHeaderMenu } from "./navigation-actions.tsx";
 import type {
@@ -47,7 +52,6 @@ import type {
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
 import { DeliverySettings } from "./delivery-settings.tsx";
-import { SplitView } from "./split-view.tsx";
 import type { ReactNode } from "react";
 import {
   devicePushToken,
@@ -459,7 +463,7 @@ function ReminderPreference({
   );
 }
 // The directory and adaptive Settings sidebar render the same destinations.
-export function SettingsNavigation() {
+export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
   const identity = useIdentity(),
     workspace = useWorkspace(),
     projects = useProjects(),
@@ -471,7 +475,7 @@ export function SettingsNavigation() {
   const section = params && "section" in params ? params.section : undefined;
   const projectId = params && "projectId" in params ? params.projectId : undefined;
   const workspaceId = params && "workspaceId" in params ? params.workspaceId : undefined;
-  const access = useProjectAccess(projectId ?? "");
+  const access = useProjectAccess(projectId ?? currentProjectId ?? "");
   const projectOptions = projectSettingsSections(access);
   function sections(
     values: readonly SettingsSection[],
@@ -520,9 +524,16 @@ export function SettingsNavigation() {
               : workspace.active.name
           }
         >
-          {route.name === "WorkspaceSettings" && workspaceId ? (
-            sections(workspaceSections, section ?? workspaceSections[0], (value) =>
-              navigation.navigate("WorkspaceSettings", { workspaceId, section: value }),
+          {(sidebar || route.name === "WorkspaceSettings") &&
+          (workspaceId ?? workspace.active.id) ? (
+            sections(
+              workspaceSections,
+              route.name === "WorkspaceSettings" ? (section ?? workspaceSections[0]) : undefined,
+              (value) =>
+                navigation.navigate("WorkspaceSettings", {
+                  workspaceId: workspaceId ?? workspace.active?.id ?? "",
+                  section: value,
+                }),
             )
           ) : (
             <Row
@@ -558,10 +569,16 @@ export function SettingsNavigation() {
             navigation.navigate("ProjectSettings", { projectId: chosenProjectId })
           }
         />
-        {route.name === "ProjectSettings" &&
-          projectId &&
-          sections(projectOptions, section ?? projectOptions[0], (value) =>
-            navigation.navigate("ProjectSettings", { projectId, section: value }),
+        {(sidebar || route.name === "ProjectSettings") &&
+          (projectId ?? currentProjectId) &&
+          sections(
+            projectOptions,
+            route.name === "ProjectSettings" ? (section ?? projectOptions[0]) : undefined,
+            (value) =>
+              navigation.navigate("ProjectSettings", {
+                projectId: projectId ?? currentProjectId ?? "",
+                section: value,
+              }),
           )}
       </Section>
     </>
@@ -570,9 +587,11 @@ export function SettingsNavigation() {
     <>
       {identity.admin && (
         <Section>
-          {route.name === "Administration" ? (
-            sections(adminSections, section ?? adminSections[0], (value) =>
-              navigation.navigate("Administration", { section: value }),
+          {sidebar || route.name === "Administration" ? (
+            sections(
+              adminSections,
+              route.name === "Administration" ? (section ?? adminSections[0]) : undefined,
+              (value) => navigation.navigate("Administration", { section: value }),
             )
           ) : (
             <Row
@@ -587,61 +606,22 @@ export function SettingsNavigation() {
   );
   return (
     <>
-      {route.name === "WorkspaceSettings" && workspaceNavigation}
-      {route.name === "ProjectSettings" && projectNavigation}
-      {route.name === "Administration" && adminNavigation}
       {accountNavigation}
-      {route.name !== "WorkspaceSettings" && workspaceNavigation}
-      {route.name !== "ProjectSettings" && projectNavigation}
-      {route.name !== "Administration" && adminNavigation}
+      {workspaceNavigation}
+      {projectNavigation}
+      {adminNavigation}
     </>
   );
 }
 
-// The selected form stays mounted while folding; only the measured pane geometry changes.
-export function SettingsLayout({
-  children,
-  root = false,
-}: {
-  children: ReactNode;
-  root?: boolean;
-}) {
+// Only the detail stack owns native bars; the persistent sidebar is outside its controller.
+export function SettingsLayout({ children }: { children: ReactNode }) {
   const navigation = useNavigation();
-  const [layout, setLayout] = useState({ collapsed: true, secondaryVisible: !root });
+  const sidebar = useContext(SettingsSidebarVisible);
   useLayoutEffect(() => {
-    navigation.setOptions({ headerBackVisible: !root && layout.collapsed });
-  }, [navigation, root, layout.collapsed]);
-  return (
-    <GroupedSurface value>
-      <Screen scroll={false} scrollInsets allowDivision>
-        <SplitView
-          secondaryActive={!root}
-          onChange={setLayout}
-          primary={
-            root ? (
-              children
-            ) : (
-              <Screen>
-                <SettingsNavigation />
-              </Screen>
-            )
-          }
-          secondary={
-            root ? (
-              <Screen>
-                <EmptyState
-                  icon="settings-2"
-                  title={t("ticket.tagInput.choose", { label: t("settings.layout.section") })}
-                />
-              </Screen>
-            ) : (
-              children
-            )
-          }
-        />
-      </Screen>
-    </GroupedSurface>
-  );
+    navigation.setOptions({ headerBackVisible: !sidebar });
+  }, [navigation, sidebar]);
+  return <GroupedSurface value>{children}</GroupedSurface>;
 }
 
 export function Settings({
@@ -656,6 +636,7 @@ export function Settings({
     identity = useIdentity(),
     navigation = useNavigation();
   const activeSection = accountSections.find((value) => value === section);
+  const sidebar = useContext(SettingsSidebarVisible);
   useLayoutEffect(() => {
     navigation.setOptions({
       title: activeSection ? settingsSectionLabel(activeSection) : t("native.screen.settings"),
@@ -729,7 +710,14 @@ export function Settings({
   if (!activeSection)
     return (
       <Screen>
-        <SettingsNavigation />
+        {sidebar ? (
+          <EmptyState
+            icon="settings-2"
+            title={t("ticket.tagInput.choose", { label: t("settings.layout.section") })}
+          />
+        ) : (
+          <SettingsNavigation />
+        )}
         <Section title={baseUrl}>
           {startupDiagnosticsEnabled && (
             <Button
