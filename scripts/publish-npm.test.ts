@@ -41,6 +41,8 @@ if (process.argv[2] === "view") {
         INTEGRITY: integrity,
         GITHUB_REF_TYPE: "tag",
         GITHUB_REF_NAME: "v1.2.3",
+        // A stable tag release, even when the suite runs inside a main CI build.
+        KANVIL_RELEASE_CHANNEL: "",
       },
     });
     await exec(process.execPath, [script], options("same"));
