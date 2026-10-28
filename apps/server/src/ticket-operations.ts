@@ -48,6 +48,7 @@ import {
   publish,
   publishMany,
   relationEvents,
+  severedRelationEvents,
   requireRow,
   subscribe,
   type Context,
@@ -604,6 +605,7 @@ async function deleteTicketRows(
       ticketId: ticket.id,
       data: { key: ticket.key, version: ticket.version },
     })),
+    ...(await severedRelationEvents(ctx, ids)),
   ]);
   await ctx.db.delete(tickets).where(inArray(tickets.id, ids));
 }

@@ -1709,6 +1709,43 @@ describe("ticket operations on PostgreSQL", () => {
         owner,
       ),
     ).toEqual([expect.objectContaining({ targetId: distant.id })]);
+    // Deleting the other side, alone or with its whole project, tells this project the edge went.
+    const severed = async (remove: () => Promise<unknown>) => {
+      const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+      await remove();
+      expect(
+        (await domain.readEvents(owner, cursor, project.id)).items.map((event) => [
+          event.type,
+          event.ticketId,
+        ]),
+      ).toEqual([["relation.removed", dependent.id]]);
+      expect(
+        await domain.execute(
+          "list_relations",
+          { projectId: project.id, ticketId: dependent.id },
+          owner,
+        ),
+      ).toEqual([]);
+    };
+    await severed(() =>
+      domain.execute(
+        "delete_ticket",
+        { projectId: far.id, ticketId: distant.id, expectedVersion: distant.version },
+        owner,
+      ),
+    );
+    await domain.execute(
+      "add_relation",
+      { projectId: project.id, ticketId: dependent.id, targetId: blocker.id, type: "related" },
+      owner,
+    );
+    await severed(() =>
+      domain.execute(
+        "delete_project",
+        { projectId: sibling.id, expectedVersion: sibling.version, confirmKey: sibling.key },
+        owner,
+      ),
+    );
   });
   it("hides a cross-project relation's far side from callers who cannot read it", async () => {
     const sibling = await otherProject();

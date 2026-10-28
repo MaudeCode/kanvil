@@ -53,10 +53,12 @@ import {
   pushDevices,
   projects,
   receipts,
+  relations,
   subscriptions,
   ticketAliases,
   tickets,
 } from "./schema.ts";
+import { alias } from "drizzle-orm/pg-core";
 import type { Connection, Database, Transaction } from "./database.ts";
 import { projectAccess, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace, roleHandlers } from "./workspace-operations.ts";
@@ -675,6 +677,44 @@ export const relationEvents = (
     data: { relation },
     projectId: requireRow(sides.find((side) => side.id === ticketId)).projectId,
   }));
+const deletedSide = alias(tickets, "deleted_side"),
+  survivingSide = alias(tickets, "surviving_side");
+// Deleting tickets of this project, the listed ones or all of them, cascades their relationships.
+// Each surviving ticket in another project hears that its edge went, in its own project's feed.
+export async function severedRelationEvents(
+  ctx: Context,
+  ticketIds?: readonly string[],
+): Promise<PendingEvent[]> {
+  const rows = await ctx.db
+    .select({
+      relation: relations,
+      ticketId: survivingSide.id,
+      projectId: survivingSide.projectId,
+    })
+    .from(relations)
+    .innerJoin(
+      deletedSide,
+      or(eq(deletedSide.id, relations.sourceId), eq(deletedSide.id, relations.targetId)),
+    )
+    .innerJoin(
+      survivingSide,
+      or(eq(survivingSide.id, relations.sourceId), eq(survivingSide.id, relations.targetId)),
+    )
+    .where(
+      and(
+        ticketIds
+          ? inArray(deletedSide.id, [...ticketIds])
+          : eq(deletedSide.projectId, project(ctx).id),
+        ne(survivingSide.projectId, project(ctx).id),
+      ),
+    );
+  return rows.map(({ relation, ticketId, projectId }) => ({
+    type: "relation.removed",
+    ticketId,
+    projectId,
+    data: { relation },
+  }));
+}
 export function ownsLiveClaim(ctx: Context, claim: typeof claims.$inferSelect) {
   return (
     claim.ownerId === ctx.actor.ownerId &&

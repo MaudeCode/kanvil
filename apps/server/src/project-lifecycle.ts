@@ -39,6 +39,7 @@ import {
   project,
   publish,
   publishMany,
+  severedRelationEvents,
   requireRecentSignIn,
   requireRow,
   toProject,
@@ -260,6 +261,7 @@ async function removeProject(ctx: Context) {
         ticketId: ticket.id,
         data: { key: ticket.key, version: ticket.version },
       })),
+      ...(await severedRelationEvents(ctx)),
       {
         type: "project.deleted",
         ticketId: null,
