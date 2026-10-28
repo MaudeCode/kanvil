@@ -2089,6 +2089,7 @@ export function Row({
   interaction = "navigate",
   emphasized = false,
   captionLines,
+  sidebar = false,
 }: {
   title: string;
   caption?: string;
@@ -2108,6 +2109,7 @@ export function Row({
   interaction?: "navigate" | "choice" | "action" | "content";
   emphasized?: boolean;
   captionLines?: number;
+  sidebar?: boolean;
 }) {
   const color = usePalette();
   const suppliedPadding = StyleSheet.flatten(style)?.paddingVertical;
@@ -2115,6 +2117,7 @@ export function Row({
     typeof suppliedPadding === "number" ? suppliedPadding : compact || dense ? 10 : 12;
   const padded = useContext(PaddedContent),
     grouped = useContext(InsideGroupedSection);
+  const highlightInset = sidebar ? 0 : grouped ? -6 : padded || compact ? -8 : 6;
   return (
     <Pressable
       accessibilityRole="button"
@@ -2124,84 +2127,122 @@ export function Row({
         disabled,
       }}
       disabled={disabled}
+      hitSlop={highlightInset < 0 ? { left: -highlightInset, right: -highlightInset } : undefined}
       onLongPress={onLongPress}
       onPress={() => {
         Keyboard.dismiss();
         onPress();
       }}
-      style={({ pressed }) => [
+      style={[
         {
           flexDirection: "row",
           alignItems: "center",
           minHeight: grouped ? 52 : 44,
           paddingVertical: verticalPadding,
-          paddingHorizontal: compact || padded ? 0 : 16,
+          paddingHorizontal: sidebar ? 12 : compact || padded ? 0 : 16,
           gap: 12,
-          borderStartWidth: 2,
-          borderStartColor: active || selected ? color.accent : "transparent",
-          backgroundColor:
-            selected || active ? color.accentSurface : pressed ? color.background : "transparent",
+          opacity: disabled ? 0.45 : 1,
         },
         style,
       ]}
     >
-      {leading}
-      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            start: 0,
-            end: 0,
-            bottom: -verticalPadding,
-            height: StyleSheet.hairlineWidth,
-            backgroundColor: color.line,
-          }}
-        />
-        {overline && (
-          <Text
+      {({ pressed }) => (
+        <>
+          <View
+            pointerEvents="none"
             style={{
-              color: color.muted,
-              fontSize: 12,
-              fontWeight: "500",
-              fontVariant: ["tabular-nums"],
+              position: "absolute",
+              start: highlightInset,
+              end: highlightInset,
+              top: 3,
+              bottom: 3,
+              borderRadius: 10,
+              backgroundColor: sidebar
+                ? active
+                  ? color.accent
+                  : pressed
+                    ? color.selection
+                    : "transparent"
+                : selected || active || pressed
+                  ? color.accentSurface
+                  : "transparent",
             }}
-          >
-            {overline}
-          </Text>
-        )}
-        <Text
-          style={{
-            color: color.foreground,
-            fontSize: compact && !grouped ? 15 : 16,
-            fontWeight: emphasized ? "600" : grouped ? "400" : "500",
-            lineHeight: grouped ? 22 : 23,
-            letterSpacing: -0.2,
-          }}
-        >
-          {title}
-        </Text>
-        {caption && (
-          <Text
-            numberOfLines={captionLines}
-            style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}
-          >
-            {caption}
-          </Text>
-        )}
-        {metadata && <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>}
-      </View>
-      {trailing ??
-        ((selected || interaction === "navigate") && (
-          <DecorativeIcon
-            name={selected ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
-            size={16}
-            color={selected ? color.accent : color.muted}
-            accessible={false}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
           />
-        ))}
+          {leading}
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            {!sidebar && !active && !selected && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  start: 0,
+                  end: 0,
+                  bottom: -verticalPadding,
+                  height: StyleSheet.hairlineWidth,
+                  backgroundColor: color.line,
+                }}
+              />
+            )}
+            {overline && (
+              <Text
+                style={{
+                  color: color.muted,
+                  fontSize: 12,
+                  fontWeight: "500",
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {overline}
+              </Text>
+            )}
+            <Text
+              style={{
+                color: sidebar
+                  ? active
+                    ? color.accentForeground
+                    : color.sidebarForeground
+                  : color.foreground,
+                fontSize: compact && !grouped ? 15 : 16,
+                fontWeight: emphasized || active || selected ? "600" : grouped ? "400" : "500",
+                lineHeight: grouped ? 22 : 23,
+                letterSpacing: -0.2,
+              }}
+            >
+              {title}
+            </Text>
+            {caption && (
+              <Text
+                numberOfLines={captionLines}
+                style={{
+                  color: sidebar && active ? color.accentForeground : color.muted,
+                  fontSize: 13,
+                  lineHeight: 18,
+                }}
+              >
+                {caption}
+              </Text>
+            )}
+            {metadata && (
+              <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>
+            )}
+          </View>
+          {trailing ??
+            ((selected || interaction === "navigate") && (
+              <DecorativeIcon
+                name={
+                  selected ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"
+                }
+                size={16}
+                color={
+                  sidebar && active ? color.accentForeground : selected ? color.accent : color.muted
+                }
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              />
+            ))}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -2648,7 +2689,7 @@ export const styles = StyleSheet.create({
     minHeight: 44,
     minWidth: 44,
     borderWidth: 0,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     alignItems: "center",

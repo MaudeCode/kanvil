@@ -777,6 +777,7 @@ function SettingsNavigatorLayout({
   children,
   settingsRoot,
 }: StackLayoutProps & { settingsRoot: boolean }) {
+  const color = usePalette();
   const route = state.routes[state.index];
   const focused = route ? descriptors[route.key] : undefined;
   const enabled =
@@ -799,10 +800,17 @@ function SettingsNavigatorLayout({
           onChange={setLayout}
           primary={
             focused && enabled ? (
-              <SafeAreaView edges={["left", "top", "bottom"]} style={{ flex: 1 }}>
+              <SafeAreaView
+                edges={["left", "top", "bottom"]}
+                style={{ flex: 1, backgroundColor: color.sidebar }}
+              >
                 <NavigationContext value={undefined}>
-                  <GroupedSurface value>
-                    <Screen safeArea={false} connectionStatus={false}>
+                  <GroupedSurface value={false}>
+                    <Screen
+                      safeArea={false}
+                      connectionStatus={false}
+                      style={{ backgroundColor: color.sidebar }}
+                    >
                       <Heading>{t("native.screen.settings")}</Heading>
                       <NavigationContext value={focused.navigation}>
                         <NavigationRouteContext value={focused.route}>

@@ -486,8 +486,14 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
       <Row
         key={value}
         title={settingsSectionLabel(value)}
-        leading={<TicketGlyph name={settingsSectionSymbols[value]} color={color.accent} />}
+        leading={
+          <TicketGlyph
+            name={settingsSectionSymbols[value]}
+            color={sidebar && value === active ? color.accentForeground : color.accent}
+          />
+        }
         active={value === active}
+        sidebar={sidebar}
         interaction="action"
         onPress={() => onSelect(value)}
       />
@@ -498,9 +504,13 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
       <Section>
         <Row
           title={identity.name}
-          leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
+          leading={
+            <UserAvatar name={identity.name} image={identity.image} size={sidebar ? 44 : 36} />
+          }
           caption={identity.email}
           active={route.name === "AccountSettings" && section === "account"}
+          sidebar={sidebar}
+          emphasized
           onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
         />
       </Section>

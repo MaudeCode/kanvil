@@ -57,6 +57,8 @@ Native rail actions have semantic symbols and stable identifiers. Create is high
 
 The native-stack type patch permits explicitly clearing `headerSearchBarOptions`, matching its existing runtime nullish check. This removes list search from compact detail and selection mode without replacing the system bar.
 
+Settings navigation uses a flat sidebar with rounded selections and the active theme's primary/foreground pair. Shared rows use inset rounded feedback for browsing, choice sheets, and project pickers; selected rows keep their accessible state and checkmarks. Grouped forms remain separate from navigation, and row text continues to wrap.
+
 ## Checks
 
 The native sidebar button hides or restores the ticket list while keeping its scroll position and the open ticket's drafts mounted. The choice is retained per project during the account session. The native workspace/project picker replaces the project-level Back button; Back from compact ticket detail still returns to its list. Settings keeps one persistent category list outside its native detail stack on wide and book layouts. Each column scrolls independently; category changes transition only the detail column and retain the list position. Compact displays use the same detail stack at full width. Standalone reading and editing screens prefer the right-hand facet while a fold is active, falling back only when it is too constrained.
