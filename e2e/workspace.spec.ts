@@ -373,8 +373,8 @@ test("writers can open expired claim recovery without administrator access", asy
     ).ok(),
   ).toBe(true);
   const context = await browser.newContext({ baseURL: origin });
+  const writer = await context.newPage();
   try {
-    const writer = await context.newPage();
     expect(
       (
         await writer.request.post("/api/auth/sign-in/email", {
@@ -403,6 +403,19 @@ test("writers can open expired claim recovery without administrator access", asy
       }
       await route.fulfill({ response, json: body });
     });
+    const reloadTicket = async () => {
+      const [response] = await Promise.all([
+        writer.waitForResponse(
+          (result) =>
+            result.url().endsWith(`/projects/${project.id}/tickets/${ticket.id}`) &&
+            result.request().method() === "GET" &&
+            result.ok(),
+        ),
+        writer.reload(),
+      ]);
+      expect(await response.finished()).toBeNull();
+      await expect(writer.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
+    };
     await writer.goto(`/projects/${project.id}/tickets/${ticket.id}`);
     const recover = writer.getByRole("button", { name: "Recover expired claim", exact: true });
     await expect(recover).toBeVisible();
@@ -433,13 +446,15 @@ test("writers can open expired claim recovery without administrator access", asy
       }
     }
     expired = false;
-    await writer.reload();
+    await reloadTicket();
     await expect(recover).toHaveCount(0);
     expired = true;
     expect((await membership("reader")).ok()).toBe(true);
-    await writer.reload();
+    await reloadTicket();
+    await expect(writer.getByRole("button", { name: "Edit ticket", exact: true })).toBeDisabled();
     await expect(recover).toHaveCount(0);
   } finally {
+    await writer.unrouteAll({ behavior: "wait" });
     await context.close();
   }
 });

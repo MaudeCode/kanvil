@@ -685,28 +685,50 @@ export function TicketList({
   });
   const queries = queryState.states;
   const pageData = queryState.pages;
+  const [seen, setSeen] = useState<{ filterKey: string; ids: string | null; fresh: Set<string> }>({
+    filterKey,
+    ids: null,
+    fresh: new Set(),
+  });
+  const totals = useMemo(
+    () =>
+      new Map(
+        fetches.map((entry) => [
+          entry.id,
+          pageData[pageQueries.findIndex((query) => query.entry.id === entry.id)]?.total ?? 0,
+        ]),
+      ),
+    [fetches, pageQueries, pageData],
+  );
+  const requiredPages = Object.fromEntries(
+    fetches.map((entry) => [
+      entry.id,
+      Math.max(1, Math.ceil((totals.get(entry.id) ?? 0) / pageSize)),
+    ]),
+  );
+  const missingPages = fetches.some(
+    (entry) => (pages[entry.id] ?? 1) < (requiredPages[entry.id] ?? 1),
+  );
+  // Load every page immediately, but build the initial row model only once all pages arrive.
+  if (missingPages) setPaging({ filterKey, pages: requiredPages });
+  const loading = workflowPending || missingPages || queries.some((query) => query.isPending);
+  const failed = queries.some((query) => query.error);
+  const renderPages = (seen.filterKey === filterKey && seen.ids !== null) || (!loading && !failed);
   const groups = useMemo(
     () =>
       fetches.map((entry) => ({
         entry,
         data: {
-          items: pageQueries.flatMap((query, index) =>
-            query.entry.id === entry.id ? (pageData[index]?.items ?? []) : [],
-          ),
-          total:
-            pageData[pageQueries.findIndex((query) => query.entry.id === entry.id)]?.total ?? 0,
+          items: renderPages
+            ? pageQueries.flatMap((query, index) =>
+                query.entry.id === entry.id ? (pageData[index]?.items ?? []) : [],
+              )
+            : [],
+          total: totals.get(entry.id) ?? 0,
         },
       })),
-    [fetches, pageQueries, pageData],
+    [fetches, pageQueries, pageData, renderPages, totals],
   );
-  const requiredPages = Object.fromEntries(
-    groups.map((group) => [group.entry.id, Math.max(1, Math.ceil(group.data.total / pageSize))]),
-  );
-  const missingPages = fetches.some(
-    (entry) => (pages[entry.id] ?? 1) < (requiredPages[entry.id] ?? 1),
-  );
-  // Load the remaining pages of a section as soon as its total is known.
-  if (missingPages) setPaging({ filterKey, pages: requiredPages });
   const latest = useMemo(() => {
     const records = new Map<string, Ticket>();
     for (const group of groups)
@@ -720,16 +742,10 @@ export function TicketList({
     return records;
   }, [groups, placing]);
   // Rows that arrive through realtime after the first load get a short highlight.
-  const loading = workflowPending || missingPages || queries.some((query) => query.isPending);
   const currentIds = useMemo(() => [...latest.keys()].join("\n"), [latest]);
-  const [seen, setSeen] = useState<{ filterKey: string; ids: string | null; fresh: Set<string> }>({
-    filterKey,
-    ids: null,
-    fresh: new Set(),
-  });
   if (seen.filterKey !== filterKey) setSeen({ filterKey, ids: null, fresh: new Set() });
   else if (seen.ids === null) {
-    if (!loading) setSeen({ filterKey, ids: currentIds, fresh: new Set() });
+    if (!loading && !failed) setSeen({ filterKey, ids: currentIds, fresh: new Set() });
   } else if (seen.ids !== currentIds) {
     const known = new Set(seen.ids.split("\n"));
     setSeen({
