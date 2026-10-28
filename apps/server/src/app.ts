@@ -1,5 +1,7 @@
 import { createAccountAdministration } from "./account-administration.ts";
 import { createDatabase } from "./database.ts";
+import { createCleanup } from "./cleanup.ts";
+import type { JobScheduler } from "./adapters/ports.ts";
 import { createInstance } from "./instance.ts";
 import { createBlobStorage, imageResponse, stagedUploadCutoff } from "./blob-storage.ts";
 import { createTicketSearch } from "./search.ts";
@@ -99,9 +101,30 @@ export async function createApplication(
   config: Config,
   overrides: Partial<RuntimeAdapters> = {},
 ) {
+  const cleanup = createCleanup();
   const adapters = { ...defaultAdapters, ...overrides };
+  // The scheduler is the acquisition point for all jobs, including nested blob/search jobs.
+  const jobs: JobScheduler = (name, interval, run) => {
+    const job = adapters.jobs(name, interval, run);
+    cleanup.add(name, () => job.close());
+    return job;
+  };
+  try {
+    return await initializeApplication(database, config, { ...adapters, jobs }, cleanup);
+  } catch (error) {
+    return cleanup.fail(error);
+  }
+}
+
+async function initializeApplication(
+  database: Database,
+  config: Config,
+  adapters: RuntimeAdapters,
+  cleanup: ReturnType<typeof createCleanup>,
+) {
   // Integration receipts must remain writable while domain transactions wait for the global write lock.
   const integrationDatabase = createDatabase(config.DATABASE_URL);
+  cleanup.add("integration database", () => integrationDatabase.pool.end());
   const instance = createInstance(integrationDatabase, config);
   await instance.read();
   const blobs = createBlobStorage(
@@ -126,15 +149,17 @@ export async function createApplication(
     }),
     access = createAccess(auth, domain, config, database),
     realtime = await adapters.realtime(config, instance, integrationDatabase);
+  cleanup.add("realtime", () => realtime.close());
   const unsubscribeJobs = realtime.subscribe(() => {
     void blobs.sync().catch(() => {});
     void search.sync().catch(() => {});
   });
+  cleanup.add("job subscription", unsubscribeJobs);
   // Queued deliveries are durable, so a restart resumes where the last worker stopped.
-  const outbox = adapters.jobs("outbox", 5000, () =>
+  adapters.jobs("outbox", 5000, () =>
     deliverBatch(database, config, senders, secrets, repositories),
   );
-  const reminders = adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
+  adapters.jobs("due-reminders", 60_000, () => sendDueReminders(database));
   // Import runs resume from their records after a restart; each pass asks for the next while work
   // remains, and closing stops between passes.
   const imports = adapters.jobs("imports", 2000, async () => {
@@ -869,15 +894,6 @@ export async function createApplication(
     blobs,
     search,
     realtime,
-    close: async () => {
-      await imports.close();
-      unsubscribeJobs();
-      await realtime.close();
-      await search.close();
-      await blobs.close();
-      await integrationDatabase.pool.end();
-      await outbox.close();
-      await reminders.close();
-    },
+    close: cleanup.close,
   };
 }
