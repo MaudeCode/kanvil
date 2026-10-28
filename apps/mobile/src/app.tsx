@@ -72,7 +72,7 @@ import { MyWork, Search } from "./work.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
 import { Inbox, Settings, SettingsLayout, SettingsNavigation } from "./settings.tsx";
-import { SplitView } from "./split-view.tsx";
+import { SplitView, type SplitState } from "./split-view.tsx";
 import {
   MainNavigation,
   ProjectNavigation,
@@ -776,7 +776,13 @@ function SettingsNavigatorLayout({
   descriptors,
   children,
   settingsRoot,
-}: StackLayoutProps & { settingsRoot: boolean }) {
+  splitState,
+  onSplitChange,
+}: StackLayoutProps & {
+  settingsRoot: boolean;
+  splitState: SplitState;
+  onSplitChange: (state: SplitState) => void;
+}) {
   const color = usePalette();
   const route = state.routes[state.index];
   const focused = route ? descriptors[route.key] : undefined;
@@ -790,14 +796,13 @@ function SettingsNavigatorLayout({
         "Administration",
         "Import",
       ].includes(route.name));
-  const [layout, setLayout] = useState({ collapsed: true, secondaryVisible: true });
   return (
-    <SettingsSidebarVisible value={enabled && !layout.collapsed}>
+    <SettingsSidebarVisible value={enabled && !splitState.collapsed}>
       <View style={{ flex: 1 }}>
         <SplitView
           enabled={enabled}
           secondaryActive
-          onChange={setLayout}
+          onChange={onSplitChange}
           primary={
             focused && enabled ? (
               <SafeAreaView
@@ -848,11 +853,20 @@ function BrowsingStack({
     Search: t("shell.page.search"),
     Settings: t("native.screen.settings"),
   };
+  const [splitState, setSplitState] = useState<SplitState>({
+    collapsed: true,
+    secondaryVisible: true,
+  });
   const navigatorLayout = useCallback(
     (props: StackLayoutProps) => (
-      <SettingsNavigatorLayout {...props} settingsRoot={tab === "Settings"} />
+      <SettingsNavigatorLayout
+        {...props}
+        settingsRoot={tab === "Settings"}
+        splitState={splitState}
+        onSplitChange={setSplitState}
+      />
     ),
-    [tab],
+    [tab, splitState],
   );
   return (
     <Stack.Navigator
@@ -975,7 +989,10 @@ function BrowsingStack({
           })
         }
       />
-      <Stack.Group screenLayout={SettingsScreenLayout}>
+      <Stack.Group
+        screenLayout={SettingsScreenLayout}
+        screenOptions={{ animation: splitState.collapsed ? "default" : "none" }}
+      >
         <Stack.Screen
           name="WorkspaceSettings"
           getId={({ params }) => params.workspaceId}
