@@ -40,7 +40,8 @@ export async function signOut(
   identity: { clearPrivateData: () => void | Promise<void> },
   next = "/login",
 ) {
-  const result = await auth.signOut();
+  // A provider redirect must not unload the page before private-cache removal finishes.
+  const result = await auth.signOut({ disableRedirect: true });
   if (result.error) throw new Error(result.error.message);
   await identity.clearPrivateData();
   window.location.assign(next);
