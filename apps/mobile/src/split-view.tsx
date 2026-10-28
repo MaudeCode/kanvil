@@ -1,12 +1,13 @@
 import { useEffect, type ReactNode } from "react";
 import { View } from "react-native";
 import { MeasuredViewport, useNativeViewport, ViewportPane } from "./ui.tsx";
-import { paneLayout } from "./pane-layout.ts";
+import { paneLayout, usableViewport } from "./pane-layout.ts";
 
 type SplitProps = {
   primary: ReactNode;
   secondary: ReactNode;
   secondaryActive: boolean;
+  primaryHidden?: boolean;
   onChange?: (state: { collapsed: boolean; secondaryVisible: boolean }) => void;
 };
 
@@ -18,10 +19,17 @@ export function SplitView(props: SplitProps) {
     </MeasuredViewport>
   );
 }
-function Panes({ primary, secondary, secondaryActive, onChange }: SplitProps) {
+function Panes({
+  primary,
+  secondary,
+  secondaryActive,
+  primaryHidden = false,
+  onChange,
+}: SplitProps) {
   const { bounds, regions } = useNativeViewport();
   const layout = paneLayout(bounds, regions),
-    collapsed = layout.collapsed;
+    collapsed = layout.collapsed,
+    detailOnly = secondaryActive && (collapsed || primaryHidden);
   useEffect(() => {
     onChange?.({ collapsed, secondaryVisible: secondaryActive });
   }, [collapsed, secondaryActive, onChange]);
@@ -30,7 +38,7 @@ function Panes({ primary, secondary, secondaryActive, onChange }: SplitProps) {
       key="primary"
       rect={layout.primary}
       viewportWidth={bounds.width}
-      visible={!collapsed || !secondaryActive}
+      visible={!detailOnly}
     >
       {primary}
     </ViewportPane>
@@ -38,16 +46,13 @@ function Panes({ primary, secondary, secondaryActive, onChange }: SplitProps) {
   const second = (
     <ViewportPane
       key="secondary"
-      rect={layout.secondary}
+      rect={primaryHidden && secondaryActive ? usableViewport(bounds, regions) : layout.secondary}
       viewportWidth={bounds.width}
       visible={!collapsed || secondaryActive}
+      inheritHeader={detailOnly}
     >
       {secondary}
     </ViewportPane>
   );
-  return (
-    <View style={{ flex: 1 }}>
-      {collapsed && secondaryActive ? [second, first] : [first, second]}
-    </View>
-  );
+  return <View style={{ flex: 1 }}>{detailOnly ? [second, first] : [first, second]}</View>;
 }

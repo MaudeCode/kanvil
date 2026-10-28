@@ -105,7 +105,7 @@ export function TicketSchedule({
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
-        headerBackVisible: !(showDay && splitState.collapsed && splitState.secondaryVisible),
+        headerBackVisible: false,
         unstable_headerLeftItems: () =>
           projectHeaderItems(
             showPicker,
@@ -125,7 +125,7 @@ export function TicketSchedule({
     return () =>
       navigation.setOptions(
         nativeHeaderOptions({
-          headerBackVisible: true,
+          headerBackVisible: false,
           unstable_headerLeftItems: () =>
             projectHeaderItems(showPicker, t("native.navigation.switchProject")),
         }),

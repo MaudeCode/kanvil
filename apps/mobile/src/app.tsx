@@ -69,7 +69,7 @@ import { Projects, Tickets } from "./lists.tsx";
 import { MyWork, Search } from "./work.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
-import { Inbox, Settings } from "./settings.tsx";
+import { Inbox, Settings, SettingsLayout } from "./settings.tsx";
 import {
   MainNavigation,
   ProjectNavigation,
@@ -756,6 +756,13 @@ function BrowsingLayout({
 function GroupedLayout({ children }: { children: ReactNode }) {
   return <GroupedSurface value>{children}</GroupedSurface>;
 }
+function SettingsScreenLayout({ children, navigation }: Parameters<typeof BrowsingLayout>[0]) {
+  return (
+    <BrowsingLayout navigation={navigation}>
+      <SettingsLayout>{children}</SettingsLayout>
+    </BrowsingLayout>
+  );
+}
 function BrowsingStack({
   tab,
   onDisconnect,
@@ -807,9 +814,9 @@ function BrowsingStack({
           ) : tab === "Search" ? (
             <Search key={workspace.active?.id} />
           ) : (
-            <GroupedSurface value>
+            <SettingsLayout root>
               <Settings onDisconnect={onDisconnect} />
-            </GroupedSurface>
+            </SettingsLayout>
           )
         }
       </Stack.Screen>
@@ -849,6 +856,7 @@ function BrowsingStack({
         options={({ route, navigation }) =>
           nativeHeaderOptions({
             title: route.params.name ?? t("ticket.list.tickets"),
+            headerBackVisible: false,
             unstable_headerRightItems: () => [
               createHeaderAction(
                 t("native.screen.newTicket"),
@@ -892,7 +900,7 @@ function BrowsingStack({
           })
         }
       />
-      <Stack.Group screenLayout={GroupedLayout}>
+      <Stack.Group screenLayout={SettingsScreenLayout}>
         <Stack.Screen
           name="WorkspaceSettings"
           component={WorkspaceSettings}

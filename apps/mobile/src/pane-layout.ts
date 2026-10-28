@@ -34,7 +34,11 @@ const larger = (first: Rect, second: Rect) =>
 // Forms and single lists occupy one usable facet while the fold is active.
 export function usableViewport(bounds: Bounds, regions: readonly ReservedRegion[]) {
   const division = divisionLayout(bounds, regions);
-  return division ? larger(division.primary, division.secondary) : fullRect(bounds);
+  if (!division) return fullRect(bounds);
+  // Reading and editing belong on the trailing facet; a constrained fold still needs room.
+  return division.secondarySpace >= minimumSecondary
+    ? division.secondary
+    : larger(division.primary, division.secondary);
 }
 // Region frames and the viewport use the same provider-local coordinates, after bar insets.
 export function paneLayout(bounds: Bounds, regions: readonly ReservedRegion[]) {

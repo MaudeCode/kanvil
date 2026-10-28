@@ -118,6 +118,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   const isFocused = useIsFocused();
   const [initial] = useState(() => contexts.get(projectId));
   const [anchor, setAnchor] = useState(() => initial?.anchor ?? calendarDay(new Date()));
+  const [sidebarHidden, setSidebarHidden] = useState(initial?.sidebarHidden ?? false);
   const [splitState, setSplitState] = useState({
     collapsed: false,
     secondaryVisible: initial?.secondaryVisible ?? !!initial?.selectedTicketId,
@@ -143,6 +144,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     Platform.OS === "ios" &&
     Number.parseInt(Platform.Version, 10) >= 26 &&
     (layout === "list" || layout === "board");
+  const detailOnly =
+    split && splitState.secondaryVisible && (splitState.collapsed || sidebarHidden);
   const exitSelection = useCallback(() => {
     setSelecting(false);
     setSelection(new Map());
@@ -234,6 +237,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         anchor,
         selectedTicketId,
         secondaryVisible: splitState.secondaryVisible,
+        sidebarHidden,
         location: route.params,
         collapsedSections: {
           ...contexts.get(projectId)?.collapsedSections,
@@ -249,6 +253,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     anchor,
     selectedTicketId,
     splitState.secondaryVisible,
+    sidebarHidden,
     route.params,
     collection,
     normalCollapsed,
@@ -561,7 +566,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                   },
                 )
               : []),
-            ...(split && splitState.collapsed && splitState.secondaryVisible
+            ...(detailOnly
               ? []
               : ([
                   ...(access.canWrite
@@ -612,6 +617,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       viewItems,
       query,
       filterCount,
+      detailOnly,
     ],
   );
   useLayoutEffect(() => {
@@ -619,35 +625,47 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       nativeHeaderOptions({
         title: selecting
           ? t("ticket.selection.selected", { count: selection.size })
-          : split && splitState.collapsed && splitState.secondaryVisible && selectedTicket
+          : detailOnly && selectedTicket
             ? selectedTicket.key
             : title,
         unstable_headerRightItems: () => headerItems,
         ...(layout === "list" || layout === "board"
           ? {
-              headerBackVisible:
-                !selecting && !(split && splitState.collapsed && splitState.secondaryVisible),
+              headerBackVisible: false,
               unstable_headerLeftItems: () =>
                 selecting
                   ? []
-                  : projectHeaderItems(
-                      showPicker,
-                      t("native.navigation.switchProject"),
-                      split && splitState.collapsed && splitState.secondaryVisible
-                        ? {
-                            title: t("ticket.list.tickets"),
-                            onPress: () => {
-                              setSplitState((state) => ({ ...state, secondaryVisible: false }));
-                            },
-                          }
-                        : undefined,
-                    ),
+                  : [
+                      ...projectHeaderItems(
+                        showPicker,
+                        t("native.navigation.switchProject"),
+                        split && splitState.collapsed && splitState.secondaryVisible
+                          ? {
+                              title: t("ticket.list.tickets"),
+                              onPress: () => {
+                                setSplitState((state) => ({ ...state, secondaryVisible: false }));
+                              },
+                            }
+                          : undefined,
+                      ),
+                      ...(split &&
+                      !splitState.collapsed &&
+                      selectedTicket &&
+                      splitState.secondaryVisible
+                        ? [
+                            createHeaderAction(
+                              t("shell.action.sidebar"),
+                              () => setSidebarHidden((hidden) => !hidden),
+                              { type: "sfSymbol", name: "sidebar.left" },
+                              false,
+                              { identifier: "ticket-sidebar", visibilityPriority: "high" },
+                            ),
+                          ]
+                        : []),
+                    ],
             }
           : {}),
-        headerSearchBarOptions:
-          selecting || (split && splitState.collapsed && splitState.secondaryVisible)
-            ? undefined
-            : searchOptions,
+        headerSearchBarOptions: selecting || detailOnly ? undefined : searchOptions,
       }),
     );
   }, [
@@ -662,6 +680,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     searchOptions,
     selecting,
     selectedTicket,
+    detailOnly,
   ]);
   const entries = sectionEntries(sections, collapsed, !!query.trim());
   const open = (ticket: Ticket) => {
@@ -675,7 +694,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     planning ? Promise.all([backlog.refetch(), archived.refetch()]) : tickets.refetch();
   const collectionHeader = (
     <>
-      {!(split && splitState.collapsed && splitState.secondaryVisible) && (
+      {!detailOnly && (
         <>
           {!searching && (
             <RemovableSummary
@@ -889,7 +908,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       scrollInsets={
         (layout === "list" && (!split || splitState.collapsed)) ||
         layout === "timeline" ||
-        (split && splitState.collapsed && splitState.secondaryVisible)
+        detailOnly
       }
       allowDivision={split || layout === "calendar"}
       background={project?.background ?? null}
@@ -899,6 +918,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         <SplitView
           primary={primaryContent}
           secondaryActive={!!selectedTicketId && splitState.secondaryVisible}
+          primaryHidden={sidebarHidden}
           onChange={setSplitState}
           secondary={
             selectedTicketId ? (

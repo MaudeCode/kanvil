@@ -115,8 +115,8 @@ export function projectHeaderItems(showPicker: () => void, title: string, back?:
       : []),
     createHeaderAction(title, showPicker, { type: "sfSymbol", name: "square.stack.3d.up" }, false, {
       identifier: "switch-project",
-      visibilityPriority: "low",
-      sharesBackground: true,
+      visibilityPriority: "high",
+      sharesBackground: false,
     }),
   ];
 }

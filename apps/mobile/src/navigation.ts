@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { TicketLayout } from "@kanvil/contracts/navigation";
+import { projectSections, type TicketLayout } from "@kanvil/contracts/navigation";
 import type { SearchBarCommands, SearchBarProps } from "react-native-screens";
 import type { Input } from "@kanvil/contracts";
 export type Routes = {
@@ -40,6 +40,14 @@ export type TabRoutes = {
   Search: NavigatorScreenParams<Routes>;
   Settings: NavigatorScreenParams<Routes>;
 };
+export function projectSettingsSections(access: { canManage: boolean; canShare: boolean }) {
+  return projectSections.filter(
+    (section) =>
+      (section !== "integrations" && section !== "calendar") ||
+      (section === "integrations" && access.canManage) ||
+      (section === "calendar" && access.canShare),
+  );
+}
 export type ScreenProps<K extends keyof Routes> = NativeStackScreenProps<Routes, K>;
 // Independent sheets target the browsing stack that opened them.
 export const MainNavigation = createContext<Pick<
@@ -75,6 +83,7 @@ export type ProjectContext = {
   anchor: Date;
   selectedTicketId: string | undefined;
   secondaryVisible: boolean;
+  sidebarHidden: boolean;
   scrollOffset: number;
   collapsedSections: Partial<Record<"all" | "planning", string[]>>;
 };

@@ -55,7 +55,21 @@ it("keeps ordinary forms and pickers on a usable facet without constraining flat
     usableViewport(bounds, [
       { kind: "division", frame: { x: 430, y: 0, width: 24, height: 587 }, occludesContent: false },
     ]),
-  ).toEqual({ x: 0, y: 0, width: 430, height: 587 });
+  ).toEqual({ x: 454, y: 0, width: 413, height: 587 });
+});
+
+it("prefers the right facet for reading and editing unless it cannot fit the content", () => {
+  const bounds = { width: 951, height: 669 };
+  expect(
+    usableViewport(bounds, [
+      { kind: "division", frame: { x: 490, y: 0, width: 24, height: 669 }, occludesContent: false },
+    ]),
+  ).toEqual({ x: 514, y: 0, width: 437, height: 669 });
+  expect(
+    usableViewport(bounds, [
+      { kind: "division", frame: { x: 820, y: 0, width: 24, height: 669 }, occludesContent: false },
+    ]),
+  ).toEqual({ x: 0, y: 0, width: 820, height: 669 });
 });
 
 it("fits compact metadata by measured width rather than a fixed tag count", async () => {

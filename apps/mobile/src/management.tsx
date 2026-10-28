@@ -26,7 +26,6 @@ import {
 import { TicketTag } from "./ticket-values.tsx";
 import { t } from "@kanvil/contracts/i18n";
 import {
-  projectSections,
   workspaceSections,
   settingsSectionLabel,
   type SettingsSection,
@@ -59,7 +58,7 @@ import {
   TicketGlyph,
   usePalette,
 } from "./ui.tsx";
-import { useProjectNavigation, type ScreenProps } from "./navigation.ts";
+import { useProjectNavigation, projectSettingsSections, type ScreenProps } from "./navigation.ts";
 import { IntegrationSettings, CalendarFeeds } from "./delivery-settings.tsx";
 import { ProjectAppearance } from "./project-appearance.tsx";
 export { Administration } from "./administration.tsx";
@@ -68,12 +67,11 @@ export { ImportProject } from "./imports.tsx";
 // The web SettingsLayout needs DOM controls. Native settings share its section catalog and use
 // the existing Screen, Sheet, Row and field renderers instead.
 export function useSettingsSection(
-  navigation: Pick<ScreenProps<"WorkspaceSettings">["navigation"], "setOptions">,
+  navigation: Pick<ScreenProps<"WorkspaceSettings">["navigation"], "setOptions" | "setParams">,
   sections: readonly SettingsSection[],
   initial?: string,
 ) {
-  const [requested, setSection] = useState(initial);
-  const section = sections.find((value) => value === requested) ?? sections[0] ?? "general";
+  const section = sections.find((value) => value === initial) ?? sections[0] ?? "general";
   useLayoutEffect(() => {
     navigation.setOptions(
       nativeHeaderOptions({
@@ -86,7 +84,7 @@ export function useSettingsSection(
               type: "action",
               label: settingsSectionLabel(value),
               state: value === section ? "on" : "off",
-              onPress: () => setSection(value),
+              onPress: () => navigation.setParams({ section: value }),
             })),
             { identifier: "settings-sections", visibilityPriority: "default" },
           ),
@@ -1006,13 +1004,7 @@ export function ProjectSettings({ route, navigation }: ScreenProps<"ProjectSetti
     access = useProjectAccess(projectId),
     { api } = useConnection();
   const allowedSections = useMemo(
-    () =>
-      projectSections.filter(
-        (value) =>
-          (value !== "integrations" && value !== "calendar") ||
-          (value === "integrations" && access.canManage) ||
-          (value === "calendar" && access.canShare),
-      ),
+    () => projectSettingsSections({ canManage: access.canManage, canShare: access.canShare }),
     [access.canManage, access.canShare],
   );
   const section = useSettingsSection(navigation, allowedSections, route.params.section);

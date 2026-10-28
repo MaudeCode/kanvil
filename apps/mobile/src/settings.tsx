@@ -12,7 +12,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import {
   infoSchema,
   notificationCategories,
@@ -20,20 +20,35 @@ import {
   reminderUnits,
   reminderUnitSchema,
 } from "@kanvil/contracts";
-import { useConnection, useIdentity, useProjects, useWorkspace, useAllProjects } from "./data.tsx";
+import {
+  useConnection,
+  useIdentity,
+  useProjects,
+  useWorkspace,
+  useAllProjects,
+  useProjectAccess,
+} from "./data.tsx";
 import {
   accountSections,
+  adminSections,
+  workspaceSections,
   settingsSectionLabel,
   settingsSectionSymbols,
+  type SettingsSection,
 } from "@kanvil/contracts/navigation";
 import { startupDiagnosticsEnabled, shareStartupDiagnostics } from "./media.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { UserAvatar } from "./ticket-values.tsx";
-import { useProjectNavigation } from "./navigation.ts";
+import { useProjectNavigation, projectSettingsSections, type Routes } from "./navigation.ts";
 import { AppearanceSettings, CredentialsSettings, ProfileSettings } from "./account-settings.tsx";
 import { createHeaderAction, createHeaderMenu } from "./navigation-actions.tsx";
-import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
+import type {
+  NativeStackHeaderItem,
+  NativeStackNavigationProp,
+} from "@react-navigation/native-stack";
 import { DeliverySettings } from "./delivery-settings.tsx";
+import { SplitView } from "./split-view.tsx";
+import type { ReactNode } from "react";
 import {
   devicePushToken,
   disableDevicePush,
@@ -60,6 +75,7 @@ import {
   Sheet,
   TicketGlyph,
   usePalette,
+  GroupedSurface,
 } from "./ui.tsx";
 
 export function Inbox() {
@@ -442,6 +458,192 @@ function ReminderPreference({
     </>
   );
 }
+// The directory and adaptive Settings sidebar render the same destinations.
+export function SettingsNavigation() {
+  const identity = useIdentity(),
+    workspace = useWorkspace(),
+    projects = useProjects(),
+    color = usePalette(),
+    navigation = useNavigation<NativeStackNavigationProp<Routes>>(),
+    route = useRoute<RouteProp<Routes>>();
+  const { currentProjectId } = useProjectNavigation();
+  const params = route.params;
+  const section = params && "section" in params ? params.section : undefined;
+  const projectId = params && "projectId" in params ? params.projectId : undefined;
+  const workspaceId = params && "workspaceId" in params ? params.workspaceId : undefined;
+  const access = useProjectAccess(projectId ?? "");
+  const projectOptions = projectSettingsSections(access);
+  function sections(
+    values: readonly SettingsSection[],
+    active: string | undefined,
+    onSelect: (value: SettingsSection) => void,
+  ) {
+    return values.map((value) => (
+      <Row
+        key={value}
+        title={settingsSectionLabel(value)}
+        leading={<TicketGlyph name={settingsSectionSymbols[value]} color={color.accent} />}
+        active={value === active}
+        interaction="action"
+        onPress={() => onSelect(value)}
+      />
+    ));
+  }
+  const accountNavigation = (
+    <>
+      <Section>
+        <Row
+          title={identity.name}
+          leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
+          caption={identity.email}
+          active={route.name === "AccountSettings" && section === "account"}
+          onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
+        />
+      </Section>
+      <Section title={t("shell.settingsNav.account")}>
+        {sections(
+          accountSections.filter((value) => value !== "account"),
+          route.name === "AccountSettings" ? section : undefined,
+          (value) => navigation.navigate("AccountSettings", { section: value }),
+        )}
+      </Section>
+    </>
+  );
+  const workspaceNavigation = (
+    <>
+      {workspace.active && (
+        <Section
+          title={
+            workspaceId
+              ? (workspace.workspaces.find((space) => space.id === workspaceId)?.name ??
+                t("shell.workspace.settings"))
+              : workspace.active.name
+          }
+        >
+          {route.name === "WorkspaceSettings" && workspaceId ? (
+            sections(workspaceSections, section ?? workspaceSections[0], (value) =>
+              navigation.navigate("WorkspaceSettings", { workspaceId, section: value }),
+            )
+          ) : (
+            <Row
+              title={t("shell.workspace.settings")}
+              leading={<TicketGlyph name="building-2" color={color.accent} />}
+              onPress={() => {
+                if (workspace.active)
+                  navigation.navigate("WorkspaceSettings", { workspaceId: workspace.active.id });
+              }}
+            />
+          )}
+        </Section>
+      )}
+    </>
+  );
+  const projectNavigation = (
+    <>
+      <Section title={t("shell.page.projects")}>
+        <Choice
+          label={t("shell.settingsNav.projectSettings")}
+          value={
+            projects.data?.some((project) => project.id === (projectId ?? currentProjectId))
+              ? (projectId ?? currentProjectId ?? "")
+              : ""
+          }
+          emptyLabel={t("ticket.tagInput.choose", { label: t("ticket.project.label") })}
+          options={(projects.data ?? []).map((project) => ({
+            value: project.id,
+            label: project.name,
+            leading: <ProjectIcon project={project} size={20} />,
+          }))}
+          onChange={(chosenProjectId) =>
+            navigation.navigate("ProjectSettings", { projectId: chosenProjectId })
+          }
+        />
+        {route.name === "ProjectSettings" &&
+          projectId &&
+          sections(projectOptions, section ?? projectOptions[0], (value) =>
+            navigation.navigate("ProjectSettings", { projectId, section: value }),
+          )}
+      </Section>
+    </>
+  );
+  const adminNavigation = (
+    <>
+      {identity.admin && (
+        <Section>
+          {route.name === "Administration" ? (
+            sections(adminSections, section ?? adminSections[0], (value) =>
+              navigation.navigate("Administration", { section: value }),
+            )
+          ) : (
+            <Row
+              title={t("shell.settingsNav.administration")}
+              leading={<TicketGlyph name="shield-check" color={color.accent} />}
+              onPress={() => navigation.navigate("Administration", {})}
+            />
+          )}
+        </Section>
+      )}
+    </>
+  );
+  return (
+    <>
+      {route.name === "WorkspaceSettings" && workspaceNavigation}
+      {route.name === "ProjectSettings" && projectNavigation}
+      {route.name === "Administration" && adminNavigation}
+      {accountNavigation}
+      {route.name !== "WorkspaceSettings" && workspaceNavigation}
+      {route.name !== "ProjectSettings" && projectNavigation}
+      {route.name !== "Administration" && adminNavigation}
+    </>
+  );
+}
+
+// The selected form stays mounted while folding; only the measured pane geometry changes.
+export function SettingsLayout({
+  children,
+  root = false,
+}: {
+  children: ReactNode;
+  root?: boolean;
+}) {
+  const navigation = useNavigation();
+  const [layout, setLayout] = useState({ collapsed: true, secondaryVisible: !root });
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerBackVisible: !root && layout.collapsed });
+  }, [navigation, root, layout.collapsed]);
+  return (
+    <GroupedSurface value>
+      <Screen scroll={false} scrollInsets allowDivision>
+        <SplitView
+          secondaryActive={!root}
+          onChange={setLayout}
+          primary={
+            root ? (
+              children
+            ) : (
+              <Screen>
+                <SettingsNavigation />
+              </Screen>
+            )
+          }
+          secondary={
+            root ? (
+              <Screen>
+                <EmptyState
+                  icon="settings-2"
+                  title={t("ticket.tagInput.choose", { label: t("settings.layout.section") })}
+                />
+              </Screen>
+            ) : (
+              children
+            )
+          }
+        />
+      </Screen>
+    </GroupedSurface>
+  );
+}
+
 export function Settings({
   onDisconnect,
   section,
@@ -452,11 +654,7 @@ export function Settings({
   const connection = useConnection(),
     { api, auth, baseUrl } = connection,
     identity = useIdentity(),
-    workspace = useWorkspace(),
-    projects = useProjects(),
-    color = usePalette(),
     navigation = useNavigation();
-  const { currentProjectId } = useProjectNavigation();
   const activeSection = accountSections.find((value) => value === section);
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -531,64 +729,7 @@ export function Settings({
   if (!activeSection)
     return (
       <Screen>
-        <Section>
-          <Row
-            title={identity.name}
-            leading={<UserAvatar name={identity.name} image={identity.image} size={36} />}
-            caption={identity.email}
-            onPress={() => navigation.navigate("AccountSettings", { section: "account" })}
-          />
-        </Section>
-        <Section title={t("shell.settingsNav.account")}>
-          {accountSections
-            .filter((value) => value !== "account")
-            .map((value) => (
-              <Row
-                key={value}
-                title={settingsSectionLabel(value)}
-                leading={<TicketGlyph name={settingsSectionSymbols[value]} color={color.accent} />}
-                onPress={() => navigation.navigate("AccountSettings", { section: value })}
-              />
-            ))}
-        </Section>
-        {workspace.active && (
-          <Section title={workspace.active.name}>
-            <Row
-              title={t("shell.workspace.settings")}
-              leading={<TicketGlyph name="building-2" color={color.accent} />}
-              onPress={() => {
-                if (workspace.active)
-                  navigation.navigate("WorkspaceSettings", { workspaceId: workspace.active.id });
-              }}
-            />
-          </Section>
-        )}
-        <Section title={t("shell.page.projects")}>
-          <Choice
-            label={t("shell.settingsNav.projectSettings")}
-            value={
-              projects.data?.some((project) => project.id === currentProjectId)
-                ? (currentProjectId ?? "")
-                : ""
-            }
-            emptyLabel={t("ticket.tagInput.choose", { label: t("ticket.project.label") })}
-            options={(projects.data ?? []).map((project) => ({
-              value: project.id,
-              label: project.name,
-              leading: <ProjectIcon project={project} size={20} />,
-            }))}
-            onChange={(projectId) => navigation.navigate("ProjectSettings", { projectId })}
-          />
-        </Section>
-        {identity.admin && (
-          <Section>
-            <Row
-              title={t("shell.settingsNav.administration")}
-              leading={<TicketGlyph name="shield-check" color={color.accent} />}
-              onPress={() => navigation.navigate("Administration", {})}
-            />
-          </Section>
-        )}
+        <SettingsNavigation />
         <Section title={baseUrl}>
           {startupDiagnosticsEnabled && (
             <Button

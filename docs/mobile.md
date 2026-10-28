@@ -59,6 +59,8 @@ The native-stack type patch permits explicitly clearing `headerSearchBarOptions`
 
 ## Checks
 
+The native sidebar button hides or restores the ticket list while keeping its scroll position and the open ticket's drafts mounted. The choice is retained per project during the account session. The native workspace/project picker replaces the project-level Back button; Back from compact ticket detail still returns to its list. Settings keeps its categories beside the selected section on wide and book layouts, and returns to a stack on compact displays. Standalone reading and editing screens prefer the right-hand facet while a fold is active, falling back only when it is too constrained.
+
 ```sh
 pnpm --filter @kanvil/mobile typecheck
 pnpm --filter @kanvil/mobile exec expo install --check

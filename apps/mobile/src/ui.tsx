@@ -177,13 +177,16 @@ export function ViewportPane({
   rect,
   viewportWidth,
   visible = true,
+  inheritHeader = true,
 }: {
   children: ReactNode;
   rect: ReservedRegion["frame"];
   viewportWidth: number;
   visible?: boolean;
+  inheritHeader?: boolean;
 }) {
   const headerInset = useContext(ScrollHeaderInset);
+  const scrollingHeader = useContext(ScrollingHeader);
   return (
     <View
       pointerEvents={visible ? "auto" : "none"}
@@ -199,7 +202,9 @@ export function ViewportPane({
         overflow: "hidden",
       }}
     >
-      <ScrollHeaderInset value={Math.max(0, headerInset - rect.y)}>{children}</ScrollHeaderInset>
+      <ScrollingHeader value={inheritHeader ? scrollingHeader : null}>
+        <ScrollHeaderInset value={Math.max(0, headerInset - rect.y)}>{children}</ScrollHeaderInset>
+      </ScrollingHeader>
     </View>
   );
 }
