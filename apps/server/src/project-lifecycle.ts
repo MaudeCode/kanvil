@@ -39,6 +39,7 @@ import {
   project,
   publish,
   publishMany,
+  severedRelationEvents,
   requireRecentSignIn,
   requireRow,
   toProject,
@@ -72,8 +73,8 @@ async function claimBlockers(ctx: Context): Promise<Blocker[]> {
       ]
     : [];
 }
-// Relationships and parents stay inside a project today; one that reaches another project would
-// cross workspaces after a move, so it has to be removed first rather than silently kept or dropped.
+// Parents stay inside a project; a relationship may reach another project. A move to another
+// workspace keeps neither silently nor drops it: links to other projects are removed first.
 async function relationBlockers(ctx: Context): Promise<Blocker[]> {
   const rows = await ctx.db
     .select({ key: tickets.key })
@@ -260,6 +261,7 @@ async function removeProject(ctx: Context) {
         ticketId: ticket.id,
         data: { key: ticket.key, version: ticket.version },
       })),
+      ...(await severedRelationEvents(ctx)),
       {
         type: "project.deleted",
         ticketId: null,

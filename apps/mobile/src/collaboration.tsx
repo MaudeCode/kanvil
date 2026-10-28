@@ -115,8 +115,12 @@ export function Relations({
           <View key={relation.id} style={{ gap: 8 }}>
             <Button
               title={`${reference.label} · ${reference.title}`}
+              disabled={reference.restricted}
               onPress={() =>
-                navigation.push("Ticket", { projectId: ticket.projectId, ticketId: reference.id })
+                navigation.push("Ticket", {
+                  projectId: reference.projectId ?? ticket.projectId,
+                  ticketId: reference.id,
+                })
               }
             />
             <Button

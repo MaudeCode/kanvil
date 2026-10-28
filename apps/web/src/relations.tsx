@@ -176,11 +176,12 @@ export function Relations({ ticket }: { ticket: Ticket }) {
       )}
       <ItemGroup className="gap-0">
         {relations.data?.map((relation) => {
-          const reference = relationReference(relation, ticket.id);
+          const reference = relationReference(relation, ticket.id),
+            projectId = reference.projectId ?? ticket.projectId;
           return (
             <ReferenceRow
               key={relation.id}
-              projectId={ticket.projectId}
+              projectId={projectId}
               ticketId={reference.id}
               ticket={linkedTickets.get(reference.id)}
               canWrite={access.canWrite}
@@ -197,9 +198,13 @@ export function Relations({ ticket }: { ticket: Ticket }) {
                 </IconButton>
               }
             >
-              <TicketLink projectId={ticket.projectId} ticketId={reference.id}>
-                {reference.title}
-              </TicketLink>
+              {reference.restricted ? (
+                <span className="text-muted-foreground">{reference.title}</span>
+              ) : (
+                <TicketLink projectId={projectId} ticketId={reference.id}>
+                  {reference.title}
+                </TicketLink>
+              )}
             </ReferenceRow>
           );
         })}
