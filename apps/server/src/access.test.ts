@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
 import { createWriteLimiter } from "./access.ts";
+import { hasScope, type Actor } from "./domain.ts";
+import { isOperation, operations, scopes } from "@kanvil/contracts";
+
+it("limits intake to create_ticket while preserving ordinary scope access", () => {
+  const actor: Actor = {
+    id: "owner",
+    ownerId: "key",
+    machine: true,
+    admin: true,
+    scopes: ["intake"],
+  };
+  for (const name of Object.keys(operations).filter(isOperation))
+    expect(hasScope(actor, operations[name].scope, name), name).toBe(name === "create_ticket");
+  for (const scope of scopes) expect(hasScope(actor, scope)).toBe(false);
+  for (const scope of ["write", "claim", "admin"] as const)
+    expect(hasScope({ ...actor, scopes: [scope] }, "read")).toBe(true);
+  expect(hasScope({ ...actor, scopes: [] }, "read")).toBe(false);
+});
 
 describe("session write limiter", () => {
   it("allows a burst up to the limit, then rejects with a retry hint until the window slides", () => {

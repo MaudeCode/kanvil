@@ -470,6 +470,190 @@ describe("HTTP, realtime, and MCP", () => {
     ).toBe(200);
     expect((await request(`/api/v1/projects/${project.id}/tickets`, { headers })).status).toBe(401);
   });
+  it("rejects intake credentials combined with another scope", async () => {
+    const project = await newProject();
+    for (const scope of ["read", "write", "claim", "admin"]) {
+      const response = await request("/api/v1/credentials", {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          name: "Mixed intake",
+          projectIds: [project.id],
+          scopes: ["intake", scope],
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(errorSchema.parse(await response.json()).error.code).toBe("validation_error");
+    }
+  });
+  it.each([false, true])("quarantines create-only intake tickets over MCP=%s", async (mcp) => {
+    const project = await newProject(),
+      other = await newProject(),
+      human = client(),
+      token = await credential(project.id, ["intake"]),
+      api = client(token.key),
+      sdk = await mcpClient(token.key);
+    try {
+      const trustedInput = {
+        projectId: project.id,
+        title: "Parent",
+        requestId: crypto.randomUUID(),
+      };
+      const parent = await human.call("create_ticket", trustedInput);
+      const replayError = mcp
+        ? await mcpRejection(sdk, "create_ticket", trustedInput)
+        : await httpRejection(api.call("create_ticket", trustedInput));
+      expect(replayError).toMatchObject({ status: 409, code: "idempotency_conflict" });
+      const field = await human.call("create_custom_field", {
+        projectId: project.id,
+        name: "Required default",
+        type: "text",
+        required: true,
+        defaultValue: "trusted default",
+      });
+      await human.call("create_custom_field", {
+        projectId: project.id,
+        name: "Required without default",
+        type: "text",
+        required: true,
+      });
+      const state = (await human.call("list_workflow_states", { projectId: project.id })).find(
+        (candidate) => candidate.category === "done",
+      )!;
+      const upload = await human.call("stage_upload", {
+        projectId: project.id,
+        name: "intake.txt",
+        data: btoa("untrusted"),
+      });
+      const input = {
+        projectId: project.id,
+        requestId: crypto.randomUUID(),
+        title: "Untrusted report",
+        description: "User supplied text",
+        acceptanceCriteria: "Human triage",
+        difficulty: "med" as const,
+        kind: "bug" as const,
+        priority: "high" as const,
+        labels: ["bug"],
+        scopes: ["server"],
+        automationReady: true,
+        holdReason: null,
+        status: "done" as const,
+        stateId: state.id,
+        assigneeId: "not-a-member",
+        parentId: parent.id,
+        archived: true,
+        dueAt: "2030-01-02T00:00:00.000Z",
+        startAt: "2030-01-01T00:00:00.000Z",
+        customFields: { [field.id]: "untrusted" },
+        uploads: [upload.id],
+      };
+      const create = async (args: typeof input) => {
+        if (!mcp) return api.call("create_ticket", args);
+        const result = await sdk.callTool({ name: "create_ticket", arguments: args });
+        expect(result.isError).not.toBe(true);
+        return z.object({ result: ticketSchema }).parse(result.structuredContent).result;
+      };
+      const created = await create(input);
+      expect(created).toMatchObject({
+        title: input.title,
+        description: input.description,
+        kind: "bug",
+        priority: "high",
+        labels: ["bug", "intake"],
+        scopes: ["server"],
+        automationReady: false,
+        holdReason: "Untrusted intake: human triage required",
+        status: "todo",
+        assigneeId: null,
+        parentId: null,
+        archived: false,
+        dueAt: null,
+        startAt: null,
+        customFields: {},
+      });
+      expect(created.stateId).not.toBe(state.id);
+      expect(await create(input)).toEqual(created);
+      expect((await human.call("list_tickets", { projectId: project.id })).total).toBe(2);
+      const fullLabels = Array.from({ length: 30 }, (_, index) => `label-${index}`);
+      await expect(
+        api.call("create_ticket", {
+          projectId: project.id,
+          title: "Too many intake labels",
+          labels: fullLabels,
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "validation_error" });
+      const labeled = await api.call("create_ticket", {
+        projectId: project.id,
+        title: "Existing intake label",
+        labels: [...fullLabels.slice(0, 29), "intake"],
+      });
+      expect(labeled.labels).toHaveLength(30);
+      expect(labeled.labels.filter((label) => label === "intake")).toHaveLength(1);
+      expect(
+        (await human.call("get_ticket", { projectId: project.id, ticketId: created.id })).ticket,
+      ).toEqual(created);
+      expect(
+        await human.call("list_attachments", { projectId: project.id, ticketId: created.id }),
+      ).toEqual([]);
+      expect(
+        (await request(attachmentPath(project.id, upload.id), { headers: sessionHeaders() }))
+          .status,
+      ).toBe(200);
+      expect(
+        (await human.call("list_eligible_tickets", { projectId: project.id })).items.filter(
+          (row) => row.readiness.ready,
+        ),
+      ).toEqual([]);
+      const ticket = { projectId: project.id, ticketId: created.id },
+        versioned = { ...ticket, expectedVersion: created.version };
+      const denied = [
+        ["get_ticket", ticket],
+        ["list_tickets", { projectId: project.id }],
+        ["search_tickets", { q: "report" }],
+        ["update_ticket", { ...versioned, changes: { automationReady: true } }],
+        ["delete_ticket", versioned],
+        ["relocate_ticket", { ...versioned, destinationProjectId: other.id }],
+        ["add_comment", { ...ticket, body: "Intake comment" }],
+        ["upload_attachment", { ...ticket, name: "intake.txt", data: btoa("untrusted") }],
+      ] as const;
+      for (const [name, args] of denied) {
+        const error = mcp
+          ? await mcpRejection(sdk, name, args)
+          : await httpRejection(api.call(name, args));
+        expect(error, name).toMatchObject({ status: 403, code: "insufficient_scope" });
+      }
+      const headers = { Authorization: `Bearer ${token.key}` };
+      for (const path of [
+        "/api/v1/snapshot",
+        "/api/v1/events",
+        "/api/v1/me",
+        "/api/v1/notifications/preferences",
+        attachmentPath(project.id, upload.id),
+      ]) {
+        const response = await request(path, { headers });
+        expect(response.status, path).toBe(403);
+        expect(errorSchema.parse(await response.json()).error.code).toBe("insufficient_scope");
+      }
+      const foreign = { ...input, projectId: other.id, requestId: crypto.randomUUID() };
+      const error = mcp
+        ? await mcpRejection(sdk, "create_ticket", foreign)
+        : await httpRejection(api.call("create_ticket", foreign));
+      expect(error.status).toBe(404);
+      const triaged = await human.call("update_ticket", {
+        ...versioned,
+        changes: { automationReady: true, holdReason: null },
+      });
+      expect(triaged.automationReady).toBe(true);
+      expect(
+        (await human.call("list_eligible_tickets", { projectId: project.id })).items
+          .filter((row) => row.readiness.ready)
+          .map((row) => row.ticket.id),
+      ).toEqual([created.id]);
+    } finally {
+      await sdk.close();
+    }
+  });
   it("lets global credentials follow current account access while keeping machine and scope gates", async () => {
     const person = await fixture.auth.api.createUser({
       body: {

@@ -119,6 +119,11 @@ export default {
       custom: "Aangepaste rechten",
     },
     permission: {
+      intake: {
+        name: "Meldingen indienen",
+        description:
+          "Maakt alleen tickets in quarantaine. Kan tickets niet lezen of bewerken. Afzonderlijk gebruiken.",
+      },
       read: {
         name: "Tickets lezen",
         description: "Projecten, tickets, opmerkingen en bijlagen bekijken.",

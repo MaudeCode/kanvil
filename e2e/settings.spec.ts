@@ -453,7 +453,18 @@ test("API keys support explicit global access and preserve selected-project defa
   await expect(
     dialog.getByRole("checkbox", { name: "Manage projects and workspaces", exact: true }),
   ).toBeVisible();
-  await choose(page, "Access level", "Read only");
+  const intake = dialog.getByRole("checkbox", { name: "Submit reports", exact: true });
+  await intake.check();
+  for (const name of [
+    "Read tickets",
+    "Edit tickets",
+    "Claim work",
+    "Manage projects and workspaces",
+  ])
+    await expect(dialog.getByRole("checkbox", { name, exact: true })).not.toBeChecked();
+  await dialog.getByRole("checkbox", { name: "Read tickets", exact: true }).check();
+  await expect(intake).not.toBeChecked();
+  await intake.check();
   await dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }).check();
   await dialog.getByRole("checkbox", { name: "Global", exact: true }).check();
   await expect(
@@ -471,6 +482,9 @@ test("API keys support explicit global access and preserve selected-project defa
       await expect(
         dialog.getByRole("button", { name: "Create API key", exact: true }),
       ).toBeVisible();
+      await dialog
+        .getByRole("button", { name: "Create API key", exact: true })
+        .scrollIntoViewIfNeeded();
       await page.screenshot({
         path: `test-results/credentials-${mode}-${width}.png`,
         animations: "disabled",
@@ -481,6 +495,7 @@ test("API keys support explicit global access and preserve selected-project defa
       );
     }
   }
+  await choose(page, "Access level", "Read only");
   await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
   await expect(dialog.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
@@ -494,6 +509,8 @@ test("API keys support explicit global access and preserve selected-project defa
   await expect(dialog.getByRole("checkbox", { name: "Global", exact: true })).not.toBeChecked();
   await dialog.getByLabel("Key name", { exact: true }).fill("Scoped fixture");
   await dialog.getByRole("checkbox", { name: "Scoped key fixture", exact: true }).check();
+  await choose(page, "Access level", "Custom permissions");
+  await intake.check();
   await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
   await expect(dialog.getByLabel("New API key", { exact: true })).toHaveValue(/^kv_/);
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
@@ -501,6 +518,7 @@ test("API keys support explicit global access and preserve selected-project defa
     (value: { name: string }) => value.name === "Scoped fixture",
   );
   expect(JSON.parse(scoped.metadata)).toEqual({ projectIds: [project.id] });
+  expect(JSON.parse(scoped.permissions)).toEqual({ kanvil: ["intake"] });
   await expect(page.getByRole("row").filter({ hasText: "Scoped fixture" })).toContainText(
     "Scoped key fixture",
   );

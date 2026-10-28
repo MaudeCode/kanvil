@@ -225,10 +225,18 @@ export function json(value: unknown): unknown {
   );
 }
 export const complete = (status: string) => closedStates.some((closed) => closed === status);
-export const hasScope = (actor: Actor, scope: (typeof scopes)[number]) =>
-  actor.scopes.includes("admin") ||
-  actor.scopes.includes(scope) ||
-  (scope === "read" && actor.scopes.length > 0);
+export const intakeOnly = (actor: Actor) =>
+  actor.scopes.length > 0 && actor.scopes.every((scope) => scope === "intake");
+export const hasScope = (actor: Actor, scope: (typeof scopes)[number], operation?: Operation) =>
+  intakeOnly(actor)
+    ? operation === "create_ticket"
+    : actor.scopes.includes("admin") ||
+      actor.scopes.includes(scope) ||
+      (scope === "read" && actor.scopes.some((value) => value !== "intake"));
+function requireScope(actor: Actor, scope: (typeof scopes)[number], operation?: Operation) {
+  if (!hasScope(actor, scope, operation))
+    fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
+}
 // The actions a role grants that the credential's scopes also allow: what clients are told the
 // caller can do, and the most the caller can grant to anyone else.
 export const capabilities = (actor: Actor, granted: readonly Permission[]) =>
@@ -347,9 +355,9 @@ export async function context(
     : scope === "admin"
       ? "project.manage"
       : "ticket.write",
+  operation?: Operation,
 ): Promise<Context> {
-  if (!hasScope(actor, scope))
-    fail(403, "insufficient_scope", `This credential requires ${scope} permission`);
+  requireScope(actor, scope, operation);
   const ctx = baseContext(db, actor);
   if (workspaceId) {
     const access = await requireWorkspace(ctx, workspaceId, permission);
@@ -828,6 +836,7 @@ export function createDomain(
     const projectId = "projectId" in input ? input.projectId : undefined;
     const workspaceId =
       "workspaceId" in input && !workspaceIsFilter.has(name) ? input.workspaceId : undefined;
+    if (intakeOnly(actor)) requireScope(actor, spec.scope, name);
     // Check the session-only gate before operation scopes for every machine identity.
     if (actor.machine && sessionOnly.has(name))
       fail(403, "session_required", "Use a signed-in account for this action");
@@ -852,7 +861,7 @@ export function createDomain(
     const permission = operationPermission(name);
     if (spec.method === "GET" || remoteReads.has(name))
       return invoke(
-        await context(database.db, actor, spec.scope, projectId, workspaceId, permission),
+        await context(database.db, actor, spec.scope, projectId, workspaceId, permission, name),
       );
     const requestId = "requestId" in input ? input.requestId : undefined;
     // A write that reads another tracker reads it first, outside the lock, unless a receipt
@@ -879,13 +888,19 @@ export function createDomain(
     )
       read = await reader.read(
         withServices(
-          await context(database.db, actor, spec.scope, projectId, workspaceId, permission),
+          await context(database.db, actor, spec.scope, projectId, workspaceId, permission, name),
         ),
         input,
       );
     const committed = await locked(async (tx) => {
       const hash = createHash("sha256")
-        .update(JSON.stringify({ name, input: reader ? reader.receipt(input) : input }))
+        .update(
+          JSON.stringify({
+            name,
+            input: reader ? reader.receipt(input) : input,
+            ...(intakeOnly(actor) && { intakeCredential: actor.ownerId }),
+          }),
+        )
         .digest("hex");
       const receipt = requestId
         ? (
@@ -902,7 +917,7 @@ export function createDomain(
       // author's receipt.
       if (receipt && (name === "delete_project" || name === "delete_workspace"))
         return parseOutput(name, receipt.result);
-      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission);
+      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission, name);
       if (receipt) {
         // Time-entry receipts must not disclose a moved or deleted ticket through its old project.
         if (

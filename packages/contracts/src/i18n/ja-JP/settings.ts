@@ -120,6 +120,11 @@ export default {
       custom: "カスタム権限",
     },
     permission: {
+      intake: {
+        name: "報告を送信",
+        description:
+          "隔離されたチケットの作成のみ。チケットの閲覧や編集はできません。単独で使用してください。",
+      },
       read: {
         name: "チケットの閲覧",
         description: "プロジェクト、チケット、コメント、添付ファイルを表示します。",

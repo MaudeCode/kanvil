@@ -119,6 +119,11 @@ export default {
       custom: "Fərdi icazələr",
     },
     permission: {
+      intake: {
+        name: "Hesabat göndər",
+        description:
+          "Yalnız karantində biletlər yaradır. Biletləri oxuya və ya redaktə edə bilməz. Tək istifadə edin.",
+      },
       read: {
         name: "Tiketləri oxumaq",
         description: "Layihələrə, tiketlərə, şərhlərə və qoşmalara baxmaq.",

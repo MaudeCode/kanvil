@@ -119,6 +119,10 @@ export default {
       custom: "Quyền tùy chỉnh",
     },
     permission: {
+      intake: {
+        name: "Gửi báo cáo",
+        description: "Chỉ tạo phiếu cách ly. Không thể đọc hoặc sửa phiếu. Sử dụng riêng.",
+      },
       read: {
         name: "Đọc phiếu",
         description: "Xem dự án, phiếu, bình luận và tệp đính kèm.",

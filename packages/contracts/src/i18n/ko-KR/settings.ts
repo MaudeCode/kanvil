@@ -117,6 +117,11 @@ export default {
       custom: "사용자 지정 권한",
     },
     permission: {
+      intake: {
+        name: "보고서 제출",
+        description:
+          "격리된 티켓만 생성합니다. 티켓을 읽거나 수정할 수 없습니다. 단독으로 사용하세요.",
+      },
       read: {
         name: "티켓 읽기",
         description: "프로젝트, 티켓, 댓글, 첨부 파일을 봅니다.",

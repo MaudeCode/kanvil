@@ -36,7 +36,16 @@ import {
   requireSession,
   requireInstanceAdmin,
 } from "./access.ts";
-import { createDomain, errorEnvelope, fail, json, requireRow, type Actor, one } from "./domain.ts";
+import {
+  createDomain,
+  errorEnvelope,
+  fail,
+  intakeOnly,
+  json,
+  requireRow,
+  type Actor,
+  one,
+} from "./domain.ts";
 import { createMcp } from "./mcp.ts";
 import { emailCodesAvailable, signInProviders } from "./auth.ts";
 import { deliverySecrets } from "./sealing.ts";
@@ -313,6 +322,11 @@ export async function createApplication(
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);
     const actor = await access.authenticate(c.req.raw);
+    if (
+      intakeOnly(actor) &&
+      !(c.req.method === "POST" && /^\/api\/v1\/projects\/[^/]+\/tickets$/.test(c.req.path))
+    )
+      fail(403, "insufficient_scope", "Intake credentials can only create tickets");
     c.set("actor", actor);
     if (!actor.machine && !["GET", "HEAD", "OPTIONS"].includes(c.req.method))
       writes.consume(actor.id);
