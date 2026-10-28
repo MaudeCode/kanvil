@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createHmac } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Project, RepositoryConnection, SyncRule, Ticket } from "@kanvil/contracts";
+import {
+  operations,
+  type Project,
+  type RepositoryConnection,
+  type SyncRule,
+  type Ticket,
+} from "@kanvil/contracts";
 import { createFixture } from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
@@ -16,6 +22,7 @@ import { deliverBatch } from "./outbox.ts";
 import { deliverySecrets } from "./sealing.ts";
 import { deliveries, issueLinks, repositoryConnections } from "./schema.ts";
 import type { Actor } from "./domain.ts";
+import { updateTicket } from "./ticket-operations.ts";
 
 type Issue = {
   number: number;
@@ -381,6 +388,64 @@ describe("issue sync", () => {
     await update(target, { holdReason: null });
     expect((await flush()).map((request) => request.method)).toEqual(["POST"]);
     expect(await linkOf(target)).toMatchObject({ state: "active" });
+  });
+  it("does not lose a queued export when triage races quarantine completion", async () => {
+    await apply(await connect(), rule());
+    await flush();
+    const target = await create("Concurrent triage", [await labelName()]);
+    await update(target, {
+      holdReason: "Untrusted intake: human triage required",
+      automationReady: false,
+    });
+    const link = await linkOf(target),
+      held = await current(target);
+    expect(link).toBeDefined();
+    if (!link) throw new Error("Expected a queued creation");
+    let sending: Promise<void> | undefined;
+    try {
+      await app.domain.transact(async (db, as) => {
+        await db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(eq(deliveries.issueLinkId, link.id))
+          .for("update");
+        sending = tick();
+        // The old worker waits on the delivery row; the fixed worker waits on the write lock.
+        await expect
+          .poll(async () =>
+            Number(
+              (
+                await fixture.database.db.execute(sql`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND pid <> pg_backend_pid()
+        `)
+              ).rows[0]?.waiting ?? 0,
+            ),
+          )
+          .toBeGreaterThan(0);
+        await updateTicket(
+          await as(owner, project.id),
+          operations.update_ticket.input.parse({
+            projectId: project.id,
+            ticketId: target.id,
+            expectedVersion: held.version,
+            changes: { holdReason: null },
+          }),
+        );
+      });
+      await sending;
+      expect(
+        await fixture.database.db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(and(eq(deliveries.issueLinkId, link.id), isNull(deliveries.finishedAt))),
+      ).toHaveLength(1);
+      expect((await flush()).map((request) => request.method)).toEqual(["POST"]);
+      expect(await linkOf(target)).toMatchObject({ state: "active" });
+    } finally {
+      await sending;
+    }
   });
   it("previews and applies filtered export rules and creates each issue once from a verified answer", async () => {
     const name = await labelName();

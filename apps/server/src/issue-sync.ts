@@ -648,7 +648,18 @@ export async function sendIssueSync(
   )[0];
   if (!loaded) return finish(database.db, job, "link_removed");
   const { link, ticket, connection } = loaded;
-  if (intakeQuarantined(ticket)) return finish(database.db, job, "quarantined");
+  if (intakeQuarantined(ticket))
+    return locked(database, async (db) => {
+      const current = (
+        await db
+          .select({ holdReason: tickets.holdReason })
+          .from(tickets)
+          .where(eq(tickets.id, ticket.id))
+      )[0];
+      // Triage may have requalified this still-pending job while the worker waited for the lock.
+      if (!current || intakeQuarantined(current))
+        await finish(db, job, current ? "quarantined" : "link_removed");
+    });
   // Writes act for the connecting administrator, so they stop with that person's write access.
   const skip = connection.paused
     ? "paused"
