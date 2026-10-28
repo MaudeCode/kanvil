@@ -903,11 +903,13 @@ function BrowsingStack({
       <Stack.Group screenLayout={SettingsScreenLayout}>
         <Stack.Screen
           name="WorkspaceSettings"
+          getId={({ params }) => params.workspaceId}
           component={WorkspaceSettings}
           options={{ title: t("shell.workspace.settings") }}
         />
         <Stack.Screen
           name="ProjectSettings"
+          getId={({ params }) => params.projectId}
           component={ProjectSettings}
           options={{ title: t("shell.settingsNav.projectSettings") }}
         />
