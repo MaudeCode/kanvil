@@ -90,6 +90,14 @@ A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unn
 
 Increment `ios.buildNumber` and `android.versionCode` in `app.config.ts` for subsequent distributed builds. Keep signing material outside the repository. Building a simulator app or preview APK does not publish to an app store or install on a physical device.
 
+After changing a native dependency patch, regenerate the native project and reinstall Pods. CocoaPods can retain a path to an older pnpm patch directory even when the dependency version is unchanged. A JavaScript export or incremental archive does not establish which native implementation was linked. Verify the archived executable before exporting, and repeat against the executable extracted from the final IPA:
+
+```sh
+node scripts/verify-ios-tabs.ts /path/to/Kanvil.xcarchive/Products/Applications/Kanvil.app/Kanvil
+```
+
+This macOS build check uses Xcode's disassembler to require the tab host's compiled sizing call before controller attachment. It rejects a stale binary without that fix. It does not establish physical-device startup behavior.
+
 ## Local startup diagnostics
 
 For a native startup failure that cannot be reproduced on the available simulator, make an explicit diagnostic candidate with `EXPO_PUBLIC_STARTUP_DIAGNOSTICS=1` set during prebuild, JavaScript export, and native compilation:
