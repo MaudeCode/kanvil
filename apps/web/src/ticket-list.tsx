@@ -810,7 +810,9 @@ export function TicketList({
     [all, sections, grouped, board, collapsed],
   );
   const tickets = {
-    isPending: loading,
+    // A realtime count can add a page after initial completion. Keep the scroll owner and
+    // virtualizers mounted while that page arrives, rather than replaying active-row reveals.
+    isPending: loading && (seen.filterKey !== filterKey || seen.ids === null),
     error: queries.find((query) => query.error)?.error,
     data: {
       items: visibleTickets,
@@ -1081,13 +1083,19 @@ export function TicketList({
   const manual = search.sort === "manual",
     reorderable = canWrite && manual,
     descending = (search.order ?? defaultOrder[search.sort]) === "desc";
-  const moveTicket = useOperation("move_ticket"),
+  const moveTicket = useOperation("move_ticket", (saved) => {
+      savedVersions.current.set(saved.id, saved.version);
+      const release = releaseWrite.current;
+      releaseWrite.current = undefined;
+      release?.();
+    }),
     cache = useQueryClient(),
     [announcement, setAnnouncement] = useState(""),
     followActive = useRef(false);
   // Moves made before the previous one is saved wait their turn and use the version it returned,
   // so quick repeated keys are neither dropped nor rejected as stale.
   const queue = useRef(Promise.resolve()),
+    releaseWrite = useRef<(() => void) | undefined>(undefined),
     savedVersions = useRef(new Map<string, number>());
   const statusName = (value: StatusValue) => {
     const { status, stateId } = parseStatus(value);
@@ -1124,22 +1132,31 @@ export function TicketList({
     );
     // A descending list shows the manual order reversed.
     const after = below !== descending;
-    queue.current = queue.current
-      .then(async () => {
-        const saved = await moveTicket.mutateAsync({
-          projectId: ticket.projectId,
-          ticketId: ticket.id,
-          expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
-          ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
-          ...(changed ? propertyChange("status", changed) : {}),
-        });
-        savedVersions.current.set(saved.id, saved.version);
-      })
-      .catch((error: unknown) => {
-        void cache.invalidateQueries({ queryKey: ["kanvil"] });
-        reportError(error);
-      })
-      .finally(() => setPlacing((current) => (current === shown ? undefined : current)));
+    queue.current = queue.current.then(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWrite.current = resolve;
+          // Only the versioned server write blocks the next command. Its refresh still owns
+          // optimistic placement until the canonical list has settled.
+          void moveTicket
+            .mutateAsync({
+              projectId: ticket.projectId,
+              ticketId: ticket.id,
+              expectedVersion: Math.max(ticket.version, savedVersions.current.get(ticket.id) ?? 0),
+              ...(neighbor ? (after ? { after: neighbor.id } : { before: neighbor.id }) : {}),
+              ...(changed ? propertyChange("status", changed) : {}),
+            })
+            .catch((error: unknown) => {
+              void cache.invalidateQueries({ queryKey: ["kanvil"] });
+              reportError(error);
+            })
+            .finally(() => {
+              if (releaseWrite.current === resolve) releaseWrite.current = undefined;
+              resolve();
+              setPlacing((current) => (current === shown ? undefined : current));
+            });
+        }),
+    );
   };
   const sectionOf = (ticket: Ticket) => sections.find((section) => section.has(ticket));
   // Status steps work in any order; in the manual order the ticket arrives on top of its new
@@ -1454,17 +1471,17 @@ export function TicketList({
           onClear={() => table.resetRowSelection()}
         />
       )}
-      {tickets.isPending ? (
-        <Loading />
-      ) : tickets.error ? (
+      {tickets.error ? (
         <Button
-          disabled={queries.some((query) => query.isFetching)}
+          disabled={queries.some((query) => query.error && query.isFetching)}
           onClick={() => {
             for (const query of queries) if (query.error) void query.refetch();
           }}
         >
           {t("ticket.list.retry")}
         </Button>
+      ) : tickets.isPending ? (
+        <Loading />
       ) : board ? (
         <div
           role="region"

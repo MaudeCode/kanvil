@@ -256,6 +256,45 @@ test("loads all 10,000 tickets while bounding mounted rows", async ({ page }, te
   }
   if (process.env.KANVIL_SCALE_BENCHMARK === "1" && browser) await browser.stopTracing();
   await record(testInfo, "initial-performance-samples.json", samples);
+  const viewportCovered = () =>
+    page.locator(".table-scroll").evaluate((owner) => {
+      const bounds = owner.getBoundingClientRect();
+      const rows = [...owner.querySelectorAll(".ticket-row")]
+        .map((row) => row.getBoundingClientRect())
+        .filter((rect) => rect.bottom > bounds.top + 72 && rect.top < bounds.bottom);
+      return (
+        rows.length > 0 &&
+        Math.min(...rows.map((row) => row.top)) <= bounds.top + 72 &&
+        Math.max(...rows.map((row) => row.bottom)) >= bounds.bottom - 1
+      );
+    });
+  await page.getByRole("rowgroup", { name: "To do tickets", exact: true }).evaluate((group) => {
+    const owner = group.closest<HTMLElement>(".table-scroll");
+    if (!owner) throw new Error("Missing list scroll owner");
+    owner.style.overflowAnchor = "none";
+    owner.scrollTop += group.getBoundingClientRect().top - owner.getBoundingClientRect().top + 1000;
+  });
+  await expect.poll(viewportCovered).toBe(true);
+  // Model a preceding section growing as wrapped rows are measured, without a parent React render.
+  await page
+    .locator(".ticket-table [data-slot=table-container]")
+    .nth(1)
+    .evaluate((section) => {
+      section.style.paddingBottom = "600px";
+    });
+  await expect
+    .poll(viewportCovered, { message: "preceding section growth must leave no viewport gap" })
+    .toBe(true);
+  await page
+    .locator(".ticket-table [data-slot=table-container]")
+    .nth(1)
+    .evaluate((section) => {
+      section.style.paddingBottom = "";
+    });
+  await page.locator(".table-scroll").evaluate((owner) => {
+    owner.style.overflowAnchor = "";
+    owner.scrollTop = 0;
+  });
   await page.getByRole("checkbox", { name: "Select all displayed tickets", exact: true }).check();
   await expect(page.getByRole("region", { name: "Selected tickets", exact: true })).toContainText(
     "10,000 selected",
@@ -539,13 +578,22 @@ test("reconciles 10,000 tickets through failed pages, middle moves and realtime 
       )
       .items.map((item) => item.id);
   await expect.poll(order).toEqual([neighbor.id, moving.id]);
+  await performanceRun.sample("before consecutive moves");
+  const mountedList = await page.locator(".table-scroll").evaluateHandle((node) => node);
+  const refreshStarted = page.waitForRequest(
+    (request) => request.method() === "GET" && request.url().includes(`${path}?`),
+  );
+  const releaseMoveRefresh = await holdRequests(page, `**${path}?*`);
   await row(moving.id).dragTo(row(neighbor.id), { targetPosition: { x: 40, y: 4 } });
   await expect.poll(order).toEqual([moving.id, neighbor.id]);
+  await refreshStarted;
   // A status step from the middle has to reveal the ticket in its new section.
   await page.keyboard.press("]");
   const read = async (id: string) =>
     (await (await page.request.get(`${path}/${id}`)).json()).ticket;
   await expect.poll(async () => (await read(moving.id)).status).toBe("cancelled");
+  releaseMoveRefresh();
+  await page.unroute(`**${path}?*`);
   await expect(row(moving.id)).toBeInViewport();
   await page.route(`**${path}/*/move`, (route) =>
     route.fulfill({
@@ -575,6 +623,7 @@ test("reconciles 10,000 tickets through failed pages, middle moves and realtime 
     owner.scrollTop += node.getBoundingClientRect().top - owner.getBoundingClientRect().top - 32;
   });
   await expect(row(outside.id)).toContainText("Changed outside the render window");
+  expect(await mountedList.evaluate((node) => node.isConnected)).toBe(true);
   const bursts = [];
   for (let i = 0; i < (process.env.KANVIL_SCALE_BENCHMARK === "1" ? 5 : 1); i++) {
     await page.evaluate(() => {

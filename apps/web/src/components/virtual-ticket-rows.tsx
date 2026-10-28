@@ -75,6 +75,21 @@ export function VirtualTicketRows<T extends { id: string }>({
   useLayoutEffect(() => virtual["_didMount"](), [virtual]);
   useLayoutEffect(() => {
     const element = origin.current;
+    if (!scroll || !element) return undefined;
+    const content = element.closest(".ticket-table") ?? scroll.firstElementChild;
+    if (!content) return undefined;
+    // A sibling section's measured height moves this origin without rendering its parent.
+    const observer = new ResizeObserver(() => {
+      const offset =
+        element.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+      setMargin((previous) => (Math.abs(offset - previous) > 0.5 ? offset : previous));
+    });
+    observer.observe(content);
+    for (const section of content.children) observer.observe(section);
+    return () => observer.disconnect();
+  }, [scroll]);
+  useLayoutEffect(() => {
+    const element = origin.current;
     const owner = element?.closest<HTMLElement>(".table-scroll, .ticket-board") ?? null;
     if (owner !== scroll) setScroll(owner);
     const offset =

@@ -11,6 +11,8 @@ import {
   memberName,
   permissions,
   type Operation,
+  type Input,
+  type OutputOf,
   type Permission,
   type Workspace,
 } from "@kanvil/contracts";
@@ -44,12 +46,15 @@ export async function signOut(
   window.location.assign(next);
 }
 // `before` runs ahead of the refetch, such as leaving a page whose subject the write removed.
-export function useOperation<K extends Operation>(name: K, before?: () => Promise<unknown>) {
+export function useOperation<K extends Operation>(
+  name: K,
+  before?: (saved: OutputOf<K, Input<K>>) => unknown,
+) {
   const cache = useQueryClient();
   return useMutation({
     ...api.action(name),
-    onSuccess: async () => {
-      await before?.();
+    onSuccess: async (saved) => {
+      await before?.(saved);
       return cache.invalidateQueries({ queryKey: ["kanvil"] });
     },
   });

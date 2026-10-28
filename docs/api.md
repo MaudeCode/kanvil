@@ -4,6 +4,8 @@ The HTTP API, MCP tools, and apps execute the same ticket operations and permiss
 
 Runnable MCP and durable realtime examples, plus the worker ownership sequence, are in [examples](../examples/README.md).
 
+The typed client's `api.call` and `api.callPublic` accept an optional `AbortSignal` as their third argument. Its query helpers pass React Query cancellation to the transport, so obsolete list reads stop downloading and aborted reads are not retried.
+
 ## Authentication
 
 Browser and native clients use Better Auth sessions with local login or configured OIDC. Public registration is closed. Initial owner setup requires `KANVIL_SETUP_TOKEN` and is available only before any account exists.
