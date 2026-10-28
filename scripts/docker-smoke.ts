@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
+import { experimentalVersion, isReleaseVersion } from "./release-version.ts";
 import { writeScriptReport } from "./testing/policy.ts";
 
 const started = new Date();
@@ -59,18 +60,17 @@ const credentials = z.object({ id: z.string(), key: z.string() });
 const attachmentSchema = z.object({ id: z.uuid() });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
-  const expectedVersion = execFileSync(
-    "docker",
-    [
-      "image",
-      "inspect",
-      env.KANVIL_IMAGE,
-      "--format",
-      '{{index .Config.Labels "org.opencontainers.image.version"}}',
-    ],
-    { encoding: "utf8" },
-  ).trim();
-  expect(expectedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  const label = (name: string) =>
+    execFileSync(
+      "docker",
+      ["image", "inspect", env.KANVIL_IMAGE, "--format", `{{index .Config.Labels "${name}"}}`],
+      { encoding: "utf8" },
+    ).trim();
+  const expectedVersion = label("org.opencontainers.image.version");
+  expect(isReleaseVersion(expectedVersion)).toBe(true);
+  // An experimental build names the commit its revision label records.
+  if (expectedVersion.includes("-experimental."))
+    expect(expectedVersion).toBe(experimentalVersion(label("org.opencontainers.image.revision")));
   await run("docker", ["compose", "up", "-d", "--no-build", "--wait"]);
   browser = await chromium.launch();
   const page = await browser.newPage();
