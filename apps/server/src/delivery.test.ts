@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createHmac } from "node:crypto";
-import { createServer, type IncomingHttpHeaders } from "node:http";
 import { createServer as createTcpServer, type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import type { Project, Ticket } from "@kanvil/contracts";
-import { createFixture, startMailbox } from "./test-fixture.ts";
+import {
+  createFixture,
+  startMailbox,
+  startHttpReceiver,
+  type ReceivedRequest,
+} from "./test-fixture.ts";
 import { createApplication } from "./app.ts";
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import { createHttpSender, createMailSender } from "./adapters/outbound.ts";
@@ -25,22 +29,15 @@ function portOf(address: string | AddressInfo | null) {
   if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
   return address.port;
 }
-type Received = { url: string; headers: IncomingHttpHeaders; body: string };
 // A local HTTP receiver standing in for webhooks, ntfy, Gotify, and chat services.
 async function receiver() {
-  const state = { status: 200, location: "", received: [] as Received[] };
-  const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk: Buffer) => (body += chunk.toString()));
-    request.on("end", () => {
-      state.received.push({ url: request.url ?? "", headers: request.headers, body });
-      response.writeHead(state.status, state.location ? { Location: state.location } : {});
-      response.end();
-    });
+  const state = { status: 200, location: "", received: [] as ReceivedRequest[] };
+  const http = await startHttpReceiver((request, response) => {
+    state.received.push(request);
+    response.writeHead(state.status, state.location ? { Location: state.location } : {});
+    response.end();
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const port = portOf(server.address());
-  return { state, port, url: `http://127.0.0.1:${port}`, close: () => server.close() };
+  return { state, ...http };
 }
 describe("notification channels and project destinations", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -97,7 +94,7 @@ describe("notification channels and project destinations", () => {
     });
   });
   afterAll(async () => {
-    http?.close();
+    await http?.close();
     await mail?.close();
     await app?.close();
     await fixture?.close();

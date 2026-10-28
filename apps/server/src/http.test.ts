@@ -1106,7 +1106,7 @@ describe("HTTP, realtime, and MCP", () => {
             [token.id],
           );
         const databaseUrl = new URL(fixture.config.DATABASE_URL);
-        // Fail a blocking write at PostgreSQL's lock boundary, without timing the response.
+        // Fail a credential-row write at PostgreSQL's lock boundary, without timing the response.
         databaseUrl.searchParams.set("options", "-c lock_timeout=100ms");
         const database = createDatabase({ ...fixture.config, DATABASE_URL: databaseUrl.href });
         const unlimited = await createApplication(database, {
@@ -1148,20 +1148,20 @@ describe("HTTP, realtime, and MCP", () => {
           if (reads.status !== "fulfilled") throw reads.reason;
           expect(reads.value.map((response) => response.status)).toEqual([200, 200, 200]);
           expect(mcp.status).toBe("fulfilled");
-          const [created, tool] = await Promise.all([
-            fetch(url(`/api/v1/projects/${project.id}/tickets`), {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token.key}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ title: "Created while the credential row is locked" }),
-            }),
-            sdk.callTool({
-              name: "create_ticket",
-              arguments: { projectId: project.id, title: "MCP creation with a locked credential" },
-            }),
-          ]);
+          // Keep our own domain writes sequential: both take the global write lock, which
+          // must not become a second target of the credential probe's 100 ms timeout.
+          const created = await fetch(url(`/api/v1/projects/${project.id}/tickets`), {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token.key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ title: "Created while the credential row is locked" }),
+          });
+          const tool = await sdk.callTool({
+            name: "create_ticket",
+            arguments: { projectId: project.id, title: "MCP creation with a locked credential" },
+          });
           expect(created.status).toBe(200);
           expect(ticketSchema.parse(await created.json())).toMatchObject({
             projectId: project.id,
