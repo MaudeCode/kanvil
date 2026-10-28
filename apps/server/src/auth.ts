@@ -65,6 +65,7 @@ const googleProfileSchema = z.object({
 });
 
 export function createAuth(database: Database, config: Config) {
+  const adapter = drizzleAdapter(database.db, { provider: "pg", schema, transaction: true });
   const instance = createInstance(database, config);
   const credentials = socialCredentials(config);
   const mail =
@@ -121,7 +122,21 @@ export function createAuth(database: Database, config: Config) {
     appName: "Kanvil",
     baseURL: config.KANVIL_URL,
     secret: config.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(database.db, { provider: "pg", schema, transaction: true }),
+    database: (options: Parameters<typeof adapter>[0]) => {
+      const base = adapter(options);
+      const update: typeof base.update = (input) => {
+        const fields = Object.keys(input.update);
+        // Verification timestamps serialize unlimited keys; enforcement uses atomic increments.
+        if (
+          input.model === "apikey" &&
+          fields.length > 0 &&
+          fields.every((field) => field === "lastRequest" || field === "updatedAt")
+        )
+          return base.findOne({ model: input.model, where: input.where });
+        return base.update(input);
+      };
+      return { ...base, update };
+    },
     trustedOrigins: config.trustedOrigins,
     emailAndPassword: {
       enabled: true,

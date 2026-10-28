@@ -22,6 +22,7 @@ import {
   type ChangeEvent,
 } from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
+import { createDatabase } from "./database.ts";
 import { createFixture } from "./test-fixture.ts";
 import { startImportSources } from "./import-source-fixture.ts";
 
@@ -909,6 +910,109 @@ describe("HTTP, realtime, and MCP", () => {
       expect((await read(created.key)).status).toBe(401);
     },
   );
+  it.each([false, true])(
+    "authenticates concurrent HTTP and MCP requests without locking an unlimited key, global=%s",
+    async (global) => {
+      const project = await newProject();
+      for (const instanceLimit of [false, true]) {
+        const token = await credential(global ? null : project.id);
+        if (instanceLimit)
+          await fixture.database.pool.query(
+            "UPDATE apikey SET rate_limit_enabled = false WHERE id = $1",
+            [token.id],
+          );
+        const databaseUrl = new URL(fixture.config.DATABASE_URL);
+        // Fail a blocking write at PostgreSQL's lock boundary, without timing the response.
+        databaseUrl.searchParams.set("options", "-c lock_timeout=100ms");
+        const database = createDatabase(databaseUrl.href);
+        const unlimited = await createApplication(database, {
+          ...fixture.config,
+          KANVIL_API_KEY_RATE_LIMIT_ENABLED: instanceLimit,
+        });
+        const fetch = async (input: string | URL | Request, init?: RequestInit) =>
+          unlimited.app.fetch(new Request(input, init));
+        const sdk = new Client({ name: "locked-key-test", version: "1.0.0" });
+        const locker = await fixture.database.pool.connect();
+        const snapshot = async () =>
+          (
+            await locker.query("SELECT last_request, updated_at FROM apikey WHERE id = $1", [
+              token.id,
+            ])
+          ).rows[0];
+        try {
+          await locker.query("BEGIN");
+          await locker.query("SELECT id FROM apikey WHERE id = $1 FOR UPDATE", [token.id]);
+          const before = await snapshot();
+          const transport = new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+            requestInit: { headers: { Authorization: `Bearer ${token.key}` } },
+            fetch,
+          });
+          const [reads, mcp] = await Promise.allSettled([
+            Promise.all(
+              Array.from({ length: 3 }, () =>
+                fetch(url("/api/v1/projects"), {
+                  headers: { Authorization: `Bearer ${token.key}` },
+                }),
+              ),
+            ),
+            sdk.connect(transport).then(async () => {
+              const result = await sdk.callTool({ name: "list_projects", arguments: {} });
+              expect(result.isError).not.toBe(true);
+            }),
+          ]);
+          expect(reads.status).toBe("fulfilled");
+          if (reads.status !== "fulfilled") throw reads.reason;
+          expect(reads.value.map((response) => response.status)).toEqual([200, 200, 200]);
+          expect(mcp.status).toBe("fulfilled");
+          const [created, tool] = await Promise.all([
+            fetch(url(`/api/v1/projects/${project.id}/tickets`), {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token.key}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ title: "Created while the credential row is locked" }),
+            }),
+            sdk.callTool({
+              name: "create_ticket",
+              arguments: { projectId: project.id, title: "MCP creation with a locked credential" },
+            }),
+          ]);
+          expect(created.status).toBe(200);
+          expect(ticketSchema.parse(await created.json())).toMatchObject({
+            projectId: project.id,
+            title: "Created while the credential row is locked",
+          });
+          expect(tool.isError).not.toBe(true);
+          expect(await snapshot()).toEqual(before);
+        } finally {
+          await locker.query("ROLLBACK");
+          locker.release();
+          await sdk.close();
+          await unlimited.close();
+          await database.pool.end();
+        }
+      }
+    },
+  );
+  it("keeps rate limits and usage quotas atomic under concurrent authentication", async () => {
+    const project = await newProject();
+    for (const rateLimited of [false, true]) {
+      const token = await credential(project.id);
+      await fixture.database.pool.query(
+        `UPDATE apikey SET rate_limit_enabled = $2, rate_limit_max = 2,
+          request_count = 0, last_request = NULL, remaining = $3 WHERE id = $1`,
+        [token.id, rateLimited, rateLimited ? null : 2],
+      );
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, async () =>
+          request("/api/v1/projects", { headers: { Authorization: `Bearer ${token.key}` } }),
+        ),
+      );
+      expect(responses.filter((response) => response.status === 200)).toHaveLength(2);
+      expect(responses.filter((response) => response.status === 401)).toHaveLength(4);
+    }
+  });
   it("never treats missing or malformed credential project metadata as global access", async () => {
     const project = await newProject(),
       token = await credential(project.id);
