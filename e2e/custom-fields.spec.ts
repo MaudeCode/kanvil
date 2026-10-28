@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { customFieldSchema } from "../packages/contracts/src/index.ts";
 import { expect, test } from "./test.ts";
 import { signIn } from "./auth.ts";
 import { choose } from "./controls.ts";
@@ -47,6 +49,30 @@ test("administrators define custom fields that the composer, list, filters, and 
   await page.getByRole("checkbox", { name: "Severity", exact: true }).check();
   await page.keyboard.press("Escape");
   const row = page.locator(".ticket-row", { hasText: "Checkout fails for guests" });
+  await expect(row.getByRole("combobox", { name: "Severity", exact: true })).toContainText("High");
+  // Definition revisions must refresh memoized cells even when the ticket's data has not changed.
+  const definitions = z
+    .array(customFieldSchema)
+    .parse(await (await page.request.get(`/api/v1/projects/${project.id}/custom-fields`)).json());
+  const severityField = definitions.find((field) => field.name === "Severity");
+  if (!severityField) throw new Error("Missing Severity field");
+  const renamed = customFieldSchema.parse(
+    await (
+      await page.request.patch(`/api/v1/projects/${project.id}/custom-fields/${severityField.id}`, {
+        data: { expectedVersion: severityField.version, name: "Severity revised" },
+      })
+    ).json(),
+  );
+  await expect(row.getByRole("combobox", { name: "Severity revised", exact: true })).toContainText(
+    "High",
+  );
+  expect(
+    (
+      await page.request.patch(`/api/v1/projects/${project.id}/custom-fields/${severityField.id}`, {
+        data: { expectedVersion: renamed.version, name: "Severity" },
+      })
+    ).ok(),
+  ).toBe(true);
   await expect(row.getByRole("combobox", { name: "Severity", exact: true })).toContainText("High");
   await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
     data: { title: "Typo on the landing page" },

@@ -3,6 +3,7 @@ import { signIn, ownerPassword, useEmailLogin } from "./auth.ts";
 import {
   addAcceptanceCriteria,
   choose,
+  expectTicketCount,
   openSearch,
   setProperty,
   settingsLink,
@@ -889,8 +890,17 @@ test("home summarizes assigned work and activity, and My work lists every assign
 }) => {
   await signIn(page);
   const session = await (await page.request.get("/api/auth/get-session")).json();
+  const createdWorkspace = await page.request.post("/api/v1/workspaces", {
+    data: { name: "Z assigned work", slug: "assigned-work" },
+  });
+  expect(createdWorkspace.ok()).toBe(true);
+  const workspace = await createdWorkspace.json();
   const create = async (key: string, name: string) =>
-    (await page.request.post("/api/v1/projects", { data: { key, name } })).json();
+    (
+      await page.request.post("/api/v1/projects", {
+        data: { key, name, workspaceId: workspace.id },
+      })
+    ).json();
   const ticket = async (projectId: string, data: Record<string, unknown>) =>
     (
       await page.request.post(`/api/v1/projects/${projectId}/tickets`, {
@@ -912,7 +922,9 @@ test("home summarizes assigned work and activity, and My work lists every assign
   });
   await ticket(beta.id, { title: "Beta finished assignment", status: "done" });
 
-  await page.goto("/");
+  await page.goto(`/projects/${alpha.id}`);
+  await expect(page.getByRole("heading", { name: "Assigned alpha", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Home", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   const assigned = page.getByRole("region", { name: "Assigned to you" });
   await expect(assigned.getByRole("link", { name: new RegExp(overdue.title) })).toBeVisible();
@@ -942,12 +954,25 @@ test("home summarizes assigned work and activity, and My work lists every assign
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await toggleDisplay(page, "Project");
   await page.keyboard.press("Escape");
+  await expectTicketCount(page, 103);
   await expect(
-    page.getByRole("rowgroup", { name: "Assigned alpha tickets" }).locator("tr.ticket-row"),
-  ).toHaveCount(101);
+    page.getByRole("button", { name: "Collapse Assigned alpha tickets", exact: true }),
+  ).toContainText("101");
   await expect(
-    page.getByRole("rowgroup", { name: "Assigned beta tickets" }).locator("tr.ticket-row"),
-  ).toHaveCount(2);
+    page.getByRole("button", { name: "Collapse Assigned beta tickets", exact: true }),
+  ).toContainText("2");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The end of the complete first project lies beyond the initial 100-ticket response.
+  await page.locator("tr.ticket-row .ticket-title").first().focus();
+  for (const title of [
+    "Beta upcoming assignment",
+    "Beta overdue assignment",
+    "Alpha assignment 101",
+  ]) {
+    await page.keyboard.press("k");
+    await expect(page.locator("tr.ticket-row[data-active=true]")).toContainText(title);
+    await expect(page.locator("tr.ticket-row[data-active=true]")).toBeInViewport();
+  }
 });
 
 test("My work moves a ticket into Overdue when its due time passes while the page is open", async ({

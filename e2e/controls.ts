@@ -1,3 +1,4 @@
+import { t } from "../packages/contracts/src/i18n/index.ts";
 import { expect, type Locator, type Page, type Request } from "@playwright/test";
 
 // Prefers the combobox inside the open popover or dialog, since list rows carry inline editors too.
@@ -60,6 +61,10 @@ export function ticketRows(page: Page) {
   return page.getByRole("table", { name: "Tickets", exact: true }).locator("tbody tr.ticket-row");
 }
 
+// Mounted rows are a window; completeness is the list's translated logical count.
+export async function expectTicketCount(page: Page, count: number) {
+  await expect(page.locator("footer")).toHaveText(t("ticket.list.count", { count, lng: "en-US" }));
+}
 export async function setProperty(scope: Page | Locator, label: string, option: string) {
   await scope.getByRole("combobox", { name: label, exact: true }).click();
   const page = "page" in scope ? scope.page() : scope;
@@ -157,4 +162,34 @@ export function sheetMotion(phase: "enter" | "exit", slot = "sheet-content") {
     `${slot} translate ${phase}`,
     `sheet-overlay opacity ${phase}`,
   ];
+}
+
+// Account query snapshots use IndexedDB; preferences and drafts still use localStorage.
+export function privateCache(page: Page, key?: string) {
+  return page.evaluate(
+    (name) =>
+      new Promise<string>((resolve, reject) => {
+        const request = indexedDB.open("kanvil-private-cache", 1);
+        request.addEventListener("success", () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("clients")) {
+            db.close();
+            resolve("");
+            return;
+          }
+          const store = db.transaction("clients").objectStore("clients");
+          const read = name === undefined ? store.getAll() : store.get(name);
+          read.addEventListener("success", () => {
+            db.close();
+            resolve(JSON.stringify(read.result) ?? "");
+          });
+          read.addEventListener("error", () => {
+            db.close();
+            reject(read.error);
+          });
+        });
+        request.addEventListener("error", () => reject(request.error));
+      }),
+    key,
+  );
 }

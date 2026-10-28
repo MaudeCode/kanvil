@@ -116,6 +116,38 @@ const application = await createApplication(
     jobs: (name, intervalMs, run) => createPollingJob(name, Math.min(intervalMs, 250), run),
   },
 );
+// Bulk data belongs to this disposable server, never a production route or UI create loop.
+application.app.post("/_fixtures/ticket-scale", async (c) => {
+  const session = await application.auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.json({ error: "Sign in first" }, 401);
+  const input = z
+    .object({ projectId: z.uuid(), mode: z.enum(["mixed", "planning", "work"]).default("mixed") })
+    .parse(await c.req.json());
+  const result = await fixture.database.pool.query<{ id: string }>(
+    `INSERT INTO tickets (project_id, key, number, title, description, acceptance_criteria,
+      status, state_id, priority, kind, difficulty, labels, assignee_id, start_at, due_at, position, created_by, custom_fields)
+     SELECT p.id, p.key || '-' || n, n,
+       'Scale ticket ' || n || ': a wrapping title that remains readable when the viewport is narrow',
+       'Ticket ' || n || E'\n' || repeat('Requirement detail. ', 160),
+       'Acceptance for ' || n || E'\n' || repeat('Acceptance detail. ', 60),
+       s.category, s.id, 'medium', 'bug', 'med',
+       CASE WHEN n % 3 = 0 THEN ARRAY['scale'] ELSE ARRAY[]::text[] END,
+       $2, now(), now() + interval '7 days', n * 1024, $2,
+       COALESCE((SELECT jsonb_object_agg(f.id, 'true'::jsonb) FROM custom_fields f WHERE f.project_id = p.id), '{}'::jsonb)
+     FROM projects p CROSS JOIN generate_series(1, 10000) n
+     JOIN workflow_states s ON s.project_id = p.id AND s.category =
+       CASE WHEN $3 = 'planning' THEN 'backlog' WHEN $3 = 'work' THEN 'todo'
+       WHEN n <= 7000 THEN 'done' WHEN n <= 8000 THEN 'todo'
+       WHEN n <= 8500 THEN 'backlog' WHEN n <= 9000 THEN 'in_progress'
+       WHEN n <= 9500 THEN 'in_review' ELSE 'cancelled' END
+     WHERE p.id = $1 RETURNING id`,
+    [input.projectId, session.user.id, input.mode],
+  );
+  await fixture.database.pool.query("UPDATE projects SET next_number = 10001 WHERE id = $1", [
+    input.projectId,
+  ]);
+  return c.json({ ids: result.rows.map((row) => row.id) });
+});
 const server = serve(
   {
     fetch: application.app.fetch,

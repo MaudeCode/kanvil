@@ -3,9 +3,18 @@ import { Toaster } from "@/components/ui/sonner";
 import { ProjectContextMenu } from "./components/object-context-menu.tsx";
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createPrivatePersister } from "./lib/private-cache.ts";
+import {
+  QueryClient,
+  QueryClientProvider,
+  IsRestoringProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import {
+  persistQueryClientRestore,
+  persistQueryClientSave,
+  type PersistQueryClientOptions,
+} from "@tanstack/react-query-persist-client";
+import { createPrivatePersister, subscribePrivateCache } from "./lib/private-cache.ts";
 import {
   createRootRoute,
   createRoute,
@@ -153,41 +162,55 @@ function SignedInSession({
   const [persistence] = useState(() =>
     createPrivatePersister(localStorage, `kanvil:${user.id}:cache`),
   );
+  const [restoring, setRestoring] = useState(true);
   useEffect(() => {
     persistence.resume();
+    let closed = false;
+    let unsubscribe: (() => void) | undefined;
+    const options: PersistQueryClientOptions = {
+      queryClient: cache,
+      persister: persistence.persister,
+      maxAge: 7 * 86400000,
+      buster: `kanvil-v2:${user.role ?? "user"}`,
+      dehydrateOptions: {
+        shouldDehydrateMutation: () => false,
+        shouldDehydrateQuery: (query) =>
+          query.state.status === "success" && query.queryKey[0] === "kanvil",
+      },
+    };
+    void persistQueryClientRestore(options)
+      .catch(() => {})
+      .then(() => {
+        if (closed) return;
+        unsubscribe = subscribePrivateCache(cache, () => persistQueryClientSave(options));
+        setRestoring(false);
+      });
     return () => {
+      closed = true;
       persistence.pause();
+      unsubscribe?.();
       cache.clear();
     };
-  }, [cache, persistence]);
+  }, [cache, persistence, user.role]);
   return (
     <Identity
       value={{
         ...user,
         image: user.image ?? null,
         admin: hasAdminRole(user.role),
-        clearPrivateData: () => {
+        clearPrivateData: async () => {
           persistence.pause();
           cache.clear();
           clearPrivateStorage(user.id);
+          await persistence.clear();
         },
       }}
     >
-      <PersistQueryClientProvider
-        client={cache}
-        persistOptions={{
-          persister: persistence.persister,
-          maxAge: 7 * 86400000,
-          buster: `kanvil-v2:${user.role ?? "user"}`,
-          dehydrateOptions: {
-            shouldDehydrateMutation: () => false,
-            shouldDehydrateQuery: (query) =>
-              query.state.status === "success" && query.queryKey[0] === "kanvil",
-          },
-        }}
-      >
-        <Outlet />
-      </PersistQueryClientProvider>
+      <QueryClientProvider client={cache}>
+        <IsRestoringProvider value={restoring}>
+          <Outlet />
+        </IsRestoringProvider>
+      </QueryClientProvider>
     </Identity>
   );
 }

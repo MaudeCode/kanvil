@@ -1,5 +1,7 @@
 import {
   accountMenu,
+  expectTicketCount,
+  privateCache,
   ticketRows,
   choose,
   signOut,
@@ -237,7 +239,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     expect(response.status()).toBe(200);
   }
   await page.goto(`/projects/${projectId}`);
-  await expect(ticketRows(page)).toHaveCount(55);
+  await expectTicketCount(page, 55);
   await expect(page.getByRole("button", { name: "Load more", exact: true })).toHaveCount(0);
   await page.screenshot({ path: "test-results/tickets-desktop.png", fullPage: true });
   await searchTickets(page, "Changed by another agent");
@@ -258,14 +260,14 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
     "Agent edits",
   );
   await chooseTicketView(page, "All tickets");
-  await expect(ticketRows(page)).toHaveCount(55);
+  await expectTicketCount(page, 55);
   await expect(
     page.getByRole("rowgroup", { name: "In review tickets", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Collapse To do tickets", exact: true }).click();
   await expect(ticketRows(page)).toHaveCount(1);
   await page.getByRole("button", { name: "Expand To do tickets", exact: true }).click();
-  await expect(ticketRows(page)).toHaveCount(55);
+  await expectTicketCount(page, 55);
   await chooseTicketView(page, "Agent edits");
   await expect(ticketRows(page)).toHaveCount(1);
   await accountMenu(page);
@@ -317,6 +319,7 @@ test("owner setup, tickets, discussion, attachments, credentials, and realtime c
   await page.screenshot({ path: "test-results/ticket-mobile-web.png", fullPage: true });
   await signOut(page);
   await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+  expect(await privateCache(page)).toBe("[]");
   expect(
     await page.evaluate(() =>
       Object.keys(localStorage).some(
