@@ -1752,6 +1752,7 @@ describe("ticket operations on PostgreSQL", () => {
     });
     const read = await domain.execute("get_ticket", input, owner);
     expect(read.claim).toBeNull();
+    expect(read.ticket.claimRequired).toBe(false);
     expect(read.ticket.status).toBe("in_progress");
     await expect(
       domain.execute("renew_claim", { ...input, claimId: claim.id }, owner),
@@ -1760,19 +1761,19 @@ describe("ticket operations on PostgreSQL", () => {
     expect(activity.items.filter((event) => event.type === "claim.recovered")).toHaveLength(1);
     await domain.execute(
       "update_ticket",
-      { ...input, expectedVersion: 2, changes: { status: "todo" } },
+      { ...input, expectedVersion: 3, changes: { status: "todo" } },
       owner,
     );
     const replacement = await domain.execute(
       "claim_ticket",
-      { ...input, expectedVersion: 3, workerId: "replacement" },
+      { ...input, expectedVersion: 4, workerId: "replacement" },
       worker,
     );
     expect(replacement.id).not.toBe(claim.id);
     await expect(
       domain.execute(
         "update_ticket",
-        { ...input, expectedVersion: 4, claimId: claim.id, changes: { title: "Stale owner" } },
+        { ...input, expectedVersion: 5, claimId: claim.id, changes: { title: "Stale owner" } },
         worker,
       ),
     ).rejects.toMatchObject({ code: "claim_conflict" });
@@ -1788,22 +1789,22 @@ describe("ticket operations on PostgreSQL", () => {
       "expectedVersion",
     );
     await expect(
-      domain.execute("recover_claim", { ...reschedule, expectedVersion: 3 }, worker),
+      domain.execute("recover_claim", { ...reschedule, expectedVersion: 4 }, worker),
     ).rejects.toMatchObject({ code: "version_conflict" });
     expect((await domain.execute("get_ticket", input, owner)).claim?.id).toBe(replacement.id);
     const claimOnly = await domain.actor(writer.id, {
       ownerId: worker.ownerId,
       scopes: ["read", "claim"],
     });
-    await domain.execute("recover_claim", { ...reschedule, expectedVersion: 4 }, claimOnly);
+    await domain.execute("recover_claim", { ...reschedule, expectedVersion: 5 }, claimOnly);
     const rescheduled = await domain.execute("get_ticket", input, claimOnly);
     expect(rescheduled.claim).toBeNull();
-    expect(rescheduled.ticket).toMatchObject({ status: "todo", version: 5 });
+    expect(rescheduled.ticket).toMatchObject({ status: "todo", version: 6 });
     expect((await domain.execute("list_activity", input, claimOnly)).items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "ticket.updated",
-          data: expect.objectContaining({ version: 5, changedFields: ["status", "stateId"] }),
+          data: expect.objectContaining({ version: 6, changedFields: ["status", "stateId"] }),
         }),
         expect.objectContaining({
           type: "claim.recovered",
@@ -1813,13 +1814,68 @@ describe("ticket operations on PostgreSQL", () => {
     );
     const resumed = await domain.execute(
       "claim_ticket",
-      { ...input, expectedVersion: 5, workerId: "resumed-worker" },
+      { ...input, expectedVersion: 6, workerId: "resumed-worker" },
       claimOnly,
     );
     expect(resumed.id).not.toBe(replacement.id);
     await expect(
       domain.execute("renew_claim", { ...input, claimId: replacement.id }, worker),
     ).rejects.toMatchObject({ status: 404 });
+  });
+  it("returns an In review ticket to ordinary worker writes after recovery without reschedule", async () => {
+    const current = await ticket();
+    const worker = await domain.actor(owner.id, {
+      ownerId: "stranded-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const input = { projectId: project.id, ticketId: current.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "stranded-worker" },
+      worker,
+    );
+    const review = await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: 2, claimId: claim.id, changes: { status: "in_review" } },
+      worker,
+    );
+    await fixture.database.pool.query(
+      "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+      [claim.id],
+    );
+    await domain.execute(
+      "recover_claim",
+      {
+        ...input,
+        claimId: claim.id,
+        reason: "The worker stopped after its PR merged",
+        confirmedStopped: true,
+      },
+      worker,
+    );
+    const recovered = await domain.execute("get_ticket", input, worker);
+    expect(recovered).toMatchObject({
+      claim: null,
+      ticket: { status: "in_review", claimRequired: false, version: review.version + 1 },
+    });
+    await expect(
+      domain.execute(
+        "update_ticket",
+        {
+          ...input,
+          expectedVersion: recovered.ticket.version,
+          claimId: claim.id,
+          changes: { status: "done" },
+        },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    const done = await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: recovered.ticket.version, changes: { status: "done" } },
+      worker,
+    );
+    expect(done).toMatchObject({ status: "done", claimRequired: false });
   });
   it("requires scoped project management to cancel live ownership", async () => {
     const ticketRow = await ticket();
@@ -1857,7 +1913,11 @@ describe("ticket operations on PostgreSQL", () => {
     expect(await domain.execute("recover_claim", recover, owner)).toEqual({ ok: true });
     const recovered = await domain.execute("get_ticket", input, owner);
     expect(recovered.claim).toBeNull();
-    expect(recovered.ticket).toMatchObject({ status: "in_progress", version: 2 });
+    expect(recovered.ticket).toMatchObject({
+      status: "in_progress",
+      claimRequired: false,
+      version: 3,
+    });
   });
   it("coordinates competing workers and fences old ownership after recovery", async () => {
     const current = await ticket();
@@ -1924,21 +1984,9 @@ describe("ticket operations on PostgreSQL", () => {
         {
           projectId: project.id,
           ticketId: current.id,
-          expectedVersion: 2,
+          expectedVersion: 3,
           claimId: claim.id,
           changes: { status: "done" },
-        },
-        workers[0]!,
-      ),
-    ).rejects.toMatchObject({ code: "claim_conflict" });
-    await expect(
-      domain.execute(
-        "update_ticket",
-        {
-          projectId: project.id,
-          ticketId: current.id,
-          expectedVersion: 2,
-          changes: { title: "Bypass by omitting ownership token" },
         },
         workers[0]!,
       ),
@@ -1949,6 +1997,7 @@ describe("ticket operations on PostgreSQL", () => {
         {
           projectId: project.id,
           ticketId: current.id,
+          claimId: claim.id,
           kind: "test",
           title: "Stale worker evidence",
           url: "https://example.test/proof",
