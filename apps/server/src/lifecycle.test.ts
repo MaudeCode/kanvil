@@ -51,6 +51,11 @@ vi.mock("./instance.ts", () => ({
   })),
 }));
 vi.mock("./migrate.ts", () => ({ migrateDatabase: state.migrate }));
+vi.mock("../../../scripts/testing/boundaries.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../scripts/testing/boundaries.ts")>()),
+  // The fake pg driver creates no database; keep real socket enforcement and reporting intact.
+  recordBoundary: vi.fn(),
+}));
 
 const config = readConfig({
   NODE_ENV: "test",
