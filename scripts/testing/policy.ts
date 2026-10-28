@@ -120,7 +120,16 @@ function parseReport(value: unknown): LayerReport {
   };
 }
 
-const layers = ["unit", "broker", "search", "browser", "oidc", "package", "docker"] as const;
+const layers = [
+  "unit",
+  "broker",
+  "search",
+  "browser",
+  "oidc",
+  "package",
+  "docker",
+  "renovate",
+] as const;
 type Layer = (typeof layers)[number];
 // A family of tests that reaches real infrastructure. `cases` bounds how many cases each file
 // collects, so a new or expanded heavyweight case fails until it is classified here.
@@ -387,6 +396,14 @@ export const families: readonly Family[] = [
       "Each architecture's image serves the app, MCP, and attachments and restores a backup.",
     cases: { "scripts/docker-smoke.ts": 2 },
   },
+  {
+    name: "Renovate tag selection",
+    layer: "renovate",
+    boundaries: [],
+    property:
+      "Renovate's real Docker versioning and update filter, installed from npm, decide which published tags a stable consumer is offered; a reimplementation would not track Renovate.",
+    cases: { "scripts/renovate-tags.ts": 1 },
+  },
 ];
 
 // The reports a complete CI run requires, one per job and matrix entry.
@@ -402,6 +419,7 @@ export const requiredLayers = [
   "package",
   "docker-amd64",
   "docker-arm64",
+  "renovate",
 ] as const;
 
 export function familyOf(file: string) {

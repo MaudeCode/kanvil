@@ -49,6 +49,12 @@ docker compose up -d --wait
 
 The image supports Linux amd64 and arm64. Replace `latest` with a release version such as `0.1.0`, or pin `ghcr.io/maudecode/kanvil@sha256:YOUR_DIGEST` for an immutable deployment.
 
+To run unreleased code from `main`, opt in explicitly. `ghcr.io/maudecode/kanvil:experimental` follows the newest `main` commit that passed CI; `ghcr.io/maudecode/kanvil:experimental-FULL_COMMIT_SHA` names one such commit and never changes. Experimental builds are not releases: they can carry unfinished features and migrations that a later stable release does not undo, so back up first and do not move an instance from experimental back to an older stable version. Stable tags and `latest` never point to an experimental build, and Renovate's default Docker versioning does not offer experimental tags to stable consumers:
+
+```sh
+KANVIL_IMAGE=ghcr.io/maudecode/kanvil:experimental-0123456789abcdef0123456789abcdef01234567
+```
+
 The app binds to loopback port 5180; change the host port with `KANVIL_PORT`. Set up the HTTPS reverse proxy below before opening the site. The application runs as the `node` user with a read-only root filesystem and temporary `/tmp`. Its health check verifies database connectivity. PostgreSQL storage is kept in the `postgres-data` volume. `docker compose down` retains that volume; removing volumes deletes instance data.
 
 For source builds, use the repository's Node/pnpm versions and run:

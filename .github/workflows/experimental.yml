@@ -1,0 +1,106 @@
+name: Experimental
+
+# Publishes every main commit whose CI run passed as an experimental build: immutable
+# experimental-<SHA> images and a GitHub prerelease, then moves the `experimental` alias forward.
+# Stable releases, `latest`, and npm are untouched. See docs/releasing.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    name: Select the verified commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.identity.outputs.publish }}
+      version: ${{ steps.identity.outputs.version }}
+      revision: ${{ steps.identity.outputs.revision }}
+      run-id: ${{ steps.identity.outputs.run-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - id: identity
+        run: node scripts/release-publish.ts identity
+
+  # Each commit publishes its immutable build outside any shared concurrency group, so a newer
+  # push never discards an older one.
+  images:
+    needs: identity
+    if: needs.identity.outputs.publish == 'true'
+    uses: ./.github/workflows/publish-images.yml
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    with:
+      channel: experimental
+      version: ${{ needs.identity.outputs.version }}
+      revision: ${{ needs.identity.outputs.revision }}
+      run-id: ${{ needs.identity.outputs.run-id }}
+
+  release:
+    name: Create GitHub prerelease
+    needs: [identity, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.identity.outputs.revision }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - name: Announce the published build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KANVIL_VERSION: ${{ needs.identity.outputs.version }}
+          KANVIL_REVISION: ${{ needs.identity.outputs.revision }}
+        run: node scripts/release-publish.ts release
+
+  # Only the alias move is serialized. It always selects the newest published build on main, so
+  # a promotion that waits behind another, or is replaced by a newer one, loses nothing.
+  promote:
+    name: Advance the experimental alias
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: experimental-channel
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Move experimental to the newest published build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/release-publish.ts promote
