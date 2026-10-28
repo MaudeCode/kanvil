@@ -3626,7 +3626,12 @@ export function isOperation(name: string): name is Operation {
   return Object.hasOwn(operations, name);
 }
 export const errorSchema = z.object({
-  error: z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() }),
+  error: z.object({
+    status: z.number().int().optional(),
+    code: z.string(),
+    message: z.string(),
+    details: z.unknown().optional(),
+  }),
 });
 export const streamErrorSchema = z.object({
   status: z.number().int().min(400).max(599),

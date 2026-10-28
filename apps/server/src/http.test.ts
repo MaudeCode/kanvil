@@ -1,10 +1,21 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createClient } from "@kanvil/client";
 import { z } from "zod";
 import {
+  ApiError,
   attachmentLimit,
   attachmentPath,
+  errorSchema,
   ticketSchema,
   timeEntrySchema,
   snapshotSchema,
@@ -24,6 +35,32 @@ async function readSseUntil(reader: ReadableStreamDefaultReader<Uint8Array>, val
     if (!received.includes(value) && /event:\s*error/.test(received)) throw new Error(received);
   }
   return received;
+}
+
+// Reads a rejected tool call's error envelope, and the same fields from a rejected HTTP call.
+async function mcpRejection(mcp: Client, name: string, args: Record<string, unknown>) {
+  const response = await mcp.callTool({ name, arguments: args });
+  expect(response.isError).toBe(true);
+  expect(response.structuredContent).toBeUndefined();
+  const [content] = z
+    .array(z.object({ type: z.literal("text"), text: z.string() }))
+    .parse(response.content);
+  expect(content!.text, "the error content is the JSON error envelope").toMatch(/^\{/);
+  return errorSchema.parse(JSON.parse(content!.text)).error;
+}
+function httpRejection(call: Promise<unknown>) {
+  return call.then(
+    () => expect.unreachable("The HTTP call should fail"),
+    (error: unknown) => {
+      if (!(error instanceof ApiError)) throw error;
+      return {
+        status: error.status,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      };
+    },
+  );
 }
 
 describe("HTTP, realtime, and MCP", () => {
@@ -81,6 +118,16 @@ describe("HTTP, realtime, and MCP", () => {
       headers: key ? () => ({ Authorization: `Bearer ${key}` }) : sessionHeaders,
       fetch: async (input, init) => application.app.fetch(new Request(input, init)),
     });
+  const mcpClient = async (key: string) => {
+    const mcp = new Client({ name: "kanvil-error-test", version: "1.0.0" });
+    await mcp.connect(
+      new StreamableHTTPClientTransport(new URL(url("/mcp")), {
+        requestInit: { headers: { Authorization: `Bearer ${key}` } },
+        fetch: async (input, init) => application.app.fetch(new Request(input, init)),
+      }),
+    );
+    return mcp;
+  };
   const listedProjects = async (query = "") =>
     z
       .array(z.object({ id: z.string() }))
@@ -599,6 +646,126 @@ describe("HTTP, realtime, and MCP", () => {
       } finally {
         await sdk.close();
       }
+    }
+  });
+  it("returns the HTTP error envelope from rejected MCP tool calls", async () => {
+    const api = client(),
+      project = await newProject(),
+      other = await newProject();
+    const token = await credential(project.id),
+      readOnly = await credential(project.id, ["read"]),
+      outsider = await credential(other.id);
+    const unready = await api.call("create_ticket", { projectId: project.id, title: "Not ready" });
+    const ready = await api.call("create_ticket", {
+      projectId: project.id,
+      title: "Ready",
+      description: "Claimable work",
+      acceptanceCriteria: "Errors keep their details",
+      difficulty: "low",
+      automationReady: true,
+    });
+    const worker = await mcpClient(token.key),
+      reader = await mcpClient(readOnly.key),
+      stranger = await mcpClient(outsider.key);
+    try {
+      const claim = { projectId: project.id, workerId: "envelope-worker", expectedVersion: 1 };
+      const notReady = await mcpRejection(worker, "claim_ticket", {
+        ...claim,
+        ticketId: unready.id,
+      });
+      expect(notReady).toMatchObject({
+        code: "not_ready",
+        details: {
+          ready: false,
+          reasons: expect.arrayContaining([expect.objectContaining({ code: "not_enabled" })]),
+        },
+      });
+      expect(notReady).toMatchObject(
+        await httpRejection(
+          client(token.key).call("claim_ticket", { ...claim, ticketId: unready.id }),
+        ),
+      );
+      expect(
+        await mcpRejection(worker, "claim_ticket", {
+          ...claim,
+          ticketId: ready.id,
+          leaseSeconds: 86401,
+        }),
+      ).toMatchObject({
+        code: "validation_error",
+        details: { path: "leaseSeconds", maximum: 86400 },
+      });
+      expect(
+        await mcpRejection(worker, "claim_ticket", {
+          ...claim,
+          ticketId: ready.id,
+          expectedVersion: 9,
+        }),
+      ).toMatchObject({ code: "version_conflict", details: { currentVersion: 1 } });
+      const recover = {
+        projectId: project.id,
+        ticketId: ready.id,
+        claimId: crypto.randomUUID(),
+        reason: "The worker process exited",
+        confirmedStopped: true,
+        reschedule: true,
+      };
+      const invalid = await mcpRejection(worker, "recover_claim", recover);
+      expect(invalid).toEqual({
+        code: "validation_error",
+        message: "Invalid request",
+        details: [
+          {
+            path: "expectedVersion",
+            message: "expectedVersion is required to reschedule recovered work",
+          },
+        ],
+      });
+      const { projectId, ticketId, ...body } = recover;
+      const http = await request(
+        `/api/v1/projects/${projectId}/tickets/${ticketId}/claim/recover`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      expect(http.status).toBe(400);
+      expect({ error: invalid }).toEqual(await http.json());
+      // Callers without claim access or project membership learn nothing about readiness.
+      for (const [mcp, key] of [
+        [reader, readOnly.key],
+        [stranger, outsider.key],
+      ] as const) {
+        const denied = await mcpRejection(mcp, "claim_ticket", { ...claim, ticketId: unready.id });
+        expect(denied.details).toBeUndefined();
+        expect(denied).toEqual(
+          await httpRejection(client(key).call("claim_ticket", { ...claim, ticketId: unready.id })),
+        );
+      }
+      const execute = vi
+        .spyOn(application.domain, "execute")
+        .mockRejectedValueOnce(new Error("connection to 10.0.0.5 refused for kanvil_secret"));
+      try {
+        const internal = await mcpRejection(worker, "get_ticket", {
+          projectId: project.id,
+          ticketId: ready.id,
+        });
+        expect(internal).toEqual({
+          code: "internal_error",
+          message: "The request could not be completed",
+        });
+      } finally {
+        execute.mockRestore();
+      }
+      const fetched = await worker.callTool({
+        name: "get_ticket",
+        arguments: { projectId: project.id, ticketId: ready.id },
+      });
+      expect(fetched.isError).not.toBe(true);
+      expect(fetched.structuredContent).toMatchObject({ result: { ticket: { id: ready.id } } });
+    } finally {
+      await Promise.all([worker.close(), reader.close(), stranger.close()]);
     }
   });
   it("lets administrators cancel a revoked worker's live claim and fence its old claim ID", async () => {
