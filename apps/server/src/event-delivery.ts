@@ -4,6 +4,8 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { BrokerSettings } from "@kanvil/contracts/instance";
 import { createRealtime } from "./realtime.ts";
+import type { Realtime } from "./realtime.ts";
+import { createCleanup } from "./cleanup.ts";
 import { createWakeupBus } from "./adapters/wakeup-buses.ts";
 import { bounded } from "./adapters/rabbitmq.ts";
 import type { WakeupBus, WakeupBusFactory } from "./adapters/ports.ts";
@@ -25,9 +27,32 @@ export async function createEventDelivery(
   database: Database,
   factory: WakeupBusFactory = createWakeupBus,
 ) {
-  const postgres = await createRealtime(config),
-    emitter = new EventEmitter();
+  const cleanup = createCleanup();
+  try {
+    const postgres = await createRealtime(config);
+    cleanup.add("PostgreSQL realtime client", () => postgres.close());
+    return await initializeEventDelivery(instance, database, factory, postgres, cleanup);
+  } catch (error) {
+    return cleanup.fail(error);
+  }
+}
+
+async function initializeEventDelivery(
+  instance: Instance,
+  database: Database,
+  factory: WakeupBusFactory,
+  postgres: Realtime,
+  cleanup: ReturnType<typeof createCleanup>,
+) {
+  const emitter = new EventEmitter();
   emitter.setMaxListeners(0);
+  cleanup.add("realtime listeners", () => {
+    try {
+      emitter.emit("close");
+    } finally {
+      emitter.removeAllListeners();
+    }
+  });
   const identity = (await instance.read()).identity;
   let bus: WakeupBus | undefined,
     fingerprint = "",
@@ -116,11 +141,23 @@ export async function createEventDelivery(
     if (!bus?.ready() || error) wake();
     trigger();
   });
+  cleanup.add("broker connection", async () => {
+    await bus?.close();
+  });
+  cleanup.add("broker worker", async () => {
+    closed = true;
+    await pending;
+  });
+  cleanup.add("PostgreSQL subscription", unsubscribe);
   const timer = setInterval(() => {
     if (error) wake();
     trigger();
   }, 1000);
   timer.unref();
+  cleanup.add("broker timer", () => {
+    closed = true;
+    clearInterval(timer);
+  });
   trigger();
   return {
     subscribe(listener: () => void) {
@@ -179,16 +216,7 @@ export async function createEventDelivery(
         await probe.close().catch(() => {});
       }
     },
-    async close() {
-      closed = true;
-      clearInterval(timer);
-      unsubscribe();
-      await pending;
-      await bus?.close().catch(() => {});
-      emitter.emit("close");
-      emitter.removeAllListeners();
-      await postgres.close();
-    },
+    close: cleanup.close,
   };
 }
 export type EventDelivery = Awaited<ReturnType<typeof createEventDelivery>>;

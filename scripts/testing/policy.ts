@@ -148,7 +148,7 @@ export const families: readonly Family[] = [
     layer: "unit",
     boundaries: ["database"],
     property:
-      "Transactions under the global write lock, constraints, version checks, idempotency receipts, exclusive claims, events committed with their writes, ordered replay, and permission queries run in PostgreSQL; an in-memory store would not prove them.",
+      "Transactions under the global write lock, constraints, version checks, idempotency receipts, exclusive claims, events committed with their writes, ordered replay, permission queries, and owned-connection teardown run in PostgreSQL; an in-memory store would not prove them.",
     cases: {
       "apps/server/src/account-administration.test.ts": 7,
       "apps/server/src/account-deletion.test.ts": 8,
@@ -162,6 +162,7 @@ export const families: readonly Family[] = [
       "apps/server/src/foundation.test.ts": 5,
       "apps/server/src/imports.test.ts": 9,
       "apps/server/src/invitations.test.ts": 10,
+      "apps/server/src/lifecycle.postgres.test.ts": 1,
       "apps/server/src/mentions.test.ts": 5,
       "apps/server/src/notification-categories.test.ts": 4,
       "apps/server/src/outbox.test.ts": 14,
