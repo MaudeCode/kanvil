@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { eq, sql } from "drizzle-orm";
+import { parseQuery } from "./search.ts";
 import { createFixture } from "./test-fixture.ts";
 import { notifications } from "./schema.ts";
 import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
@@ -1317,6 +1318,14 @@ describe("ticket operations on PostgreSQL", () => {
     expect(await found('"live activity"')).toEqual([live.id, titled.id].toSorted());
     expect(await found('"live activity" acknowledge')).toEqual([live.id]);
     expect(await found('live "activity')).toEqual([]);
+    // Repeated phrases count once, and only the first 8 distinct phrases count.
+    expect(await found('"live activity" '.repeat(12).trim())).toEqual(
+      [live.id, titled.id].toSorted(),
+    );
+    expect(parseQuery('"a" "A" "b" "c" "d" "e" "f" "g" "h" "i" "j" rest')).toEqual({
+      phrases: ["a", "b", "c", "d", "e", "f", "g", "h"],
+      terms: "rest",
+    });
     const listed = await domain.execute(
       "list_tickets",
       { projectId: project.id, q: '"live activity"' },

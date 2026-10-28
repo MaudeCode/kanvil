@@ -13,14 +13,22 @@ import { fail, one } from "./domain.ts";
 // An ILIKE pattern that matches the query literally anywhere in the text.
 export const likePattern = (query: string) =>
   `%${query.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+// Each phrase costs a predicate per searchable field, so only this many distinct ones count.
+export const phraseLimit = 8;
 // Double-quoted segments are exact phrases and the rest is free text; an unpaired quote stays a
-// literal character. A query of only empty quotes searches for itself.
+// literal character. Repeated phrases count once and phrases past `phraseLimit` are dropped, which
+// can only widen the result. A query of only empty quotes searches for itself.
 export function parseQuery(query: string): SearchQuery {
   const phrases: string[] = [];
   const terms = query
     .replace(/"([^"]*)"/gu, (_, phrase: string) => {
       const value = phrase.replace(/\s+/gu, " ").trim();
-      if (value) phrases.push(value);
+      if (
+        value &&
+        phrases.length < phraseLimit &&
+        !phrases.some((seen) => seen.toLowerCase() === value.toLowerCase())
+      )
+        phrases.push(value);
       return " ";
     })
     .replace(/\s+/gu, " ")
