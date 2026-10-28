@@ -11,6 +11,16 @@ const optionalEnv = <T extends z.ZodType>(schema: T) =>
 const envSchema = z
   .object({
     DATABASE_URL: z.url(),
+    // PostgreSQL connections per process; see database.ts. The outbox holds a lock connection while
+    // it queries, so the domain pool needs at least two.
+    KANVIL_DATABASE_POOL_MAX: z.coerce.number().int().min(2).max(1000).default(10),
+    KANVIL_INTEGRATION_POOL_MAX: z.coerce.number().int().min(1).max(1000).default(4),
+    KANVIL_DATABASE_ACQUIRE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(600_000)
+      .default(30_000),
     KANVIL_STORAGE_PROVIDER: optionalEnv(z.enum(["local", "s3"])),
     S3_ENDPOINT: optionalEnv(s3SettingsSchema.shape.endpoint),
     S3_REGION: s3SettingsSchema.shape.region,

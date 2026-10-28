@@ -8,15 +8,11 @@ import { readConfig } from "./config.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 
 const state = vi.hoisted(() => {
-  const controls: { createError?: Error } = {};
+  const controls: { createError?: Error; dropError?: Error } = {};
   const pools: FakePool[] = [];
   const clients: FakeClient[] = [];
   class FakePool {
-    query = vi.fn(async (sql: unknown) => {
-      if (typeof sql === "string" && sql.startsWith("CREATE DATABASE") && controls.createError)
-        throw controls.createError;
-      return { rows: [] };
-    });
+    query = vi.fn(async () => ({ rows: [] }));
     end = vi.fn(async () => {});
     on = vi.fn();
     constructor() {
@@ -25,7 +21,11 @@ const state = vi.hoisted(() => {
   }
   class FakeClient {
     connect = vi.fn(async () => {});
-    query = vi.fn(async () => {});
+    query = vi.fn(async (sql: unknown) => {
+      if (typeof sql !== "string") return;
+      if (sql.startsWith("CREATE DATABASE") && controls.createError) throw controls.createError;
+      if (sql.startsWith("DROP DATABASE") && controls.dropError) throw controls.dropError;
+    });
     end = vi.fn(async () => {});
     on = vi.fn();
     constructor() {
@@ -77,6 +77,7 @@ const jobs: JobScheduler = (_name, _interval, _run) => {
 };
 beforeEach(() => {
   delete state.controls.createError;
+  delete state.controls.dropError;
   state.pools.length = 0;
   state.clients.length = 0;
   state.read.mockReset().mockResolvedValue({ identity: "15a831fa-9240-4870-bdc5-038c51ba03b3" });
@@ -90,7 +91,7 @@ afterEach(() => {
 });
 
 it("unwinds application startup without closing the supplied database", async () => {
-  const database = createDatabase(config.DATABASE_URL);
+  const database = createDatabase(config);
   await expect(
     createApplication(database, config, {
       jobs,
@@ -106,23 +107,23 @@ it("unwinds application startup without closing the supplied database", async ()
 
 it("releases the application pool when the first instance read fails", async () => {
   state.read.mockRejectedValueOnce(startupError);
-  await expect(
-    createApplication(createDatabase(config.DATABASE_URL), config, { jobs }),
-  ).rejects.toBe(startupError);
+  await expect(createApplication(createDatabase(config), config, { jobs })).rejects.toBe(
+    startupError,
+  );
   expect(state.pools[1]?.end).toHaveBeenCalledOnce();
 });
 
 it("unwinds a partially constructed blob owner when its second job fails", async () => {
   throwJob = "blob-transfer";
-  await expect(
-    createApplication(createDatabase(config.DATABASE_URL), config, { jobs }),
-  ).rejects.toBe(startupError);
+  await expect(createApplication(createDatabase(config), config, { jobs })).rejects.toBe(
+    startupError,
+  );
   expect(closed).toEqual(["blob-cleanup"]);
   expect(state.pools[1]?.end).toHaveBeenCalledOnce();
 });
 
 it("attempts all closes in dependency order and shares the result on repeated close", async () => {
-  const application = await createApplication(createDatabase(config.DATABASE_URL), config, {
+  const application = await createApplication(createDatabase(config), config, {
     jobs,
   });
   failJob = "blob-transfer";
@@ -154,7 +155,7 @@ it("preserves startup errors and reports cleanup failures without adapter secret
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   failJob = "blob-transfer";
   await expect(
-    createApplication(createDatabase(config.DATABASE_URL), config, {
+    createApplication(createDatabase(config), config, {
       jobs,
       realtime: async () => {
         throw startupError;
@@ -168,7 +169,7 @@ it("preserves startup errors and reports cleanup failures without adapter secret
 });
 
 it("closes the LISTEN client when event-delivery initialization fails", async () => {
-  const database = createDatabase(config.DATABASE_URL);
+  const database = createDatabase(config);
   state.read.mockRejectedValueOnce(startupError);
   await expect(
     createEventDelivery(config, createInstance(database, config), database),
@@ -178,7 +179,7 @@ it("closes the LISTEN client when event-delivery initialization fails", async ()
 });
 
 it("makes event-delivery close safe to repeat concurrently", async () => {
-  const database = createDatabase(config.DATABASE_URL);
+  const database = createDatabase(config);
   const delivery = await createEventDelivery(config, createInstance(database, config), database);
   await Promise.all([delivery.close(), delivery.close()]);
   await delivery.close();
@@ -186,7 +187,7 @@ it("makes event-delivery close safe to repeat concurrently", async () => {
 });
 
 it("closes PostgreSQL even when an event-delivery close listener throws", async () => {
-  const database = createDatabase(config.DATABASE_URL);
+  const database = createDatabase(config);
   const delivery = await createEventDelivery(config, createInstance(database, config), database);
   delivery.onClose(() => {
     throw new Error("private listener failure");
@@ -197,35 +198,39 @@ it("closes PostgreSQL even when an event-delivery close listener throws", async 
   expect(state.clients[0]?.end).toHaveBeenCalledOnce();
 });
 
-it("ends the fixture admin pool when CREATE DATABASE fails", async () => {
+it("closes the fixture's maintenance connection when CREATE DATABASE fails", async () => {
   state.controls.createError = startupError;
   await expect(createFixture()).rejects.toBe(startupError);
-  expect(state.pools).toHaveLength(1);
-  expect(state.pools[0]?.end).toHaveBeenCalledOnce();
+  expect(state.pools).toHaveLength(0);
+  expect(state.clients).toHaveLength(1);
+  expect(state.clients[0]?.end).toHaveBeenCalledOnce();
 });
 
-it("ends fixture pools and preserves migration failure when DROP also fails", async () => {
+it("ends the fixture pool and preserves migration failure when DROP also fails", async () => {
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   state.migrate.mockRejectedValueOnce(startupError);
   await expect(
     createFixture({
       beforeMigrate: async () => {
-        state.pools[0]!.query.mockRejectedValueOnce(new Error("private drop error"));
+        state.controls.dropError = new Error("private drop error");
       },
     }),
   ).rejects.toBe(startupError);
-  expect(state.pools[1]?.end).toHaveBeenCalledOnce();
   expect(state.pools[0]?.end).toHaveBeenCalledOnce();
+  expect(state.clients).toHaveLength(2);
+  for (const client of state.clients) expect(client.end).toHaveBeenCalledOnce();
   expect(log).toHaveBeenCalled();
 });
 
-it("ends the fixture admin pool after failed DROP and safely repeats close", async () => {
+it("closes the DROP connection after a failed DROP and safely repeats close", async () => {
   const fixture = await createFixture();
-  state.pools[0]!.query.mockRejectedValueOnce(new Error("private drop error"));
+  state.controls.dropError = new Error("private drop error");
   await expect(fixture.close()).rejects.toBeInstanceOf(AggregateError);
   expect(state.pools[0]?.end).toHaveBeenCalledOnce();
-  expect(state.pools[1]?.end).toHaveBeenCalledOnce();
+  expect(state.clients).toHaveLength(2);
+  for (const client of state.clients) expect(client.end).toHaveBeenCalledOnce();
   await expect(fixture.close()).rejects.toBeInstanceOf(AggregateError);
   await expect(fixture.close()).rejects.toBeInstanceOf(AggregateError);
-  expect(state.pools[1]?.end).toHaveBeenCalledOnce();
+  expect(state.pools[0]?.end).toHaveBeenCalledOnce();
+  expect(state.clients).toHaveLength(2);
 });

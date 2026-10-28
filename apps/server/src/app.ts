@@ -123,7 +123,7 @@ async function initializeApplication(
   cleanup: ReturnType<typeof createCleanup>,
 ) {
   // Integration receipts must remain writable while domain transactions wait for the global write lock.
-  const integrationDatabase = createDatabase(config.DATABASE_URL);
+  const integrationDatabase = createDatabase(config, "integration");
   cleanup.add("integration database", () => integrationDatabase.pool.end());
   const instance = createInstance(integrationDatabase, config);
   await instance.read();

@@ -24,7 +24,7 @@ const password = process.stdin.isTTY
     })
   : readFileSync(0, "utf8").replace(/\r?\n$/, "");
 const config = readConfig(),
-  database = createDatabase(config.DATABASE_URL);
+  database = createDatabase(config);
 try {
   await recoverLocalPassword(
     database,

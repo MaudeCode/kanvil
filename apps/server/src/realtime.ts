@@ -10,7 +10,10 @@ export async function createRealtime(config: Config) {
     retry: ReturnType<typeof setTimeout> | undefined;
   async function connect() {
     if (closed) return;
-    const connection = new pg.Client({ connectionString: config.DATABASE_URL });
+    const connection = new pg.Client({
+      connectionString: config.DATABASE_URL,
+      application_name: "kanvil-realtime",
+    });
     client = connection;
     const disconnected = () => {
       if (client !== connection || closed) return;

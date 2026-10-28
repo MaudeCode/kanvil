@@ -1108,7 +1108,7 @@ describe("HTTP, realtime, and MCP", () => {
         const databaseUrl = new URL(fixture.config.DATABASE_URL);
         // Fail a blocking write at PostgreSQL's lock boundary, without timing the response.
         databaseUrl.searchParams.set("options", "-c lock_timeout=100ms");
-        const database = createDatabase(databaseUrl.href);
+        const database = createDatabase({ ...fixture.config, DATABASE_URL: databaseUrl.href });
         const unlimited = await createApplication(database, {
           ...fixture.config,
           KANVIL_API_KEY_RATE_LIMIT_ENABLED: instanceLimit,

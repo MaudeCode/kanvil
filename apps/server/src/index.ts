@@ -5,7 +5,7 @@ import { migrateDatabase } from "./migrate.ts";
 import { createApplication } from "./app.ts";
 
 const config = readConfig(),
-  database = createDatabase(config.DATABASE_URL);
+  database = createDatabase(config);
 await migrateDatabase(database);
 const application = await createApplication(database, config);
 const server = serve(
