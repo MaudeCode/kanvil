@@ -13,6 +13,7 @@ import {
   type ParsedInput,
   type Output,
   type Project,
+  type Ticket,
   type Workspace,
   workspaceSchema,
   scopes,
@@ -227,6 +228,10 @@ export function json(value: unknown): unknown {
   );
 }
 export const complete = (status: string) => closedStates.some((closed) => closed === status);
+export const intakeHoldReason = "Untrusted intake: human triage required";
+// Only a trusted writer can clear the hold that intake creation forces.
+export const intakeQuarantined = (ticket: Pick<Ticket, "holdReason">) =>
+  ticket.holdReason === intakeHoldReason;
 export const intakeOnly = (actor: Actor) =>
   actor.scopes.length > 0 && actor.scopes.every((scope) => scope === "intake");
 export const hasScope = (actor: Actor, scope: (typeof scopes)[number], operation?: Operation) =>

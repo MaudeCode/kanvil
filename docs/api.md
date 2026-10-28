@@ -14,6 +14,8 @@ The `intake` scope is create-only and cannot be combined with another scope (`40
 
 Intake creation returns only the new ticket's normal payload. The server forces `automationReady: false`, `holdReason: "Untrusted intake: human triage required"`, the first To do state, no assignee or parent, `archived: false`, no dates, empty custom fields (including defaults and required fields), and no uploads. It preserves the supplied title, description, requirements, kind, difficulty, priority, labels, and scopes, and adds the `intake` label. The 30-label limit includes that label. Reusing the same `requestId` returns the original ticket without creating another. A human session or a credential with ordinary write access can triage it later and enable automation. Eligibility inspection includes its explicit not-ready reasons until triage clears the hold and enables automation.
 
+Repository issue sync uses the server-forced intake hold as a quarantine marker: neither export planning nor event-driven export includes the ticket until a trusted writer clears that hold. Already queued issue-sync deliveries recheck the hold before contacting the repository. Ordinary tickets without automation readiness still follow their configured sync rules.
+
 ## Writes and ownership
 
 Use the ticket's current `version` as `expectedVersion` for updates. A stale version returns `409 version_conflict` with `details.currentVersion`; fetch the current record and reconcile the change.

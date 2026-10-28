@@ -325,6 +325,63 @@ describe("issue sync", () => {
       await app.domain.execute("list_workspace_labels", { workspaceId: project.workspaceId }, owner)
     ).find((item) => item.id === label)?.name ?? "";
 
+  it.each([false, true])(
+    "holds intake exports until trusted triage, filtered=%s",
+    async (filtered) => {
+      const name = await labelName(),
+        intake = await app.domain.actor(owner.id, {
+          ownerId: crypto.randomUUID(),
+          scopes: ["intake"],
+          projectIds: [project.id],
+        });
+      const submit = (title: string) =>
+        app.domain.execute(
+          "create_ticket",
+          {
+            projectId: project.id,
+            title,
+            labels: [name],
+            automationReady: true,
+            holdReason: null,
+          },
+          intake,
+        );
+      const before = await submit("Intake before sync configuration"),
+        connection = await connect(),
+        outbound = rule(filtered ? [label] : []);
+      expect(await preview(connection, outbound)).toMatchObject({ export: 0 });
+      await apply(connection, outbound);
+      expect(await linkOf(before)).toBeUndefined();
+      expect(await flush()).toEqual([]);
+
+      const after = await submit("Intake after sync configuration");
+      expect(await linkOf(after)).toBeUndefined();
+      expect(await flush()).toEqual([]);
+      // Ordinary unready tickets still export; the intake hold is the trust boundary.
+      const ordinary = await create("Trusted ticket without automation readiness", [name]);
+      expect((await flush()).map((request) => request.method)).toEqual(["POST"]);
+      expect(await linkOf(ordinary)).toMatchObject({ state: "active" });
+
+      await update(before, { holdReason: null });
+      await update(after, { holdReason: null, automationReady: true });
+      expect((await flush()).map((request) => request.method)).toEqual(["POST", "POST"]);
+      for (const target of [before, after])
+        expect(await linkOf(target)).toMatchObject({ state: "active", origin: "outbound" });
+    },
+  );
+  it("rechecks the intake hold before sending queued issue exports and resumes after triage", async () => {
+    const target = await create("Queued before quarantine", [await labelName()]);
+    await apply(await connect(), rule());
+    expect(await linkOf(target)).toMatchObject({ state: "creating" });
+    await update(target, {
+      holdReason: "Untrusted intake: human triage required",
+      automationReady: false,
+    });
+    expect(await flush()).toEqual([]);
+    await update(target, { holdReason: null });
+    expect((await flush()).map((request) => request.method)).toEqual(["POST"]);
+    expect(await linkOf(target)).toMatchObject({ state: "active" });
+  });
   it("previews and applies filtered export rules and creates each issue once from a verified answer", async () => {
     const name = await labelName();
     const first = await create("Export me", [name]);

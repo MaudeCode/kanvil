@@ -26,6 +26,7 @@ import {
   assertVersion,
   complete,
   fail,
+  intakeQuarantined,
   one,
   project,
   publish,
@@ -145,12 +146,13 @@ function matches(rule: SyncRule, names: Names, labels: readonly string[]) {
 const qualifies = (
   rules: Pick<Connection, "inbound" | "outbound">,
   names: Names,
-  link: Pick<Link, "origin" | "remote">,
+  link: Pick<Link, "origin" | "remote"> | null,
   ticket: Ticket,
 ) =>
-  link.origin === "outbound"
-    ? matches(rules.outbound, names, ticket.labels)
-    : matches(rules.inbound, names, link.remote?.labels ?? []);
+  !intakeQuarantined(ticket) &&
+  (link?.origin === "inbound"
+    ? matches(rules.inbound, names, link.remote?.labels ?? [])
+    : matches(rules.outbound, names, ticket.labels));
 const workspaceOf = async (db: Db, projectId: string) =>
   one(
     await db
@@ -293,7 +295,7 @@ export async function queueIssueSync(db: Db, rows: (typeof events.$inferSelect)[
           connection.projectId === ticket.projectId &&
           !ticket.archived &&
           !complete(ticket.status) &&
-          matches(connection.outbound, labelled, ticket.labels)
+          qualifies(connection, labelled, null, ticket)
         ) {
           const created = await db
             .insert(issueLinks)
@@ -320,8 +322,13 @@ export async function queueIssueSync(db: Db, rows: (typeof events.$inferSelect)[
         await setLink(db, connection.projectId, link, { state: "paused", reason: "labels" });
       else if (link.state === "paused" && link.reason === "labels" && qualified)
         await setLink(db, connection.projectId, link, { state: "review", reason: "labels" });
-      else if (link.state === "active" && !connection.paused) {
+      else if (
+        (link.state === "active" || link.state === "creating") &&
+        qualified &&
+        !connection.paused
+      ) {
         await queueSync(db, [link]);
+        if (link.state !== "active") continue;
         const fresh = commentEvents.filter(
           (event) =>
             event.ticketId === ticket.id &&
@@ -641,6 +648,7 @@ export async function sendIssueSync(
   )[0];
   if (!loaded) return finish(database.db, job, "link_removed");
   const { link, ticket, connection } = loaded;
+  if (intakeQuarantined(ticket)) return finish(database.db, job, "quarantined");
   // Writes act for the connecting administrator, so they stop with that person's write access.
   const skip = connection.paused
     ? "paused"
@@ -939,7 +947,7 @@ async function plan(ctx: Context, connection: Connection, { inbound, outbound }:
               ),
             ),
           )
-      ).filter((ticket) => matches(rules.outbound, names, ticket.labels))
+      ).filter((ticket) => qualifies(rules, names, null, ticket))
     : [];
   const fingerprint = createHash("sha256")
     .update(
