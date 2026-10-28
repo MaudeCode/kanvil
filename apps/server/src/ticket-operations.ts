@@ -44,6 +44,7 @@ import {
   complete,
   fail,
   getTicket,
+  intakeOnly,
   project,
   publish,
   publishMany,
@@ -505,7 +506,9 @@ export async function createTicketRow(ctx: Context, input: ParsedInput<"create_t
         ...fields,
         ...state,
         ...dates,
-        customFields: applyCustomFieldValues(await projectCustomFields(ctx), null, customFields),
+        customFields: intakeOnly(ctx.actor)
+          ? {}
+          : applyCustomFieldValues(await projectCustomFields(ctx), null, customFields),
         ...(await allocateTicket(ctx)),
         id,
         createdBy: ctx.actor.id,
@@ -820,6 +823,25 @@ export const ticketHandlers: Pick<
     };
   },
   async create_ticket(ctx, input) {
+    if (intakeOnly(ctx.actor)) {
+      input = {
+        ...input,
+        automationReady: false,
+        holdReason: "Untrusted intake: human triage required",
+        status: "todo",
+        stateId: undefined,
+        assigneeId: null,
+        parentId: null,
+        archived: false,
+        dueAt: null,
+        startAt: null,
+        customFields: {},
+        uploads: [],
+        labels: operations.create_ticket.input.shape.labels.parse([
+          ...new Set([...input.labels, "intake"]),
+        ]),
+      };
+    }
     const { row, event } = await createTicketRow(ctx, input);
     const claimed = await claimStagedUploads(ctx, row.id, input.uploads);
     await publishMany(ctx, [

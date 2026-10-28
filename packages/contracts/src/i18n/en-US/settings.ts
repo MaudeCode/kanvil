@@ -127,6 +127,10 @@ export default {
       custom: "Custom permissions",
     },
     permission: {
+      intake: {
+        name: "Submit reports",
+        description: "Create quarantined tickets only. Cannot read or edit tickets. Use alone.",
+      },
       read: {
         name: "Read tickets",
         description: "View projects, tickets, comments, and attachments.",

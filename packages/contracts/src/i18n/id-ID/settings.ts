@@ -118,6 +118,11 @@ export default {
       custom: "Izin kustom",
     },
     permission: {
+      intake: {
+        name: "Kirim laporan",
+        description:
+          "Hanya membuat tiket karantina. Tidak dapat membaca atau mengedit tiket. Gunakan sendiri.",
+      },
       read: {
         name: "Baca tiket",
         description: "Lihat proyek, tiket, komentar, dan lampiran.",

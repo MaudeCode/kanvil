@@ -466,7 +466,11 @@ function CreateKey({
                 checked={permissions.includes(scope)}
                 onChange={(checked) =>
                   setPermissions((current) =>
-                    checked ? [...current, scope] : current.filter((value) => value !== scope),
+                    checked
+                      ? scope === "intake"
+                        ? ["intake"]
+                        : [...current.filter((value) => value !== "intake"), scope]
+                      : current.filter((value) => value !== scope),
                   )
                 }
               />

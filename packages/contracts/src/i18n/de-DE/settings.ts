@@ -119,6 +119,11 @@ export default {
       custom: "Benutzerdefinierte Berechtigungen",
     },
     permission: {
+      intake: {
+        name: "Meldungen einreichen",
+        description:
+          "Erstellt nur Tickets zur Prüfung. Kann Tickets weder lesen noch bearbeiten. Nur einzeln verwenden.",
+      },
       read: {
         name: "Tickets lesen",
         description: "Projekte, Tickets, Kommentare und Anhänge ansehen.",

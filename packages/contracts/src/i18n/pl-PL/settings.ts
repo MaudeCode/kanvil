@@ -127,6 +127,11 @@ export default {
       custom: "Niestandardowe uprawnienia",
     },
     permission: {
+      intake: {
+        name: "Przesyłaj zgłoszenia",
+        description:
+          "Tworzy tylko zgłoszenia do weryfikacji. Nie może ich czytać ani edytować. Używaj osobno.",
+      },
       read: {
         name: "Odczyt zadań",
         description: "Wyświetlanie projektów, zadań, komentarzy i załączników.",

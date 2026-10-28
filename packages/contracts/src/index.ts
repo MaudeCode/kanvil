@@ -96,7 +96,7 @@ export const isPresetColor = (value: string): value is (typeof projectIconColors
 export const isHexColor = (value: string) => hexColor.safeParse(value).success;
 export const hasAdminRole = (role: string | null | undefined) =>
   role?.split(",").includes("admin") ?? false;
-export const scopes = ["read", "write", "claim", "admin"] as const;
+export const scopes = ["read", "write", "claim", "admin", "intake"] as const;
 export const attachmentLimit = 10_000_000;
 // An inline upload staged before its ticket exists stays claimable for this long.
 export const stagedUploadLifetime = 86_400_000;
@@ -1412,7 +1412,13 @@ export const credentialInput = z
     projectIds: credentialProjectsSchema.shape.projectIds.refine(
       (ids) => ids === null || ids.length > 0,
     ),
-    scopes: z.array(z.enum(scopes)).min(1),
+    scopes: z
+      .array(z.enum(scopes))
+      .min(1)
+      .refine(
+        (values) => !values.includes("intake") || values.every((value) => value === "intake"),
+        "Intake cannot be combined with other scopes",
+      ),
     // Omitted means the 90-day default; null is an explicit request for a key that never expires.
     expiresIn: z.number().int().min(3600).max(31_536_000).nullable().default(7_776_000),
   })

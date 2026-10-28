@@ -119,6 +119,11 @@ export default {
       custom: "Permisos personalizados",
     },
     permission: {
+      intake: {
+        name: "Enviar informes",
+        description:
+          "Solo crea tickets en cuarentena. No puede leer ni editar tickets. Usar por separado.",
+      },
       read: {
         name: "Leer tickets",
         description: "Ver proyectos, tickets, comentarios y adjuntos.",

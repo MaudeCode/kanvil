@@ -121,6 +121,11 @@ export default {
       custom: "Autorisations personnalisées",
     },
     permission: {
+      intake: {
+        name: "Envoyer des signalements",
+        description:
+          "Crée uniquement des tickets en quarantaine. Ne peut ni lire ni modifier les tickets. À utiliser seul.",
+      },
       read: {
         name: "Lire les tickets",
         description: "Consulter les projets, tickets, commentaires et pièces jointes.",
