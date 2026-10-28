@@ -2,6 +2,7 @@ import { type Locator, type Page } from "@playwright/test";
 import { expect, test } from "./test.ts";
 import { z } from "zod";
 import { signIn } from "./auth.ts";
+import { holdRequests } from "./controls.ts";
 
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXpUAAAAASUVORK5CYII=",
@@ -266,10 +267,16 @@ test("inline uploads stage before the ticket exists and attach exactly once", as
   ).json();
   expect(attachments.map((item: { name: string }) => item.name)).toEqual(["pixel.png"]);
   await expect.poll(async () => (await page.request.get(notes)).status()).toBe(404);
-  await page.goto(`/projects/${project.id}/tickets/${created.id}`);
+  // A visible image can still be waiting for its attachment bytes.
+  const releaseImage = await holdRequests(page, `**${url}`);
+  await page.goto(`/projects/${project.id}/tickets/${created.id}`, {
+    waitUntil: "domcontentloaded",
+  });
   const image = page.getByRole("img", { name: "pixel.png", exact: true });
   await expect(image).toBeVisible();
-  expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+  await expect(image).toHaveJSProperty("naturalWidth", 0);
+  releaseImage();
+  await expect(image).toHaveJSProperty("naturalWidth", 1);
 
   // Discarding a draft discards its staged files.
   await page.goto(`/projects/${project.id}`);
