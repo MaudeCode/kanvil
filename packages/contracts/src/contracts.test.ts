@@ -267,6 +267,11 @@ describe("agent write contracts", () => {
         .success,
     ).toBe(true);
     expect(operations.recover_claim.input.safeParse(input).success).toBe(true);
+    const { claimId: _claimId, ...claimless } = input;
+    expect(operations.recover_claim.input.safeParse(claimless).success).toBe(false);
+    expect(
+      operations.recover_claim.input.safeParse({ ...claimless, expectedVersion: 2 }).success,
+    ).toBe(true);
   });
   it("rejects executable evidence URLs", () => {
     expect(

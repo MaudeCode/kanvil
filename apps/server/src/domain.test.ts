@@ -2286,6 +2286,210 @@ describe("ticket operations on PostgreSQL", () => {
     );
     expect(done).toMatchObject({ status: "done", claimRequired: false });
   });
+  it("lifts the ownership fence of a released In review ticket without a claim ID", async () => {
+    const current = await ticket();
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    const worker = await domain.actor(writer.id, {
+      ownerId: "released-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const input = { projectId: project.id, ticketId: current.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "released-worker" },
+      worker,
+    );
+    const review = await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: 2, claimId: claim.id, changes: { status: "in_review" } },
+      worker,
+    );
+    await domain.execute("release_claim", { ...input, claimId: claim.id }, worker);
+    await expect(
+      domain.execute(
+        "update_ticket",
+        { ...input, expectedVersion: review.version, changes: { status: "done" } },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    const unversioned = {
+      ...input,
+      reason: "The worker released before writing Done",
+      confirmedStopped: true as const,
+    };
+    const lift = { ...unversioned, expectedVersion: review.version };
+    await expect(domain.execute("recover_claim", unversioned, worker)).rejects.toThrow(
+      "expectedVersion",
+    );
+    await expect(
+      domain.execute("recover_claim", { ...lift, expectedVersion: review.version - 1 }, worker),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    const withoutClaimScope = await domain.actor(writer.id, {
+      ownerId: "no-claim",
+      scopes: ["read", "write"],
+    });
+    await expect(domain.execute("recover_claim", lift, withoutClaimScope)).rejects.toMatchObject({
+      status: 403,
+      code: "insufficient_scope",
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "reader" },
+      owner,
+    );
+    await expect(domain.execute("recover_claim", lift, worker)).rejects.toMatchObject({
+      status: 403,
+    });
+    await domain.execute(
+      "set_member",
+      { projectId: project.id, email: "writer@example.test", role: "writer" },
+      owner,
+    );
+    expect((await domain.execute("get_ticket", input, owner)).ticket).toMatchObject({
+      claimRequired: true,
+      version: review.version,
+    });
+    const requestId = crypto.randomUUID();
+    expect(await domain.execute("recover_claim", { ...lift, requestId }, worker)).toEqual({
+      ok: true,
+    });
+    expect(await domain.execute("recover_claim", { ...lift, requestId }, worker)).toEqual({
+      ok: true,
+    });
+    const lifted = await domain.execute("get_ticket", input, worker);
+    expect(lifted).toMatchObject({
+      claim: null,
+      ticket: { status: "in_review", claimRequired: false, version: review.version + 1 },
+    });
+    const recovered = (await domain.execute("list_activity", input, owner)).items.filter(
+      (event) => event.type === "claim.recovered",
+    );
+    expect(recovered).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          claimId: null,
+          reason: lift.reason,
+          confirmedStopped: true,
+        }),
+      }),
+    ]);
+    await expect(
+      domain.execute("recover_claim", { ...lift, expectedVersion: lifted.ticket.version }, worker),
+    ).rejects.toMatchObject({ status: 409, code: "claim_not_required" });
+    const done = await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: lifted.ticket.version, changes: { status: "done" } },
+      worker,
+    );
+    expect(done).toMatchObject({ status: "done", claimRequired: false });
+  });
+  it("reschedules a ticket stranded by recovery that kept its fence without a claim ID", async () => {
+    const current = await ticket();
+    const worker = await domain.actor(owner.id, {
+      ownerId: "stranded-worker",
+      scopes: ["read", "write", "claim"],
+    });
+    const input = { projectId: project.id, ticketId: current.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "stranded-worker" },
+      worker,
+    );
+    const review = await domain.execute(
+      "update_ticket",
+      { ...input, expectedVersion: 2, claimId: claim.id, changes: { status: "in_review" } },
+      worker,
+    );
+    // Recovery before KAN-56 deleted the claim row and left the fence in place.
+    await fixture.database.pool.query("DELETE FROM claims WHERE id = $1", [claim.id]);
+    const stranded = await domain.execute("get_ticket", input, worker);
+    expect(stranded).toMatchObject({
+      claim: null,
+      ticket: { status: "in_review", claimRequired: true },
+      readiness: { ready: false },
+    });
+    await expect(
+      domain.execute(
+        "update_ticket",
+        { ...input, expectedVersion: review.version, changes: { status: "todo" } },
+        worker,
+      ),
+    ).rejects.toMatchObject({ code: "claim_conflict" });
+    await expect(
+      domain.execute(
+        "recover_claim",
+        {
+          ...input,
+          claimId: claim.id,
+          reason: "Recovered before the fence was lifted",
+          confirmedStopped: true,
+        },
+        worker,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await domain.execute(
+      "recover_claim",
+      {
+        ...input,
+        reason: "Recovered before the fence was lifted",
+        confirmedStopped: true,
+        reschedule: true,
+        expectedVersion: review.version,
+      },
+      worker,
+    );
+    const rescheduled = await domain.execute("get_ticket", input, worker);
+    expect(rescheduled).toMatchObject({
+      claim: null,
+      ticket: { status: "todo", version: review.version + 1 },
+      readiness: { ready: true },
+    });
+    const resumed = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: rescheduled.ticket.version, workerId: "resumed-worker" },
+      worker,
+    );
+    expect(resumed.id).not.toBe(claim.id);
+  });
+  it("refuses claimless recovery while any claim row exists", async () => {
+    const current = await ticket();
+    const input = { projectId: project.id, ticketId: current.id };
+    const claim = await domain.execute(
+      "claim_ticket",
+      { ...input, expectedVersion: 1, workerId: "live-worker" },
+      owner,
+    );
+    const lift = {
+      ...input,
+      reason: "Confirmed the old worker has stopped",
+      confirmedStopped: true as const,
+      expectedVersion: 2,
+    };
+    for (const expired of [false, true]) {
+      if (expired)
+        await fixture.database.pool.query(
+          "UPDATE claims SET expires_at = now() - interval '1 second' WHERE id = $1",
+          [claim.id],
+        );
+      for (const variant of [lift, { ...lift, reschedule: true }])
+        await expect(domain.execute("recover_claim", variant, owner)).rejects.toMatchObject({
+          status: 409,
+          code: "claim_conflict",
+          details: { claimId: claim.id },
+        });
+      const read = await domain.execute("get_ticket", input, owner);
+      expect(read.claim?.id).toBe(claim.id);
+      expect(read.ticket).toMatchObject({
+        status: "in_progress",
+        claimRequired: true,
+        version: 2,
+      });
+    }
+  });
   it("requires scoped project management to cancel live ownership", async () => {
     const ticketRow = await ticket();
     await domain.execute(

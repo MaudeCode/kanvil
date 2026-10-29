@@ -1358,22 +1358,44 @@ export const ticketHandlers: Pick<
   },
   async recover_claim(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    const current = one(
-      await ctx.db
-        .select()
-        .from(claims)
-        .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
-    );
-    if (input.cancelActive && !can(ctx, "project.manage"))
-      fail(
-        403,
-        "forbidden",
-        "Cancelling an active claim requires project management access and admin scope",
-      );
-    if (current.expiresAt > new Date() && !input.cancelActive)
-      fail(409, "claim_not_expired", "The current claim has not expired");
-    if (input.reschedule && input.expectedVersion !== undefined) {
-      assertVersion(ticket, input.expectedVersion, "ticket", "rescheduling recovered work");
+    const current =
+      input.claimId === undefined
+        ? undefined
+        : one(
+            await ctx.db
+              .select()
+              .from(claims)
+              .where(and(eq(claims.id, input.claimId), eq(claims.ticketId, ticket.id))),
+          );
+    if (!current) {
+      // Without a claim ID, recovery lifts only a fence whose claim row is already gone, as left
+      // by a release outside To do. Any claim row, live or expired, goes through the normal path.
+      const held = (
+        await ctx.db
+          .select({ id: claims.id })
+          .from(claims)
+          .where(eq(claims.ticketId, ticket.id))
+          .limit(1)
+      )[0];
+      if (held)
+        fail(409, "claim_conflict", "This ticket has a claim; recover it by its claim ID", {
+          claimId: held.id,
+        });
+      if (!ticket.claimRequired)
+        fail(409, "claim_not_required", "This ticket does not require ownership to recover");
+    } else {
+      if (input.cancelActive && !can(ctx, "project.manage"))
+        fail(
+          403,
+          "forbidden",
+          "Cancelling an active claim requires project management access and admin scope",
+        );
+      if (current.expiresAt > new Date() && !input.cancelActive)
+        fail(409, "claim_not_expired", "The current claim has not expired");
+    }
+    if (input.expectedVersion !== undefined && (input.reschedule || !current))
+      assertVersion(ticket, input.expectedVersion, "ticket", "recovering ownership");
+    if (input.reschedule) {
       const row = one(
         await ctx.db
           .update(tickets)
@@ -1404,12 +1426,12 @@ export const ticketHandlers: Pick<
         changedFields: ["claimRequired"],
       });
     }
-    await ctx.db.delete(claims).where(eq(claims.id, current.id));
+    if (current) await ctx.db.delete(claims).where(eq(claims.id, current.id));
     await publish(ctx, "claim.recovered", ticket.id, {
-      claimId: current.id,
+      claimId: current?.id ?? null,
       reason: input.reason,
       confirmedStopped: true,
-      ...(input.cancelActive && { cancelActive: true }),
+      ...(current && input.cancelActive && { cancelActive: true }),
     });
     return { ok: true };
   },
