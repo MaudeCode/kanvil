@@ -90,6 +90,11 @@ assert(
   heightCalls.includes("minimizationEnabled") && heightCalls.includes("convertRect:toView:"),
   "Stable pane header measurement is missing from the compiled executable",
 );
+const edgeCalls = methodCalls("RNSScreenView", "updateContentScrollViewEdgeEffectsIfExists");
+assert(
+  edgeCalls.includes("applyTopLegibilityToScrollView:coveredHeight:foregroundBottom:"),
+  "Measured scroll-content legibility fade is missing from the compiled executable",
+);
 console.log(
   JSON.stringify(
     {
@@ -97,6 +102,7 @@ console.log(
       tabSizingBeforeAttachment: true,
       headerMinimizationOverride: true,
       stablePaneHeaderMeasurement: true,
+      scrollContentLegibility: true,
       heightCalls,
       calls,
     },

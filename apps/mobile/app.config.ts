@@ -14,7 +14,7 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "22",
+    buildNumber: "23",
     supportsTablet: true,
     infoPlist: {
       NSAppTransportSecurity: { NSAllowsLocalNetworking: true },

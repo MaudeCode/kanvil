@@ -4,6 +4,7 @@ type Rect = ReservedRegion["frame"];
 type Bounds = Pick<Rect, "width" | "height">;
 export const minimumPrimary = 280,
   minimumSecondary = 320;
+export const splitResizeTarget = 44;
 export function primaryPaneWidth(bounds: Bounds, preferred: number, minimum = minimumPrimary) {
   return Math.min(Math.max(minimum, preferred), Math.max(minimum, bounds.width - minimumSecondary));
 }

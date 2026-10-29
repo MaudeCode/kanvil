@@ -12,6 +12,7 @@ import {
 import {
   minimumPrimary,
   minimumSecondary,
+  splitResizeTarget,
   paneLayout,
   primaryPaneWidth,
   usableViewport,
@@ -130,61 +131,13 @@ function Panes({
       {detailOnly ? [second, first] : [first, second]}
       {!detailOnly && !primaryOnly && !collapsed && "resizable" in layout && (
         <View
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={(event) => {
-            resize.current.origin = event.nativeEvent.pageX;
-            resize.current.startWidth = resize.current.width;
-            setDragging(true);
-          }}
-          onResponderMove={(event) =>
-            setDragWidth(
-              primaryPaneWidth(
-                resize.current.bounds,
-                resize.current.startWidth + event.nativeEvent.pageX - resize.current.origin,
-                resize.current.minimum,
-              ),
-            )
-          }
-          onResponderRelease={(event) => {
-            const width = primaryPaneWidth(
-              resize.current.bounds,
-              resize.current.startWidth + event.nativeEvent.pageX - resize.current.origin,
-              resize.current.minimum,
-            );
-            void setAppearance({ sidebarWidth: width }).catch(setError);
-            setDragWidth(undefined);
-            setDragging(false);
-          }}
-          onResponderTerminate={() => {
-            setDragWidth(undefined);
-            setDragging(false);
-          }}
-          accessible
-          accessibilityRole="adjustable"
-          accessibilityLabel={t("shell.primitive.resizeSidebar")}
-          accessibilityValue={{
-            min: minimumPrimaryWidth,
-            max: Math.round(bounds.width - minimumSecondary),
-            now: Math.round(layout.primary.width),
-            text: formatNumber(layout.primary.width / bounds.width, {
-              style: "percent",
-              maximumFractionDigits: 0,
-            }),
-          }}
-          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-          onAccessibilityAction={(event) => {
-            const action = event.nativeEvent.actionName;
-            if (action === "increment" || action === "decrement")
-              commitWidth(layout.primary.width + (action === "increment" ? 32 : -32));
-          }}
+          pointerEvents="box-none"
           style={{
             position: "absolute",
             top: 0,
             bottom: 0,
-            left: layout.primary.width - 22,
-            width: 44,
-            alignItems: "center",
-            justifyContent: "center",
+            left: layout.primary.width - splitResizeTarget / 2,
+            width: splitResizeTarget,
           }}
         >
           <View
@@ -193,19 +146,79 @@ function Panes({
               position: "absolute",
               top: 0,
               bottom: 0,
+              left: splitResizeTarget / 2,
               width: StyleSheet.hairlineWidth,
               backgroundColor: color.line,
             }}
           />
           <View
-            pointerEvents="none"
-            style={{
-              width: 4,
-              height: 32,
-              borderRadius: 2,
-              backgroundColor: dragging ? color.accent : color.muted,
+            onStartShouldSetResponder={() => true}
+            onResponderGrant={(event) => {
+              resize.current.origin = event.nativeEvent.pageX;
+              resize.current.startWidth = resize.current.width;
+              setDragging(true);
             }}
-          />
+            onResponderMove={(event) =>
+              setDragWidth(
+                primaryPaneWidth(
+                  resize.current.bounds,
+                  resize.current.startWidth + event.nativeEvent.pageX - resize.current.origin,
+                  resize.current.minimum,
+                ),
+              )
+            }
+            onResponderRelease={(event) => {
+              const width = primaryPaneWidth(
+                resize.current.bounds,
+                resize.current.startWidth + event.nativeEvent.pageX - resize.current.origin,
+                resize.current.minimum,
+              );
+              void setAppearance({ sidebarWidth: width }).catch(setError);
+              setDragWidth(undefined);
+              setDragging(false);
+            }}
+            onResponderTerminate={() => {
+              setDragWidth(undefined);
+              setDragging(false);
+            }}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={t("shell.primitive.resizeSidebar")}
+            accessibilityValue={{
+              min: minimumPrimaryWidth,
+              max: Math.round(bounds.width - minimumSecondary),
+              now: Math.round(layout.primary.width),
+              text: formatNumber(layout.primary.width / bounds.width, {
+                style: "percent",
+                maximumFractionDigits: 0,
+              }),
+            }}
+            accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+            onAccessibilityAction={(event) => {
+              const action = event.nativeEvent.actionName;
+              if (action === "increment" || action === "decrement")
+                commitWidth(layout.primary.width + (action === "increment" ? 32 : -32));
+            }}
+            style={{
+              position: "absolute",
+              top: "50%",
+              marginTop: -splitResizeTarget / 2,
+              height: splitResizeTarget,
+              width: splitResizeTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <View
+              pointerEvents="none"
+              style={{
+                width: 4,
+                height: 32,
+                borderRadius: 2,
+                backgroundColor: dragging ? color.accent : color.muted,
+              }}
+            />
+          </View>
         </View>
       )}
       {!!error && <ErrorNotice error={error} />}

@@ -40,11 +40,64 @@ index c435fdd1dab11f39dc78367860e8f568c953ea8c..0034ff91cbaf6dfd4f3d0afa70e81202
    [[self class] resolveImageFromConfig:dict
                             imageLoader:imageLoader
                         completionBlock:^(UIImage *img) {
+diff --git a/ios/RNSScreen.h b/ios/RNSScreen.h
+index fd9ecffa71b97230f62c6cde961d21c50076f960..ac8524adeadd2e5621139a19bab77ffe1a8e49d8 100644
+--- a/ios/RNSScreen.h
++++ b/ios/RNSScreen.h
+@@ -52,6 +52,7 @@ NS_ASSUME_NONNULL_BEGIN
+ - (RNSScreenView *)screenView;
+ - (void)addSnapshotToView;
+ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal;
++- (nullable UINavigationController *)getVisibleNavigationControllerIsModal:(BOOL)isModal;
+ - (BOOL)isRemovedFromParent;
+ - (void)notifyPresentedControllerDismissed;
+ 
 diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
-index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..7aa582e0a7fb4a205e37ba6fefb11cffe5dab8f0 100644
+index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..b9c835babcbc8d087de101b047866c5fbce75904 100644
 --- a/ios/RNSScreen.mm
 +++ b/ios/RNSScreen.mm
-@@ -1153,8 +1153,14 @@ - (void)overrideScrollViewBehaviorInFirstDescendantChainIfNeeded
+@@ -51,6 +51,40 @@ @interface RNSScreenView () <UIAdaptivePresentationControllerDelegate,
+                              CAAnimationDelegate>
+ @end
+ 
++static void RNSCollectRootScrollViews(UIView *view, UIView *root, NSMutableArray<UIScrollView *> *result, BOOL nested)
++{
++  if (view.hidden || view.alpha <= 0) return;
++  if (view != root && [view isKindOfClass:RNSScreenView.class]) return;
++  if ([view isKindOfClass:UIScrollView.class]) {
++    if (nested) {
++      // Fabric reuses native scroll views; a former root must not fade a nested chart or code block.
++      [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:(UIScrollView *)view
++                                                   coveredHeight:0 foregroundBottom:0];
++    } else {
++      [result addObject:(UIScrollView *)view];
++    }
++    nested = YES;
++  }
++  for (UIView *child in view.subviews) RNSCollectRootScrollViews(child, root, result, nested);
++}
++static CGFloat RNSHeaderForegroundBottom(UIView *view, UIView *coordinates, CGRect header, CGFloat alpha)
++{
++  alpha *= view.alpha;
++  if (view.hidden || alpha <= 0.01) return 0;
++  CGFloat bottom = 0;
++  CGRect foreground = view.bounds;
++  if ([view isKindOfClass:UILabel.class]) {
++    UILabel *label = (UILabel *)view;
++    foreground = [label textRectForBounds:label.bounds limitedToNumberOfLines:label.numberOfLines];
++  }
++  CGRect frame = [view convertRect:foreground toView:coordinates];
++  if (([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIControl.class]) &&
++      CGRectIntersectsRect(frame, header)) bottom = MIN(CGRectGetMaxY(frame), CGRectGetMaxY(header));
++  for (UIView *child in view.subviews)
++    bottom = MAX(bottom, RNSHeaderForegroundBottom(child, coordinates, header, alpha));
++  return bottom;
++}
++
+ @implementation RNSScreenView {
+   __weak RCTScrollViewComponentView *_sheetsScrollView;
+   /// Tag of `_sheetsScrollView` at the time we started observing it. Fabric changes the tag when it recycles
+@@ -1153,8 +1187,34 @@ - (void)overrideScrollViewBehaviorInFirstDescendantChainIfNeeded
  
  - (void)updateContentScrollViewEdgeEffectsIfExists
  {
@@ -58,10 +111,30 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..7aa582e0a7fb4a205e37ba6fefb11cff
 +    }
 +  }
 +  [RNSScrollEdgeEffectApplicator applyToScrollView:scrollView withProvider:self];
++  UINavigationController *navigation = [_controller getVisibleNavigationControllerIsModal:self.isModal];
++  CGFloat height = (self.config.show && self.config.translucent && self.topScrollEdgeEffect == RNSScrollEdgeEffectSoft)
++      ? [_controller calculateHeaderHeightIsModal:self.isModal] : 0;
++  CGRect header = CGRectMake(0, 0, navigation.view.bounds.size.width, height);
++  CGFloat foreground = RNSHeaderForegroundBottom(navigation.navigationBar, navigation.view, header, 1);
++  NSMutableArray<UIScrollView *> *scrollers = [NSMutableArray new];
++  RNSCollectRootScrollViews(self, self, scrollers, NO);
++  for (UIScrollView *content in scrollers) {
++    if (height <= 0) {
++      [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:content coveredHeight:0 foregroundBottom:0];
++      continue;
++    }
++    if (content.window == nil || content.window != navigation.view.window) continue;
++    [RNSScrollEdgeEffectApplicator applyToScrollView:content withProvider:self];
++    CGRect covered = [navigation.view convertRect:header toView:content];
++    CGPoint foregroundEnd = [navigation.view convertPoint:CGPointMake(0, foreground) toView:content];
++    [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:content
++                                                coveredHeight:height > 0 ? MAX(0, CGRectGetMaxY(covered) - content.bounds.origin.y) : 0
++                                             foregroundBottom:MAX(0, foregroundEnd.y - content.bounds.origin.y)];
++  }
  }
  
  #pragma mark - RNSSafeAreaProviding
-@@ -1589,6 +1595,8 @@ - (void)viewDidDisappear:(BOOL)animated
+@@ -1589,6 +1649,8 @@ - (void)viewDidDisappear:(BOOL)animated
  - (void)viewDidLayoutSubviews
  {
    [super viewDidLayoutSubviews];
@@ -70,7 +143,7 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..7aa582e0a7fb4a205e37ba6fefb11cff
  
    // The below code makes the screen view adapt dimensions provided by the system. We take these
    // into account only when the view is mounted under RNSNavigationController, in which case the
-@@ -1653,6 +1661,12 @@ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal
+@@ -1653,6 +1715,12 @@ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal
  {
    UINavigationController *navctr = [self getVisibleNavigationControllerIsModal:isModal];
  
@@ -83,6 +156,14 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..7aa582e0a7fb4a205e37ba6fefb11cff
    // If there's no navigation controller for the modal (or the navigation bar is hidden), we simply don't want to
    // return header height, as modal possibly does not have header when navigation controller is nil,
    // and we don't want to count status bar if navigation bar is hidden (inset could be negative).
+@@ -1710,6 +1778,7 @@ - (void)calculateAndNotifyHeaderHeightChangeIsModal:(BOOL)isModal
+ {
+   CGFloat totalHeight = [self calculateHeaderHeightIsModal:isModal];
+   [self.screenView notifyHeaderHeightChange:totalHeight];
++  [self.screenView updateContentScrollViewEdgeEffectsIfExists];
+ }
+ 
+ - (void)notifyFinishTransitioning
 diff --git a/ios/RNSScreenStackHeaderConfig.h b/ios/RNSScreenStackHeaderConfig.h
 index 8f99f5b5b9d3f184f36613d51174cb9393d2cdd6..9b1b2a9529e6c67e8b23deab7fb5fa7bea7a647d 100644
 --- a/ios/RNSScreenStackHeaderConfig.h
@@ -250,6 +331,122 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
    if (newScreenProps.translucent != _translucent) {
      _translucent = newScreenProps.translucent;
      needsNavigationControllerLayout = YES;
+diff --git a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
+index b1c43b7d04da93062e4dcf953154a732c2c50ded..22979ce00f4839ddaf2a0101b81225f3e72c335f 100644
+--- a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
++++ b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
+@@ -12,4 +12,7 @@
+ @interface RNSScrollEdgeEffectApplicator : NSObject
+ + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
+              withProvider:(nonnull id<RNSScrollEdgeEffectProviding>)provider;
+++ (void)applyTopLegibilityToScrollView:(nonnull UIScrollView *)scrollView
++                       coveredHeight:(CGFloat)height
++                    foregroundBottom:(CGFloat)foreground;
+ @end
+diff --git a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
+index c0fb1333ea2ab281f057cff15b2d0aad7f0043f1..7306324550a2ad4d6ef493a298a35457459fcb09 100644
+--- a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
++++ b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
+@@ -2,6 +2,80 @@
+ #import <React/RCTLog.h>
+ #import "RNSDefines.h"
+ #import "RNSEnums.h"
++#import <QuartzCore/QuartzCore.h>
++#import <objc/runtime.h>
++
++// The stateless applicator cannot own per-view observations; this attachment follows its scroller.
++// This masks scrolling content, never the bar or its controls. Bounds observation keeps the
++// gradient in viewport coordinates while UIScrollView changes its layer's bounds origin.
++static void *RNSLegibilityBoundsContext = &RNSLegibilityBoundsContext;
++static char RNSLegibilityMaskKey;
++@interface RNSScrollLegibilityMask : NSObject
++- (instancetype)initWithLayer:(CALayer *)layer;
++- (void)updateCoveredHeight:(CGFloat)height foregroundBottom:(CGFloat)foreground;
++- (void)updateMask;
++@end
++@implementation RNSScrollLegibilityMask {
++  CALayer *_observedLayer;
++  CAGradientLayer *_gradient;
++  CGFloat _coveredHeight;
++  CGFloat _foregroundBottom;
++}
++- (instancetype)initWithLayer:(CALayer *)layer
++{
++  if (self = [super init]) {
++    _observedLayer = layer;
++    _gradient = [CAGradientLayer layer];
++    _gradient.colors = @[(__bridge id)UIColor.clearColor.CGColor, (__bridge id)UIColor.clearColor.CGColor,
++                         (__bridge id)[UIColor colorWithWhite:0 alpha:0.06].CGColor,
++                         (__bridge id)UIColor.blackColor.CGColor, (__bridge id)UIColor.blackColor.CGColor];
++    [_observedLayer addObserver:self forKeyPath:@"bounds" options:0 context:RNSLegibilityBoundsContext];
++  }
++  return self;
++}
++- (void)updateCoveredHeight:(CGFloat)height foregroundBottom:(CGFloat)foreground
++{
++  _coveredHeight = height;
++  _foregroundBottom = foreground;
++  [self updateMask];
++}
++- (void)updateMask
++{
++  CGRect bounds = _observedLayer.bounds;
++  if (CGRectIsEmpty(bounds)) {
++    // A native viewport entering the recycle pool must not retain its former header clearance.
++    _coveredHeight = 0;
++    _foregroundBottom = 0;
++  }
++  if (_coveredHeight <= 0) {
++    if (_observedLayer.mask == _gradient) _observedLayer.mask = nil;
++    return;
++  }
++  // Respect masks owned by another component.
++  if (_observedLayer.mask != nil && _observedLayer.mask != _gradient) return;
++  CGFloat end = MIN(_coveredHeight, bounds.size.height);
++  CGFloat start = MAX(0, MIN(_foregroundBottom, end));
++  [CATransaction begin];
++  [CATransaction setDisableActions:YES];
++  _gradient.frame = bounds;
++  _gradient.locations = @[@0, @(start / bounds.size.height),
++                           @((start + (end - start) * 0.8) / bounds.size.height),
++                           @(end / bounds.size.height), @1];
++  _observedLayer.mask = _gradient;
++  [CATransaction commit];
++}
++- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
++                      change:(NSDictionary *)change context:(void *)context
++{
++  if (context == RNSLegibilityBoundsContext) [self updateMask];
++  else [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
++}
++- (void)dealloc
++{
++  [_observedLayer removeObserver:self forKeyPath:@"bounds" context:RNSLegibilityBoundsContext];
++  if (_observedLayer.mask == _gradient) _observedLayer.mask = nil;
++}
++@end
+ 
+ @implementation RNSScrollEdgeEffectApplicator
+ 
+@@ -20,6 +94,18 @@ + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
+ #endif
+ }
+ 
+++ (void)applyTopLegibilityToScrollView:(UIScrollView *)scrollView
++                       coveredHeight:(CGFloat)height
++                    foregroundBottom:(CGFloat)foreground
++{
++  RNSScrollLegibilityMask *mask = objc_getAssociatedObject(scrollView, &RNSLegibilityMaskKey);
++  if (mask == nil && height > 0) {
++    mask = [[RNSScrollLegibilityMask alloc] initWithLayer:scrollView.layer];
++    objc_setAssociatedObject(scrollView, &RNSLegibilityMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++  }
++  [mask updateCoveredHeight:height foregroundBottom:foreground];
++}
++
+ #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+ + (void)configureEffect:(UIScrollEdgeEffect *)edgeEffect
+                withEnum:(RNSScrollEdgeEffect)effectEnum API_AVAILABLE(ios(26.0))
 diff --git a/ios/tabs/host/RNSTabBarController.mm b/ios/tabs/host/RNSTabBarController.mm
 index bc9c64436da76959ecdc22539b94ce459e1e4ed2..a7821301f32e83319fa3c91808b4b942d6ab93fa 100644
 --- a/ios/tabs/host/RNSTabBarController.mm

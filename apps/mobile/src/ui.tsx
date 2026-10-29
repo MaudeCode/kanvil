@@ -165,6 +165,7 @@ const scrollInsetsDefaults: Pick<
 };
 function useScrollInsets(horizontal = false) {
   const manual = useContext(ManualScrollInsets),
+    sidebar = useContext(SidebarSurface),
     headerInset = useContext(ScrollHeaderInset),
     safe = useSafeAreaInsets();
   const top = manual && !horizontal ? headerInset : 0;
@@ -177,7 +178,11 @@ function useScrollInsets(horizontal = false) {
           automaticallyAdjustContentInsets: false,
           automaticallyAdjustsScrollIndicatorInsets: false,
           contentInset: { top: 0, bottom: safe.bottom },
-          scrollIndicatorInsets: { top, bottom: safe.bottom },
+          scrollIndicatorInsets: {
+            top,
+            bottom: safe.bottom,
+            right: sidebar ? 8 : 0,
+          },
         }
       : {},
   };
@@ -1613,7 +1618,8 @@ export function Heading({
   };
 }) {
   const color = usePalette(),
-    padded = useContext(PaddedContent);
+    padded = useContext(PaddedContent),
+    sidebar = useContext(SidebarSurface);
   const title = (
     <Text
       accessibilityRole="header"
@@ -1646,7 +1652,13 @@ export function Heading({
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-        backgroundColor: pressed ? color.accentSurface : sticky ? color.surface : "transparent",
+        backgroundColor: pressed
+          ? color.accentSurface
+          : sticky
+            ? sidebar
+              ? color.sidebar
+              : color.surface
+            : "transparent",
       })}
     >
       {disclosure.leading}
