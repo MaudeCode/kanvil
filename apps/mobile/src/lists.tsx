@@ -1,7 +1,7 @@
 import { createHeaderAction, createHeaderMenu } from "./navigation-actions.tsx";
 import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
 import { useCallback, useLayoutEffect, useState } from "react";
-import { View } from "react-native";
+import { I18nManager, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { capabilitiesOf, type Output } from "@kanvil/contracts";
 import { useHeaderSearch, useProjectNavigation } from "./navigation.ts";
@@ -265,12 +265,14 @@ export function ProjectRow({
   project,
   workspaceName = "",
   picker,
+  compact = picker,
   selected,
   onPress,
 }: {
   project: Output<"list_projects">[number];
   workspaceName?: string;
   picker: boolean;
+  compact?: boolean;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -281,25 +283,28 @@ export function ProjectRow({
       title={project.name}
       onLongPress={() => scope.selectProject(project.id, true)}
       interaction={picker ? "choice" : "navigate"}
-      selected={selected}
+      selected={picker ? selected : undefined}
       leading={<ProjectIcon project={project} size={24} />}
       dense
       trailing={
-        picker ? (
+        compact ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Body muted small>
               {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
             </Body>
-            {selected ? (
-              <TicketGlyph name="check" color={color.accent} />
-            ) : (
-              <View style={{ width: 16 }} />
+            {picker && selected && <TicketGlyph name="check" color={color.accent} />}
+            {picker && !selected && <View style={{ width: 16 }} />}
+            {!picker && (
+              <TicketGlyph
+                name={I18nManager.isRTL ? "chevron-left" : "chevron-right"}
+                color={color.muted}
+              />
             )}
           </View>
         ) : undefined
       }
       metadata={
-        picker ? undefined : (
+        compact ? undefined : (
           <>
             <Body muted small>
               {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}

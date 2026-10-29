@@ -168,6 +168,14 @@ function Editor({
   if (!ready) return <Loading />;
   const fields = draft.fields,
     stale = !!ticket && ticket.version !== draft.version;
+  const propertySummary = [
+    fields.parentId ? t("detail.field.parentTicket") : "",
+    fields.startAt ? t("ticket.date.start") : "",
+    fields.dueAt ? t("ticket.date.due") : "",
+    fields.scopes.length ? fields.scopes.join(", ") : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Screen form scrollRef={scroll}>
       {stale && (
@@ -286,16 +294,11 @@ function Editor({
         title={t("detail.editor.moreProperties")}
         collapsible
         summary={
-          <Body muted small>
-            {[
-              fields.parentId ? t("detail.field.parentTicket") : "",
-              fields.startAt ? t("ticket.date.start") : "",
-              fields.dueAt ? t("ticket.date.due") : "",
-              fields.scopes.length ? fields.scopes.join(", ") : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Body>
+          propertySummary ? (
+            <Body muted small>
+              {propertySummary}
+            </Body>
+          ) : undefined
         }
       >
         <Field

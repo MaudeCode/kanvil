@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Недавние проекты",
   "navigation.switchProject": "Сменить рабочее пространство или проект",
   labelValue: "{{label}}: {{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "Создать проект",
   },
   tickets: {
+    options: "Параметры списка",
     expandAll: "Развернуть все разделы",
     collapseAll: "Свернуть все разделы",
     select: "Выбрать задачи",

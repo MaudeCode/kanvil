@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "최근 프로젝트",
   "navigation.switchProject": "워크스페이스 또는 프로젝트 전환",
   labelValue: "{{label}}: {{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "프로젝트 만들기",
   },
   tickets: {
+    options: "목록 옵션",
     expandAll: "모든 섹션 펼치기",
     collapseAll: "모든 섹션 접기",
     select: "티켓 선택",

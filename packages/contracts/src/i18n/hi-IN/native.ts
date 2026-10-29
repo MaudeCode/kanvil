@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "हाल के प्रोजेक्ट",
   "navigation.switchProject": "कार्यस्थान या प्रोजेक्ट बदलें",
   labelValue: "{{label}}: {{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "प्रोजेक्ट बनाएं",
   },
   tickets: {
+    options: "सूची के विकल्प",
     expandAll: "सभी अनुभाग खोलें",
     collapseAll: "सभी अनुभाग समेटें",
     select: "टिकट चुनें",

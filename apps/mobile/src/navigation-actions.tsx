@@ -35,7 +35,7 @@ export function createHeaderFallback(action: HeaderAction | undefined, color: Co
 export function createHeaderAction(
   title: string,
   onPress: () => void,
-  icon: NonNullable<NativeStackHeaderItemButton["icon"]>,
+  icon: NativeStackHeaderItemButton["icon"],
   disabled = false,
   policy: Pick<
     NativeStackHeaderItemButton,
@@ -46,10 +46,10 @@ export function createHeaderAction(
     type: "button",
     label: title,
     accessibilityLabel: title,
-    icon,
+    ...(icon ? { icon } : {}),
     onPress,
     disabled,
-    identifier: `action:${icon.type === "sfSymbol" ? icon.name : title}`,
+    identifier: `action:${icon?.type === "sfSymbol" ? icon.name : title}`,
     visibilityPriority: "high",
     sharesBackground: false,
     ...policy,
@@ -97,7 +97,7 @@ export function createHeaderMenu(
 }
 
 // Route placeholders and loaded ticket panes use the same native item identities.
-export function ticketHeaderItems(edit: HeaderAction | undefined, more: HeaderAction) {
+export function ticketHeaderItems(edit: HeaderAction | undefined, more?: HeaderAction) {
   return [
     ...(edit
       ? [
@@ -110,22 +110,36 @@ export function ticketHeaderItems(edit: HeaderAction | undefined, more: HeaderAc
           ),
         ]
       : []),
-    createHeaderAction(
-      more.title,
-      more.onPress,
-      { type: "sfSymbol", name: "ticket" },
-      more.disabled,
-      {
-        identifier: "ticket-actions",
-        visibilityPriority: "low",
-        sharesBackground: true,
-      },
-    ),
+    ...(more
+      ? [
+          createHeaderAction(
+            more.title,
+            more.onPress,
+            { type: "sfSymbol", name: "ticket" },
+            more.disabled,
+            { identifier: "ticket-actions", visibilityPriority: "low", sharesBackground: true },
+          ),
+        ]
+      : []),
   ];
 }
 
 // All browsing headers share the same picker, including headers that replace Back for a Split.
-export function projectHeaderItems(showPicker: () => void, title: string, back?: HeaderAction) {
+export function projectHeaderItems(
+  showPicker: () => void,
+  title: string,
+  back?: HeaderAction,
+  projectName?: string,
+) {
+  const picker = createHeaderAction(
+    projectName ? t("native.navigation.projectButton", { project: projectName }) : title,
+    showPicker,
+    projectName ? undefined : { type: "sfSymbol", name: "square.stack.3d.up" },
+    false,
+    { identifier: "switch-project", visibilityPriority: "high", sharesBackground: false },
+  );
+  if (projectName)
+    picker.accessibilityLabel = t("native.labelValue", { label: title, value: projectName });
   return [
     ...(back
       ? [
@@ -135,10 +149,6 @@ export function projectHeaderItems(showPicker: () => void, title: string, back?:
           }),
         ]
       : []),
-    createHeaderAction(title, showPicker, { type: "sfSymbol", name: "square.stack.3d.up" }, false, {
-      identifier: "switch-project",
-      visibilityPriority: "high",
-      sharesBackground: false,
-    }),
+    picker,
   ];
 }

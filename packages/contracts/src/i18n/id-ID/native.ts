@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Proyek terbaru",
   "navigation.switchProject": "Ganti ruang kerja atau proyek",
   labelValue: "{{label}}: {{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "Buat proyek",
   },
   tickets: {
+    options: "Opsi daftar",
     expandAll: "Perluas semua bagian",
     collapseAll: "Ciutkan semua bagian",
     select: "Pilih tiket",

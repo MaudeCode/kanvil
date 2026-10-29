@@ -45,6 +45,7 @@ const calendarMinimumWidth = 7 * 44 + 16;
 
 export function TicketSchedule({
   projectId,
+  projectName,
   layout,
   tickets,
   onOpen,
@@ -55,6 +56,7 @@ export function TicketSchedule({
   header,
 }: {
   projectId: string;
+  projectName: string;
   layout: "calendar" | "timeline";
   tickets: Ticket[];
   onOpen: (ticket: Ticket) => void;
@@ -121,6 +123,7 @@ export function TicketSchedule({
                   },
                 }
               : undefined,
+            projectName,
           ),
       }),
     );
@@ -129,10 +132,15 @@ export function TicketSchedule({
         nativeHeaderOptions({
           headerBackVisible: false,
           unstable_headerLeftItems: () =>
-            projectHeaderItems(showPicker, t("native.navigation.switchProject")),
+            projectHeaderItems(
+              showPicker,
+              t("native.navigation.switchProject"),
+              undefined,
+              projectName,
+            ),
         }),
       );
-  }, [navigation, showDay, splitState, showPicker]);
+  }, [navigation, showDay, splitState, showPicker, projectName]);
   const controls = (
     <View
       style={{

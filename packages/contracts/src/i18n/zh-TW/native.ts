@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "最近的專案",
   "navigation.switchProject": "切換工作區或專案",
   labelValue: "{{label}}：{{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "建立專案",
   },
   tickets: {
+    options: "清單選項",
     expandAll: "展開所有群組",
     collapseAll: "收合所有群組",
     select: "選取工單",

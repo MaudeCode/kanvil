@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Progetti recenti",
   "navigation.switchProject": "Cambia spazio di lavoro o progetto",
   labelValue: "{{label}}: {{value}}",
@@ -49,6 +50,7 @@ export default {
     create: "Crea progetto",
   },
   tickets: {
+    options: "Opzioni elenco",
     expandAll: "Espandi tutte le sezioni",
     collapseAll: "Comprimi tutte le sezioni",
     select: "Seleziona ticket",

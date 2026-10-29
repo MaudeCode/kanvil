@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Dự án gần đây",
   "navigation.switchProject": "Chuyển không gian làm việc hoặc dự án",
   labelValue: "{{label}}: {{value}}",
@@ -50,6 +51,7 @@ export default {
     create: "Tạo dự án",
   },
   tickets: {
+    options: "Tùy chọn danh sách",
     expandAll: "Mở rộng tất cả các phần",
     collapseAll: "Thu gọn tất cả các phần",
     select: "Chọn phiếu",

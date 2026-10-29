@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Πρόσφατα έργα",
   "navigation.switchProject": "Αλλαγή χώρου εργασίας ή έργου",
   labelValue: "{{label}}: {{value}}",
@@ -50,6 +51,7 @@ export default {
     create: "Δημιουργία έργου",
   },
   tickets: {
+    options: "Επιλογές λίστας",
     expandAll: "Ανάπτυξη όλων των ενοτήτων",
     collapseAll: "Σύμπτυξη όλων των ενοτήτων",
     select: "Επιλογή εισιτηρίων",

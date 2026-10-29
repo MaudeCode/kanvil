@@ -167,6 +167,56 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     searching,
     open: openSearch,
   } = useHeaderSearch(query, onQuery, t("native.tickets.searchPlaceholder"));
+  const changeFilters = useCallback(
+    (next: typeof filters) => {
+      setFilters(next);
+      navigation.setParams({ viewId: "" });
+    },
+    [navigation],
+  );
+  const sortItems = useMemo<NativeStackHeaderItemMenu["menu"]["items"]>(() => {
+    const common = new Set<string>(["priority", "updated", "created", "title", filters.sort]);
+    const options = ticketFilter.shape.sort.unwrap().options.map((sort) => ({
+      sort,
+      item: {
+        type: "action" as const,
+        label: sortLabels[sort],
+        state: filters.sort === sort ? ("on" as const) : ("off" as const),
+        onPress: () => changeFilters({ ...filters, sort }),
+      },
+    }));
+    return [
+      {
+        type: "submenu",
+        label: t("ticket.display.orderBy"),
+        inline: true,
+        items: [
+          ...options.filter(({ sort }) => common.has(sort)).map(({ item }) => item),
+          {
+            type: "submenu",
+            label: t("shell.primitive.more"),
+            items: options.filter(({ sort }) => !common.has(sort)).map(({ item }) => item),
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        label: t("ticket.display.direction"),
+        inline: true,
+        layout: "palette",
+        items: (["asc", "desc"] as const).map((order) => ({
+          type: "action",
+          label: t(order === "asc" ? "ticket.display.ascending" : "ticket.display.descending"),
+          icon: {
+            type: "sfSymbol",
+            name: order === "asc" ? "arrow.up" : "arrow.down",
+          },
+          state: (filters.order ?? defaultOrder[filters.sort]) === order ? "on" : "off",
+          onPress: () => changeFilters({ ...filters, order }),
+        })),
+      },
+    ];
+  }, [filters, changeFilters]);
 
   const save = useOperation("save_view"),
     deleteView = useOperation("delete_view"),
@@ -230,6 +280,15 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     enabled: !!selectedTicketId,
   });
   const selectedTicket = rows.find((item) => item.id === selectedTicketId) ?? selected.data?.ticket;
+  const visibleTicket = split && splitState.secondaryVisible ? selectedTicket : undefined;
+  const newTicket = useCallback(
+    () => navigation.navigate("Edit", { projectId }),
+    [navigation, projectId],
+  );
+  const moreTicketActions = useCallback(() => {
+    if (visibleTicket)
+      setFocused(rows.find((ticket) => ticket.id === visibleTicket.id) ?? visibleTicket);
+  }, [visibleTicket, rows]);
   useEffect(() => {
     if (isFocused)
       contexts.save(projectId, {
@@ -564,52 +623,86 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
             ),
           ]
         : [
-            ...(selectedTicket && split && (!splitState.collapsed || splitState.secondaryVisible)
+            ...(visibleTicket
               ? ticketHeaderItems(
                   access.canWrite
                     ? {
                         title: t("common.action.edit"),
                         onPress: () =>
-                          navigation.navigate("Edit", { projectId, ticketId: selectedTicket.id }),
+                          navigation.navigate("Edit", { projectId, ticketId: visibleTicket.id }),
                       }
                     : undefined,
-                  {
-                    title: t("ticket.selection.more"),
-                    onPress: () =>
-                      setFocused(
-                        rows.find((ticket) => ticket.id === selectedTicket.id) ?? selectedTicket,
-                      ),
-                  },
+                  detailOnly
+                    ? { title: t("ticket.selection.more"), onPress: moreTicketActions }
+                    : undefined,
                 )
               : []),
             ...(detailOnly
               ? []
               : ([
-                  ...(access.canWrite
+                  ...(access.canWrite && !visibleTicket
                     ? [
                         createHeaderAction(
                           t("native.screen.newTicket"),
-                          () => navigation.navigate("Edit", { projectId }),
+                          newTicket,
                           { type: "sfSymbol", name: "plus" },
                           false,
-                          {
-                            identifier: "ticket-create",
-                            visibilityPriority:
-                              selectedTicket && split && !splitState.collapsed ? "default" : "high",
-                          },
+                          { identifier: "ticket-create", visibilityPriority: "high" },
                         ),
                       ]
                     : []),
                   createHeaderMenu(
-                    t("ticket.list.views"),
-                    { type: "sfSymbol", name: "rectangle.3.group" },
-                    viewItems,
+                    t("native.tickets.options"),
+                    { type: "sfSymbol", name: "arrow.up.arrow.down" },
+                    [
+                      ...(visibleTicket && access.canWrite
+                        ? [
+                            {
+                              type: "submenu" as const,
+                              label: "",
+                              inline: true,
+                              items: [
+                                {
+                                  type: "action" as const,
+                                  label: t("native.screen.newTicket"),
+                                  icon: { type: "sfSymbol" as const, name: "plus" as const },
+                                  onPress: newTicket,
+                                },
+                              ],
+                            },
+                          ]
+                        : []),
+                      ...sortItems,
+                      {
+                        type: "submenu",
+                        label: t("ticket.list.views"),
+                        icon: { type: "sfSymbol", name: "rectangle.3.group" },
+                        items: viewItems,
+                      },
+                      ...(visibleTicket
+                        ? [
+                            {
+                              type: "submenu" as const,
+                              label: "",
+                              inline: true,
+                              items: [
+                                {
+                                  type: "action" as const,
+                                  label: t("ticket.selection.more"),
+                                  icon: { type: "sfSymbol" as const, name: "ticket" as const },
+                                  onPress: moreTicketActions,
+                                },
+                              ],
+                            },
+                          ]
+                        : []),
+                    ],
                     {
-                      identifier: "ticket-views",
+                      identifier: "ticket-list-options",
+                      visibilityPriority: "high",
                       ...(filterCount || query.trim()
                         ? { badge: { value: filterCount + (query.trim() ? 1 : 0) } }
                         : {}),
-                      visibilityPriority: "default",
                     },
                   ),
                 ] satisfies NativeStackHeaderItem[])),
@@ -625,12 +718,12 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       destroy,
       navigation,
       projectId,
-      selectedTicket,
-      splitState,
-      split,
-      rows,
+      visibleTicket,
+      newTicket,
+      moreTicketActions,
       selecting,
       viewItems,
+      sortItems,
       query,
       filterCount,
       detailOnly,
@@ -643,7 +736,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
           ? t("ticket.selection.selected", { count: selection.size })
           : detailOnly && selectedTicket
             ? selectedTicket.key
-            : title,
+            : "",
         unstable_headerRightItems: () => headerItems,
         ...(layout === "list" || layout === "board"
           ? {
@@ -663,6 +756,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                               },
                             }
                           : undefined,
+                        title,
                       ),
                       ...(split &&
                       !splitState.collapsed &&
@@ -734,6 +828,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     layout === "calendar" || layout === "timeline" ? (
       <TicketSchedule
         projectId={projectId}
+        projectName={title}
         layout={layout}
         anchor={anchor}
         range={range ?? scheduleWindow(layout, anchor, firstWeekday())}
@@ -944,7 +1039,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
               />
             ) : (
               <Screen>
-                <Body muted>{t("ticket.picker.placeholder")}</Body>
+                <EmptyState title={t("ticket.picker.placeholder")} />
               </Screen>
             )
           }
@@ -1026,14 +1121,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         open={filtering}
         onClose={() => setFiltering(false)}
       >
-        <TicketFilters
-          projectId={projectId}
-          value={filters}
-          onChange={(next) => {
-            setFilters(next);
-            navigation.setParams({ viewId: "" });
-          }}
-        />
+        <TicketFilters projectId={projectId} value={filters} onChange={changeFilters} />
       </Sheet>
       <Sheet
         title={t("ticket.list.saveView")}

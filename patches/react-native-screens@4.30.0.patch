@@ -40,64 +40,29 @@ index c435fdd1dab11f39dc78367860e8f568c953ea8c..0034ff91cbaf6dfd4f3d0afa70e81202
    [[self class] resolveImageFromConfig:dict
                             imageLoader:imageLoader
                         completionBlock:^(UIImage *img) {
-diff --git a/ios/RNSScreen.h b/ios/RNSScreen.h
-index fd9ecffa71b97230f62c6cde961d21c50076f960..ac8524adeadd2e5621139a19bab77ffe1a8e49d8 100644
---- a/ios/RNSScreen.h
-+++ b/ios/RNSScreen.h
-@@ -52,6 +52,7 @@ NS_ASSUME_NONNULL_BEGIN
- - (RNSScreenView *)screenView;
- - (void)addSnapshotToView;
- - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal;
-+- (nullable UINavigationController *)getVisibleNavigationControllerIsModal:(BOOL)isModal;
- - (BOOL)isRemovedFromParent;
- - (void)notifyPresentedControllerDismissed;
- 
 diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
-index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..b9c835babcbc8d087de101b047866c5fbce75904 100644
+index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..f933429cfafff740dcd324037cdb17ef949a01d1 100644
 --- a/ios/RNSScreen.mm
 +++ b/ios/RNSScreen.mm
-@@ -51,6 +51,40 @@ @interface RNSScreenView () <UIAdaptivePresentationControllerDelegate,
+@@ -51,6 +51,17 @@ @interface RNSScreenView () <UIAdaptivePresentationControllerDelegate,
                               CAAnimationDelegate>
  @end
  
-+static void RNSCollectRootScrollViews(UIView *view, UIView *root, NSMutableArray<UIScrollView *> *result, BOOL nested)
++static void RNSCollectRootScrollViews(UIView *view, UIView *root, NSMutableArray<UIScrollView *> *result)
 +{
 +  if (view.hidden || view.alpha <= 0) return;
 +  if (view != root && [view isKindOfClass:RNSScreenView.class]) return;
 +  if ([view isKindOfClass:UIScrollView.class]) {
-+    if (nested) {
-+      // Fabric reuses native scroll views; a former root must not fade a nested chart or code block.
-+      [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:(UIScrollView *)view
-+                                                   coveredHeight:0 foregroundBottom:0];
-+    } else {
-+      [result addObject:(UIScrollView *)view];
-+    }
-+    nested = YES;
++    [result addObject:(UIScrollView *)view];
++    return;
 +  }
-+  for (UIView *child in view.subviews) RNSCollectRootScrollViews(child, root, result, nested);
-+}
-+static CGFloat RNSHeaderForegroundBottom(UIView *view, UIView *coordinates, CGRect header, CGFloat alpha)
-+{
-+  alpha *= view.alpha;
-+  if (view.hidden || alpha <= 0.01) return 0;
-+  CGFloat bottom = 0;
-+  CGRect foreground = view.bounds;
-+  if ([view isKindOfClass:UILabel.class]) {
-+    UILabel *label = (UILabel *)view;
-+    foreground = [label textRectForBounds:label.bounds limitedToNumberOfLines:label.numberOfLines];
-+  }
-+  CGRect frame = [view convertRect:foreground toView:coordinates];
-+  if (([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIControl.class]) &&
-+      CGRectIntersectsRect(frame, header)) bottom = MIN(CGRectGetMaxY(frame), CGRectGetMaxY(header));
-+  for (UIView *child in view.subviews)
-+    bottom = MAX(bottom, RNSHeaderForegroundBottom(child, coordinates, header, alpha));
-+  return bottom;
++  for (UIView *child in view.subviews) RNSCollectRootScrollViews(child, root, result);
 +}
 +
  @implementation RNSScreenView {
    __weak RCTScrollViewComponentView *_sheetsScrollView;
    /// Tag of `_sheetsScrollView` at the time we started observing it. Fabric changes the tag when it recycles
-@@ -1153,8 +1187,34 @@ - (void)overrideScrollViewBehaviorInFirstDescendantChainIfNeeded
+@@ -1153,8 +1164,19 @@ - (void)overrideScrollViewBehaviorInFirstDescendantChainIfNeeded
  
  - (void)updateContentScrollViewEdgeEffectsIfExists
  {
@@ -111,30 +76,15 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..b9c835babcbc8d087de101b047866c5f
 +    }
 +  }
 +  [RNSScrollEdgeEffectApplicator applyToScrollView:scrollView withProvider:self];
-+  UINavigationController *navigation = [_controller getVisibleNavigationControllerIsModal:self.isModal];
-+  CGFloat height = (self.config.show && self.config.translucent && self.topScrollEdgeEffect == RNSScrollEdgeEffectSoft)
-+      ? [_controller calculateHeaderHeightIsModal:self.isModal] : 0;
-+  CGRect header = CGRectMake(0, 0, navigation.view.bounds.size.width, height);
-+  CGFloat foreground = RNSHeaderForegroundBottom(navigation.navigationBar, navigation.view, header, 1);
 +  NSMutableArray<UIScrollView *> *scrollers = [NSMutableArray new];
-+  RNSCollectRootScrollViews(self, self, scrollers, NO);
-+  for (UIScrollView *content in scrollers) {
-+    if (height <= 0) {
-+      [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:content coveredHeight:0 foregroundBottom:0];
-+      continue;
-+    }
-+    if (content.window == nil || content.window != navigation.view.window) continue;
++  RNSCollectRootScrollViews(self, self, scrollers);
++  for (UIScrollView *content in scrollers)
 +    [RNSScrollEdgeEffectApplicator applyToScrollView:content withProvider:self];
-+    CGRect covered = [navigation.view convertRect:header toView:content];
-+    CGPoint foregroundEnd = [navigation.view convertPoint:CGPointMake(0, foreground) toView:content];
-+    [RNSScrollEdgeEffectApplicator applyTopLegibilityToScrollView:content
-+                                                coveredHeight:height > 0 ? MAX(0, CGRectGetMaxY(covered) - content.bounds.origin.y) : 0
-+                                             foregroundBottom:MAX(0, foregroundEnd.y - content.bounds.origin.y)];
-+  }
++
  }
  
  #pragma mark - RNSSafeAreaProviding
-@@ -1589,6 +1649,8 @@ - (void)viewDidDisappear:(BOOL)animated
+@@ -1589,6 +1611,8 @@ - (void)viewDidDisappear:(BOOL)animated
  - (void)viewDidLayoutSubviews
  {
    [super viewDidLayoutSubviews];
@@ -143,7 +93,7 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..b9c835babcbc8d087de101b047866c5f
  
    // The below code makes the screen view adapt dimensions provided by the system. We take these
    // into account only when the view is mounted under RNSNavigationController, in which case the
-@@ -1653,6 +1715,12 @@ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal
+@@ -1653,6 +1677,12 @@ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal
  {
    UINavigationController *navctr = [self getVisibleNavigationControllerIsModal:isModal];
  
@@ -156,7 +106,7 @@ index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..b9c835babcbc8d087de101b047866c5f
    // If there's no navigation controller for the modal (or the navigation bar is hidden), we simply don't want to
    // return header height, as modal possibly does not have header when navigation controller is nil,
    // and we don't want to count status bar if navigation bar is hidden (inset could be negative).
-@@ -1710,6 +1778,7 @@ - (void)calculateAndNotifyHeaderHeightChangeIsModal:(BOOL)isModal
+@@ -1710,6 +1740,7 @@ - (void)calculateAndNotifyHeaderHeightChangeIsModal:(BOOL)isModal
  {
    CGFloat totalHeight = [self calculateHeaderHeightIsModal:isModal];
    [self.screenView notifyHeaderHeightChange:totalHeight];
@@ -177,10 +127,76 @@ index 8f99f5b5b9d3f184f36613d51174cb9393d2cdd6..9b1b2a9529e6c67e8b23deab7fb5fa7b
  @property (nonatomic) UISemanticContentAttribute direction;
  @property (nonatomic) UINavigationItemBackButtonDisplayMode backButtonDisplayMode;
 diff --git a/ios/RNSScreenStackHeaderConfig.mm b/ios/RNSScreenStackHeaderConfig.mm
-index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663bee325c299 100644
+index e217b2411d20c85db3ec84bb87765c1e9407fd3b..ba3e0c01477cc4f76790f5e322cd4f3a6d631e41 100644
 --- a/ios/RNSScreenStackHeaderConfig.mm
 +++ b/ios/RNSScreenStackHeaderConfig.mm
-@@ -84,6 +84,7 @@ - (void)initProps
+@@ -45,6 +45,65 @@ + (BOOL)rnscreens_isBlankOrNull:(NSString *)string
+ 
+ @end
+ 
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++// The existing title slot owns local legibility; no scroll content or viewport is covered.
++@interface RNSGlassTitleView : UIVisualEffectView
++- (void)configureTitle:(NSString *)title attributes:(NSDictionary *)attributes;
++@end
++@implementation RNSGlassTitleView {
++  UILabel *_titleLabel;
++  NSDictionary *_attributes;
++}
++- (instancetype)init
++{
++  UIVisualEffect *effect = nil;
++  if (@available(iOS 26.0, *)) effect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
++  if (self = [super initWithEffect:effect]) {
++    self.userInteractionEnabled = NO;
++    _titleLabel = [UILabel new];
++    _titleLabel.adjustsFontForContentSizeCategory = YES;
++    _titleLabel.accessibilityTraits = UIAccessibilityTraitHeader;
++    _titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
++    [self.contentView addSubview:_titleLabel];
++    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateTextSize)
++        name:UIContentSizeCategoryDidChangeNotification object:nil];
++  }
++  return self;
++}
++- (void)configureTitle:(NSString *)title attributes:(NSDictionary *)attributes
++{
++  _titleLabel.text = title;
++  _attributes = attributes;
++  [self updateTextSize];
++}
++- (void)updateTextSize
++{
++  UIFont *font = _attributes[NSFontAttributeName];
++  _titleLabel.font = font ? [[UIFontMetrics metricsForTextStyle:UIFontTextStyleHeadline] scaledFontForFont:font]
++                         : [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
++  _titleLabel.textColor = _attributes[NSForegroundColorAttributeName] ?: UIColor.labelColor;
++  [self invalidateIntrinsicContentSize];
++  [self setNeedsLayout];
++}
++- (CGSize)intrinsicContentSize
++{
++  CGSize size = _titleLabel.intrinsicContentSize;
++  return CGSizeMake(size.width + 24, size.height + 12);
++}
++- (void)layoutSubviews
++{
++  [super layoutSubviews];
++  _titleLabel.frame = CGRectInset(self.bounds, 12, 6);
++  self.layer.cornerRadius = self.bounds.size.height / 2;
++  self.clipsToBounds = YES;
++}
++- (void)dealloc
++{
++  [[NSNotificationCenter defaultCenter] removeObserver:self];
++}
++@end
++#endif
++
+ @interface RNSScreenStackHeaderConfig () <RCTMountingTransactionObserving>
+ @end
+ 
+@@ -84,6 +143,7 @@ - (void)initProps
    self.hidden = YES;
    _reactSubviews = [NSMutableArray new];
    _backTitleVisible = YES;
@@ -188,7 +204,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
    _blurEffect = RNSBlurEffectStyleNone;
    _synchronousShadowStateUpdatesEnabled = YES;
  }
-@@ -527,6 +528,8 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -527,6 +587,8 @@ + (void)updateViewController:(UIViewController *)vc
  
    BOOL wasHidden = navctr.navigationBarHidden;
    BOOL shouldHide = config == nil || !config.shouldHeaderBeVisible;
@@ -197,7 +213,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
  
    if (!shouldHide && !config.translucent && ![self screensExtendUnderOpaqueNavigationBar]) {
      // When nav bar is not translucent we change edgesForExtendedLayout to avoid system laying out
-@@ -556,19 +559,27 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -556,19 +618,33 @@ + (void)updateViewController:(UIViewController *)vc
  #if !TARGET_OS_TV
    [config configureBackItem:prevItem withPrevVC:prevVC];
  
@@ -211,6 +227,12 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
 +  if (navitem.largeTitleDisplayMode != titleMode) {
 +    navitem.largeTitleDisplayMode = titleMode;
 +  }
++
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(27_1) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (@available(iOS 27.1, *)) {
++    navitem.verticalBarCompressionBehavior = UIVerticalBarCompressionBehaviorPrefersBarItems;
++  }
++#endif
  
  #if RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
    if (@available(iOS 27.0, *)) {
@@ -231,7 +253,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
    }
  #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
  #endif
-@@ -603,12 +614,14 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -603,12 +679,18 @@ + (void)updateViewController:(UIViewController *)vc
    }
    navitem.scrollEdgeAppearance = scrollEdgeAppearance;
  #if !TARGET_OS_TV
@@ -239,9 +261,13 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
 +  [navitem setHidesBackButton:config.hideBackButton animated:animateItems];
    navitem.leftItemsSupplementBackButton = config.backButtonInCustomView;
  #endif
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (![navitem.titleView isKindOfClass:RNSGlassTitleView.class]) navitem.titleView = nil;
++#else
    navitem.titleView = nil;
 -  navitem.leftBarButtonItems = nil;
 -  navitem.rightBarButtonItems = nil;
++#endif
 +  NSArray<UIBarButtonItem *> *previousLeftItems = navitem.leftBarButtonItems;
 +  NSArray<UIBarButtonItem *> *previousRightItems = navitem.rightBarButtonItems;
 +  NSMutableArray<UIBarButtonItem *> *leftItems = [NSMutableArray new];
@@ -249,7 +275,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
  
  #if !TARGET_OS_TV
    // We want to set navitem.searchController to nil only if we are sure
-@@ -621,17 +634,11 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -621,17 +703,11 @@ + (void)updateViewController:(UIViewController *)vc
      // `- [RNSScreenStackHeaderConfig replaceNavigationBarViewsWithSnapshotOfSubview:]` method.
      switch (subview.type) {
        case RNSScreenStackHeaderSubviewTypeLeft: {
@@ -269,7 +295,24 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
          break;
        }
        case RNSScreenStackHeaderSubviewTypeCenter:
-@@ -696,10 +703,20 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -693,13 +769,37 @@ + (void)updateViewController:(UIViewController *)vc
+   }
+ #endif /* !TARGET_OS_TV */
+ 
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (@available(iOS 26.0, *)) {
++    BOOL hasGlassTitle = [navitem.titleView isKindOfClass:RNSGlassTitleView.class];
++    if (config.translucent && config.title.length && (navitem.titleView == nil || hasGlassTitle)) {
++      RNSGlassTitleView *titleView = hasGlassTitle ? (RNSGlassTitleView *)navitem.titleView : [RNSGlassTitleView new];
++      [titleView configureTitle:config.title attributes:appearance.titleTextAttributes];
++      if (!hasGlassTitle) {
++        titleView.frame = (CGRect){CGPointZero, titleView.intrinsicContentSize};
++        navitem.titleView = titleView;
++      }
++    } else if (hasGlassTitle) navitem.titleView = nil;
++  }
++#endif
++
    // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
    // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
    navitem.title = config.title;
@@ -294,7 +337,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
  
    // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
    // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
-@@ -832,6 +849,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -832,6 +932,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
  
  - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
                                           withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
@@ -302,7 +345,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
  {
    if (dicts.count == 0) {
      return currentItems;
-@@ -841,7 +859,15 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -841,7 +942,15 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
    for (NSUInteger i = 0; i < dicts.count; i++) {
      NSDictionary *dict = dicts[i];
      if (dict[@"buttonId"] || dict[@"menu"]) {
@@ -319,7 +362,7 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
            action:^(NSString *buttonId) {
              auto eventEmitter = std::static_pointer_cast<const facebook::react::RNSScreenStackHeaderConfigEventEmitter>(
                  self->_eventEmitter);
-@@ -1068,6 +1094,11 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1068,6 +1177,11 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
      needsNavigationControllerLayout = YES;
    }
  
@@ -331,122 +374,18 @@ index e217b2411d20c85db3ec84bb87765c1e9407fd3b..3646181e0f12e330029a46fd703663be
    if (newScreenProps.translucent != _translucent) {
      _translucent = newScreenProps.translucent;
      needsNavigationControllerLayout = YES;
-diff --git a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
-index b1c43b7d04da93062e4dcf953154a732c2c50ded..22979ce00f4839ddaf2a0101b81225f3e72c335f 100644
---- a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
-+++ b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.h
-@@ -12,4 +12,7 @@
- @interface RNSScrollEdgeEffectApplicator : NSObject
- + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
-              withProvider:(nonnull id<RNSScrollEdgeEffectProviding>)provider;
-++ (void)applyTopLegibilityToScrollView:(nonnull UIScrollView *)scrollView
-+                       coveredHeight:(CGFloat)height
-+                    foregroundBottom:(CGFloat)foreground;
- @end
 diff --git a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
-index c0fb1333ea2ab281f057cff15b2d0aad7f0043f1..7306324550a2ad4d6ef493a298a35457459fcb09 100644
+index c0fb1333ea2ab281f057cff15b2d0aad7f0043f1..95057f00609ada7cca6a2aee5aa96f36e435f3d2 100644
 --- a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
 +++ b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
-@@ -2,6 +2,80 @@
+@@ -2,7 +2,6 @@
  #import <React/RCTLog.h>
  #import "RNSDefines.h"
  #import "RNSEnums.h"
-+#import <QuartzCore/QuartzCore.h>
-+#import <objc/runtime.h>
-+
-+// The stateless applicator cannot own per-view observations; this attachment follows its scroller.
-+// This masks scrolling content, never the bar or its controls. Bounds observation keeps the
-+// gradient in viewport coordinates while UIScrollView changes its layer's bounds origin.
-+static void *RNSLegibilityBoundsContext = &RNSLegibilityBoundsContext;
-+static char RNSLegibilityMaskKey;
-+@interface RNSScrollLegibilityMask : NSObject
-+- (instancetype)initWithLayer:(CALayer *)layer;
-+- (void)updateCoveredHeight:(CGFloat)height foregroundBottom:(CGFloat)foreground;
-+- (void)updateMask;
-+@end
-+@implementation RNSScrollLegibilityMask {
-+  CALayer *_observedLayer;
-+  CAGradientLayer *_gradient;
-+  CGFloat _coveredHeight;
-+  CGFloat _foregroundBottom;
-+}
-+- (instancetype)initWithLayer:(CALayer *)layer
-+{
-+  if (self = [super init]) {
-+    _observedLayer = layer;
-+    _gradient = [CAGradientLayer layer];
-+    _gradient.colors = @[(__bridge id)UIColor.clearColor.CGColor, (__bridge id)UIColor.clearColor.CGColor,
-+                         (__bridge id)[UIColor colorWithWhite:0 alpha:0.06].CGColor,
-+                         (__bridge id)UIColor.blackColor.CGColor, (__bridge id)UIColor.blackColor.CGColor];
-+    [_observedLayer addObserver:self forKeyPath:@"bounds" options:0 context:RNSLegibilityBoundsContext];
-+  }
-+  return self;
-+}
-+- (void)updateCoveredHeight:(CGFloat)height foregroundBottom:(CGFloat)foreground
-+{
-+  _coveredHeight = height;
-+  _foregroundBottom = foreground;
-+  [self updateMask];
-+}
-+- (void)updateMask
-+{
-+  CGRect bounds = _observedLayer.bounds;
-+  if (CGRectIsEmpty(bounds)) {
-+    // A native viewport entering the recycle pool must not retain its former header clearance.
-+    _coveredHeight = 0;
-+    _foregroundBottom = 0;
-+  }
-+  if (_coveredHeight <= 0) {
-+    if (_observedLayer.mask == _gradient) _observedLayer.mask = nil;
-+    return;
-+  }
-+  // Respect masks owned by another component.
-+  if (_observedLayer.mask != nil && _observedLayer.mask != _gradient) return;
-+  CGFloat end = MIN(_coveredHeight, bounds.size.height);
-+  CGFloat start = MAX(0, MIN(_foregroundBottom, end));
-+  [CATransaction begin];
-+  [CATransaction setDisableActions:YES];
-+  _gradient.frame = bounds;
-+  _gradient.locations = @[@0, @(start / bounds.size.height),
-+                           @((start + (end - start) * 0.8) / bounds.size.height),
-+                           @(end / bounds.size.height), @1];
-+  _observedLayer.mask = _gradient;
-+  [CATransaction commit];
-+}
-+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
-+                      change:(NSDictionary *)change context:(void *)context
-+{
-+  if (context == RNSLegibilityBoundsContext) [self updateMask];
-+  else [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
-+}
-+- (void)dealloc
-+{
-+  [_observedLayer removeObserver:self forKeyPath:@"bounds" context:RNSLegibilityBoundsContext];
-+  if (_observedLayer.mask == _gradient) _observedLayer.mask = nil;
-+}
-+@end
- 
+-
  @implementation RNSScrollEdgeEffectApplicator
  
-@@ -20,6 +94,18 @@ + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
- #endif
- }
- 
-++ (void)applyTopLegibilityToScrollView:(UIScrollView *)scrollView
-+                       coveredHeight:(CGFloat)height
-+                    foregroundBottom:(CGFloat)foreground
-+{
-+  RNSScrollLegibilityMask *mask = objc_getAssociatedObject(scrollView, &RNSLegibilityMaskKey);
-+  if (mask == nil && height > 0) {
-+    mask = [[RNSScrollLegibilityMask alloc] initWithLayer:scrollView.layer];
-+    objc_setAssociatedObject(scrollView, &RNSLegibilityMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-+  }
-+  [mask updateCoveredHeight:height foregroundBottom:foreground];
-+}
-+
- #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
- + (void)configureEffect:(UIScrollEdgeEffect *)edgeEffect
-                withEnum:(RNSScrollEdgeEffect)effectEnum API_AVAILABLE(ios(26.0))
+ + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
 diff --git a/ios/tabs/host/RNSTabBarController.mm b/ios/tabs/host/RNSTabBarController.mm
 index bc9c64436da76959ecdc22539b94ce459e1e4ed2..a7821301f32e83319fa3c91808b4b942d6ab93fa 100644
 --- a/ios/tabs/host/RNSTabBarController.mm

@@ -36,8 +36,8 @@ function dump(...args: string[]) {
 }
 const metadata = dump("--macho", "--objc-meta-data");
 const stubs = dump("--macho", "--section=__objc_stubs", "--no-show-raw-insn");
-function methodCalls(className: string, methodName: string) {
-  const host = metadata.split(` ${className}\n`)[1];
+function methodCalls(className: string, methodName: string, classMethod = false) {
+  const host = metadata.split(` ${className}\n`)[classMethod ? 2 : 1];
   assert(host, `${className} is missing`);
   const methods = host.match(/baseMethods\s+(0x[\da-f]+)/);
   assert(methods, `${className} method table is missing`);
@@ -92,8 +92,26 @@ assert(
 );
 const edgeCalls = methodCalls("RNSScreenView", "updateContentScrollViewEdgeEffectsIfExists");
 assert(
-  edgeCalls.includes("applyTopLegibilityToScrollView:coveredHeight:foregroundBottom:"),
-  "Measured scroll-content legibility fade is missing from the compiled executable",
+  edgeCalls.includes("setContentScrollView:forEdge:"),
+  "Native content-scroll association is missing from the compiled executable",
+);
+const headerCalls = methodCalls(
+  "RNSScreenStackHeaderConfig",
+  "updateViewController:withConfig:animated:",
+  true,
+);
+assert(
+  headerCalls.includes("setVerticalBarCompressionBehavior:"),
+  "Native bar-item compression preference is missing from the compiled executable",
+);
+assert(
+  headerCalls.includes("configureTitle:attributes:") &&
+    methodCalls("RNSGlassTitleView", "init").includes("effectWithStyle:"),
+  "Native content-sized glass title is missing from the compiled executable",
+);
+assert(
+  !metadata.includes("RNSScrollLegibilityMask") && !metadata.includes("RNSScrollEdgeBackdrop"),
+  "A rejected scroll-content mask or backdrop remains in the executable",
 );
 console.log(
   JSON.stringify(
@@ -102,7 +120,9 @@ console.log(
       tabSizingBeforeAttachment: true,
       headerMinimizationOverride: true,
       stablePaneHeaderMeasurement: true,
-      scrollContentLegibility: true,
+      nativeTitleGlass: true,
+      noScrollContentMask: true,
+      preferRailActions: true,
       heightCalls,
       calls,
     },

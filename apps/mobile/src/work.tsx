@@ -223,7 +223,7 @@ export function MyWork() {
 }
 
 export function Search() {
-  const { selectProject, contexts, currentProjectId } = useProjectNavigation();
+  const { selectProject, contexts } = useProjectNavigation();
   const projects = useAllProjects();
   const { api } = useConnection(),
     workspace = useWorkspace(),
@@ -318,8 +318,9 @@ export function Search() {
                 <ProjectRow
                   key={project.id}
                   project={project}
-                  picker
-                  selected={project.id === currentProjectId}
+                  picker={false}
+                  compact
+                  selected={false}
                   onPress={() => selectProject(project.id)}
                 />
               ))}

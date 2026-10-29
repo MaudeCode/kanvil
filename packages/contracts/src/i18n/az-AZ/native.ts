@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Son layihələr",
   "navigation.switchProject": "İş sahəsini və ya layihəni dəyiş",
   labelValue: "{{label}}: {{value}}",
@@ -50,6 +51,7 @@ export default {
     create: "Layihə yarat",
   },
   tickets: {
+    options: "Siyahı seçimləri",
     expandAll: "Bütün bölmələri genişləndir",
     collapseAll: "Bütün bölmələri yığ",
     select: "Biletləri seç",

@@ -1,4 +1,5 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
   "navigation.recentProjects": "Неодамнешни проекти",
   "navigation.switchProject": "Промени работен простор или проект",
   labelValue: "{{label}}: {{value}}",
@@ -50,6 +51,7 @@ export default {
     create: "Креирај проект",
   },
   tickets: {
+    options: "Опции за листата",
     expandAll: "Прошири ги сите секции",
     collapseAll: "Собери ги сите секции",
     select: "Избери тикети",
