@@ -107,7 +107,8 @@ function Panes({
       rect={primaryOnly ? usableViewport(bounds, regions) : layout.primary}
       viewportWidth={bounds.width}
       visible={!detailOnly}
-      sidebar
+      // Paired columns use the sidebar palette; a sole collection shares its outer canvas.
+      sidebar={!collapsed && !primaryOnly}
       insetHeader={primaryHeader === "frame"}
       manualInsets={ownsInsets}
     >
