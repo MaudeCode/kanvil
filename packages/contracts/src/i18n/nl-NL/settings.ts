@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Meldingen indienen",
         description:
-          "Maakt alleen tickets in quarantaine. Kan tickets niet lezen of bewerken. Afzonderlijk gebruiken.",
+          "Maakt alleen tickets in quarantaine en voegt er bestanden aan toe. Kan tickets niet lezen of bewerken. Afzonderlijk gebruiken.",
       },
       read: {
         name: "Tickets lezen",

@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Meldungen einreichen",
         description:
-          "Erstellt nur Tickets zur Prüfung. Kann Tickets weder lesen noch bearbeiten. Nur einzeln verwenden.",
+          "Erstellt nur Tickets zur Prüfung und hängt Dateien an sie an. Kann Tickets weder lesen noch bearbeiten. Nur einzeln verwenden.",
       },
       read: {
         name: "Tickets lesen",

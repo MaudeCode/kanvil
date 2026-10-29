@@ -129,7 +129,8 @@ export default {
     permission: {
       intake: {
         name: "Submit reports",
-        description: "Create quarantined tickets only. Cannot read or edit tickets. Use alone.",
+        description:
+          "Create quarantined tickets and attach files to them only. Cannot read or edit tickets. Use alone.",
       },
       read: {
         name: "Read tickets",

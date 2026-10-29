@@ -17,6 +17,7 @@ import {
   isNull,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -43,6 +44,8 @@ import {
   context,
   fail,
   getTicket,
+  intakeHoldReason,
+  intakeOnly,
   project,
   publish,
   can,
@@ -54,6 +57,10 @@ import {
   type Handlers,
   one,
 } from "./domain.ts";
+// Bounds what an untrusted intake credential can store: files on one quarantined ticket, and
+// bytes across every ticket it created that is still quarantined. Triage releases both.
+const intakeAttachmentLimit = 10,
+  intakeByteQuota = 1_000_000_000;
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket"),
   sourceProject = alias(projects, "source_project"),
@@ -299,6 +306,38 @@ export const collaborationHandlers: Pick<
   async upload_attachment(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
     const bytes = decodeBlobData(input.data, attachmentLimit);
+    if (intakeOnly(ctx.actor)) {
+      const stored = one(
+        await ctx.db
+          .select({
+            files:
+              sql<number>`count(*) filter (where ${attachments.ticketId} = ${ticket.id})`.mapWith(
+                Number,
+              ),
+            bytes: sql<number>`coalesce(sum(${attachments.size}), 0)`.mapWith(Number),
+          })
+          .from(attachments)
+          .innerJoin(tickets, eq(tickets.id, attachments.ticketId))
+          .where(
+            and(
+              eq(tickets.intakeCredentialId, ctx.actor.ownerId),
+              eq(tickets.holdReason, intakeHoldReason),
+            ),
+          ),
+      );
+      if (stored.files >= intakeAttachmentLimit)
+        fail(
+          409,
+          "attachment_limit",
+          `An intake credential can attach at most ${intakeAttachmentLimit} files to a ticket`,
+        );
+      if (stored.bytes + bytes.length > intakeByteQuota)
+        fail(
+          409,
+          "attachment_limit",
+          "This intake credential's untriaged tickets hold too many attachment bytes",
+        );
+    }
     const id = crypto.randomUUID();
     await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
     const row = one(

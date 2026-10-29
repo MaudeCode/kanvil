@@ -344,14 +344,24 @@ async function initializeApplication(
     );
     return c.json(result, result.outcome === "duplicate" ? 200 : 202);
   });
+  // The only routes an intake credential reaches; the handlers decide which tickets it may attach to.
+  const intakeRoutes = [
+    ["POST", /^\/api\/v1\/projects\/[^/]+\/tickets$/],
+    ["POST", /^\/api\/v1\/projects\/[^/]+\/tickets\/[^/]+\/attachments$/],
+    ["GET", /^\/api\/v1\/projects\/[^/]+\/tickets\/[^/]+\/attachments$/],
+  ] as const;
   app.use("/api/v1/*", async (c, next) => {
     access.checkOrigin(c.req.raw);
     const actor = await access.authenticate(c.req.raw);
     if (
       intakeOnly(actor) &&
-      !(c.req.method === "POST" && /^\/api\/v1\/projects\/[^/]+\/tickets$/.test(c.req.path))
+      !intakeRoutes.some(([method, path]) => c.req.method === method && path.test(c.req.path))
     )
-      fail(403, "insufficient_scope", "Intake credentials can only create tickets");
+      fail(
+        403,
+        "insufficient_scope",
+        "Intake credentials can only create tickets and attach files to them",
+      );
     c.set("actor", actor);
     if (!actor.machine && !["GET", "HEAD", "OPTIONS"].includes(c.req.method))
       writes.consume(actor.id);

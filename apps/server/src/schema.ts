@@ -270,6 +270,8 @@ export const tickets = pgTable(
     automationReady: boolean("automation_ready").notNull().default(false),
     claimRequired: boolean("claim_required").notNull().default(false),
     holdReason: text("hold_reason"),
+    // The intake credential that created the ticket; see getTicket in domain.ts.
+    intakeCredentialId: text("intake_credential_id"),
     startAt: timestamp("start_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
     archived: boolean("archived").notNull().default(false),
@@ -293,6 +295,9 @@ export const tickets = pgTable(
     index("ticket_parent").on(table.parentId),
     index("ticket_project_position").on(table.projectId, table.position),
     index("ticket_state").on(table.stateId),
+    index("ticket_intake_credential")
+      .on(table.intakeCredentialId)
+      .where(sql`${table.intakeCredentialId} IS NOT NULL`),
     foreignKey({
       name: "ticket_workflow_state",
       columns: [table.projectId, table.stateId, table.status],

@@ -116,7 +116,10 @@ export default {
       custom: "自訂權限",
     },
     permission: {
-      intake: { name: "提交報告", description: "僅建立隔離工單。無法讀取或編輯工單。請單獨使用。" },
+      intake: {
+        name: "提交報告",
+        description: "僅建立隔離工單並為其附加檔案。無法讀取或編輯工單。請單獨使用。",
+      },
       read: {
         name: "讀取工單",
         description: "檢視專案、工單、留言和附件。",

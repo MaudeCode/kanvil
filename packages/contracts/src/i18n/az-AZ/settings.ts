@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Hesabat göndər",
         description:
-          "Yalnız karantində biletlər yaradır. Biletləri oxuya və ya redaktə edə bilməz. Tək istifadə edin.",
+          "Yalnız karantində biletlər yaradır və onlara fayl əlavə edir. Biletləri oxuya və ya redaktə edə bilməz. Tək istifadə edin.",
       },
       read: {
         name: "Tiketləri oxumaq",

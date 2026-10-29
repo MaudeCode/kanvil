@@ -121,7 +121,7 @@ export default {
       intake: {
         name: "Kirim laporan",
         description:
-          "Hanya membuat tiket karantina. Tidak dapat membaca atau mengedit tiket. Gunakan sendiri.",
+          "Hanya membuat tiket karantina dan melampirkan file ke tiket tersebut. Tidak dapat membaca atau mengedit tiket. Gunakan sendiri.",
       },
       read: {
         name: "Baca tiket",

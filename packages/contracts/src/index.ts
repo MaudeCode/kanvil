@@ -3000,7 +3000,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/attachments",
     "write",
-    "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path.",
+    "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path. An intake credential can attach up to 10 files to a quarantined ticket it created, within 1 GB across its quarantined tickets.",
   ),
   stage_upload: op(
     projectInput.extend({ ...mutation, ...fileFields }).strict(),
@@ -3024,7 +3024,7 @@ export const operations = {
     "GET",
     "/projects/{projectId}/tickets/{ticketId}/attachments",
     "read",
-    "List authorized attachment metadata.",
+    "List authorized attachment metadata. An intake credential can list them on a quarantined ticket it created.",
   ),
   delete_attachment: op(
     projectInput.extend({ ...mutation, attachmentId: z.uuid() }).strict(),

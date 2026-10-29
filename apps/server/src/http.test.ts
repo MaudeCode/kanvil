@@ -15,6 +15,7 @@ import {
   ApiError,
   attachmentLimit,
   attachmentPath,
+  attachmentSchema,
   errorSchema,
   ticketSchema,
   timeEntrySchema,
@@ -615,7 +616,7 @@ describe("HTTP, realtime, and MCP", () => {
         ["delete_ticket", versioned],
         ["relocate_ticket", { ...versioned, destinationProjectId: other.id }],
         ["add_comment", { ...ticket, body: "Intake comment" }],
-        ["upload_attachment", { ...ticket, name: "intake.txt", data: btoa("untrusted") }],
+        ["stage_upload", { projectId: project.id, name: "intake.txt", data: btoa("untrusted") }],
       ] as const;
       for (const [name, args] of denied) {
         const error = mcp
@@ -654,6 +655,113 @@ describe("HTTP, realtime, and MCP", () => {
       await sdk.close();
     }
   });
+  it.each([false, true])(
+    "lets an intake key attach files only to its own quarantined tickets over MCP=%s",
+    async (mcp) => {
+      const project = await newProject(),
+        human = client(),
+        token = await credential(project.id, ["intake"]),
+        otherToken = await credential(project.id, ["intake"]),
+        api = client(token.key),
+        sdk = await mcpClient(token.key),
+        attachmentCap = 10;
+      try {
+        type Upload = { projectId: string; ticketId: string; name: string; data: string };
+        type Ticket = { projectId: string; ticketId: string };
+        const tool = async (name: string, args: Upload | Ticket) => {
+          const result = await sdk.callTool({ name, arguments: args });
+          expect(result.isError, name).not.toBe(true);
+          return z.object({ result: z.unknown() }).parse(result.structuredContent).result;
+        };
+        const attach = async (args: Upload) =>
+          mcp
+            ? attachmentSchema.parse(await tool("upload_attachment", args))
+            : api.call("upload_attachment", args);
+        const list = async (args: Ticket) =>
+          mcp
+            ? z.array(attachmentSchema).parse(await tool("list_attachments", args))
+            : api.call("list_attachments", args);
+        const refused = (args: Upload | Ticket) =>
+          "data" in args
+            ? mcp
+              ? mcpRejection(sdk, "upload_attachment", args)
+              : httpRejection(attach(args))
+            : mcp
+              ? mcpRejection(sdk, "list_attachments", args)
+              : httpRejection(list(args));
+        const created = await api.call("create_ticket", {
+          projectId: project.id,
+          title: "Report with screenshot",
+        });
+        const ticket = { projectId: project.id, ticketId: created.id },
+          upload = (name: string) => ({ ...ticket, name, data: btoa(`bytes of ${name}`) });
+        const first = await attach(upload("shot.png"));
+        expect(first).toMatchObject({ ticketId: created.id, name: "shot.png" });
+        expect(await list(ticket)).toEqual([first]);
+        const content = await request(attachmentPath(project.id, first.id), {
+          headers: sessionHeaders(),
+        });
+        expect(content.status).toBe(200);
+        expect(await content.text()).toBe("bytes of shot.png");
+        const elsewhere = [
+          await human.call("create_ticket", { projectId: project.id, title: "Human ticket" }),
+          await client(otherToken.key).call("create_ticket", {
+            projectId: project.id,
+            title: "Another intake key",
+          }),
+        ];
+        for (const other of elsewhere) {
+          const args = { projectId: project.id, ticketId: other.id };
+          for (const input of [{ ...args, name: "probe.txt", data: btoa("probe") }, args])
+            expect(await refused(input), other.title).toMatchObject({
+              status: 404,
+              code: "not_found",
+            });
+        }
+        for (let index = 2; index <= attachmentCap; index++)
+          await attach(upload(`shot-${index}.png`));
+        expect(await refused(upload("one-too-many.png"))).toMatchObject({
+          status: 409,
+          code: "attachment_limit",
+        });
+        await human.call("upload_attachment", upload("triage.txt"));
+        expect(await human.call("list_attachments", ticket)).toHaveLength(attachmentCap + 1);
+        // The key's quarantined tickets share one byte quota; inflating a stored size fills it.
+        const second = await api.call("create_ticket", {
+          projectId: project.id,
+          title: "Second report",
+        });
+        const secondUpload = {
+          projectId: project.id,
+          ticketId: second.id,
+          name: "clip.mp4",
+          data: btoa("clip"),
+        };
+        await fixture.database.pool.query("UPDATE attachments SET size = $1 WHERE id = $2", [
+          1_000_000_000,
+          first.id,
+        ]);
+        expect(await refused(secondUpload), "over the key's quota").toMatchObject({
+          status: 409,
+          code: "attachment_limit",
+        });
+        await human.call("update_ticket", {
+          ...ticket,
+          expectedVersion: created.version,
+          changes: { holdReason: null },
+        });
+        for (const input of [upload("late.png"), ticket])
+          expect(await refused(input), "after triage").toMatchObject({
+            status: 404,
+            code: "not_found",
+          });
+        // Triage releases the quota the triaged ticket held.
+        expect(await attach(secondUpload)).toMatchObject({ ticketId: second.id });
+      } finally {
+        await sdk.close();
+      }
+    },
+  );
   it("lets global credentials follow current account access while keeping machine and scope gates", async () => {
     const person = await fixture.auth.api.createUser({
       body: {

@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Rapor gönder",
         description:
-          "Yalnızca karantinadaki biletleri oluşturur. Biletleri okuyamaz veya düzenleyemez. Tek başına kullanın.",
+          "Yalnızca karantinadaki biletleri oluşturur ve onlara dosya ekler. Biletleri okuyamaz veya düzenleyemez. Tek başına kullanın.",
       },
       read: {
         name: "Talepleri okuma",

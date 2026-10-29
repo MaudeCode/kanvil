@@ -1,0 +1,2 @@
+ALTER TABLE "tickets" ADD COLUMN "intake_credential_id" text;--> statement-breakpoint
+CREATE INDEX "ticket_intake_credential" ON "tickets" USING btree ("intake_credential_id") WHERE "tickets"."intake_credential_id" IS NOT NULL;
