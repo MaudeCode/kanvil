@@ -1,5 +1,5 @@
 {
-  "id": "3207fe12-cd36-49ef-8918-1c14285763b4",
+  "id": "b2cad25f-1c52-4017-9afe-a70c51b4a19b",
   "prevId": "e09d0172-5c9e-436d-901b-61295f79b14d",
   "version": "7",
   "dialect": "postgresql",
@@ -6212,6 +6212,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ticket_intake_credential": {
+          "name": "ticket_intake_credential",
+          "columns": [
+            {
+              "expression": "intake_credential_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tickets\".\"intake_credential_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

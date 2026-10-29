@@ -726,6 +726,25 @@ describe("HTTP, realtime, and MCP", () => {
         });
         await human.call("upload_attachment", upload("triage.txt"));
         expect(await human.call("list_attachments", ticket)).toHaveLength(attachmentCap + 1);
+        // The key's quarantined tickets share one byte quota; inflating a stored size fills it.
+        const second = await api.call("create_ticket", {
+          projectId: project.id,
+          title: "Second report",
+        });
+        const secondUpload = {
+          projectId: project.id,
+          ticketId: second.id,
+          name: "clip.mp4",
+          data: btoa("clip"),
+        };
+        await fixture.database.pool.query("UPDATE attachments SET size = $1 WHERE id = $2", [
+          1_000_000_000,
+          first.id,
+        ]);
+        expect(await refused(secondUpload), "over the key's quota").toMatchObject({
+          status: 409,
+          code: "attachment_limit",
+        });
         await human.call("update_ticket", {
           ...ticket,
           expectedVersion: created.version,
@@ -736,6 +755,8 @@ describe("HTTP, realtime, and MCP", () => {
             status: 404,
             code: "not_found",
           });
+        // Triage releases the quota the triaged ticket held.
+        expect(await attach(secondUpload)).toMatchObject({ ticketId: second.id });
       } finally {
         await sdk.close();
       }
