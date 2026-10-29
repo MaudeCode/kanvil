@@ -130,7 +130,7 @@ export default {
       intake: {
         name: "Przesyłaj zgłoszenia",
         description:
-          "Tworzy tylko zgłoszenia do weryfikacji. Nie może ich czytać ani edytować. Używaj osobno.",
+          "Tworzy tylko zgłoszenia do weryfikacji i dołącza do nich pliki. Nie może ich czytać ani edytować. Używaj osobno.",
       },
       read: {
         name: "Odczyt zadań",

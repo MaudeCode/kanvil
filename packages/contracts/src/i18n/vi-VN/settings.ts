@@ -121,7 +121,8 @@ export default {
     permission: {
       intake: {
         name: "Gửi báo cáo",
-        description: "Chỉ tạo phiếu cách ly. Không thể đọc hoặc sửa phiếu. Sử dụng riêng.",
+        description:
+          "Chỉ tạo phiếu cách ly và đính kèm tệp vào phiếu đó. Không thể đọc hoặc sửa phiếu. Sử dụng riêng.",
       },
       read: {
         name: "Đọc phiếu",

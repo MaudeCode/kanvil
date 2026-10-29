@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Enviar relatos",
         description:
-          "Cria apenas tickets em quarentena. Não pode ler nem editar tickets. Use separadamente.",
+          "Cria apenas tickets em quarentena e anexa arquivos a eles. Não pode ler nem editar tickets. Use separadamente.",
       },
       read: {
         name: "Ler tickets",

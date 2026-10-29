@@ -43,6 +43,7 @@ import {
   context,
   fail,
   getTicket,
+  intakeOnly,
   project,
   publish,
   can,
@@ -54,6 +55,8 @@ import {
   type Handlers,
   one,
 } from "./domain.ts";
+// Bounds what an untrusted intake credential can store on one quarantined ticket.
+const intakeAttachmentLimit = 10;
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket"),
   sourceProject = alias(projects, "source_project"),
@@ -298,6 +301,20 @@ export const collaborationHandlers: Pick<
   },
   async upload_attachment(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
+    if (
+      intakeOnly(ctx.actor) &&
+      one(
+        await ctx.db
+          .select({ count: count() })
+          .from(attachments)
+          .where(eq(attachments.ticketId, ticket.id)),
+      ).count >= intakeAttachmentLimit
+    )
+      fail(
+        409,
+        "attachment_limit",
+        `An intake credential can attach at most ${intakeAttachmentLimit} files to a ticket`,
+      );
     const bytes = decodeBlobData(input.data, attachmentLimit);
     const id = crypto.randomUUID();
     await ctx.blobs.put(ctx.db, id, bytes, input.contentType);

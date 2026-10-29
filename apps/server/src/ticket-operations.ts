@@ -508,6 +508,7 @@ export async function createTicketRow(ctx: Context, input: ParsedInput<"create_t
         ...(await allocateTicket(ctx)),
         id,
         createdBy: ctx.actor.id,
+        intakeCredentialId: intakeOnly(ctx.actor) ? ctx.actor.ownerId : null,
       })
       .returning(),
   );

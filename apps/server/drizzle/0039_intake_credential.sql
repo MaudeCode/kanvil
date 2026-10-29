@@ -1,0 +1,1 @@
+ALTER TABLE "tickets" ADD COLUMN "intake_credential_id" text;

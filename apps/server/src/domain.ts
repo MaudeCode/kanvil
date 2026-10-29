@@ -234,9 +234,16 @@ export const intakeQuarantined = (ticket: Pick<Ticket, "holdReason">) =>
   ticket.holdReason === intakeHoldReason;
 export const intakeOnly = (actor: Actor) =>
   actor.scopes.length > 0 && actor.scopes.every((scope) => scope === "intake");
+// Beyond creating tickets, an intake credential may attach files to the quarantined tickets it
+// created; `getTicket` hides every other ticket from it.
+const intakeOperations = new Set<Operation>([
+  "create_ticket",
+  "upload_attachment",
+  "list_attachments",
+]);
 export const hasScope = (actor: Actor, scope: (typeof scopes)[number], operation?: Operation) =>
   intakeOnly(actor)
-    ? operation === "create_ticket"
+    ? !!operation && intakeOperations.has(operation)
     : actor.scopes.includes("admin") ||
       actor.scopes.includes(scope) ||
       (scope === "read" && actor.scopes.some((value) => value !== "intake"));
@@ -388,13 +395,21 @@ export async function context(
   return { ...ctx, project: toProject(row), role: access.role, permissions: access.permissions };
 }
 export async function getTicket(ctx: Context, identifier: string) {
-  return one(
+  const ticket = one(
     await ctx.db
       .select()
       .from(tickets)
       .where(and(eq(tickets.projectId, project(ctx).id), ticketMatch(identifier)))
       .limit(1),
   );
+  // An intake credential sees only the tickets it created that are still quarantined, so it
+  // cannot probe any other ticket.
+  if (
+    intakeOnly(ctx.actor) &&
+    !(ticket.intakeCredentialId === ctx.actor.ownerId && intakeQuarantined(ticket))
+  )
+    fail(404, "not_found", "The requested record was not found");
+  return ticket;
 }
 export type PendingEvent = {
   type: string;

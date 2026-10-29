@@ -122,7 +122,7 @@ export default {
       intake: {
         name: "Enviar informes",
         description:
-          "Solo crea tickets en cuarentena. No puede leer ni editar tickets. Usar por separado.",
+          "Solo crea tickets en cuarentena y les adjunta archivos. No puede leer ni editar tickets. Usar por separado.",
       },
       read: {
         name: "Leer tickets",

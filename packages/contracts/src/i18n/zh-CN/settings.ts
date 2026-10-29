@@ -116,7 +116,10 @@ export default {
       custom: "自定义权限",
     },
     permission: {
-      intake: { name: "提交报告", description: "仅创建隔离工单。无法读取或编辑工单。请单独使用。" },
+      intake: {
+        name: "提交报告",
+        description: "仅创建隔离工单并为其附加文件。无法读取或编辑工单。请单独使用。",
+      },
       read: {
         name: "读取工单",
         description: "查看项目、工单、评论和附件。",
