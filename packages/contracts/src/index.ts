@@ -3212,7 +3212,8 @@ export const operations = {
     ticketInput
       .extend({
         ...mutation,
-        claimId: z.uuid(),
+        // Omitted to lift the ownership fence of a ticket whose claim row is already gone.
+        claimId: z.uuid().optional(),
         reason: text.min(10).max(2000),
         confirmedStopped: z.literal(true),
         cancelActive: z.boolean().optional(),
@@ -3223,12 +3224,16 @@ export const operations = {
       .refine((input) => !input.reschedule || input.expectedVersion !== undefined, {
         message: "expectedVersion is required to reschedule recovered work",
         path: ["expectedVersion"],
+      })
+      .refine((input) => input.claimId !== undefined || input.expectedVersion !== undefined, {
+        message: "expectedVersion is required to recover ownership without a claim",
+        path: ["expectedVersion"],
       }),
     okSchema,
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim/recover",
     "claim",
-    "Recover an expired claim after confirming the worker stopped. Optionally reschedule it to To do at its expectedVersion. Project managers with admin scope may explicitly cancel an active claim.",
+    "Recover an expired claim after confirming the worker stopped. Optionally reschedule it to To do at its expectedVersion. Project managers with admin scope may explicitly cancel an active claim. Omit claimId, with the ticket's expectedVersion, to lift the ownership requirement of a ticket that has no claim left, such as one released outside To do.",
   ),
   set_subscription: op(
     ticketInput.extend({ ...mutation, enabled: z.boolean() }).strict(),

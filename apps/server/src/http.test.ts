@@ -917,6 +917,16 @@ describe("HTTP, realtime, and MCP", () => {
       );
       expect(http.status).toBe(400);
       expect({ error: invalid }).toEqual(await http.json());
+      const { claimId: _claimId, reschedule: _reschedule, ...claimless } = recover;
+      expect(await mcpRejection(worker, "recover_claim", claimless)).toMatchObject({
+        code: "validation_error",
+        details: [
+          {
+            path: "expectedVersion",
+            message: "expectedVersion is required to recover ownership without a claim",
+          },
+        ],
+      });
       // Callers without claim access or project membership learn nothing about readiness.
       for (const [mcp, key] of [
         [reader, readOnly.key],

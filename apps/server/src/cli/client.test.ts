@@ -235,6 +235,7 @@ test("claim recover sends only the registered recovery operation with explicit c
     { ...recovery, confirmedStopped: false },
     { ...recovery, confirmedStopped: true, reschedule: true },
     { ...recovery, confirmedStopped: true, reason: "short" },
+    { reason: recovery.reason, confirmedStopped: true },
   ])
     expect(
       (await h.run(["claim", "recover", "CLI-1", "--input", JSON.stringify(input)])).code,
