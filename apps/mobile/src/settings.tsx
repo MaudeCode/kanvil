@@ -80,6 +80,7 @@ import {
   TicketGlyph,
   usePalette,
   GroupedSurface,
+  ManualScrollInsets,
 } from "./ui.tsx";
 
 export function Inbox() {
@@ -499,12 +500,7 @@ export function SettingsNavigation({ sidebar = false }: { sidebar?: boolean }) {
               }),
             }
           : {})}
-        leading={
-          <TicketGlyph
-            name={settingsSectionSymbols[value]}
-            color={sidebar && value === active ? color.accentForeground : color.accent}
-          />
-        }
+        leading={<TicketGlyph name={settingsSectionSymbols[value]} color={color.accent} />}
         active={value === active}
         sidebar={sidebar}
         interaction={sidebar ? "action" : "navigate"}
@@ -627,7 +623,11 @@ export function SettingsLayout({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     navigation.setOptions({ headerBackVisible: !sidebar });
   }, [navigation, sidebar]);
-  return <GroupedSurface value>{children}</GroupedSurface>;
+  return (
+    <ManualScrollInsets value>
+      <GroupedSurface value>{children}</GroupedSurface>
+    </ManualScrollInsets>
+  );
 }
 
 export function Settings({

@@ -32,6 +32,31 @@ it("keeps both panes outside the native fold, in either orientation", () => {
     secondary: { x: 0, y: 494, width: 669, height: 457 },
   });
 });
+it("resizes a flat split within both pane minimums and restores the preference after rotation", () => {
+  const wide = { width: 1200, height: 700 };
+  expect(paneLayout(wide, [], true, 650).primary.width).toBe(650);
+  expect(paneLayout(wide, [], true, 10).primary.width).toBe(280);
+  expect(paneLayout(wide, [], true, 2000).secondary.width).toBe(320);
+  expect(paneLayout({ width: 700, height: 1200 }, [], true, 650).primary.width).toBe(380);
+  expect(paneLayout(wide, [], true, 650).primary.width).toBe(650);
+  expect(paneLayout({ width: 390, height: 844 }, [], true, 650).collapsed).toBe(true);
+  expect(paneLayout(wide, [], true, 280, 324).primary.width).toBe(324);
+  expect(paneLayout({ width: 620, height: 700 }, [], true, 280, 324).collapsed).toBe(true);
+});
+it("keeps a physical hinge fixed even when a saved sidebar width requests crossing it", () => {
+  const bounds = { width: 951, height: 669 };
+  const regions = [
+    {
+      kind: "division" as const,
+      frame: { x: 450, y: 0, width: 24, height: 669 },
+      occludesContent: false,
+    },
+  ];
+  const layout = paneLayout(bounds, regions, true, 700);
+  expect(layout.primary.width).toBe(450);
+  expect(layout.secondary.x).toBe(474);
+  expect(layout).not.toHaveProperty("resizable");
+});
 it("leaves the full viewport to a nested navigator when its sidebar is inactive", () => {
   const bounds = { width: 867, height: 587 };
   const layout = paneLayout(

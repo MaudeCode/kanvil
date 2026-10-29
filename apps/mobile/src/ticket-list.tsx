@@ -74,6 +74,7 @@ import {
   projectHeaderItems,
   createHeaderMenu,
   ticketHeaderItems,
+  sidebarHeaderItem,
 } from "./navigation-actions.tsx";
 import { TicketActions, BulkProperties } from "./ticket-actions.tsx";
 import { TicketSchedule } from "./ticket-schedule.tsx";
@@ -337,6 +338,19 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   };
   const viewItems = useMemo<NativeStackHeaderItemMenu["menu"]["items"]>(
     () => [
+      ...(split && selectedTicketId
+        ? [
+            {
+              type: "action" as const,
+              label: t("detail.page.closePreview"),
+              icon: { type: "sfSymbol" as const, name: "xmark" as const },
+              onPress: () => {
+                setSelectedTicketId(undefined);
+                setSplitState((state) => ({ ...state, secondaryVisible: false }));
+              },
+            },
+          ]
+        : []),
       {
         type: "submenu",
         label: t("ticket.display.layout"),
@@ -495,6 +509,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       openSearch,
       filterCount,
       projectId,
+      split,
+      selectedTicketId,
     ],
   );
   const headerItems = useMemo<NativeStackHeaderItem[]>(
@@ -652,15 +668,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                       !splitState.collapsed &&
                       selectedTicket &&
                       splitState.secondaryVisible
-                        ? [
-                            createHeaderAction(
-                              t("shell.action.sidebar"),
-                              () => setSidebarHidden((hidden) => !hidden),
-                              { type: "sfSymbol", name: "sidebar.left" },
-                              false,
-                              { identifier: "ticket-sidebar", visibilityPriority: "high" },
-                            ),
-                          ]
+                        ? [sidebarHeaderItem(() => setSidebarHidden((hidden) => !hidden))]
                         : []),
                     ],
             }
@@ -775,55 +783,59 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
         </EmptyState>
       </Scroll>
     ) : layout === "board" ? (
-      <Scroll
-        horizontal
-        decelerationRate="fast"
-        snapToInterval={Math.min(340, Math.max(260, width - 100)) + 12}
-        contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingVertical: 8 }}
-      >
-        {sections.map((state) => (
-          <View
-            key={state.id}
-            style={{
-              width: Math.min(340, Math.max(260, width - 100)),
-              backgroundColor: color.surface,
-            }}
-          >
-            <View style={{ paddingHorizontal: 20 }}>
-              <Heading
-                compact
-                leading={
-                  <PropertyValue
-                    projectId={projectId}
-                    property="status"
-                    value={state.category}
-                    stateId={state.id}
-                    iconOnly
+      <View style={{ flex: 1 }}>
+        {collectionHeader}
+        <Scroll
+          horizontal
+          decelerationRate="fast"
+          snapToInterval={Math.min(340, Math.max(260, width - 100)) + 12}
+          contentContainerStyle={{ gap: 12, paddingHorizontal: 4, paddingVertical: 8 }}
+        >
+          {sections.map((state) => (
+            <View
+              key={state.id}
+              style={{
+                width: Math.min(340, Math.max(260, width - 100)),
+                backgroundColor: color.surface,
+              }}
+            >
+              <View style={{ paddingHorizontal: 20 }}>
+                <Heading
+                  compact
+                  leading={
+                    <PropertyValue
+                      projectId={projectId}
+                      property="status"
+                      value={state.category}
+                      stateId={state.id}
+                      iconOnly
+                    />
+                  }
+                  count={state.tickets.length}
+                >
+                  {state.name}
+                </Heading>
+              </View>
+              <List
+                onRefresh={refresh}
+                data={state.tickets}
+                keyExtractor={(ticket) => ticket.id}
+                renderItem={({ item: ticket }) => (
+                  <TicketRow
+                    ticket={ticket}
+                    selected={selecting ? selection.has(ticket.id) : undefined}
+                    selecting={selecting}
+                    active={split && selectedTicketId === ticket.id}
+                    showStatus={false}
+                    onPress={() => open(ticket)}
+                    onLongPress={() => setFocused(ticket)}
                   />
-                }
-                count={state.tickets.length}
-              >
-                {state.name}
-              </Heading>
+                )}
+              />
             </View>
-            <List
-              data={state.tickets}
-              keyExtractor={(ticket) => ticket.id}
-              renderItem={({ item: ticket }) => (
-                <TicketRow
-                  ticket={ticket}
-                  selected={selecting ? selection.has(ticket.id) : undefined}
-                  selecting={selecting}
-                  active={split && selectedTicketId === ticket.id}
-                  showStatus={false}
-                  onPress={() => open(ticket)}
-                  onLongPress={() => setFocused(ticket)}
-                />
-              )}
-            />
-          </View>
-        ))}
-      </Scroll>
+          ))}
+        </Scroll>
+      </View>
     ) : (
       <List
         data={entries}
@@ -905,11 +917,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
   return (
     <Screen
       scroll={false}
-      scrollInsets={
-        (layout === "list" && (!split || splitState.collapsed)) ||
-        layout === "timeline" ||
-        detailOnly
-      }
+      scrollInsets={layout === "list" || layout === "timeline" || detailOnly}
       allowDivision={split || layout === "calendar"}
       background={project?.background ?? null}
     >
@@ -917,6 +925,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
       {split ? (
         <SplitView
           primary={primaryContent}
+          primaryHeader={layout === "board" ? "frame" : "scroll"}
+          secondaryHidden={layout === "board" && !selectedTicketId}
           secondaryActive={!!selectedTicketId && splitState.secondaryVisible}
           primaryHidden={sidebarHidden}
           onChange={setSplitState}
@@ -933,9 +943,9 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                 }}
               />
             ) : (
-              <View style={{ padding: 24 }}>
+              <Screen>
                 <Body muted>{t("ticket.picker.placeholder")}</Body>
-              </View>
+              </Screen>
             )
           }
         />

@@ -1,8 +1,10 @@
 import type {
   NativeStackHeaderItemButton,
   NativeStackHeaderItemMenu,
+  NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { Button, type ColorValue } from "react-native";
+import { t } from "@kanvil/contracts/i18n";
 
 export type HeaderAction = Pick<NativeStackHeaderItemButton, "onPress" | "disabled"> & {
   title: string;
@@ -52,6 +54,26 @@ export function createHeaderAction(
     sharesBackground: false,
     ...policy,
   };
+}
+
+export function sidebarHeaderItem(onPress: () => void) {
+  return createHeaderAction(
+    t("shell.action.sidebar"),
+    onPress,
+    { type: "sfSymbol", name: "sidebar.left" },
+    false,
+    {
+      identifier: "sidebar-toggle",
+      visibilityPriority: "high",
+    },
+  );
+}
+
+export function paneNavigationOptions(
+  minimize: boolean,
+  allowBack = false,
+): Pick<NativeStackNavigationOptions, "headerMinimizationEnabled" | "gestureEnabled"> {
+  return { headerMinimizationEnabled: minimize, gestureEnabled: allowBack };
 }
 
 // Menus need their own semantic symbol; UIKit reserves ellipsis for system overflow.

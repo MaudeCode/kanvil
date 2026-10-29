@@ -253,6 +253,13 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
         )
       }
     >
+      <ErrorNotice
+        error={comments.error}
+        retrying={comments.isFetching}
+        onRetry={() => {
+          void comments.refetch();
+        }}
+      />
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}

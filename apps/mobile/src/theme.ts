@@ -9,6 +9,7 @@ import {
   resolveThemeId,
 } from "@kanvil/contracts/themes";
 import { palettes } from "@kanvil/contracts/theme";
+import { minimumPrimary } from "./pane-layout.ts";
 
 const preferenceSchema = z.object({
   mode: z.enum(["system", "light", "dark"]).default("system"),
@@ -16,6 +17,7 @@ const preferenceSchema = z.object({
   light: z.string().nullable().default(null),
   dark: z.string().nullable().default(null),
   custom: z.array(themeSchema).max(50).default([]),
+  sidebarWidth: z.number().finite().min(minimumPrimary).optional(),
 });
 let preference = preferenceSchema.parse({});
 const key = "kanvil:appearance";

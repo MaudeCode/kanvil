@@ -35,6 +35,7 @@ export function TicketProperties({
   disabled = false,
   compact = false,
   children,
+  leading,
 }: {
   projectId: string;
   value: { [K in keyof PropertyFields]: PropertyFields[K] | undefined };
@@ -43,6 +44,7 @@ export function TicketProperties({
   disabled?: boolean;
   compact?: boolean;
   children?: ReactNode;
+  leading?: ReactNode;
 }) {
   const { api } = useConnection();
   const members = useQuery(api.query("list_members", { projectId }));
@@ -51,18 +53,21 @@ export function TicketProperties({
     select: presentWorkflow,
   });
   const prefix = mixed ? [{ value: mixedValue, label: t("ticket.field.mixed") }] : [];
+  const stateId =
+    value.stateId ?? workflow.data?.find((state) => state.category === value.status)?.id;
   return (
     <>
       <View style={compact ? { flexDirection: "row", flexWrap: "wrap", gap: 8 } : { gap: 4 }}>
+        {leading}
         <Choice
           label={t("common.filterField.status")}
           summary={
-            compact && value.status ? (
+            compact && value.status && !(mixed && value.stateId === undefined) ? (
               <PropertyValue
                 projectId={projectId}
                 property="status"
                 value={value.status}
-                stateId={value.stateId ?? null}
+                stateId={stateId ?? null}
               />
             ) : undefined
           }
@@ -71,10 +76,7 @@ export function TicketProperties({
           value={
             mixed && value.stateId === undefined
               ? mixedValue
-              : (value.stateId ??
-                workflow.data?.find((state) => state.category === value.status)?.id ??
-                value.status ??
-                mixedValue)
+              : (stateId ?? value.status ?? mixedValue)
           }
           options={[
             ...prefix,

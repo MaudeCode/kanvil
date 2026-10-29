@@ -41,6 +41,8 @@ import { SplitView } from "./split-view.tsx";
 import { useProjectNavigation } from "./navigation.ts";
 import { projectHeaderItems } from "./navigation-actions.tsx";
 
+const calendarMinimumWidth = 7 * 44 + 16;
+
 export function TicketSchedule({
   projectId,
   layout,
@@ -334,6 +336,7 @@ export function TicketSchedule({
   }
   return (
     <SplitView
+      minimumPrimaryWidth={calendarMinimumWidth}
       secondaryActive={showDay && splitState.secondaryVisible}
       onChange={setSplitState}
       primary={
@@ -400,7 +403,7 @@ function CalendarMonth({
 }) {
   const color = usePalette(),
     viewport = useNativeViewport();
-  const width = Math.max(7 * 44, viewport.bounds.width - 16);
+  const width = Math.max(calendarMinimumWidth, viewport.bounds.width) - 16;
   const days = Array.from({ length: calendarDistance(range.from, range.to) }, (_, index) =>
     addCalendarDays(range.from, index),
   );

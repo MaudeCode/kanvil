@@ -1,8 +1,37 @@
+diff --git a/lib/module/views/useHeaderConfigProps.js b/lib/module/views/useHeaderConfigProps.js
+index 08055b25568228a1d262648b361ae2dd97244ae4..e3b0a0d9f9004e27395f8a3ad057cb28dc7ea55d 100644
+--- a/lib/module/views/useHeaderConfigProps.js
++++ b/lib/module/views/useHeaderConfigProps.js
+@@ -159,6 +159,7 @@ export function useHeaderConfigProps({
+   headerTitleAlign,
+   headerTitleStyle,
+   headerTransparent,
++  headerMinimizationEnabled,
+   headerSearchBarOptions,
+   headerTopInsetEnabled,
+   headerBack,
+@@ -377,6 +378,7 @@ export function useHeaderConfigProps({
+     disableRightInsetApplication: headerInsets?.right !== undefined ? !headerInsets.right : undefined,
+     disableBottomInsetApplication: headerInsets?.bottom !== undefined ? !headerInsets.bottom : undefined,
+     translucent: translucent === true,
++    minimizationEnabled: headerMinimizationEnabled,
+     children,
+     headerLeftBarButtonItems: processBarButtonItems(leftItems, colors, fonts),
+     headerRightBarButtonItems: processBarButtonItems(rightItems, colors, fonts),
 diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
-index 27a3d8eb19f99c986ba143aceddb5d7f06277fc1..7490967ba69fa4f492ee4a9f7ecb43a982e2ffbf 100644
+index 27a3d8eb19f99c986ba143aceddb5d7f06277fc1..93a4b5cecfde83e7d30580a907d639b3b75610f0 100644
 --- a/lib/typescript/src/types.d.ts
 +++ b/lib/typescript/src/types.d.ts
-@@ -361,7 +361,7 @@ export type NativeStackNavigationOptions = {
+@@ -252,6 +252,8 @@ export type NativeStackNavigationOptions = {
+      * and changes the background color to `transparent` unless specified in `headerStyle`.
+      */
+     headerTransparent?: boolean;
++    /** Allow iOS 27 native bar minimization. Defaults to true. */
++    headerMinimizationEnabled?: boolean;
+     /**
+      * Blur effect for the translucent header.
+      * The `headerTransparent` option needs to be set to `true` for this to work.
+@@ -361,7 +363,7 @@ export type NativeStackNavigationOptions = {
       * You also need to specify `contentInsetAdjustmentBehavior="automatic"` in your `ScrollView`, `FlatList` etc.
       * If you don't have a `ScrollView`, specify `headerTransparent: false`.
       */
@@ -12,10 +41,19 @@ index 27a3d8eb19f99c986ba143aceddb5d7f06277fc1..7490967ba69fa4f492ee4a9f7ecb43a9
       * Boolean indicating whether to show the menu on longPress of iOS >= 14 back button. Defaults to `true`.
       * Requires `react-native-screens` version >=3.3.0.
 diff --git a/src/types.tsx b/src/types.tsx
-index 5d63f4112acf503f639d8f8103917e179786c4ae..60696b2a25540787c643a0fdbb731362d7eebe7f 100644
+index 5d63f4112acf503f639d8f8103917e179786c4ae..c8872eaa491eaa3ddad5f99c3cd965e2ccef64b1 100644
 --- a/src/types.tsx
 +++ b/src/types.tsx
-@@ -413,7 +413,7 @@ export type NativeStackNavigationOptions = {
+@@ -296,6 +296,8 @@ export type NativeStackNavigationOptions = {
+    * and changes the background color to `transparent` unless specified in `headerStyle`.
+    */
+   headerTransparent?: boolean;
++  /** Allow iOS 27 native bar minimization. Defaults to true. */
++  headerMinimizationEnabled?: boolean;
+   /**
+    * Blur effect for the translucent header.
+    * The `headerTransparent` option needs to be set to `true` for this to work.
+@@ -413,7 +415,7 @@ export type NativeStackNavigationOptions = {
     * You also need to specify `contentInsetAdjustmentBehavior="automatic"` in your `ScrollView`, `FlatList` etc.
     * If you don't have a `ScrollView`, specify `headerTransparent: false`.
     */
@@ -24,3 +62,23 @@ index 5d63f4112acf503f639d8f8103917e179786c4ae..60696b2a25540787c643a0fdbb731362
    /**
     * Boolean indicating whether to show the menu on longPress of iOS >= 14 back button. Defaults to `true`.
     * Requires `react-native-screens` version >=3.3.0.
+diff --git a/src/views/useHeaderConfigProps.tsx b/src/views/useHeaderConfigProps.tsx
+index 739134e9dba03731ae4d69952f335ea5f4b382f4..3a3bc987fe8fc25fb7a88b56850ee5854442c89a 100644
+--- a/src/views/useHeaderConfigProps.tsx
++++ b/src/views/useHeaderConfigProps.tsx
+@@ -232,6 +232,7 @@ export function useHeaderConfigProps({
+   headerTitleAlign,
+   headerTitleStyle,
+   headerTransparent,
++  headerMinimizationEnabled,
+   headerSearchBarOptions,
+   headerTopInsetEnabled,
+   headerBack,
+@@ -557,6 +558,7 @@ export function useHeaderConfigProps({
+     disableBottomInsetApplication:
+       headerInsets?.bottom !== undefined ? !headerInsets.bottom : undefined,
+     translucent: translucent === true,
++    minimizationEnabled: headerMinimizationEnabled,
+     children,
+     headerLeftBarButtonItems: processBarButtonItems(leftItems, colors, fonts),
+     headerRightBarButtonItems: processBarButtonItems(rightItems, colors, fonts),

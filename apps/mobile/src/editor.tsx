@@ -201,40 +201,42 @@ function Editor({
         value={fields}
         onChange={(changes) => change({ ...draft, fields: { ...draft.fields, ...changes } })}
         disabled={!access.canWrite}
+        leading={
+          !ticket && (
+            <Choice
+              label={t("ticket.project.label")}
+              value={projectId}
+              compact
+              options={(projects.data ?? [])
+                .filter(
+                  (project) =>
+                    !project.archivedAt &&
+                    (identity.admin || capabilitiesOf(project).includes("ticket.write")),
+                )
+                .map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                  leading: <ProjectIcon project={project} size={18} />,
+                }))}
+              onChange={(next) => {
+                change({
+                  ...draft,
+                  projectId: next,
+                  fields: {
+                    ...draft.fields,
+                    stateId: null,
+                    parentId: null,
+                    assigneeId: null,
+                    labels: [],
+                    customFields: {},
+                  },
+                });
+                setLabels("");
+              }}
+            />
+          )
+        }
       >
-        {!ticket && (
-          <Choice
-            label={t("ticket.project.label")}
-            value={projectId}
-            compact
-            options={(projects.data ?? [])
-              .filter(
-                (project) =>
-                  !project.archivedAt &&
-                  (identity.admin || capabilitiesOf(project).includes("ticket.write")),
-              )
-              .map((project) => ({
-                value: project.id,
-                label: project.name,
-                leading: <ProjectIcon project={project} size={18} />,
-              }))}
-            onChange={(next) => {
-              change({
-                ...draft,
-                projectId: next,
-                fields: {
-                  ...draft.fields,
-                  stateId: null,
-                  parentId: null,
-                  assigneeId: null,
-                  labels: [],
-                  customFields: {},
-                },
-              });
-              setLabels("");
-            }}
-          />
-        )}
         <Choice
           label={t("ticket.tags.labels")}
           compact

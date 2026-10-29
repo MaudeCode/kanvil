@@ -2,8 +2,11 @@ import type { ReservedRegion } from "react-native-reserved-regions";
 
 type Rect = ReservedRegion["frame"];
 type Bounds = Pick<Rect, "width" | "height">;
-const minimumPrimary = 280,
+export const minimumPrimary = 280,
   minimumSecondary = 320;
+export function primaryPaneWidth(bounds: Bounds, preferred: number, minimum = minimumPrimary) {
+  return Math.min(Math.max(minimum, preferred), Math.max(minimum, bounds.width - minimumSecondary));
+}
 const fullRect = (bounds: Bounds) => ({ x: 0, y: 0, ...bounds });
 const collapsed = (rect: Rect) => ({ collapsed: true, primary: rect, secondary: rect });
 function divisionLayout(bounds: Bounds, regions: readonly ReservedRegion[]) {
@@ -41,20 +44,31 @@ export function usableViewport(bounds: Bounds, regions: readonly ReservedRegion[
     : larger(division.primary, division.secondary);
 }
 // Region frames and the viewport use the same provider-local coordinates, after bar insets.
-export function paneLayout(bounds: Bounds, regions: readonly ReservedRegion[], enabled = true) {
+export function paneLayout(
+  bounds: Bounds,
+  regions: readonly ReservedRegion[],
+  enabled = true,
+  preferredWidth?: number,
+  minimumWidth = minimumPrimary,
+) {
   if (!enabled) return collapsed(fullRect(bounds));
   const division = divisionLayout(bounds, regions);
   if (division) {
     const { primary, secondary, primarySpace, secondarySpace } = division;
-    if (primarySpace < minimumPrimary || secondarySpace < minimumSecondary)
+    if (primarySpace < minimumWidth || secondarySpace < minimumSecondary)
       return collapsed(larger(primary, secondary));
     return { collapsed: false, primary, secondary };
   }
   const full = fullRect(bounds);
-  if (bounds.width < minimumPrimary + minimumSecondary) return collapsed(full);
-  const width = Math.min(420, Math.max(minimumPrimary, bounds.width * 0.42));
+  if (bounds.width < minimumWidth + minimumSecondary) return collapsed(full);
+  const width = primaryPaneWidth(
+    bounds,
+    preferredWidth ?? Math.min(420, bounds.width * 0.42),
+    minimumWidth,
+  );
   return {
     collapsed: false,
+    resizable: true,
     primary: { ...full, width },
     secondary: { ...full, x: width, width: bounds.width - width },
   };

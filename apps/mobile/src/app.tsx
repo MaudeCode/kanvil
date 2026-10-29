@@ -4,8 +4,17 @@ import {
   createHeaderMenu,
   projectHeaderItems,
   ticketHeaderItems,
+  sidebarHeaderItem,
+  paneNavigationOptions,
 } from "./navigation-actions.tsx";
-import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -79,6 +88,7 @@ import {
   createProjectContexts,
   useProjectNavigation,
   SettingsSidebarVisible,
+  WideNavigation,
   settingsRouteId,
   type Routes,
   type TabRoutes,
@@ -785,8 +795,11 @@ function SettingsNavigatorLayout({
   onSplitChange: (state: SplitState) => void;
 }) {
   const color = usePalette();
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const route = state.routes[state.index];
   const focused = route ? descriptors[route.key] : undefined;
+  const focusedNavigation = focused?.navigation;
+  const sidebarIsHidden = sidebarHidden && route?.name !== "Home";
   const enabled =
     !!route &&
     ((settingsRoot && route.name === "Home") ||
@@ -797,11 +810,26 @@ function SettingsNavigatorLayout({
         "Administration",
         "Import",
       ].includes(route.name));
+  useLayoutEffect(() => {
+    if (!enabled || !focusedNavigation) return;
+    const wide = !splitState.collapsed;
+    focusedNavigation.setOptions(
+      nativeHeaderOptions({
+        ...paneNavigationOptions(!wide, !wide),
+        unstable_headerLeftItems: () =>
+          wide && route?.name !== "Home"
+            ? [sidebarHeaderItem(() => setSidebarHidden((hidden) => !hidden))]
+            : [],
+      }),
+    );
+  }, [enabled, focusedNavigation, splitState.collapsed, route?.name]);
   return (
     <SettingsSidebarVisible value={enabled && !splitState.collapsed}>
       <View style={{ flex: 1 }}>
         <SplitView
           enabled={enabled}
+          nativeHeader={false}
+          primaryHidden={sidebarIsHidden}
           secondaryActive
           onChange={onSplitChange}
           primary={
@@ -870,162 +898,167 @@ function BrowsingStack({
     [tab, splitState],
   );
   return (
-    <Stack.Navigator
-      layout={navigatorLayout}
-      screenLayout={BrowsingLayout}
-      screenOptions={({ route }) =>
-        nativeHeaderOptions({
-          headerShadowVisible: false,
-          headerTintColor: color.accent,
-          headerTitleStyle: { color: color.foreground, fontWeight: "600" },
-          headerBackButtonDisplayMode: "minimal",
-          headerBackVisible: true,
-          contentStyle: { backgroundColor: color.surface },
-          unstable_headerLeftItems: () =>
-            route.name === "Tickets" ||
-            route.name === "Ticket" ||
-            (route.name === "Home" && tab !== "Settings")
-              ? projectHeaderItems(
-                  projectNavigation.showPicker,
-                  t("native.navigation.switchProject"),
-                )
-              : [],
-        })
-      }
-    >
-      <Stack.Screen name="Home" options={{ title: titles[tab] }}>
-        {() =>
-          tab === "Projects" ? (
-            <HomeProjects />
-          ) : tab === "Work" ? (
-            <MyWork key={workspace.active?.id} />
-          ) : tab === "Inbox" ? (
-            <Inbox />
-          ) : tab === "Search" ? (
-            <Search key={workspace.active?.id} />
-          ) : (
-            <GroupedSurface value>
-              <Settings onDisconnect={onDisconnect} />
-            </GroupedSurface>
-          )
-        }
-      </Stack.Screen>
-      <Stack.Group
-        screenLayout={GroupedLayout}
-        screenOptions={({ navigation }) =>
+    <WideNavigation value={!splitState.collapsed}>
+      <Stack.Navigator
+        layout={navigatorLayout}
+        screenLayout={BrowsingLayout}
+        screenOptions={({ route }) =>
           nativeHeaderOptions({
-            presentation: "modal",
-            headerBackVisible: false,
-            unstable_headerLeftItems: () => [
-              createHeaderAction(t("common.action.cancel"), () => navigation.goBack(), {
-                type: "sfSymbol",
-                name: "xmark",
-              }),
-            ],
+            headerShadowVisible: false,
+            headerTintColor: color.accent,
+            headerTitleStyle: { color: color.foreground, fontWeight: "600" },
+            headerBackButtonDisplayMode: "minimal",
+            headerBackVisible: true,
+            contentStyle: { backgroundColor: color.surface },
+            unstable_headerLeftItems: () =>
+              route.name === "Tickets" ||
+              route.name === "Ticket" ||
+              (route.name === "Home" && tab !== "Settings")
+                ? projectHeaderItems(
+                    projectNavigation.showPicker,
+                    t("native.navigation.switchProject"),
+                  )
+                : [],
           })
         }
       >
-        <Stack.Screen
-          name="Edit"
-          component={EditTicket}
-          options={({ route }) => ({
-            title: route.params.ticketId
-              ? t("native.screen.editTicket")
-              : t("native.screen.newTicket"),
-          })}
-        />
-        <Stack.Screen
-          name="CreateWorkspace"
-          component={CreateWorkspace}
-          options={{ title: t("shell.workspace.new") }}
-        />
-      </Stack.Group>
-      <Stack.Screen
-        name="Tickets"
-        getId={({ params }) => params.projectId}
-        options={({ route, navigation }) =>
-          nativeHeaderOptions({
-            title: route.params.name ?? t("ticket.list.tickets"),
-            headerBackVisible: false,
-            unstable_headerRightItems: () => [
-              createHeaderAction(
-                t("native.screen.newTicket"),
-                () => navigation.navigate("Edit", { projectId: route.params.projectId }),
-                { type: "sfSymbol", name: "plus" },
-                true,
-                { identifier: "ticket-create" },
-              ),
-              createHeaderMenu(
-                t("ticket.list.views"),
-                { type: "sfSymbol", name: "rectangle.3.group" },
-                [],
-                { identifier: "ticket-views", visibilityPriority: "default" },
-              ),
-            ],
-          })
-        }
-      >
-        {(props) => (
-          <Tickets
-            key={`${props.route.params.projectId}:${props.route.params.collection ?? "all"}`}
-            {...props}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen
-        name="Ticket"
-        component={TicketDetail}
-        options={({ route, navigation }) =>
-          nativeHeaderOptions({
-            title: t("native.screen.ticket"),
-            unstable_headerRightItems: () =>
-              ticketHeaderItems(
-                {
-                  title: t("common.action.edit"),
-                  onPress: () => navigation.navigate("Edit", route.params),
-                  disabled: true,
-                },
-                { title: t("ticket.selection.more"), onPress: () => {}, disabled: true },
-              ),
-          })
-        }
-      />
-      <Stack.Group
-        screenLayout={SettingsScreenLayout}
-        screenOptions={{ animation: splitState.collapsed ? "default" : "none" }}
-      >
-        <Stack.Screen
-          name="WorkspaceSettings"
-          getId={settingsRouteId}
-          component={WorkspaceSettings}
-          options={{ title: t("shell.workspace.settings") }}
-        />
-        <Stack.Screen
-          name="ProjectSettings"
-          getId={settingsRouteId}
-          component={ProjectSettings}
-          options={{ title: t("shell.settingsNav.projectSettings") }}
-        />
-        <Stack.Screen
-          name="AccountSettings"
-          getId={settingsRouteId}
-          options={{ title: t("shell.page.settings") }}
+        <Stack.Screen name="Home" options={{ title: titles[tab] }}>
+          {() =>
+            tab === "Projects" ? (
+              <HomeProjects />
+            ) : tab === "Work" ? (
+              <MyWork key={workspace.active?.id} />
+            ) : tab === "Inbox" ? (
+              <Inbox />
+            ) : tab === "Search" ? (
+              <Search key={workspace.active?.id} />
+            ) : (
+              <GroupedSurface value>
+                <Settings onDisconnect={onDisconnect} />
+              </GroupedSurface>
+            )
+          }
+        </Stack.Screen>
+        <Stack.Group
+          screenLayout={GroupedLayout}
+          screenOptions={({ navigation }) =>
+            nativeHeaderOptions({
+              presentation: "modal",
+              headerBackVisible: false,
+              unstable_headerLeftItems: () => [
+                createHeaderAction(t("common.action.cancel"), () => navigation.goBack(), {
+                  type: "sfSymbol",
+                  name: "xmark",
+                }),
+              ],
+            })
+          }
         >
-          {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
+          <Stack.Screen
+            name="Edit"
+            component={EditTicket}
+            options={({ route }) => ({
+              title: route.params.ticketId
+                ? t("native.screen.editTicket")
+                : t("native.screen.newTicket"),
+            })}
+          />
+          <Stack.Screen
+            name="CreateWorkspace"
+            component={CreateWorkspace}
+            options={{ title: t("shell.workspace.new") }}
+          />
+        </Stack.Group>
+        <Stack.Screen
+          name="Tickets"
+          getId={({ params }) => params.projectId}
+          options={({ route, navigation }) =>
+            nativeHeaderOptions({
+              title: route.params.name ?? t("ticket.list.tickets"),
+              headerBackVisible: false,
+              unstable_headerRightItems: () => [
+                createHeaderAction(
+                  t("native.screen.newTicket"),
+                  () => navigation.navigate("Edit", { projectId: route.params.projectId }),
+                  { type: "sfSymbol", name: "plus" },
+                  true,
+                  { identifier: "ticket-create" },
+                ),
+                createHeaderMenu(
+                  t("ticket.list.views"),
+                  { type: "sfSymbol", name: "rectangle.3.group" },
+                  [],
+                  { identifier: "ticket-views", visibilityPriority: "default" },
+                ),
+              ],
+            })
+          }
+        >
+          {(props) => (
+            <Tickets
+              key={`${props.route.params.projectId}:${props.route.params.collection ?? "all"}`}
+              {...props}
+            />
+          )}
         </Stack.Screen>
         <Stack.Screen
-          name="Administration"
-          getId={settingsRouteId}
-          component={Administration}
-          options={{ title: t("shell.settingsNav.administration") }}
+          name="Ticket"
+          component={TicketDetail}
+          options={({ route, navigation }) =>
+            nativeHeaderOptions({
+              title: t("native.screen.ticket"),
+              unstable_headerRightItems: () =>
+                ticketHeaderItems(
+                  {
+                    title: t("common.action.edit"),
+                    onPress: () => navigation.navigate("Edit", route.params),
+                    disabled: true,
+                  },
+                  { title: t("ticket.selection.more"), onPress: () => {}, disabled: true },
+                ),
+            })
+          }
         />
-        <Stack.Screen
-          name="Import"
-          component={ImportProject}
-          options={{ title: t("admin.import.title") }}
-        />
-      </Stack.Group>
-    </Stack.Navigator>
+        <Stack.Group
+          screenLayout={SettingsScreenLayout}
+          screenOptions={{
+            animation: splitState.collapsed ? "default" : "none",
+            ...paneNavigationOptions(splitState.collapsed, splitState.collapsed),
+          }}
+        >
+          <Stack.Screen
+            name="WorkspaceSettings"
+            getId={settingsRouteId}
+            component={WorkspaceSettings}
+            options={{ title: t("shell.workspace.settings") }}
+          />
+          <Stack.Screen
+            name="ProjectSettings"
+            getId={settingsRouteId}
+            component={ProjectSettings}
+            options={{ title: t("shell.settingsNav.projectSettings") }}
+          />
+          <Stack.Screen
+            name="AccountSettings"
+            getId={settingsRouteId}
+            options={{ title: t("shell.page.settings") }}
+          >
+            {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
+          </Stack.Screen>
+          <Stack.Screen
+            name="Administration"
+            getId={settingsRouteId}
+            component={Administration}
+            options={{ title: t("shell.settingsNav.administration") }}
+          />
+          <Stack.Screen
+            name="Import"
+            component={ImportProject}
+            options={{ title: t("admin.import.title") }}
+          />
+        </Stack.Group>
+      </Stack.Navigator>
+    </WideNavigation>
   );
 }
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {

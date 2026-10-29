@@ -65,6 +65,7 @@ export function settingsRouteId({
   ]);
 }
 export const SettingsSidebarVisible = createContext(false);
+export const WideNavigation = createContext(false);
 // Independent sheets target the browsing stack that opened them.
 export const MainNavigation = createContext<Pick<
   NativeStackNavigationProp<Routes>,
@@ -197,6 +198,7 @@ export function useHeaderSearch(
   placeholder: string,
   persistent = false,
 ) {
+  const wide = useContext(WideNavigation);
   const [handle] = useState(() => createSearchBarHandle(query));
   const [searching, setSearching] = useState(false),
     [visible, setVisible] = useState(false),
@@ -212,9 +214,9 @@ export function useHeaderSearch(
   const options = useMemo<SearchBarProps>(
     () => ({
       ref: handle.ref,
-      placement: "stacked",
-      hideWhenScrolling: !persistent,
-      hideNavigationBar: true,
+      placement: wide ? "integrated" : "stacked",
+      hideWhenScrolling: !persistent && !wide,
+      hideNavigationBar: !wide,
       autoCapitalize: "none",
       autoFocus: true,
       placeholder,
@@ -237,7 +239,7 @@ export function useHeaderSearch(
         setVisible(false);
       },
     }),
-    [handle, onChange, placeholder, persistent],
+    [handle, onChange, placeholder, persistent, wide],
   );
   const setText = useCallback(
     (value: string) => {

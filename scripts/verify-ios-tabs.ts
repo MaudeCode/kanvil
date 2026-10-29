@@ -35,45 +35,48 @@ function dump(...args: string[]) {
   });
 }
 const metadata = dump("--macho", "--objc-meta-data");
-const host = metadata.split(" RNSTabsHostComponentView\n")[1];
-assert(host, "Native tabs host is missing");
-const methods = host.match(/baseMethods\s+(0x[\da-f]+)/);
-assert(methods, "Native tabs method table is missing");
-const table = Number(methods[1]);
-const format = binary.readUInt32LE(offset(table));
-assert.equal(format >>> 30, 2, "Expected relative, indirect Objective-C methods");
-assert.equal(format & 0xffff, 12, "Unexpected Objective-C method entry size");
-const implementations: number[] = [];
-let attach: number | undefined;
-for (let index = 0; index < binary.readUInt32LE(offset(table) + 4); index++) {
-  const entry = table + 8 + index * 12;
-  const selectorReference = entry + binary.readInt32LE(offset(entry));
-  // DYLD_CHAINED_PTR_64_OFFSET stores the selector's image-relative target in 36 bits.
-  const selector =
-    Number(binary.readBigUInt64LE(offset(selectorReference)) & 0xfffffffffn) + 0x100000000;
-  const nameStart = offset(selector);
-  const name = binary.toString("utf8", nameStart, binary.indexOf(0, nameStart));
-  const implementation = entry + 8 + binary.readInt32LE(offset(entry) + 8);
-  implementations.push(implementation);
-  if (name === "didMoveToWindow") attach = implementation;
-}
-assert(attach, "Native tabs attachment method is missing");
-const end = Math.min(...implementations.filter((address) => address > attach));
-assert(Number.isFinite(end), "Cannot determine the attachment method boundary");
-const assembly = dump(
-  "--disassemble",
-  "--no-show-raw-insn",
-  `--start-address=${attach}`,
-  `--stop-address=${end}`,
-);
 const stubs = dump("--macho", "--section=__objc_stubs", "--no-show-raw-insn");
-const calls = [...assembly.matchAll(/\bbl\s+0x([\da-f]+)/g)].flatMap((call) => {
-  const start = stubs.indexOf(`\n${call[1]}:`);
-  if (start < 0) return [];
-  const selector = stubs.slice(start).split("\n").slice(0, 4).join("\n");
-  const name = selector.match(/Objc selector ref: (.+)/)?.[1];
-  return name ? [name] : [];
-});
+function methodCalls(className: string, methodName: string) {
+  const host = metadata.split(` ${className}\n`)[1];
+  assert(host, `${className} is missing`);
+  const methods = host.match(/baseMethods\s+(0x[\da-f]+)/);
+  assert(methods, `${className} method table is missing`);
+  const table = Number(methods[1]);
+  const format = binary.readUInt32LE(offset(table));
+  assert.equal(format >>> 30, 2, "Expected relative, indirect Objective-C methods");
+  assert.equal(format & 0xffff, 12, "Unexpected Objective-C method entry size");
+  const implementations: number[] = [];
+  let attach: number | undefined;
+  for (let index = 0; index < binary.readUInt32LE(offset(table) + 4); index++) {
+    const entry = table + 8 + index * 12;
+    const selectorReference = entry + binary.readInt32LE(offset(entry));
+    // DYLD_CHAINED_PTR_64_OFFSET stores the selector's image-relative target in 36 bits.
+    const selector =
+      Number(binary.readBigUInt64LE(offset(selectorReference)) & 0xfffffffffn) + 0x100000000;
+    const nameStart = offset(selector);
+    const name = binary.toString("utf8", nameStart, binary.indexOf(0, nameStart));
+    const implementation = entry + 8 + binary.readInt32LE(offset(entry) + 8);
+    implementations.push(implementation);
+    if (name === methodName) attach = implementation;
+  }
+  assert(attach, `${className}.${methodName} is missing`);
+  const end = Math.min(...implementations.filter((address) => address > attach));
+  assert(Number.isFinite(end), "Cannot determine the attachment method boundary");
+  const assembly = dump(
+    "--disassemble",
+    "--no-show-raw-insn",
+    `--start-address=${attach}`,
+    `--stop-address=${end}`,
+  );
+  return [...assembly.matchAll(/\bbl\s+0x([\da-f]+)/g)].flatMap((call) => {
+    const start = stubs.indexOf(`\n${call[1]}:`);
+    if (start < 0) return [];
+    const selector = stubs.slice(start).split("\n").slice(0, 4).join("\n");
+    const name = selector.match(/Objc selector ref: (.+)/)?.[1];
+    return name ? [name] : [];
+  });
+}
+const calls = methodCalls("RNSTabsHostComponentView", "didMoveToWindow");
 const mount = calls.indexOf("addChildViewController:toViewControllerManaging:withContainerView:");
 const bounds = calls.indexOf("bounds");
 const view = calls.indexOf("view", bounds + 1);
@@ -82,4 +85,22 @@ assert(
   bounds >= 0 && view > bounds && frame > view && mount > frame,
   `Native tabs must size their view before attachment. Compiled calls: ${calls.join(", ")}`,
 );
-console.log(JSON.stringify({ executable, tabSizingBeforeAttachment: true, calls }, null, 2));
+const heightCalls = methodCalls("RNSScreen", "calculateHeaderHeightIsModal:");
+assert(
+  heightCalls.includes("minimizationEnabled") && heightCalls.includes("convertRect:toView:"),
+  "Stable pane header measurement is missing from the compiled executable",
+);
+console.log(
+  JSON.stringify(
+    {
+      executable,
+      tabSizingBeforeAttachment: true,
+      headerMinimizationOverride: true,
+      stablePaneHeaderMeasurement: true,
+      heightCalls,
+      calls,
+    },
+    null,
+    2,
+  ),
+);

@@ -50,7 +50,7 @@ import {
   type ReservedRegion,
 } from "react-native-reserved-regions";
 import { usableViewport } from "./pane-layout.ts";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   NavigationContainer,
@@ -133,6 +133,8 @@ export const GroupedSurface = createContext(false);
 const InsideGroupedSection = createContext(false);
 const ScrollEdgeAttachment = createContext<(() => void) | null>(null);
 const ScrollHeaderInset = createContext(0);
+const SidebarSurface = createContext(false);
+export const ManualScrollInsets = createContext(false);
 
 function useScrollEdgeAttachment(onLayout: ComponentProps<typeof ScrollView>["onLayout"]) {
   const attach = useContext(ScrollEdgeAttachment),
@@ -161,6 +163,25 @@ const scrollInsetsDefaults: Pick<
   automaticallyAdjustKeyboardInsets: true,
   automaticallyAdjustsScrollIndicatorInsets: true,
 };
+function useScrollInsets(horizontal = false) {
+  const manual = useContext(ManualScrollInsets),
+    headerInset = useContext(ScrollHeaderInset),
+    safe = useSafeAreaInsets();
+  const top = manual && !horizontal ? headerInset : 0;
+  return {
+    manual,
+    top,
+    props: manual
+      ? {
+          contentInsetAdjustmentBehavior: "never" as const,
+          automaticallyAdjustContentInsets: false,
+          automaticallyAdjustsScrollIndicatorInsets: false,
+          contentInset: { top: 0, bottom: safe.bottom },
+          scrollIndicatorInsets: { top, bottom: safe.bottom },
+        }
+      : {},
+  };
+}
 
 const ViewportContext = createContext<{
   bounds: { width: number; height: number };
@@ -178,15 +199,25 @@ export function ViewportPane({
   viewportWidth,
   visible = true,
   inheritHeader = true,
+  sidebar,
+  manualInsets,
+  insetHeader = false,
 }: {
   children: ReactNode;
   rect: ReservedRegion["frame"];
   viewportWidth: number;
   visible?: boolean;
   inheritHeader?: boolean;
+  sidebar?: boolean;
+  manualInsets?: boolean;
+  insetHeader?: boolean;
 }) {
   const headerInset = useContext(ScrollHeaderInset);
   const scrollingHeader = useContext(ScrollingHeader);
+  const inheritedSidebar = useContext(SidebarSurface),
+    inheritedManual = useContext(ManualScrollInsets),
+    color = usePalette();
+  const top = Math.max(0, headerInset - rect.y);
   return (
     <View
       pointerEvents={visible ? "auto" : "none"}
@@ -200,10 +231,16 @@ export function ViewportPane({
         height: rect.height,
         opacity: visible ? 1 : 0,
         overflow: "hidden",
+        paddingTop: insetHeader ? top : 0,
+        ...(sidebar ? { backgroundColor: color.sidebar } : {}),
       }}
     >
       <ScrollingHeader value={inheritHeader ? scrollingHeader : null}>
-        <ScrollHeaderInset value={Math.max(0, headerInset - rect.y)}>{children}</ScrollHeaderInset>
+        <ScrollHeaderInset value={insetHeader ? 0 : top}>
+          <ManualScrollInsets value={manualInsets ?? inheritedManual}>
+            <SidebarSurface value={sidebar ?? inheritedSidebar}>{children}</SidebarSurface>
+          </ManualScrollInsets>
+        </ScrollHeaderInset>
       </ScrollingHeader>
     </View>
   );
@@ -980,15 +1017,19 @@ export function Sheet({
               }}
             >
               {() => (
-                <InsetsConsumed value={false}>
-                  <SafeAreaProvider style={{ backgroundColor: color.surface }}>
-                    <FormAction value={setSubmit}>
-                      <AfterSheet value={afterSheet}>
-                        <Screen scroll={scroll}>{children}</Screen>
-                      </AfterSheet>
-                    </FormAction>
-                  </SafeAreaProvider>
-                </InsetsConsumed>
+                <ManualScrollInsets value={false}>
+                  <SidebarSurface value={false}>
+                    <InsetsConsumed value={false}>
+                      <SafeAreaProvider style={{ backgroundColor: color.surface }}>
+                        <FormAction value={setSubmit}>
+                          <AfterSheet value={afterSheet}>
+                            <Screen scroll={scroll}>{children}</Screen>
+                          </AfterSheet>
+                        </FormAction>
+                      </SafeAreaProvider>
+                    </InsetsConsumed>
+                  </SidebarSurface>
+                </ManualScrollInsets>
               )}
             </SheetStack.Screen>
           </SheetStack.Navigator>
@@ -1426,7 +1467,9 @@ export function ErrorNotice({
   background?: boolean;
 }) {
   const color = usePalette(),
-    live = useContext(LiveStatus);
+    live = useContext(LiveStatus),
+    navigation = useContext(NavigationContext),
+    insideScreen = useContext(InsetsConsumed);
   if (!error) return null;
   if (background && live === "offline" && !(error instanceof ApiError && error.status < 500))
     return null;
@@ -1454,7 +1497,7 @@ export function ErrorNotice({
       </Text>
     </View>
   );
-  return onRetry ? (
+  const notice = onRetry ? (
     <View>
       {message}
       <Button plain title={t("common.action.retry")} disabled={retrying} onPress={onRetry} />
@@ -1463,6 +1506,7 @@ export function ErrorNotice({
   ) : (
     message
   );
+  return navigation && !insideScreen ? <Screen>{notice}</Screen> : notice;
 }
 export function Loading() {
   const color = usePalette(),
@@ -1752,7 +1796,8 @@ export function Screen({
 }) {
   const color = usePalette(),
     live = useContext(LiveStatus),
-    boundary = !useContext(InsetsConsumed);
+    boundary = !useContext(InsetsConsumed),
+    sidebarSurface = useContext(SidebarSurface);
   const navigation = useContext(NavigationContext),
     headerHeight = useContext(HeaderHeightContext) ?? 0,
     inheritedScrollInset = useContext(ScrollHeaderInset),
@@ -1763,7 +1808,7 @@ export function Screen({
     groupedSurface = grouped ?? inheritedGrouped;
   const ios = Platform.OS === "ios",
     modern = ios && Number.parseInt(String(Platform.Version), 10) >= 26;
-  const nativeScroll = !!navigation && ios && scrollInsets && !background;
+  const nativeScroll = !!navigation && ios && (allowDivision || (scrollInsets && !background));
   const transparentHeader = !!navigation && ios && (modern || nativeScroll);
   const edgeFrame = useRef<number | undefined>(undefined);
   const attachEdges = useCallback(() => {
@@ -1810,7 +1855,14 @@ export function Screen({
     <View
       collapsable={false}
       style={[
-        { flex: 1, backgroundColor: groupedSurface ? color.background : color.surface },
+        {
+          flex: 1,
+          backgroundColor: sidebarSurface
+            ? color.sidebar
+            : groupedSurface
+              ? color.background
+              : color.surface,
+        },
         style,
       ]}
     >
@@ -1864,14 +1916,20 @@ export function Screen({
 // Screen's scrolling primitive also serves layouts that own their scrolling content.
 export function Scroll({ children, ...props }: ComponentProps<typeof ScrollView>) {
   const header = useContext(ScrollingHeader);
+  const insets = useScrollInsets(props.horizontal);
+  const style = StyleSheet.flatten(props.contentContainerStyle);
+  const gap = style?.rowGap ?? style?.gap ?? 0;
+  const clearance = Math.max(0, insets.top - (typeof gap === "number" ? gap : 0));
   const onLayout = useScrollEdgeAttachment(props.horizontal ? undefined : props.onLayout);
   return (
     <ScrollView
       {...scrollInsetsDefaults}
       {...props}
+      {...insets.props}
       onLayout={props.horizontal ? props.onLayout : onLayout}
     >
       <ScrollingHeader value={props.horizontal ? header : null}>
+        {insets.top > 0 && <View style={{ height: clearance }} />}
         {!props.horizontal && header}
         {children}
       </ScrollingHeader>
@@ -1961,6 +2019,7 @@ export function List<T>({
 }) {
   const onLayout = useScrollEdgeAttachment(props.onLayout);
   const headerInset = useContext(ScrollHeaderInset);
+  const insets = useScrollInsets(props.horizontal);
   const list = useRef<LegendListRef>(null),
     resetFrame = useRef<number | undefined>(undefined),
     interacted = useRef(false),
@@ -1974,9 +2033,11 @@ export function List<T>({
       // contentInset. Permit the measured negative bar offset on replaceable collections;
       // UIKit retains automatic keyboard and bottom-bar adjustment.
       if (!interacted.current)
-        list.current?.getNativeScrollRef()?.scrollTo({ y: -headerInset, animated: false });
+        list.current
+          ?.getNativeScrollRef()
+          ?.scrollTo({ y: insets.manual ? 0 : -headerInset, animated: false });
     });
-  }, [headerInset, props.dataKey]);
+  }, [headerInset, props.dataKey, insets.manual]);
   useLayoutEffect(() => {
     if (collectionKey.current !== props.dataKey) {
       interacted.current = false;
@@ -2001,14 +2062,16 @@ export function List<T>({
   const [refreshing, setRefreshing] = useState(false),
     header = useContext(ScrollingHeader);
   const original = props.ListHeaderComponent;
-  const listHeader = header ? (
-    <>
-      {header}
-      {isValidElement(original) ? original : original ? createElement(original) : null}
-    </>
-  ) : (
-    original
-  );
+  const listHeader =
+    header || insets.top > 0 ? (
+      <>
+        {insets.top > 0 && <View style={{ height: insets.top }} />}
+        {header}
+        {isValidElement(original) ? original : original ? createElement(original) : null}
+      </>
+    ) : (
+      original
+    );
   async function refresh() {
     if (!onRefresh || refreshing) return;
     setRefreshing(true);
@@ -2028,7 +2091,9 @@ export function List<T>({
         keyboardShouldPersistTaps="handled"
         {...scrollInsetsDefaults}
         {...props}
+        {...insets.props}
         ref={list}
+        {...(insets.manual ? { progressViewOffset: props.progressViewOffset ?? headerInset } : {})}
         scrollToOverflowEnabled={
           props.scrollToOverflowEnabled ?? (props.dataKey !== undefined && headerInset > 0)
         }
@@ -2159,7 +2224,7 @@ export function Row({
               borderRadius: 10,
               backgroundColor: sidebar
                 ? active
-                  ? color.accent
+                  ? color.accentSurface
                   : pressed
                     ? color.selection
                     : "transparent"
@@ -2197,11 +2262,7 @@ export function Row({
             )}
             <Text
               style={{
-                color: sidebar
-                  ? active
-                    ? color.accentForeground
-                    : color.sidebarForeground
-                  : color.foreground,
+                color: sidebar ? color.sidebarForeground : color.foreground,
                 fontSize: compact && !grouped ? 15 : 16,
                 fontWeight: emphasized || active || selected ? "600" : grouped ? "400" : "500",
                 lineHeight: grouped ? 22 : 23,
@@ -2214,7 +2275,7 @@ export function Row({
               <Text
                 numberOfLines={captionLines}
                 style={{
-                  color: sidebar && active ? color.accentForeground : color.muted,
+                  color: color.muted,
                   fontSize: 13,
                   lineHeight: 18,
                 }}
@@ -2233,9 +2294,7 @@ export function Row({
                   selected ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"
                 }
                 size={16}
-                color={
-                  sidebar && active ? color.accentForeground : selected ? color.accent : color.muted
-                }
+                color={selected ? color.accent : color.muted}
                 accessible={false}
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
