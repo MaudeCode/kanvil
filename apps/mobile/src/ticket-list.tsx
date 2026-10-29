@@ -71,7 +71,7 @@ import {
 } from "./ui.tsx";
 import {
   createHeaderAction,
-  projectHeaderItems,
+  useProjectHeaderItems,
   createHeaderMenu,
   ticketHeaderItems,
   sidebarHeaderItem,
@@ -115,7 +115,8 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     ),
     projectId = project?.id ?? route.params.projectId,
     access = useProjectAccess(projectId);
-  const { contexts, showPicker } = useProjectNavigation();
+  const { contexts } = useProjectNavigation();
+  const scopeHeaderItems = useProjectHeaderItems();
   const isFocused = useIsFocused();
   const [initial] = useState(() => contexts.get(projectId));
   const [anchor, setAnchor] = useState(() => initial?.anchor ?? calendarDay(new Date()));
@@ -745,9 +746,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
                 selecting
                   ? []
                   : [
-                      ...projectHeaderItems(
-                        showPicker,
-                        t("native.navigation.switchProject"),
+                      ...scopeHeaderItems(
                         split && splitState.collapsed && splitState.secondaryVisible
                           ? {
                               title: t("ticket.list.tickets"),
@@ -778,7 +777,7 @@ export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
     layout,
     split,
     splitState,
-    showPicker,
+    scopeHeaderItems,
     searchOptions,
     selecting,
     selectedTicket,

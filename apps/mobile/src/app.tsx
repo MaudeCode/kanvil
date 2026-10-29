@@ -2,7 +2,7 @@ import { hasAdminRole } from "@kanvil/contracts";
 import {
   createHeaderAction,
   createHeaderMenu,
-  projectHeaderItems,
+  useProjectHeaderItems,
   ticketHeaderItems,
   sidebarHeaderItem,
   paneNavigationOptions,
@@ -86,7 +86,6 @@ import {
   MainNavigation,
   ProjectNavigation,
   createProjectContexts,
-  useProjectNavigation,
   SettingsSidebarVisible,
   WideNavigation,
   settingsRouteId,
@@ -671,6 +670,7 @@ function Navigation({
   );
   const switchWorkspace = useCallback(
     (workspaceId: string) => {
+      if (workspaceId === activeWorkspace?.id) return;
       switchDestination();
       const tabs = navigationRef.getRootState();
       for (const tab of tabs?.routes ?? []) {
@@ -683,7 +683,7 @@ function Navigation({
       }
       selectWorkspace(workspaceId);
     },
-    [switchDestination, selectWorkspace, navigationRef],
+    [switchDestination, selectWorkspace, navigationRef, activeWorkspace?.id],
   );
   const theme = {
     ...(dark ? DarkTheme : DefaultTheme),
@@ -739,7 +739,7 @@ function Navigation({
           <LiveStatus value={connection}>
             <Home onDisconnect={onDisconnect} />
             <Sheet
-              title={t("shell.page.projects")}
+              title={t("native.navigation.switchProject")}
               open={picker}
               onClose={() => setPicker(false)}
               onDismissed={() =>
@@ -794,7 +794,8 @@ function SettingsNavigatorLayout({
   splitState: SplitState;
   onSplitChange: (state: SplitState) => void;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    scopeHeaderItems = useProjectHeaderItems();
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const route = state.routes[state.index];
   const focused = route ? descriptors[route.key] : undefined;
@@ -816,13 +817,15 @@ function SettingsNavigatorLayout({
     focusedNavigation.setOptions(
       nativeHeaderOptions({
         ...paneNavigationOptions(!wide, !wide),
-        unstable_headerLeftItems: () =>
-          wide && route?.name !== "Home"
+        unstable_headerLeftItems: () => [
+          ...scopeHeaderItems(),
+          ...(wide && route?.name !== "Home"
             ? [sidebarHeaderItem(() => setSidebarHidden((hidden) => !hidden))]
-            : [],
+            : []),
+        ],
       }),
     );
-  }, [enabled, focusedNavigation, splitState.collapsed, route?.name]);
+  }, [enabled, focusedNavigation, splitState.collapsed, route?.name, scopeHeaderItems]);
   return (
     <SettingsSidebarVisible value={enabled && !splitState.collapsed}>
       <View style={{ flex: 1 }}>
@@ -873,7 +876,7 @@ function BrowsingStack({
   onDisconnect: () => Promise<void>;
 }) {
   const color = usePalette(),
-    projectNavigation = useProjectNavigation(),
+    scopeHeaderItems = useProjectHeaderItems(),
     workspace = useWorkspace();
   const titles = {
     Projects: t("shell.page.projects"),
@@ -911,13 +914,8 @@ function BrowsingStack({
             headerBackVisible: true,
             contentStyle: { backgroundColor: color.surface },
             unstable_headerLeftItems: () =>
-              route.name === "Tickets" ||
-              route.name === "Ticket" ||
-              (route.name === "Home" && tab !== "Settings")
-                ? projectHeaderItems(
-                    projectNavigation.showPicker,
-                    t("native.navigation.switchProject"),
-                  )
+              route.name === "Tickets" || route.name === "Ticket" || route.name === "Home"
+                ? scopeHeaderItems()
                 : [],
           })
         }

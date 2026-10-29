@@ -29,7 +29,8 @@ import {
 } from "./ui.tsx";
 
 export function Projects({ picker = false }: { picker?: boolean }) {
-  const projectNavigation = useProjectNavigation();
+  const projectNavigation = useProjectNavigation(),
+    color = usePalette();
   const navigation = useNavigation();
   const [includeArchived, setIncludeArchived] = useState(false);
   const projects = useProjects(includeArchived),
@@ -172,19 +173,22 @@ export function Projects({ picker = false }: { picker?: boolean }) {
         <>
           {picker ? (
             <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
-              <Choice
-                compact
-                label={t("shell.workspace.workspaces")}
-                value={workspace.active?.id ?? ""}
-                options={workspace.workspaces.map((space) => ({
-                  value: space.id,
-                  label: space.name,
-                }))}
-                onChange={(id) => {
-                  changeQuery("");
-                  projectNavigation.selectWorkspace(id);
-                }}
-              />
+              <Heading compact>{t("shell.workspace.workspaces")}</Heading>
+              {workspace.workspaces.map((space) => (
+                <Row
+                  key={space.id}
+                  compact
+                  interaction="choice"
+                  title={space.name}
+                  selected={space.id === workspace.active?.id}
+                  leading={<TicketGlyph name="building-2" color={color.muted} />}
+                  onPress={() => {
+                    changeQuery("");
+                    projectNavigation.selectWorkspace(space.id);
+                  }}
+                />
+              ))}
+              {!recent.length && <Heading compact>{t("shell.page.projects")}</Heading>}
             </View>
           ) : (
             <WorkspaceScope />

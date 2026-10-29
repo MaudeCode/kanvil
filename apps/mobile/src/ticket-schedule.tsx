@@ -38,8 +38,7 @@ import {
   useNativeViewport,
 } from "./ui.tsx";
 import { SplitView } from "./split-view.tsx";
-import { useProjectNavigation } from "./navigation.ts";
-import { projectHeaderItems } from "./navigation-actions.tsx";
+import { useProjectHeaderItems } from "./navigation-actions.tsx";
 
 const calendarMinimumWidth = 7 * 44 + 16;
 
@@ -67,7 +66,7 @@ export function TicketSchedule({
   header?: ReactNode;
 }) {
   const navigation = useNavigation(),
-    { showPicker } = useProjectNavigation(),
+    scopeHeaderItems = useProjectHeaderItems(),
     { api } = useConnection();
   const [splitState, setSplitState] = useState({ collapsed: false, secondaryVisible: false });
   const [today] = useState(() => calendarDay(new Date())),
@@ -111,9 +110,7 @@ export function TicketSchedule({
       nativeHeaderOptions({
         headerBackVisible: false,
         unstable_headerLeftItems: () =>
-          projectHeaderItems(
-            showPicker,
-            t("native.navigation.switchProject"),
+          scopeHeaderItems(
             showDay && splitState.collapsed && splitState.secondaryVisible
               ? {
                   title: t("ticket.schedule.calendar"),
@@ -131,16 +128,10 @@ export function TicketSchedule({
       navigation.setOptions(
         nativeHeaderOptions({
           headerBackVisible: false,
-          unstable_headerLeftItems: () =>
-            projectHeaderItems(
-              showPicker,
-              t("native.navigation.switchProject"),
-              undefined,
-              projectName,
-            ),
+          unstable_headerLeftItems: () => scopeHeaderItems(undefined, projectName),
         }),
       );
-  }, [navigation, showDay, splitState, showPicker, projectName]);
+  }, [navigation, showDay, splitState, scopeHeaderItems, projectName]);
   const controls = (
     <View
       style={{

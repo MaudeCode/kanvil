@@ -4,6 +4,9 @@ import type {
   NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { Button, type ColorValue } from "react-native";
+import { useCallback } from "react";
+import { useWorkspace } from "./data.tsx";
+import { useProjectNavigation } from "./navigation.ts";
 import { t } from "@kanvil/contracts/i18n";
 
 export type HeaderAction = Pick<NativeStackHeaderItemButton, "onPress" | "disabled"> & {
@@ -130,16 +133,21 @@ export function projectHeaderItems(
   title: string,
   back?: HeaderAction,
   projectName?: string,
+  workspaceName?: string,
 ) {
+  const scope = workspaceName
+    ? projectName
+      ? t("native.labelValue", { label: workspaceName, value: projectName })
+      : workspaceName
+    : projectName;
   const picker = createHeaderAction(
-    projectName ? t("native.navigation.projectButton", { project: projectName }) : title,
+    scope ? t("native.navigation.projectButton", { project: scope }) : title,
     showPicker,
-    projectName ? undefined : { type: "sfSymbol", name: "square.stack.3d.up" },
+    scope ? undefined : { type: "sfSymbol", name: "square.stack.3d.up" },
     false,
     { identifier: "switch-project", visibilityPriority: "high", sharesBackground: false },
   );
-  if (projectName)
-    picker.accessibilityLabel = t("native.labelValue", { label: title, value: projectName });
+  if (scope) picker.accessibilityLabel = t("native.labelValue", { label: title, value: scope });
   return [
     ...(back
       ? [
@@ -151,4 +159,21 @@ export function projectHeaderItems(
       : []),
     picker,
   ];
+}
+
+// Bind workspace scope once for every browsing header, including pane-specific overrides.
+export function useProjectHeaderItems() {
+  const { active } = useWorkspace();
+  const { showPicker } = useProjectNavigation();
+  return useCallback(
+    (back?: HeaderAction, projectName?: string) =>
+      projectHeaderItems(
+        showPicker,
+        t("native.navigation.switchProject"),
+        back,
+        projectName,
+        active?.name,
+      ),
+    [showPicker, active?.name],
+  );
 }

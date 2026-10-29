@@ -1055,6 +1055,7 @@ export function Choice({
   compact = false,
   summary,
   inline = false,
+  disclosure = false,
 }: {
   label: string;
   value: string;
@@ -1067,6 +1068,7 @@ export function Choice({
   compact?: boolean;
   summary?: ReactNode;
   inline?: boolean;
+  disclosure?: boolean;
 }) {
   const color = usePalette(),
     [open, setOpen] = useState(false),
@@ -1126,6 +1128,7 @@ export function Choice({
     <Button
       compact
       plain
+      disclosure={disclosure}
       title={selected?.length === 0 && emptyLabel === t("ticket.field.noValue") ? label : current}
       disabled={disabled}
       leading={summary ? undefined : options.find((option) => option.value === value)?.leading}
@@ -2684,24 +2687,24 @@ export function ContextBar({ children }: { children: ReactNode }) {
   );
 }
 export function WorkspaceScope({ children }: { children?: ReactNode }) {
-  const { active } = useWorkspace(),
-    { showPicker } = useProjectNavigation(),
+  const { active, workspaces } = useWorkspace(),
+    { selectWorkspace } = useProjectNavigation(),
     color = usePalette();
   return (
     <ContextBar>
-      <Button
+      <Choice
         compact
-        plain
-        title={active?.name ?? t("shell.app.noWorkspaceSelected")}
-        accessibilityLabel={t("native.labelValue", {
-          label: t("native.navigation.switchProject"),
-          value: active?.name ?? t("shell.app.noWorkspaceSelected"),
-        })}
-        leading={<TicketGlyph name="building-2" size={16} color={color.muted} />}
-        trailing={
-          <DecorativeIcon name="chevron-down" size={12} color={color.muted} accessible={false} />
-        }
-        onPress={showPicker}
+        disclosure
+        label={t("shell.workspace.switch")}
+        value={active?.id ?? ""}
+        emptyLabel={t("shell.app.noWorkspaceSelected")}
+        options={workspaces.map((space) => ({
+          value: space.id,
+          label: space.name,
+          leading: <TicketGlyph name="building-2" size={16} color={color.muted} />,
+          symbol: "building-2",
+        }))}
+        onChange={selectWorkspace}
       />
       {children}
     </ContextBar>
