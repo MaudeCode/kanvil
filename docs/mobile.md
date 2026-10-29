@@ -57,7 +57,7 @@ Native rail actions have semantic symbols and stable identifiers. Create is high
 
 The native-stack type patch permits explicitly clearing `headerSearchBarOptions`, matching its existing runtime nullish check. This removes list search from compact detail and selection mode without replacing the system bar.
 
-Settings navigation uses a flat sidebar with rounded selections and the active theme's primary/foreground pair. Shared rows use inset rounded feedback for browsing, choice sheets, and project pickers; selected rows keep their accessible state and checkmarks. Grouped forms remain separate from navigation, and row text continues to wrap.
+Settings navigation uses a flat sidebar with rounded selections and the active theme's primary/foreground pair. Each section has its own native route identity, scoped to its workspace or project where applicable, so changing sections cannot transfer scroll momentum or form state. Returning to a section restores its own mounted page. Shared rows use inset rounded feedback for browsing, choice sheets, and project pickers; selected rows keep their accessible state and checkmarks. Grouped forms remain separate from navigation, and row text continues to wrap.
 
 ## Checks
 

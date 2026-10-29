@@ -49,6 +49,21 @@ export function projectSettingsSections(access: { canManage: boolean; canShare: 
   );
 }
 export type ScreenProps<K extends keyof Routes> = NativeStackScreenProps<Routes, K>;
+// Each settings page owns its native scroll view, momentum and unsaved form state.
+export function settingsRouteId({
+  params,
+}: {
+  params:
+    | Routes["AccountSettings"]
+    | Routes["WorkspaceSettings"]
+    | Routes["ProjectSettings"]
+    | Routes["Administration"];
+}) {
+  return JSON.stringify([
+    "projectId" in params ? params.projectId : "workspaceId" in params ? params.workspaceId : null,
+    params.section ?? "general",
+  ]);
+}
 export const SettingsSidebarVisible = createContext(false);
 // Independent sheets target the browsing stack that opened them.
 export const MainNavigation = createContext<Pick<

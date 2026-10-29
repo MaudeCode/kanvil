@@ -1,6 +1,28 @@
 import { expect, it } from "vite-plus/test";
-import { createProjectContexts, createSearchBarHandle } from "./navigation.ts";
+import { createProjectContexts, createSearchBarHandle, settingsRouteId } from "./navigation.ts";
 import { ticketFilter } from "@kanvil/contracts";
+
+it("isolates settings pages by section and entity, including implicit General routes", () => {
+  const destinations = [
+    { section: "appearance" },
+    { section: "preferences" },
+    { workspaceId: "one", section: "general" },
+    { workspaceId: "one", section: "members" },
+    { workspaceId: "two", section: "general" },
+    { projectId: "three", section: "general" },
+    { projectId: "three", section: "members" },
+    { projectId: "four", section: "general" },
+    { section: "general" },
+    { section: "users" },
+  ];
+  expect(new Set(destinations.map((params) => settingsRouteId({ params }))).size).toBe(
+    destinations.length,
+  );
+  expect(settingsRouteId({ params: { projectId: "three" } })).toBe(
+    settingsRouteId({ params: { projectId: "three", section: "general" } }),
+  );
+  expect(settingsRouteId({ params: {} })).toBe(settingsRouteId({ params: { section: "general" } }));
+});
 
 it("restores each project's browsing context without borrowing another project's selection", () => {
   const contexts = createProjectContexts();

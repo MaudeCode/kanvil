@@ -79,6 +79,7 @@ import {
   createProjectContexts,
   useProjectNavigation,
   SettingsSidebarVisible,
+  settingsRouteId,
   type Routes,
   type TabRoutes,
 } from "./navigation.ts";
@@ -995,21 +996,26 @@ function BrowsingStack({
       >
         <Stack.Screen
           name="WorkspaceSettings"
-          getId={({ params }) => params.workspaceId}
+          getId={settingsRouteId}
           component={WorkspaceSettings}
           options={{ title: t("shell.workspace.settings") }}
         />
         <Stack.Screen
           name="ProjectSettings"
-          getId={({ params }) => params.projectId}
+          getId={settingsRouteId}
           component={ProjectSettings}
           options={{ title: t("shell.settingsNav.projectSettings") }}
         />
-        <Stack.Screen name="AccountSettings" options={{ title: t("shell.page.settings") }}>
+        <Stack.Screen
+          name="AccountSettings"
+          getId={settingsRouteId}
+          options={{ title: t("shell.page.settings") }}
+        >
           {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
         </Stack.Screen>
         <Stack.Screen
           name="Administration"
+          getId={settingsRouteId}
           component={Administration}
           options={{ title: t("shell.settingsNav.administration") }}
         />
