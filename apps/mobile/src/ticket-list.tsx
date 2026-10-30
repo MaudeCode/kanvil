@@ -90,10 +90,11 @@ import { ticketSections, sectionEntries, sectionHeaderIndices } from "./ticket-s
 
 function useTicketPages(input: Input<"list_tickets">, enabled: boolean) {
   const { api } = useConnection();
+  const request = { ...input, view: "full" as const };
   const result = useInfiniteQuery({
-    queryKey: [...api.query("list_tickets", input).queryKey, "pages"],
+    queryKey: [...api.query("list_tickets", request).queryKey, "pages"],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => api.call("list_tickets", { ...input, offset: pageParam }),
+    queryFn: ({ pageParam }) => api.call("list_tickets", { ...request, offset: pageParam }),
     getNextPageParam: (last, pages) => {
       const count = pages.reduce((sum, page) => sum + page.items.length, 0);
       return count < last.total ? count : undefined;
