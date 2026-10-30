@@ -1,4 +1,9 @@
-import { decodeBlobData, stagedUploadCutoff } from "./blob-storage.ts";
+import {
+  decodeBlobData,
+  stagedUploadCutoff,
+  intakeAttachmentLimit,
+  intakeByteQuota,
+} from "./blob-storage.ts";
 import {
   attachmentLimit,
   resourceProvider,
@@ -57,10 +62,6 @@ import {
   type Handlers,
   one,
 } from "./domain.ts";
-// Bounds what an untrusted intake credential can store: files on one quarantined ticket, and
-// bytes across every ticket it created that is still quarantined. Triage releases both.
-const intakeAttachmentLimit = 10,
-  intakeByteQuota = 1_000_000_000;
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket"),
   sourceProject = alias(projects, "source_project"),

@@ -24,6 +24,7 @@ import {
 } from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
 import { createDatabase } from "./database.ts";
+import { createAuth } from "./auth.ts";
 import { createFixture } from "./test-fixture.ts";
 import { startImportSources } from "./import-source-fixture.ts";
 
@@ -1226,11 +1227,18 @@ describe("HTTP, realtime, and MCP", () => {
         const databaseUrl = new URL(fixture.config.DATABASE_URL);
         // Fail a credential-row write at PostgreSQL's lock boundary, without timing the response.
         databaseUrl.searchParams.set("options", "-c lock_timeout=100ms");
-        const database = createDatabase({ ...fixture.config, DATABASE_URL: databaseUrl.href });
-        const unlimited = await createApplication(database, {
-          ...fixture.config,
-          KANVIL_API_KEY_RATE_LIMIT_ENABLED: instanceLimit,
-        });
+        const authDatabase = createDatabase({ ...fixture.config, DATABASE_URL: databaseUrl.href });
+        // Probe only authentication: domain COMMIT/NOTIFY locks are unrelated to key-row writes.
+        const unlimited = await createApplication(
+          fixture.database,
+          {
+            ...fixture.config,
+            KANVIL_API_KEY_RATE_LIMIT_ENABLED: instanceLimit,
+          },
+          {
+            auth: (_database, config) => createAuth(authDatabase, config),
+          },
+        );
         const fetch = async (input: string | URL | Request, init?: RequestInit) =>
           unlimited.app.fetch(new Request(input, init));
         const sdk = new Client({ name: "locked-key-test", version: "1.0.0" });
@@ -1292,7 +1300,7 @@ describe("HTTP, realtime, and MCP", () => {
           locker.release();
           await sdk.close();
           await unlimited.close();
-          await database.pool.end();
+          await authDatabase.pool.end();
         }
       }
     },

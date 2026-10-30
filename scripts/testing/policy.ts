@@ -162,7 +162,7 @@ export const families: readonly Family[] = [
       "apps/server/src/account-administration.test.ts": 7,
       "apps/server/src/account-deletion.test.ts": 8,
       "apps/server/src/authentication-policy.test.ts": 3,
-      "apps/server/src/blob-storage.test.ts": 1,
+      "apps/server/src/blob-storage.test.ts": 3,
       "apps/server/src/calendar.test.ts": 3,
       "apps/server/src/cli/client.integration.test.ts": 3,
       "apps/server/src/consumers.test.ts": 2,
@@ -355,8 +355,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "ticket-list-scale.spec.ts",
-    4,
-    "Real 10,000-ticket DOM, layout, focus and collection completeness.",
+    5,
+    "Real 10,000-ticket DOM, layout, focus and collection completeness, plus browser response completion and abort-after-headers settlement in the scale sampler.",
   ),
   spec(
     "users.spec.ts",

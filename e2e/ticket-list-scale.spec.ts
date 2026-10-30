@@ -70,13 +70,21 @@ async function monitor(page: Page) {
     const eventOptions = { type: "event", buffered: true, durationThreshold: 16 };
     eventObserver.observe(eventOptions);
   });
-  const inFlight = new Set<string>();
+  const inFlight = new Map<BrowserRequest, { done: Promise<void>; finish: () => void }>();
   const lists = /\/api\/v1\/(?:projects\/[^/]+\/tickets|my-work)\?/;
   page.on("request", (request) => {
-    if (lists.test(request.url())) inFlight.add(request.url());
+    if (!lists.test(request.url())) return;
+    let finish: () => void;
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    inFlight.set(request, { done, finish: () => finish() });
   });
+  // Response.finished() can remain pending after an abort; both terminal events settle work.
   const settled = (request: BrowserRequest) => {
-    inFlight.delete(request.url());
+    const pending = inFlight.get(request);
+    inFlight.delete(request);
+    pending?.finish();
   };
   page.on("requestfinished", settled);
   page.on("requestfailed", settled);
@@ -93,7 +101,24 @@ async function monitor(page: Page) {
       await expect(page.locator("footer")).toHaveText("10,000 tickets");
     },
     sample: async (scenario: string) => {
-      await expect.poll(() => inFlight.size).toBe(0);
+      // A realtime burst can queue a follow-up refetch after the visible row updates.
+      while (inFlight.size) {
+        await Promise.all([...inFlight.values()].map(({ done }) => done));
+        await page.evaluate(
+          () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+        );
+      }
+      await expect
+        .poll(
+          () =>
+            [...inFlight.keys()].map((request) => ({
+              url: request.url(),
+              failure: request.failure(),
+              timing: request.timing(),
+            })),
+          { message: `${scenario}: every list request must finish before sampling` },
+        )
+        .toEqual([]);
       if (!cdp)
         return {
           scenario,
@@ -685,4 +710,44 @@ test("reconciles 10,000 tickets through failed pages, middle moves and realtime 
   await page.getByRole("link", { name: "Stress fixture", exact: true }).click();
   await expect(page.locator("footer")).toHaveText("10,000 tickets");
   expect(await page.locator(".ticket-row").count()).toBeLessThanOrEqual(120);
+});
+
+test("settles scale sampling when a response is aborted after headers", async ({ page }) => {
+  const performanceRun = await monitor(page);
+  await signIn(page);
+  const probe = "/api/v1/projects/sample/tickets?scale-abort=1";
+  // The existing event stream sends headers but keeps its body open until the request aborts.
+  await page.route(`**${probe}`, (route) =>
+    route.continue({ url: new URL("/api/v1/events?scale-abort=1", page.url()).href }),
+  );
+  const headers = page.waitForResponse((response) => response.url().includes("scale-abort=1"));
+  const failed = page.waitForEvent("requestfailed", (request) =>
+    request.url().includes("scale-abort=1"),
+  );
+  const controller = await page.evaluateHandle((path) => {
+    const abort = new AbortController();
+    void fetch(path, { signal: abort.signal }).catch(() => {});
+    return abort;
+  }, probe);
+  try {
+    expect((await headers).status()).toBe(200);
+    let result = "pending";
+    const sampling = performanceRun.sample("abort after headers").then(
+      () => {
+        result = "passed";
+      },
+      () => {
+        result = "failed";
+      },
+    );
+    await controller.evaluate((abort) => abort.abort());
+    await failed;
+    await expect
+      .poll(() => result, { message: "an aborted response must settle sampling" })
+      .toBe("passed");
+    await sampling;
+  } finally {
+    await controller.dispose();
+    await page.unroute(`**${probe}`);
+  }
 });
