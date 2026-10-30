@@ -93,6 +93,18 @@ async function monitor(page: Page) {
       await expect(page.locator("footer")).toHaveText("10,000 tickets");
     },
     sample: async (scenario: string) => {
+      // A realtime burst can queue a follow-up refetch after the visible row updates.
+      while (inFlight.size) {
+        await Promise.all(
+          [...inFlight].map(async (request) => {
+            const response = await request.response();
+            await response?.finished();
+          }),
+        );
+        await page.evaluate(
+          () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+        );
+      }
       await expect
         .poll(
           () =>
