@@ -70,13 +70,13 @@ async function monitor(page: Page) {
     const eventOptions = { type: "event", buffered: true, durationThreshold: 16 };
     eventObserver.observe(eventOptions);
   });
-  const inFlight = new Set<string>();
+  const inFlight = new Set<BrowserRequest>();
   const lists = /\/api\/v1\/(?:projects\/[^/]+\/tickets|my-work)\?/;
   page.on("request", (request) => {
-    if (lists.test(request.url())) inFlight.add(request.url());
+    if (lists.test(request.url())) inFlight.add(request);
   });
   const settled = (request: BrowserRequest) => {
-    inFlight.delete(request.url());
+    inFlight.delete(request);
   };
   page.on("requestfinished", settled);
   page.on("requestfailed", settled);
@@ -93,7 +93,17 @@ async function monitor(page: Page) {
       await expect(page.locator("footer")).toHaveText("10,000 tickets");
     },
     sample: async (scenario: string) => {
-      await expect.poll(() => inFlight.size).toBe(0);
+      await expect
+        .poll(
+          () =>
+            [...inFlight].map((request) => ({
+              url: request.url(),
+              failure: request.failure(),
+              timing: request.timing(),
+            })),
+          { message: `${scenario}: every list request must finish before sampling` },
+        )
+        .toEqual([]);
       if (!cdp)
         return {
           scenario,
