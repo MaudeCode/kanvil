@@ -141,7 +141,7 @@ export const ProjectNavigation = createContext<{
   currentProjectId: string | undefined;
   showPicker: () => void;
   selectProject: (projectId: string, settings?: boolean) => void;
-  selectWorkspace: (workspaceId: string) => void;
+  selectWorkspace: (workspaceId: string, options?: { reset?: boolean }) => void;
   workspaceSettings: (workspaceId: string) => void;
   createWorkspace: () => void;
   openTicket: (params: Routes["Ticket"]) => void;

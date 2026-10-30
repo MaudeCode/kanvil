@@ -1062,7 +1062,9 @@ export function ProjectSettings({ route, navigation }: ScreenProps<"ProjectSetti
           <ProjectLifecycle
             project={project}
             canManage={access.canManage}
-            onDeleted={() => projectNavigation.selectWorkspace(project.workspaceId)}
+            onDeleted={() =>
+              projectNavigation.selectWorkspace(project.workspaceId, { reset: true })
+            }
           />
         </>
       )}
@@ -1277,7 +1279,7 @@ function ProjectLifecycle({
             <Impact value={impact.data} />
             {mode === "delete" && (
               <Field
-                label={t("settings.lifecycle.typeToConfirm", { key: project.key })}
+                label={t("settings.lifecycle.typeToConfirm", { value: project.key })}
                 value={confirmation}
                 onChangeText={setConfirmation}
                 autoCapitalize="characters"

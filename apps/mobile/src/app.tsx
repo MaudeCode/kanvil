@@ -669,8 +669,8 @@ function Navigation({
     [navigationRef, projects.data, contexts, selectWorkspace],
   );
   const switchWorkspace = useCallback(
-    (workspaceId: string) => {
-      if (workspaceId === activeWorkspace?.id) return;
+    (workspaceId: string, options?: { reset?: boolean }) => {
+      if (workspaceId === activeWorkspace?.id && !options?.reset) return;
       switchDestination();
       const tabs = navigationRef.getRootState();
       for (const tab of tabs?.routes ?? []) {
