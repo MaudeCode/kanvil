@@ -355,8 +355,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "ticket-list-scale.spec.ts",
-    4,
-    "Real 10,000-ticket DOM, layout, focus and collection completeness.",
+    5,
+    "Real 10,000-ticket DOM, layout, focus and collection completeness, plus browser response completion and abort-after-headers settlement in the scale sampler.",
   ),
   spec(
     "users.spec.ts",
