@@ -162,7 +162,7 @@ export const families: readonly Family[] = [
       "apps/server/src/account-administration.test.ts": 7,
       "apps/server/src/account-deletion.test.ts": 8,
       "apps/server/src/authentication-policy.test.ts": 3,
-      "apps/server/src/blob-storage.test.ts": 1,
+      "apps/server/src/blob-storage.test.ts": 3,
       "apps/server/src/calendar.test.ts": 3,
       "apps/server/src/cli/client.integration.test.ts": 3,
       "apps/server/src/consumers.test.ts": 2,

@@ -1,18 +1,29 @@
 import { createPollingJob } from "./adapters/polling-jobs.ts";
 import type { JobScheduler } from "./adapters/ports.ts";
 import { createHash } from "node:crypto";
-import { and, eq, isNull, isNotNull, lt, or, sql, count } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lt, or, sql, count, inArray, asc } from "drizzle-orm";
 import { stagedUploadLifetime } from "@kanvil/contracts";
-import { blobObjects, attachments, profilePhotos, projects, stagedUploads } from "./schema.ts";
+import {
+  blobObjects,
+  attachments,
+  profilePhotos,
+  projects,
+  stagedUploads,
+  tickets,
+} from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
-import { fail, requireRow, one } from "./domain.ts";
+import { appendEvents, intakeHoldReason, fail, requireRow, one } from "./domain.ts";
 import { createObjectStore } from "./adapters/object-stores.ts";
 import type {
   ObjectStoreFactory,
   ObjectStore,
   ObjectStoreConfiguration,
 } from "./adapters/ports.ts";
+// Bounds files per quarantined intake ticket, bytes per credential, and untriaged retention.
+export const intakeAttachmentLimit = 10,
+  intakeByteQuota = 1_000_000_000,
+  intakeAttachmentLifetime = 30 * 86_400_000;
 // Staged uploads created before this instant have expired: nobody can read, claim, or discard them.
 export const stagedUploadCutoff = () => new Date(Date.now() - stagedUploadLifetime);
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -149,6 +160,45 @@ export function createBlobStorage(
     });
   }
   async function collectBatch() {
+    // Serialize with triage and intake uploads; keep external orphan removal outside this lock.
+    await database.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(7361080)`);
+      const expired = await tx
+        .select({ attachment: attachments, key: tickets.key, title: tickets.title })
+        .from(attachments)
+        .innerJoin(tickets, eq(tickets.id, attachments.ticketId))
+        .where(
+          and(
+            isNotNull(tickets.intakeCredentialId),
+            eq(tickets.holdReason, intakeHoldReason),
+            lt(attachments.createdAt, new Date(Date.now() - intakeAttachmentLifetime)),
+          ),
+        )
+        .orderBy(asc(attachments.createdAt), asc(attachments.id))
+        .limit(100);
+      if (!expired.length) return;
+      await tx.delete(attachments).where(
+        inArray(
+          attachments.id,
+          expired.map(({ attachment }) => attachment.id),
+        ),
+      );
+      await appendEvents(
+        tx,
+        expired.map(({ attachment, key, title }) => ({
+          projectId: attachment.projectId,
+          ticketId: attachment.ticketId,
+          actorId: null,
+          type: "attachment.deleted",
+          data: {
+            attachmentId: attachment.id,
+            key,
+            title,
+            source: { kind: "system", id: "blob-cleanup" },
+          },
+        })),
+      );
+    });
     return database.db.transaction(async (tx) => {
       // An expired staged upload releases its bytes; the unreferenced object goes below.
       await tx.delete(stagedUploads).where(lt(stagedUploads.createdAt, stagedUploadCutoff()));
