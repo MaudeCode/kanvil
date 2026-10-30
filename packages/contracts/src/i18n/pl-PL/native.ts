@@ -1,5 +1,8 @@
 // Screens of the native app. Shared wording comes from `common`.
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Ostatnie projekty",
+  "navigation.switchProject": "Zmień obszar roboczy lub projekt",
   // A field's name and its current value, for screen readers and read-only field lists.
   labelValue: "{{label}}: {{value}}",
   ui: {
@@ -52,6 +55,11 @@ export default {
     create: "Utwórz projekt",
   },
   tickets: {
+    options: "Opcje listy",
+    expandAll: "Rozwiń wszystkie sekcje",
+    collapseAll: "Zwiń wszystkie sekcje",
+    select: "Wybierz zgłoszenia",
+
     search: "Szukaj zadań",
     searchPlaceholder: "Tytuł, opis lub klucz",
     allStatuses: "Wszystkie statusy",
@@ -183,6 +191,7 @@ export default {
     next: "Późniejsza aktywność",
   },
   inbox: {
+    read: "Przeczytane",
     markAllRead: "Oznacz wszystkie jako przeczytane",
     empty: "Brak powiadomień",
   },

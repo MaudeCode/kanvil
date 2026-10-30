@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "最近のプロジェクト",
+  "navigation.switchProject": "ワークスペースまたはプロジェクトを切り替え",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "閉じる",
@@ -48,6 +51,11 @@ export default {
     create: "プロジェクトを作成",
   },
   tickets: {
+    options: "リストのオプション",
+    expandAll: "すべてのセクションを展開",
+    collapseAll: "すべてのセクションを折りたたむ",
+    select: "チケットを選択",
+
     search: "チケットを検索",
     searchPlaceholder: "タイトル、説明、キー",
     allStatuses: "すべてのステータス",
@@ -175,6 +183,7 @@ export default {
     next: "次のアクティビティ",
   },
   inbox: {
+    read: "既読",
     markAllRead: "すべて既読にする",
     empty: "通知はありません",
   },

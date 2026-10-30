@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "최근 프로젝트",
+  "navigation.switchProject": "워크스페이스 또는 프로젝트 전환",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "닫기",
@@ -47,6 +50,11 @@ export default {
     create: "프로젝트 만들기",
   },
   tickets: {
+    options: "목록 옵션",
+    expandAll: "모든 섹션 펼치기",
+    collapseAll: "모든 섹션 접기",
+    select: "티켓 선택",
+
     search: "티켓 검색",
     searchPlaceholder: "제목, 설명 또는 키",
     allStatuses: "모든 상태",
@@ -173,6 +181,7 @@ export default {
     next: "다음 활동",
   },
   inbox: {
+    read: "읽음",
     markAllRead: "모두 읽음으로 표시",
     empty: "알림이 없습니다",
   },

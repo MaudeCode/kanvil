@@ -29,6 +29,11 @@ import {
   ArrowUp,
   OctagonAlert,
   Minus,
+  Sparkles,
+  Bug,
+  Wrench,
+  FlaskConical,
+  BookOpen,
   Search,
   X,
 } from "lucide-react";
@@ -52,6 +57,7 @@ import {
   type LabelColor,
   type Ticket,
 } from "@kanvil/contracts";
+import { ticketSymbols } from "@kanvil/contracts/icons";
 import { brandMark } from "@kanvil/contracts/theme";
 import { formatNumber, formatRelativeTime, t } from "@kanvil/contracts/i18n";
 import { accentColor } from "./lib/accent-colors.ts";
@@ -377,23 +383,36 @@ export function EmptyState({
     </Empty>
   );
 }
-const statusPresentation = {
-  backlog: { icon: CircleDashed, color: "text-muted-foreground" },
-  todo: { icon: Circle, color: "text-muted-foreground" },
-  in_progress: { icon: CircleDot, color: "text-primary" },
-  in_review: { icon: Clock, color: "text-[var(--warning)]" },
-  done: { icon: CircleCheck, color: "text-[var(--success)]" },
-  cancelled: { icon: XCircle, color: "text-muted-foreground" },
+// Platform renderers share the glyph/tone assignments; this is the web SVG adapter.
+export const ticketGlyphs = {
+  "circle-dashed": CircleDashed,
+  circle: Circle,
+  "circle-dot": CircleDot,
+  clock: Clock,
+  "circle-check": CircleCheck,
+  "circle-x": XCircle,
+  "octagon-alert": OctagonAlert,
+  "arrow-up": ArrowUp,
+  equal: Equal,
+  "arrow-down": ArrowDown,
+  minus: Minus,
+  sparkles: Sparkles,
+  bug: Bug,
+  wrench: Wrench,
+  "flask-conical": FlaskConical,
+  "book-open": BookOpen,
+};
+const symbolColors = {
+  muted: "text-muted-foreground",
+  foreground: "text-foreground",
+  accent: "text-primary",
+  warning: "text-[var(--warning)]",
+  success: "text-[var(--success)]",
+  danger: "text-destructive",
 };
 // The tint a status uses on pills, calendar entries, and timeline bars.
-export const statusColor = (status: Ticket["status"]) => statusPresentation[status].color;
-const priorityPresentation = {
-  urgent: { icon: OctagonAlert, color: "text-destructive" },
-  high: { icon: ArrowUp, color: "text-[var(--warning)]" },
-  medium: { icon: Equal, color: "text-foreground" },
-  low: { icon: ArrowDown, color: "text-primary" },
-  none: { icon: Minus, color: "text-muted-foreground" },
-};
+export const statusColor = (status: Ticket["status"]) =>
+  symbolColors[ticketSymbols.status[status].tone];
 // A status shows its category's icon; a workflow state can rename it and tint it.
 export function TicketIndicator({
   property,
@@ -407,17 +426,11 @@ export function TicketIndicator({
 ) & { iconOnly?: boolean; label?: string | undefined; color?: LabelColor | undefined }) {
   const custom =
     property === "status" && tint && tint !== "default" ? accentColor(tint) : undefined;
-  const {
-    icon: Icon,
-    color,
-    label,
-  } = property === "status"
-    ? {
-        ...statusPresentation[value],
-        color: custom ? custom.className : statusPresentation[value].color,
-        label: name ?? stateLabels[value],
-      }
-    : { ...priorityPresentation[value], label: priorityLabels[value] };
+  const symbol =
+    property === "status" ? ticketSymbols.status[value] : ticketSymbols.priority[value];
+  const Icon = ticketGlyphs[symbol.icon];
+  const color = custom?.className ?? symbolColors[symbol.tone];
+  const label = property === "status" ? (name ?? stateLabels[value]) : priorityLabels[value];
   const accessibleLabel =
     property === "priority" && value !== "none" ? t("shell.ui.priority", { label }) : label;
   return (

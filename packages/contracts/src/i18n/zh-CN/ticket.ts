@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "管理视图",
     selectSection: "选择{{section}}工单",
     expandSection: "展开{{section}}工单",
     collapseSection: "收起{{section}}工单",
@@ -128,6 +129,7 @@ export default {
     noDue: "无截止日期",
   },
   filter: {
+    add: "添加筛选条件",
     me: "我",
     searchTickets: "搜索工单",
     searchTicketsPlaceholder: "搜索工单…",

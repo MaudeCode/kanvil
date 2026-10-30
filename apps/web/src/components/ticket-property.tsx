@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  BookOpen,
   Bug,
   CalendarDays,
   Hash,
@@ -15,12 +14,9 @@ import {
   CircleDot,
   CircleUserRound,
   Flag,
-  FlaskConical,
   Shapes,
-  Sparkles,
   Tag,
   UserRound,
-  Wrench,
 } from "lucide-react";
 import {
   difficulties,
@@ -51,7 +47,8 @@ import {
   useProjectAccess,
   useProjects,
 } from "../data.tsx";
-import { Input, TicketIndicator, reportError } from "../ui.tsx";
+import { ticketSymbols, difficultySegments, ticketPropertyOrder } from "@kanvil/contracts/icons";
+import { Input, TicketIndicator, ticketGlyphs, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { TagInput } from "./tag-input.tsx";
@@ -95,13 +92,7 @@ export type PropertyValues = {
 };
 export type PropertyName = keyof PropertyValues;
 // The order every property toolbar and menu lists them in.
-export const propertyOrder = [
-  "status",
-  "priority",
-  "assignee",
-  "kind",
-  "difficulty",
-] as const satisfies PropertyName[];
+export const propertyOrder = ticketPropertyOrder;
 export const propertyLabels = labelTable<PropertyName>(propertyOrder, (property) =>
   t(`ticket.property.${property}`),
 );
@@ -144,29 +135,12 @@ const writers: {
 export function propertyChange<P extends PropertyName>(property: P, value: PropertyValues[P]) {
   return writers[property](value);
 }
-const kindIcons: Record<Ticket["kind"], typeof Bug> = {
-  feature: Sparkles,
-  bug: Bug,
-  chore: Wrench,
-  research: FlaskConical,
-  documentation: BookOpen,
-};
 // Three bars filled to the level read at a glance, like Linear's estimate bars.
 function DifficultyBars({ level, className }: { level: Ticket["difficulty"]; className?: string }) {
-  const filled = level === "low" ? 1 : level === "med" ? 2 : level === "high" ? 3 : 0;
   return (
     <svg viewBox="0 0 16 16" className={cn("size-4 shrink-0", className)} aria-hidden="true">
-      {[6, 10, 14].map((height, index) => (
-        <rect
-          key={height}
-          x={1.5 + index * 5}
-          y={15 - height}
-          width={3.5}
-          height={height}
-          rx={1}
-          fill="currentColor"
-          opacity={index < filled ? 1 : 0.2}
-        />
+      {difficultySegments(level).map((segment) => (
+        <rect key={segment.x} {...segment} fill="currentColor" />
       ))}
     </svg>
   );
@@ -202,7 +176,7 @@ export function PropertyValue({
     case "priority":
       return <TicketIndicator property="priority" value={props.value} iconOnly={iconOnly} />;
     case "kind": {
-      const Icon = kindIcons[props.value];
+      const Icon = ticketGlyphs[ticketSymbols.kind[props.value].icon];
       return (
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />

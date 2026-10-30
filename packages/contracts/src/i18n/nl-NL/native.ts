@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Recente projecten",
+  "navigation.switchProject": "Werkruimte of project wisselen",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Negeren",
@@ -48,6 +51,11 @@ export default {
     create: "Project aanmaken",
   },
   tickets: {
+    options: "Lijstopties",
+    expandAll: "Alle secties uitvouwen",
+    collapseAll: "Alle secties samenvouwen",
+    select: "Tickets selecteren",
+
     search: "Tickets zoeken",
     searchPlaceholder: "Titel, beschrijving of sleutel",
     allStatuses: "Alle statussen",
@@ -174,6 +182,7 @@ export default {
     next: "Volgende activiteit",
   },
   inbox: {
+    read: "Gelezen",
     markAllRead: "Alles als gelezen markeren",
     empty: "Geen meldingen",
   },

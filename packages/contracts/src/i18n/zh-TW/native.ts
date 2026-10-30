@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "最近的專案",
+  "navigation.switchProject": "切換工作區或專案",
   labelValue: "{{label}}：{{value}}",
   ui: {
     dismiss: "關閉",
@@ -47,6 +50,11 @@ export default {
     create: "建立專案",
   },
   tickets: {
+    options: "清單選項",
+    expandAll: "展開所有群組",
+    collapseAll: "收合所有群組",
+    select: "選取工單",
+
     search: "搜尋工單",
     searchPlaceholder: "標題、說明或編號",
     allStatuses: "所有狀態",
@@ -173,6 +181,7 @@ export default {
     next: "較新的活動",
   },
   inbox: {
+    read: "已讀",
     markAllRead: "全部標示為已讀",
     empty: "沒有通知",
   },

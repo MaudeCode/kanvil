@@ -144,6 +144,14 @@ describe("presentation in another language", () => {
   afterEach(async () => {
     await applyLocale("en-US");
   });
+  it("resolves read-notification wording through the runtime lookup in every language", async () => {
+    for (const locale of locales) {
+      await applyLocale(locale);
+      const expected = leaves(await catalog(locale)).get("native.inbox.read");
+      expect(t("native.inbox.read"), locale).toBe(expected);
+      expect(t("native.inbox.read"), locale).not.toBe("native.inbox.read");
+    }
+  });
   it("reads labels, dates, numbers, and errors in the active language", async () => {
     expect(stateLabels.in_progress).toBe("In progress");
     await applyLocale("de-DE");
@@ -210,5 +218,18 @@ describe("presentation in another language", () => {
     expect(partial.t("common.status.todo")).toBe("To do");
     await expect(applyLocale("de-DE")).resolves.toBe("de-DE");
     expect(t("common.language.label")).not.toBe("Language");
+  });
+
+  it("uses compact localized calendar values when relative formatting is unavailable", () => {
+    const relative = Object.getOwnPropertyDescriptor(Intl, "RelativeTimeFormat");
+    Object.defineProperty(Intl, "RelativeTimeFormat", { value: undefined, configurable: true });
+    try {
+      const now = new Date(2026, 9, 28, 14).getTime();
+      expect(formatRelativeTime(new Date(2026, 9, 28, 13, 5), now)).toBe("1:05 PM");
+      expect(formatRelativeTime(new Date(2026, 9, 27, 13, 5), now)).toBe("Oct 27");
+      expect(formatRelativeTime(new Date(2025, 9, 27, 13, 5), now)).toBe("Oct 27, 2025");
+    } finally {
+      if (relative) Object.defineProperty(Intl, "RelativeTimeFormat", relative);
+    }
   });
 });

@@ -1,6 +1,20 @@
 import { hasAdminRole } from "@kanvil/contracts";
-import { createHeaderAction } from "./navigation-actions.tsx";
-import { useEffect, useState } from "react";
+import {
+  createHeaderAction,
+  createHeaderMenu,
+  useProjectHeaderItems,
+  ticketHeaderItems,
+  sidebarHeaderItem,
+  paneNavigationOptions,
+} from "./navigation-actions.tsx";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Alert, AppState, View, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -14,17 +28,25 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { createPrivatePersister, shouldPersistQuery } from "./private-cache.ts";
+import { restoreAppearance } from "./theme.ts";
+import { z } from "zod";
 import {
   NavigationContainer,
   DarkTheme,
   DefaultTheme,
   useNavigationContainerRef,
+  TabActions,
+  NavigationContext,
+  NavigationRouteContext,
   type NavigationState,
+  type PathConfig,
 } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationProp,
+} from "@react-navigation/native-stack";
+import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
 import { authResult, infoSchema, okSchema } from "@kanvil/contracts";
 import {
   connect,
@@ -34,8 +56,14 @@ import {
   useConnection,
   useIdentity,
   useLive,
+  WorkspaceProvider,
+  ClockProvider,
+  LiveStatus,
+  useWorkspace,
+  useAllProjects,
 } from "./data.tsx";
 import {
+  nativeHeaderOptions,
   Body,
   Brand,
   Button,
@@ -44,36 +72,65 @@ import {
   Heading,
   Loading,
   Screen,
+  GroupedSurface,
+  Sheet,
   usePalette,
 } from "./ui.tsx";
 import { Projects, Tickets } from "./lists.tsx";
+import { MyWork, Search } from "./work.tsx";
 import { TicketDetail } from "./ticket-detail.tsx";
 import { EditTicket } from "./editor.tsx";
-import { Inbox, Settings } from "./settings.tsx";
-import type { Routes } from "./navigation.ts";
+import { Inbox, Settings, SettingsLayout, SettingsNavigation } from "./settings.tsx";
+import { SplitView, type SplitState } from "./split-view.tsx";
+import {
+  MainNavigation,
+  ProjectNavigation,
+  createProjectContexts,
+  SettingsSidebarVisible,
+  WideNavigation,
+  settingsRouteId,
+  type Routes,
+  type TabRoutes,
+} from "./navigation.ts";
 import { usePushNavigation } from "./push.tsx";
 import { LocaleRoot, startLocale } from "./locale.tsx";
-import { t } from "@kanvil/contracts/i18n";
+import {
+  WorkspaceSettings,
+  ProjectSettings,
+  CreateWorkspace,
+  Administration,
+  ImportProject,
+} from "./management.tsx";
+import { formatNumber, t } from "@kanvil/contracts/i18n";
 
 const Stack = createNativeStackNavigator<Routes>();
-const Tabs = createBottomTabNavigator<{
-  Projects: undefined;
-  Inbox: undefined;
-  Settings: undefined;
-}>();
+const Tabs = createNativeBottomTabNavigator<TabRoutes>();
+const projectPaths: PathConfig<Routes> = {
+  initialRouteName: "Home",
+  screens: {
+    Home: "",
+    Tickets: "projects/:projectId",
+    Ticket: "projects/:projectId/tickets/:ticketId",
+  },
+};
+const tabPaths = {
+  initialRouteName: "Projects",
+  screens: { Projects: projectPaths },
+} satisfies PathConfig<TabRoutes>;
 const publicCache = new QueryClient();
 // The language root remounts the app; the account's last navigation state brings it back to the
 // same screen instead of the first tab.
 const navigationStates = new Map<string, NavigationState>();
 export default function App() {
+  const color = usePalette();
   const [connection, setConnection] = useState<Connection>(),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState<unknown>();
   useEffect(() => {
     let mounted = true;
     // The first screen already reads the chosen language.
-    void Promise.all([startLocale(), AsyncStorage.getItem("kanvil:server")])
-      .then(async ([, url]) => {
+    void Promise.all([startLocale(), restoreAppearance(), AsyncStorage.getItem("kanvil:server")])
+      .then(async ([, , url]) => {
         if (url) {
           const next = await connect(url);
           if (mounted) setConnection(next);
@@ -107,7 +164,7 @@ export default function App() {
     setError(undefined);
   }
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ backgroundColor: color.surface }}>
       {/* oxlint-disable-next-line react/style-prop-object -- Expo StatusBar takes a color mode string, not a View style. */}
       <StatusBar style="auto" />
       <LocaleRoot>
@@ -136,7 +193,7 @@ function ServerSetup({
     [pending, setPending] = useState(false);
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <Screen>
+      <Screen grouped>
         <Brand />
         <Field
           label={t("native.server.url")}
@@ -267,7 +324,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
   if (flow)
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <Screen>
+        <Screen grouped>
           <Brand />
           <Heading>
             {flow === "reset" ? t("common.signIn.resetTitle") : t("common.signIn.codeTitle")}
@@ -341,7 +398,7 @@ function Login({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     );
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <Screen>
+      <Screen grouped>
         <Brand />
         <Heading>{setup ? t("native.login.setupTitle") : t("native.login.signIn")}</Heading>
         <Body muted>{baseUrl}</Body>
@@ -441,10 +498,16 @@ function PrivateWorkspace({
   user,
   onDisconnect,
 }: {
-  user: { id: string; name: string; email: string; role?: string | null | undefined };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    image?: string | null | undefined;
+    role?: string | null | undefined;
+  };
   onDisconnect: () => Promise<void>;
 }) {
-  const { prefix } = useConnection();
+  const { prefix, baseUrl } = useConnection();
   const [cache] = useState(
     () =>
       new QueryClient({
@@ -454,38 +517,174 @@ function PrivateWorkspace({
         },
       }),
   );
-  const [persister] = useState(() =>
-    createAsyncStoragePersister({ storage: AsyncStorage, key: `${prefix}:${user.id}:cache` }),
+  const [contexts] = useState(createProjectContexts);
+  const [persistence] = useState(() =>
+    createPrivatePersister(AsyncStorage, `${prefix}:${user.id}:cache`),
+  );
+  useEffect(
+    () => () => {
+      persistence.pause();
+      contexts.clear();
+      cache.clear();
+    },
+    [cache, persistence, contexts],
   );
   return (
-    <Identity value={{ ...user, admin: hasAdminRole(user.role) }}>
+    <Identity
+      value={{
+        ...user,
+        image: user.image ?? null,
+        admin: hasAdminRole(user.role),
+        clearPrivateData: async () => {
+          persistence.pause();
+          contexts.clear();
+          cache.clear();
+          navigationStates.delete(`${baseUrl}:${user.id}`);
+          await persistence.clear();
+          const keys = await AsyncStorage.getAllKeys();
+          await AsyncStorage.multiRemove(
+            keys.filter((key) => key.startsWith(`${prefix}:${user.id}:`)),
+          );
+        },
+      }}
+    >
       <PersistQueryClientProvider
         client={cache}
         persistOptions={{
-          persister,
+          persister: persistence.persister,
           maxAge: 7 * 86400000,
           buster: `kanvil-v2:${user.role ?? "user"}`,
           dehydrateOptions: {
             shouldDehydrateMutation: () => false,
-            shouldDehydrateQuery: (query) =>
-              query.state.status === "success" && query.queryKey[0] === "kanvil",
+            shouldDehydrateQuery: shouldPersistQuery,
           },
         }}
       >
-        <Navigation onDisconnect={onDisconnect} />
+        <ClockProvider>
+          <WorkspaceProvider>
+            <Navigation onDisconnect={onDisconnect} contexts={contexts} />
+          </WorkspaceProvider>
+        </ClockProvider>
       </PersistQueryClientProvider>
     </Identity>
   );
 }
-function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
-  const navigationRef = useNavigationContainerRef<Routes>();
-  const onReady = usePushNavigation(navigationRef);
+function Navigation({
+  onDisconnect,
+  contexts,
+}: {
+  onDisconnect: () => Promise<void>;
+  contexts: ReturnType<typeof createProjectContexts>;
+}) {
+  const navigationRef = useNavigationContainerRef<TabRoutes>();
+  const [workspaceCreation, setWorkspaceCreation] = useState<"waiting" | "ready">();
+  const [picker, setPicker] = useState(false),
+    [currentProjectId, setCurrentProjectId] = useState<string>();
+  const openTicket = useCallback(
+    (params: Routes["Ticket"]) => {
+      navigationRef.navigate("Projects", { screen: "Ticket", params, initial: false });
+    },
+    [navigationRef],
+  );
+  // Present a new modal only after the picker's native controller has returned and unmounted.
+  useEffect(() => {
+    if (workspaceCreation === "ready") {
+      navigationRef.navigate("Projects", { screen: "CreateWorkspace", initial: false });
+    }
+  }, [workspaceCreation, navigationRef]);
+  const onReady = usePushNavigation(navigationRef, openTicket);
   const connection = useLive(),
     color = usePalette(),
     dark = useColorScheme() === "dark",
     { baseUrl } = useConnection(),
     owner = `${baseUrl}:${useIdentity().id}`;
   const [initialState] = useState(() => navigationStates.get(owner));
+  const { active: activeWorkspace, select: selectWorkspace } = useWorkspace(),
+    projects = useAllProjects();
+  const followRoute = useCallback(() => {
+    if (!navigationRef.isReady()) return;
+    const projectId = z
+      .object({ projectId: z.string() })
+      .safeParse(navigationRef.getCurrentRoute()?.params).data?.projectId;
+    const project = projects.data?.find(
+      (item) => item.id === projectId || item.key === projectId?.toUpperCase(),
+    );
+    if (project) {
+      contexts.touch(project.id);
+      setCurrentProjectId(project.id);
+      if (project.workspaceId !== activeWorkspace?.id) selectWorkspace(project.workspaceId);
+    }
+  }, [projects.data, activeWorkspace?.id, selectWorkspace, navigationRef, contexts]);
+  useEffect(followRoute, [followRoute]);
+  const switchDestination = useCallback(
+    (projectId?: string, settings = false) => {
+      if (!navigationRef.isReady()) return;
+      const currentId = z
+        .object({ projectId: z.string() })
+        .safeParse(navigationRef.getCurrentRoute()?.params).data?.projectId;
+      const current = projects.data?.find(
+        (item) => item.id === currentId || item.key === currentId?.toUpperCase(),
+      );
+      if (projectId) contexts.touch(projectId);
+      if (projectId && !settings && current?.id === projectId) {
+        setPicker(false);
+        return;
+      }
+      const tabs = navigationRef.getRootState();
+      const stack = tabs?.routes.find((item) => item.name === "Projects")?.state;
+      const project = projects.data?.find((item) => item.id === projectId);
+      const params = projectId
+        ? {
+            ...contexts.get(projectId)?.location,
+            projectId,
+            ...(project ? { name: project.name } : {}),
+          }
+        : undefined;
+      const homeKey = stack?.routes.find((item) => item.name === "Home")?.key;
+      const destination = {
+        index: projectId ? (settings ? 2 : 1) : 0,
+        routes: [
+          { name: "Home", ...(homeKey ? { key: homeKey } : {}) },
+          ...(params ? [{ name: "Tickets", params }] : []),
+          ...(params && settings ? [{ name: "ProjectSettings", params: { projectId } }] : []),
+        ],
+      };
+      if (stack?.key) {
+        navigationRef.dispatch({
+          type: "RESET",
+          payload: destination,
+          target: stack.key,
+        });
+        navigationRef.dispatch({
+          ...TabActions.jumpTo("Projects"),
+          ...(tabs?.key ? { target: tabs.key } : {}),
+        });
+      } else {
+        navigationRef.navigate("Projects", { state: destination });
+      }
+      setCurrentProjectId(projectId);
+      if (projectId) setPicker(false);
+      if (project) selectWorkspace(project.workspaceId);
+    },
+    [navigationRef, projects.data, contexts, selectWorkspace],
+  );
+  const switchWorkspace = useCallback(
+    (workspaceId: string, options?: { reset?: boolean }) => {
+      if (workspaceId === activeWorkspace?.id && !options?.reset) return;
+      switchDestination();
+      const tabs = navigationRef.getRootState();
+      for (const tab of tabs?.routes ?? []) {
+        if (tab.name !== "Projects" && tab.state?.key)
+          navigationRef.dispatch({
+            type: "RESET",
+            target: tab.state.key,
+            payload: { index: 0, routes: [{ name: "Home" }] },
+          });
+      }
+      selectWorkspace(workspaceId);
+    },
+    [switchDestination, selectWorkspace, navigationRef, activeWorkspace?.id],
+  );
   const theme = {
     ...(dark ? DarkTheme : DefaultTheme),
     colors: {
@@ -498,112 +697,437 @@ function Navigation({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
     },
   };
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      onReady={onReady}
-      {...(initialState ? { initialState } : {})}
-      onStateChange={(state) => {
-        navigationStates.clear();
-        if (state) navigationStates.set(owner, state);
-      }}
-      theme={theme}
-      linking={{
-        prefixes: ["kanvil://", baseUrl],
-        filter: (url) => !url.startsWith("kanvil://auth/"),
-        config: {
-          initialRouteName: "Home",
-          screens: {
-            Home: "",
-            Tickets: "projects/:projectId",
-            Ticket: "projects/:projectId/tickets/:ticketId",
-          },
+    <ProjectNavigation
+      value={{
+        currentProjectId,
+        showPicker: () => setPicker(true),
+        selectProject: switchDestination,
+        selectWorkspace: switchWorkspace,
+        openTicket,
+        contexts,
+        workspaceSettings: (workspaceId) => {
+          setPicker(false);
+          navigationRef.navigate("Projects", {
+            screen: "WorkspaceSettings",
+            params: { workspaceId },
+            initial: false,
+          });
+        },
+        createWorkspace: () => {
+          setWorkspaceCreation("waiting");
+          setPicker(false);
         },
       }}
     >
-      <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: color.surface }}>
-        <Stack.Navigator
-          screenOptions={{
+      <NavigationContainer
+        ref={navigationRef}
+        onReady={onReady}
+        {...(initialState ? { initialState } : {})}
+        onStateChange={(state) => {
+          followRoute();
+          navigationStates.clear();
+          if (state) navigationStates.set(owner, state);
+        }}
+        theme={theme}
+        linking={{
+          prefixes: ["kanvil://", baseUrl],
+          filter: (url) => !url.startsWith("kanvil://auth/"),
+          config: tabPaths,
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: color.surface }}>
+          <LiveStatus value={connection}>
+            <Home onDisconnect={onDisconnect} />
+            <Sheet
+              title={t("native.navigation.switchProject")}
+              open={picker}
+              onClose={() => setPicker(false)}
+              onDismissed={() =>
+                setWorkspaceCreation((pending) => (pending === "waiting" ? "ready" : pending))
+              }
+              scroll={false}
+            >
+              <Projects picker />
+            </Sheet>
+          </LiveStatus>
+        </View>
+      </NavigationContainer>
+    </ProjectNavigation>
+  );
+}
+function HomeProjects() {
+  const workspace = useWorkspace();
+  return <Projects key={workspace.active?.id} />;
+}
+function BrowsingLayout({
+  children,
+  navigation,
+}: {
+  children: ReactNode;
+  navigation: Pick<NativeStackNavigationProp<Routes>, "navigate" | "goBack" | "dispatch">;
+}) {
+  return <MainNavigation value={navigation}>{children}</MainNavigation>;
+}
+function GroupedLayout({ children }: { children: ReactNode }) {
+  return <GroupedSurface value>{children}</GroupedSurface>;
+}
+function SettingsScreenLayout({ children, navigation }: Parameters<typeof BrowsingLayout>[0]) {
+  return (
+    <BrowsingLayout navigation={navigation}>
+      <SettingsLayout>{children}</SettingsLayout>
+    </BrowsingLayout>
+  );
+}
+type StackLayoutProps = Parameters<
+  NonNullable<ComponentProps<typeof Stack.Navigator>["layout"]>
+>[0];
+// Keep the sidebar outside native screen transitions and the detail controller's scroll handling.
+function SettingsNavigatorLayout({
+  state,
+  descriptors,
+  children,
+  settingsRoot,
+  splitState,
+  onSplitChange,
+}: StackLayoutProps & {
+  settingsRoot: boolean;
+  splitState: SplitState;
+  onSplitChange: (state: SplitState) => void;
+}) {
+  const color = usePalette(),
+    scopeHeaderItems = useProjectHeaderItems();
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const route = state.routes[state.index];
+  const focused = route ? descriptors[route.key] : undefined;
+  const focusedNavigation = focused?.navigation;
+  const sidebarIsHidden = sidebarHidden && route?.name !== "Home";
+  const enabled =
+    !!route &&
+    ((settingsRoot && route.name === "Home") ||
+      [
+        "WorkspaceSettings",
+        "ProjectSettings",
+        "AccountSettings",
+        "Administration",
+        "Import",
+      ].includes(route.name));
+  useLayoutEffect(() => {
+    if (!enabled || !focusedNavigation) return;
+    const wide = !splitState.collapsed;
+    focusedNavigation.setOptions(
+      nativeHeaderOptions({
+        ...paneNavigationOptions(!wide, !wide),
+        unstable_headerLeftItems: () => [
+          ...scopeHeaderItems(),
+          ...(wide && route?.name !== "Home"
+            ? [sidebarHeaderItem(() => setSidebarHidden((hidden) => !hidden))]
+            : []),
+        ],
+      }),
+    );
+  }, [enabled, focusedNavigation, splitState.collapsed, route?.name, scopeHeaderItems]);
+  return (
+    <SettingsSidebarVisible value={enabled && !splitState.collapsed}>
+      <View style={{ flex: 1 }}>
+        <SplitView
+          enabled={enabled}
+          nativeHeader={false}
+          primaryHidden={sidebarIsHidden}
+          secondaryActive
+          onChange={onSplitChange}
+          primary={
+            focused && enabled ? (
+              <SafeAreaView
+                edges={["left", "top", "bottom"]}
+                style={{ flex: 1, backgroundColor: color.sidebar }}
+              >
+                <NavigationContext value={undefined}>
+                  <GroupedSurface value={false}>
+                    <Screen
+                      safeArea={false}
+                      connectionStatus={false}
+                      style={{ backgroundColor: color.sidebar }}
+                    >
+                      <Heading>{t("native.screen.settings")}</Heading>
+                      <NavigationContext value={focused.navigation}>
+                        <NavigationRouteContext value={focused.route}>
+                          <MainNavigation value={focused.navigation}>
+                            <SettingsNavigation sidebar />
+                          </MainNavigation>
+                        </NavigationRouteContext>
+                      </NavigationContext>
+                    </Screen>
+                  </GroupedSurface>
+                </NavigationContext>
+              </SafeAreaView>
+            ) : null
+          }
+          secondary={children}
+        />
+      </View>
+    </SettingsSidebarVisible>
+  );
+}
+function BrowsingStack({
+  tab,
+  onDisconnect,
+}: {
+  tab: keyof TabRoutes;
+  onDisconnect: () => Promise<void>;
+}) {
+  const color = usePalette(),
+    scopeHeaderItems = useProjectHeaderItems(),
+    workspace = useWorkspace();
+  const titles = {
+    Projects: t("shell.page.projects"),
+    Work: t("shell.page.myWork"),
+    Inbox: t("native.screen.inbox"),
+    Search: t("shell.page.search"),
+    Settings: t("native.screen.settings"),
+  };
+  const [splitState, setSplitState] = useState<SplitState>({
+    collapsed: true,
+    secondaryVisible: true,
+  });
+  const navigatorLayout = useCallback(
+    (props: StackLayoutProps) => (
+      <SettingsNavigatorLayout
+        {...props}
+        settingsRoot={tab === "Settings"}
+        splitState={splitState}
+        onSplitChange={setSplitState}
+      />
+    ),
+    [tab, splitState],
+  );
+  return (
+    <WideNavigation value={!splitState.collapsed}>
+      <Stack.Navigator
+        layout={navigatorLayout}
+        screenLayout={BrowsingLayout}
+        screenOptions={({ route }) =>
+          nativeHeaderOptions({
             headerShadowVisible: false,
-            headerTitleStyle: { fontSize: 17, fontWeight: "600" },
+            headerTintColor: color.accent,
+            headerTitleStyle: { color: color.foreground, fontWeight: "600" },
             headerBackButtonDisplayMode: "minimal",
-          }}
+            headerBackVisible: true,
+            contentStyle: { backgroundColor: color.surface },
+            unstable_headerLeftItems: () =>
+              route.name === "Tickets" || route.name === "Ticket" || route.name === "Home"
+                ? scopeHeaderItems()
+                : [],
+          })
+        }
+      >
+        <Stack.Screen name="Home" options={{ title: titles[tab] }}>
+          {() =>
+            tab === "Projects" ? (
+              <HomeProjects />
+            ) : tab === "Work" ? (
+              <MyWork key={workspace.active?.id} />
+            ) : tab === "Inbox" ? (
+              <Inbox />
+            ) : tab === "Search" ? (
+              <Search key={workspace.active?.id} />
+            ) : (
+              <GroupedSurface value>
+                <Settings onDisconnect={onDisconnect} />
+              </GroupedSurface>
+            )
+          }
+        </Stack.Screen>
+        <Stack.Group
+          screenLayout={GroupedLayout}
+          screenOptions={({ navigation }) =>
+            nativeHeaderOptions({
+              presentation: "modal",
+              headerBackVisible: false,
+              unstable_headerLeftItems: () => [
+                createHeaderAction(t("common.action.cancel"), () => navigation.goBack(), {
+                  type: "sfSymbol",
+                  name: "xmark",
+                }),
+              ],
+            })
+          }
         >
-          <Stack.Screen
-            name="Home"
-            options={{ headerShown: false, title: t("native.screen.projects") }}
-          >
-            {() => <Home onDisconnect={onDisconnect} />}
-          </Stack.Screen>
-          <Stack.Screen name="Tickets" component={Tickets} />
-          <Stack.Screen
-            name="Ticket"
-            component={TicketDetail}
-            options={{ title: t("native.screen.ticket") }}
-          />
           <Stack.Screen
             name="Edit"
             component={EditTicket}
-            options={({ route, navigation }) => ({
-              headerLeft: createHeaderAction(t("common.action.cancel"), () => navigation.goBack()),
+            options={({ route }) => ({
               title: route.params.ticketId
                 ? t("native.screen.editTicket")
                 : t("native.screen.newTicket"),
-              presentation: "modal",
             })}
           />
-        </Stack.Navigator>
-        <View
-          pointerEvents="none"
-          accessibilityLiveRegion="polite"
-          style={{
-            paddingHorizontal: 22,
-            paddingVertical: 5,
-            borderTopWidth: 0.5,
-            borderTopColor: color.line,
-            backgroundColor: color.surface,
+          <Stack.Screen
+            name="CreateWorkspace"
+            component={CreateWorkspace}
+            options={{ title: t("shell.workspace.new") }}
+          />
+        </Stack.Group>
+        <Stack.Screen
+          name="Tickets"
+          getId={({ params }) => params.projectId}
+          options={({ route, navigation }) =>
+            nativeHeaderOptions({
+              title: route.params.name ?? t("ticket.list.tickets"),
+              headerBackVisible: false,
+              unstable_headerRightItems: () => [
+                createHeaderAction(
+                  t("native.screen.newTicket"),
+                  () => navigation.navigate("Edit", { projectId: route.params.projectId }),
+                  { type: "sfSymbol", name: "plus" },
+                  true,
+                  { identifier: "ticket-create" },
+                ),
+                createHeaderMenu(
+                  t("ticket.list.views"),
+                  { type: "sfSymbol", name: "rectangle.3.group" },
+                  [],
+                  { identifier: "ticket-views", visibilityPriority: "default" },
+                ),
+              ],
+            })
+          }
+        >
+          {(props) => (
+            <Tickets
+              key={`${props.route.params.projectId}:${props.route.params.collection ?? "all"}`}
+              {...props}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen
+          name="Ticket"
+          component={TicketDetail}
+          options={({ route, navigation }) =>
+            nativeHeaderOptions({
+              title: t("native.screen.ticket"),
+              unstable_headerRightItems: () =>
+                ticketHeaderItems(
+                  {
+                    title: t("common.action.edit"),
+                    onPress: () => navigation.navigate("Edit", route.params),
+                    disabled: true,
+                  },
+                  { title: t("ticket.selection.more"), onPress: () => {}, disabled: true },
+                ),
+            })
+          }
+        />
+        <Stack.Group
+          screenLayout={SettingsScreenLayout}
+          screenOptions={{
+            animation: splitState.collapsed ? "default" : "none",
+            ...paneNavigationOptions(splitState.collapsed, splitState.collapsed),
           }}
         >
-          <Body muted small>
-            {t(`native.connection.${connection}`)}
-          </Body>
-        </View>
-      </SafeAreaView>
-    </NavigationContainer>
+          <Stack.Screen
+            name="WorkspaceSettings"
+            getId={settingsRouteId}
+            component={WorkspaceSettings}
+            options={{ title: t("shell.workspace.settings") }}
+          />
+          <Stack.Screen
+            name="ProjectSettings"
+            getId={settingsRouteId}
+            component={ProjectSettings}
+            options={{ title: t("shell.settingsNav.projectSettings") }}
+          />
+          <Stack.Screen
+            name="AccountSettings"
+            getId={settingsRouteId}
+            options={{ title: t("shell.page.settings") }}
+          >
+            {({ route }) => <Settings section={route.params.section} onDisconnect={onDisconnect} />}
+          </Stack.Screen>
+          <Stack.Screen
+            name="Administration"
+            getId={settingsRouteId}
+            component={Administration}
+            options={{ title: t("shell.settingsNav.administration") }}
+          />
+          <Stack.Screen
+            name="Import"
+            component={ImportProject}
+            options={{ title: t("admin.import.title") }}
+          />
+        </Stack.Group>
+      </Stack.Navigator>
+    </WideNavigation>
   );
 }
-function tabIcon({ route }: { route: { name: string } }) {
-  return {
-    tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-      <Ionicons
-        name={
-          route.name === "Projects"
-            ? "folder-outline"
-            : route.name === "Inbox"
-              ? "notifications-outline"
-              : "settings-outline"
-        }
-        size={size}
-        color={color}
-      />
-    ),
-    headerShadowVisible: false,
-    headerTitleAlign: "left" as const,
-    headerTitleStyle: { fontSize: 28, fontWeight: "700" as const, letterSpacing: -0.8 },
-    headerStyle: { height: 112 },
-    tabBarLabelStyle: { fontSize: 11, fontWeight: "500" as const },
-  };
-}
 function Home({ onDisconnect }: { onDisconnect: () => Promise<void> }) {
+  const workspace = useWorkspace(),
+    color = usePalette();
+  const { api } = useConnection(),
+    projects = useAllProjects();
+  const notifications = useQuery(api.notifications());
+  const allowed = new Set(
+    projects.data
+      ?.filter((project) => project.workspaceId === workspace.active?.id)
+      .map((project) => project.id),
+  );
+  const unread =
+    notifications.data?.filter((entry) => !entry.readAt && allowed.has(entry.event.projectId))
+      .length ?? 0;
+  if (workspace.pending) return <Loading />;
   return (
-    <Tabs.Navigator screenOptions={tabIcon} safeAreaInsets={{ bottom: 0 }}>
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: color.accent,
+        tabBarMinimizeBehavior: "none",
+        tabBarControllerMode: "tabBar",
+      }}
+    >
       <Tabs.Screen
         name="Projects"
-        component={Projects}
-        options={{ title: t("native.screen.projects") }}
-      />
-      <Tabs.Screen name="Inbox" component={Inbox} options={{ title: t("native.screen.inbox") }} />
-      <Tabs.Screen name="Settings" options={{ title: t("native.screen.settings") }}>
-        {() => <Settings onDisconnect={onDisconnect} />}
+        options={{
+          title: t("shell.page.projects"),
+          tabBarIcon: { type: "sfSymbol", name: "folder" },
+        }}
+      >
+        {() => <BrowsingStack tab="Projects" onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Work"
+        options={{
+          title: t("shell.page.myWork"),
+          tabBarIcon: { type: "sfSymbol", name: "checklist" },
+        }}
+      >
+        {() => <BrowsingStack tab="Work" onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Inbox"
+        options={{
+          title: t("native.screen.inbox"),
+          ...(unread ? { tabBarBadge: formatNumber(unread) } : {}),
+          tabBarIcon: { type: "sfSymbol", name: "tray" },
+        }}
+      >
+        {() => <BrowsingStack tab="Inbox" onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Search"
+        options={{
+          title: t("shell.page.search"),
+          tabBarIcon: { type: "sfSymbol", name: "magnifyingglass" },
+        }}
+      >
+        {() => <BrowsingStack tab="Search" onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Settings"
+        options={{
+          title: t("native.screen.settings"),
+          tabBarIcon: { type: "sfSymbol", name: "gearshape" },
+        }}
+      >
+        {() => <BrowsingStack tab="Settings" onDisconnect={onDisconnect} />}
       </Tabs.Screen>
     </Tabs.Navigator>
   );

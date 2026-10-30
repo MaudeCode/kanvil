@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Proyek terbaru",
+  "navigation.switchProject": "Ganti ruang kerja atau proyek",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Tutup",
@@ -47,6 +50,11 @@ export default {
     create: "Buat proyek",
   },
   tickets: {
+    options: "Opsi daftar",
+    expandAll: "Perluas semua bagian",
+    collapseAll: "Ciutkan semua bagian",
+    select: "Pilih tiket",
+
     search: "Cari tiket",
     searchPlaceholder: "Judul, deskripsi, atau kunci",
     allStatuses: "Semua status",
@@ -173,6 +181,7 @@ export default {
     next: "Aktivitas berikutnya",
   },
   inbox: {
+    read: "Dibaca",
     markAllRead: "Tandai semua sudah dibaca",
     empty: "Tidak ada notifikasi",
   },

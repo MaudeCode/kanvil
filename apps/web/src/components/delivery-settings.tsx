@@ -1,3 +1,8 @@
+import {
+  deliveryFields as kindFields,
+  deliverySettingsInput,
+  failureText,
+} from "@kanvil/contracts/configuration";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -81,106 +86,6 @@ import { TicketLink } from "./ticket-link.tsx";
 
 type Target = NotificationChannel | ProjectDestination;
 type Health = Target["health"];
-type FieldSpec = {
-  name: string;
-  label: string;
-  type?: "url" | "email" | "number";
-  placeholder?: string;
-  optional?: boolean;
-};
-// The inputs each kind needs; fields named in `deliverySecretFields` are write-only.
-const kindFields = (): Record<DeliveryKind, FieldSpec[]> => ({
-  email: [{ name: "address", label: t("admin.delivery.field.address"), type: "email" }],
-  ntfy: [
-    {
-      name: "server",
-      label: t("admin.delivery.field.server"),
-      type: "url",
-      placeholder: "https://ntfy.sh",
-      optional: true,
-    },
-    { name: "topic", label: t("admin.delivery.field.topic") },
-    { name: "token", label: t("admin.delivery.field.accessToken"), optional: true },
-  ],
-  gotify: [
-    {
-      name: "server",
-      label: t("admin.delivery.field.server"),
-      type: "url",
-      placeholder: "https://gotify.example.com",
-    },
-    { name: "token", label: t("admin.delivery.field.applicationToken") },
-  ],
-  webhook: [
-    {
-      name: "url",
-      label: t("admin.delivery.field.endpointUrl"),
-      type: "url",
-      placeholder: "https://",
-    },
-    { name: "secret", label: t("admin.delivery.field.signingSecret"), optional: true },
-  ],
-  slack: [{ name: "url", label: t("admin.delivery.field.incomingWebhookUrl"), type: "url" }],
-  discord: [{ name: "url", label: t("admin.delivery.field.webhookUrl"), type: "url" }],
-  mattermost: [
-    { name: "url", label: t("admin.delivery.field.incomingWebhookUrl"), type: "url" },
-    {
-      name: "channel",
-      label: t("admin.delivery.field.channel"),
-      placeholder: "town-square",
-      optional: true,
-    },
-  ],
-  telegram: [
-    { name: "token", label: t("admin.delivery.field.botToken") },
-    {
-      name: "chatId",
-      label: t("admin.delivery.field.chatId"),
-      placeholder: t("admin.delivery.field.chatIdPlaceholder"),
-    },
-    { name: "topicId", label: t("admin.delivery.field.topicId"), type: "number", optional: true },
-  ],
-});
-const failures: Record<string, string> = {
-  get blocked_address() {
-    return t("admin.delivery.failure.blockedAddress");
-  },
-  get redirect_blocked() {
-    return t("admin.delivery.failure.redirectBlocked");
-  },
-  get dns_error() {
-    return t("admin.delivery.failure.dnsError");
-  },
-  get network_error() {
-    return t("admin.delivery.failure.networkError");
-  },
-  get timeout() {
-    return t("admin.delivery.failure.timeout");
-  },
-  get invalid_endpoint() {
-    return t("admin.delivery.failure.invalidEndpoint");
-  },
-  get email_unavailable() {
-    return t("admin.delivery.failure.emailUnavailable");
-  },
-  get smtp_error() {
-    return t("admin.delivery.failure.smtpError");
-  },
-  // Repository connections.
-  get access_revoked() {
-    return t("admin.delivery.failure.accessRevoked");
-  },
-  get repository_mismatch() {
-    return t("admin.delivery.failure.repositoryMismatch");
-  },
-};
-const failureText = (code: string) =>
-  failures[code] ??
-  (code.startsWith("http_")
-    ? t("admin.delivery.failure.http", { status: code.slice(5) })
-    : code.startsWith("smtp_")
-      ? t("admin.delivery.failure.smtp", { code: code.slice(5) })
-      : code.replaceAll("_", " "));
 // Health refreshes while a send is queued, so a test shows its result without a reload; a failed
 // send waiting for its retry refreshes slowly.
 const refreshWhilePending = (query: { state: { data?: { health: Health }[] | undefined } }) => {
@@ -390,14 +295,15 @@ function DeliveryFields({
 }
 // Submitted settings: blank secrets stay saved, blank fields clear on edit, numbers parse.
 function readSettings(form: FormData, kind: DeliveryKind, editing: boolean) {
-  const settings: { kind: DeliveryKind; [field: string]: string | number | null } = { kind };
-  for (const field of kindFields()[kind]) {
-    const value = formText(form, `settings.${field.name}`).trim();
-    if (form.get(`clear.${field.name}`)) settings[field.name] = "";
-    else if (value) settings[field.name] = field.type === "number" ? Number(value) : value;
-    else if (editing && !deliverySecretFields[kind].includes(field.name)) settings[field.name] = "";
-  }
-  return settings;
+  const fields = kindFields()[kind];
+  return deliverySettingsInput(
+    kind,
+    Object.fromEntries(
+      fields.map((field) => [field.name, formText(form, `settings.${field.name}`)]),
+    ),
+    editing,
+    fields.filter((field) => form.get(`clear.${field.name}`)).map((field) => field.name),
+  );
 }
 function DeliveryList({
   title,

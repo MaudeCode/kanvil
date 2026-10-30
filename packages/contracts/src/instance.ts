@@ -144,3 +144,57 @@ export function searchAuthentication(settings: SearchSettings) {
     (settings.apiKey ? "apiKey" : settings.username && settings.password ? "basic" : "none")
   );
 }
+
+export function initialInstanceDraft(data: AdminInstance) {
+  return {
+    expectedVersion: data.version,
+    authentication: data.authentication,
+    name: data.name,
+    description: data.description,
+    storageProvider: data.storage.provider,
+    s3: {
+      endpoint: "",
+      region: "us-east-1",
+      bucket: "",
+      prefix: "kanvil/",
+      forcePathStyle: true,
+      accessKeyId: "",
+      ...data.storage.settings,
+      secretAccessKey: "",
+    },
+    brokerProvider: data.broker.provider,
+    rabbit: { url: "", exchange: data.broker.settings?.exchange ?? "kanvil.events" },
+    searchProvider: data.search.provider,
+    elastic: {
+      url: "",
+      index: `kanvil-${data.id}`,
+      username: "",
+      ...data.search.settings,
+      auth: data.search.settings?.auth ?? "none",
+      apiKey: "",
+      password: "",
+    },
+  };
+}
+
+export function instanceDraftInput(
+  draft: ReturnType<typeof initialInstanceDraft>,
+  authentication = false,
+) {
+  return instanceUpdateSchema.parse({
+    expectedVersion: draft.expectedVersion,
+    ...(authentication ? { authentication: draft.authentication } : {}),
+    name: draft.name,
+    description: draft.description,
+    storage:
+      draft.storageProvider === "s3" ? { provider: "s3", ...draft.s3 } : { provider: "local" },
+    broker:
+      draft.brokerProvider === "rabbitmq"
+        ? { provider: "rabbitmq", ...draft.rabbit, url: draft.rabbit.url || undefined }
+        : { provider: "postgres" },
+    search:
+      draft.searchProvider === "elasticsearch"
+        ? { provider: "elasticsearch", ...draft.elastic }
+        : { provider: "postgres" },
+  });
+}

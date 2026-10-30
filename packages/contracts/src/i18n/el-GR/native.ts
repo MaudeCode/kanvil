@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Πρόσφατα έργα",
+  "navigation.switchProject": "Αλλαγή χώρου εργασίας ή έργου",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Απόρριψη",
@@ -48,6 +51,11 @@ export default {
     create: "Δημιουργία έργου",
   },
   tickets: {
+    options: "Επιλογές λίστας",
+    expandAll: "Ανάπτυξη όλων των ενοτήτων",
+    collapseAll: "Σύμπτυξη όλων των ενοτήτων",
+    select: "Επιλογή εισιτηρίων",
+
     search: "Αναζήτηση δελτίων",
     searchPlaceholder: "Τίτλος, περιγραφή ή κωδικός",
     allStatuses: "Όλες οι καταστάσεις",
@@ -175,6 +183,7 @@ export default {
     next: "Επόμενη δραστηριότητα",
   },
   inbox: {
+    read: "Διαβασμένο",
     markAllRead: "Σήμανση όλων ως αναγνωσμένα",
     empty: "Καμία ειδοποίηση",
   },

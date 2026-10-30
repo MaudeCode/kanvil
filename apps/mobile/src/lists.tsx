@@ -1,206 +1,355 @@
-import { createHeaderAction } from "./navigation-actions.tsx";
-import { useDeferredValue, useLayoutEffect, useState } from "react";
-import { View, Text } from "react-native";
+import { createHeaderAction, createHeaderMenu } from "./navigation-actions.tsx";
+import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
+import { useCallback, useLayoutEffect, useState } from "react";
+import { I18nManager, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { z } from "zod";
-import { states, stateLabels, difficultyLabels, type Ticket } from "@kanvil/contracts";
-import { formatNumber, t } from "@kanvil/contracts/i18n";
-import { useConnection, useProjects, useOperation } from "./data.tsx";
+import { capabilitiesOf, type Output } from "@kanvil/contracts";
+import { useHeaderSearch, useProjectNavigation } from "./navigation.ts";
+import { ProjectIcon } from "./project-icon.tsx";
+import { t } from "@kanvil/contracts/i18n";
+import { useProjects, useAllProjects, useWorkspace, useOperation, useIdentity } from "./data.tsx";
 import {
+  nativeHeaderOptions,
   Body,
+  TicketGlyph,
+  usePalette,
   Button,
-  Sheet,
   Choice,
+  Sheet,
   ErrorNotice,
+  EmptyState,
   Field,
   Loading,
   List,
   Row,
   Screen,
-  Status,
-  usePalette,
-  priorityText,
+  RemovableSummary,
+  WorkspaceScope,
+  Heading,
 } from "./ui.tsx";
-import type { ScreenProps } from "./navigation.ts";
 
-// Navigation invokes this callback directly; mount the component that owns the sheet state.
-function projectHeader() {
-  return <ProjectAction />;
-}
-
-export function Projects() {
+export function Projects({ picker = false }: { picker?: boolean }) {
+  const projectNavigation = useProjectNavigation(),
+    color = usePalette();
   const navigation = useNavigation();
-  const projects = useProjects();
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerRight: projectHeader });
-  }, [navigation]);
-  return (
-    <Screen scroll={false}>
-      <ErrorNotice error={projects.error} />
-      {projects.isPending ? (
-        <Loading />
-      ) : (
-        <List
-          data={projects.data ?? []}
-          keyExtractor={(project) => project.id}
-          onRefresh={() => {
-            void projects.refetch();
-          }}
-          refreshing={projects.isRefetching}
-          ListEmptyComponent={
-            <View style={{ padding: 20 }}>
-              <Body muted>{t("native.projects.empty")}</Body>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <Row
-              title={item.name}
-              overline={item.key}
-              caption={item.description}
-              onPress={() =>
-                navigation.navigate("Tickets", { projectId: item.id, name: item.name })
-              }
-            />
-          )}
-        />
-      )}
-    </Screen>
-  );
-}
-export function Tickets({ route, navigation }: ScreenProps<"Tickets">) {
-  const { api } = useConnection(),
-    color = usePalette(),
-    projects = useProjects();
-  const [query, setQuery] = useState(""),
-    [status, setStatus] = useState("");
-  const q = useDeferredValue(query),
-    project = projects.data?.find(
-      (item) =>
-        item.id === route.params.projectId || item.key === route.params.projectId.toUpperCase(),
-    ),
-    projectId = project?.id ?? route.params.projectId;
-  const input = {
-    projectId,
-    q,
-    ...(status ? { status: z.enum(states).parse(status) } : {}),
-    limit: 50,
-  };
-  const tickets = useInfiniteQuery({
-    queryKey: ["kanvil", api.query("list_tickets", input).queryKey, "pages"],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) => api.call("list_tickets", { ...input, offset: pageParam }),
-    getNextPageParam: (last, pages) => {
-      const count = pages.reduce((sum, page) => sum + page.items.length, 0);
-      return count < last.total ? count : undefined;
-    },
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const projects = useProjects(includeArchived),
+    workspace = useWorkspace(),
+    allProjects = useAllProjects();
+  const [search, setSearch] = useState<{ workspaceId: string | undefined; query: string }>({
+    workspaceId: workspace.active?.id,
+    query: "",
   });
+  const query = search.workspaceId === workspace.active?.id ? search.query : "";
+  const onQuery = useCallback(
+    (value: string) => setSearch({ workspaceId: workspace.active?.id, query: value }),
+    [workspace.active?.id],
+  );
+  const {
+    options: searchOptions,
+    setText: changeQuery,
+    searching,
+    open: openSearch,
+  } = useHeaderSearch(query, onQuery, t("shell.app.searchProjects"));
+  const [creating, setCreating] = useState<string>();
+  const identity = useIdentity();
+  const canCreate =
+    !!workspace.active &&
+    (identity.admin || capabilitiesOf(workspace.active).includes("ticket.write"));
   useLayoutEffect(() => {
-    navigation.setOptions({
-      title: route.params.name ?? project?.name ?? t("native.screen.tickets"),
-      headerRight: createHeaderAction(t("native.screen.newTicket"), () =>
-        navigation.navigate("Edit", { projectId }),
-      ),
-    });
-  }, [navigation, projectId, route.params.name, project?.name]);
-  const rows = tickets.data?.pages.flatMap((page) => page.items) ?? [];
+    navigation.setOptions(
+      nativeHeaderOptions({
+        headerSearchBarOptions: searchOptions,
+        unstable_headerRightItems: (): NativeStackHeaderItem[] => [
+          ...(canCreate
+            ? [
+                createHeaderAction(
+                  t("native.projects.new"),
+                  () => setCreating(workspace.active?.id),
+                  { type: "sfSymbol", name: "plus" },
+                  false,
+                  { visibilityPriority: "high", identifier: "project-create" },
+                ),
+              ]
+            : []),
+          createHeaderMenu(
+            t("shell.page.projects"),
+            { type: "sfSymbol", name: "gearshape" },
+            [
+              {
+                type: "action",
+                label: query.trim()
+                  ? t("ticket.filter.searchChip", { query })
+                  : t("shell.app.searchProjects"),
+                icon: { type: "sfSymbol", name: "magnifyingglass" },
+                onPress: openSearch,
+              },
+              {
+                type: "action",
+                label: t("shell.app.archivedProjects"),
+                state: includeArchived ? "on" : "off",
+                onPress: () => setIncludeArchived((previous) => !previous),
+              },
+              ...(picker
+                ? [
+                    ...(projectNavigation.currentProjectId
+                      ? [
+                          {
+                            type: "action" as const,
+                            label: t("shell.settingsNav.projectSettings"),
+                            onPress: () =>
+                              projectNavigation.selectProject(
+                                projectNavigation.currentProjectId ?? "",
+                                true,
+                              ),
+                          },
+                        ]
+                      : []),
+                    ...(workspace.active
+                      ? [
+                          {
+                            type: "action" as const,
+                            label: t("shell.workspace.settings"),
+                            onPress: () => {
+                              if (workspace.active)
+                                projectNavigation.workspaceSettings(workspace.active.id);
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      type: "action" as const,
+                      label: t("shell.workspace.new"),
+                      onPress: projectNavigation.createWorkspace,
+                    },
+                  ]
+                : []),
+            ],
+            {
+              identifier: "project-options",
+              visibilityPriority: "low",
+              ...(query.trim() ? { badge: { value: 1 } } : {}),
+            },
+          ),
+        ],
+      }),
+    );
+  }, [
+    navigation,
+    canCreate,
+    includeArchived,
+    workspace.active,
+    picker,
+    projectNavigation,
+    searchOptions,
+    openSearch,
+    query,
+  ]);
+  const candidates =
+    picker && query.trim()
+      ? allProjects.data?.filter((project) => includeArchived || !project.archivedAt)
+      : projects.data;
+  const filtered = (candidates ?? []).filter((project) =>
+    `${project.name} ${project.key} ${picker ? (workspace.workspaces.find((space) => space.id === project.workspaceId)?.name ?? "") : ""}`
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase()),
+  );
+  const recent =
+    picker && !query.trim()
+      ? projectNavigation.contexts
+          .recent()
+          .flatMap((id) => {
+            const project = filtered.find((item) => item.id === id);
+            return project ? [project] : [];
+          })
+          .slice(0, 4)
+      : [];
+  const remaining = filtered.filter((project) => !recent.some((item) => item.id === project.id));
   return (
-    <Screen scroll={false}>
-      <View style={{ padding: 20, gap: 14 }}>
-        <Field
-          label={t("native.tickets.search")}
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t("native.tickets.searchPlaceholder")}
-          returnKeyType="search"
-        />
-        <Choice
-          label={t("common.filterField.status")}
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: "", label: t("native.tickets.allStatuses") },
-            ...states.map((value) => ({ value, label: stateLabels[value] })),
-          ]}
-        />
-        <ErrorNotice error={tickets.error} />
-      </View>
-      {tickets.isPending ? (
-        <Loading />
-      ) : (
-        <List
-          data={rows}
-          keyExtractor={(ticket) => ticket.id}
-          onRefresh={() => {
-            void tickets.refetch();
-          }}
-          refreshing={tickets.isRefetching}
-          onEndReached={() => {
-            if (tickets.hasNextPage && !tickets.isFetchingNextPage) void tickets.fetchNextPage();
-          }}
-          onEndReachedThreshold={0.5}
-          ListEmptyComponent={
-            <View style={{ padding: 20 }}>
-              <Body muted>{t("native.tickets.empty")}</Body>
+    <Screen
+      scroll={false}
+      scrollInsets
+      header={
+        <>
+          {picker ? (
+            <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+              <Heading compact>{t("shell.workspace.workspaces")}</Heading>
+              {workspace.workspaces.map((space) => (
+                <Row
+                  key={space.id}
+                  compact
+                  interaction="choice"
+                  title={space.name}
+                  selected={space.id === workspace.active?.id}
+                  leading={<TicketGlyph name="building-2" color={color.muted} />}
+                  onPress={() => {
+                    changeQuery("");
+                    projectNavigation.selectWorkspace(space.id);
+                  }}
+                />
+              ))}
+              {!recent.length && <Heading compact>{t("shell.page.projects")}</Heading>}
             </View>
-          }
-          ListFooterComponent={
-            tickets.isFetchingNextPage ? (
-              <Loading />
-            ) : (
-              <Text style={{ color: color.muted, textAlign: "center", padding: 20 }}>
-                {t("native.tickets.count", {
-                  shown: formatNumber(rows.length),
-                  total: formatNumber(tickets.data?.pages[0]?.total ?? 0),
-                })}
-              </Text>
-            )
-          }
-          renderItem={({ item }) => (
-            <TicketRow
-              ticket={item}
-              onPress={() => navigation.navigate("Ticket", { projectId, ticketId: item.id })}
+          ) : (
+            <WorkspaceScope />
+          )}
+          {!searching && (
+            <RemovableSummary
+              label={t("shell.app.clearSearch")}
+              value={query}
+              onClear={() => changeQuery("")}
             />
           )}
-        />
-      )}
-    </Screen>
-  );
-}
-function TicketRow({ ticket, onPress }: { ticket: Ticket; onPress: () => void }) {
-  return (
-    <Row
-      title={ticket.title}
-      overline={ticket.key}
-      metadata={
-        <>
-          <Status ticket={ticket} />
-          <Body muted small>
-            {priorityText(ticket.priority)}
-          </Body>
-          <Body muted small>
-            {ticket.difficulty
-              ? difficultyLabels[ticket.difficulty]
-              : t("native.ticket.noDifficulty")}
-          </Body>
+          <ErrorNotice error={projects.error} background={!!projects.data} />
         </>
       }
+    >
+      <List
+        data={remaining}
+        ListHeaderComponent={
+          recent.length ? (
+            <View style={{ paddingTop: 8 }}>
+              <View style={{ paddingHorizontal: 20 }}>
+                <Heading compact>{t("native.navigation.recentProjects")}</Heading>
+              </View>
+              {recent.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  picker={picker}
+                  selected={project.id === projectNavigation.currentProjectId}
+                  onPress={() => projectNavigation.selectProject(project.id)}
+                />
+              ))}
+              {remaining.length > 0 && (
+                <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+                  <Heading compact>{t("shell.page.projects")}</Heading>
+                </View>
+              )}
+            </View>
+          ) : undefined
+        }
+        keyExtractor={(project) => project.id}
+        onRefresh={() => projects.refetch()}
+        ListEmptyComponent={
+          projects.isPending ? (
+            <Loading />
+          ) : recent.length ? undefined : (
+            <EmptyState
+              icon="folder-open"
+              title={t(query.trim() ? "shell.app.noMatchingProjects" : "native.projects.empty")}
+            />
+          )
+        }
+        renderItem={({ item }) => (
+          <ProjectRow
+            project={item}
+            workspaceName={
+              picker && query.trim()
+                ? (workspace.workspaces.find((space) => space.id === item.workspaceId)?.name ?? "")
+                : ""
+            }
+            picker={picker}
+            selected={item.id === projectNavigation.currentProjectId}
+            onPress={() => projectNavigation.selectProject(item.id)}
+          />
+        )}
+      />
+      {creating && (
+        <ProjectAction
+          workspaceId={creating}
+          onClose={() => setCreating(undefined)}
+          onCreated={projectNavigation.selectProject}
+        />
+      )}
+    </Screen>
+  );
+}
+export function ProjectRow({
+  project,
+  workspaceName = "",
+  picker,
+  compact = picker,
+  selected,
+  onPress,
+}: {
+  project: Output<"list_projects">[number];
+  workspaceName?: string;
+  picker: boolean;
+  compact?: boolean;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const color = usePalette(),
+    scope = useProjectNavigation();
+  return (
+    <Row
+      title={project.name}
+      onLongPress={() => scope.selectProject(project.id, true)}
+      interaction={picker ? "choice" : "navigate"}
+      selected={picker ? selected : undefined}
+      leading={<ProjectIcon project={project} size={24} />}
+      dense
+      trailing={
+        compact ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Body muted small>
+              {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
+            </Body>
+            {picker && selected && <TicketGlyph name="check" color={color.accent} />}
+            {picker && !selected && <View style={{ width: 16 }} />}
+            {!picker && (
+              <TicketGlyph
+                name={I18nManager.isRTL ? "chevron-left" : "chevron-right"}
+                color={color.muted}
+              />
+            )}
+          </View>
+        ) : undefined
+      }
+      metadata={
+        compact ? undefined : (
+          <>
+            <Body muted small>
+              {project.archivedAt ? `${project.key} · ${t("shell.app.archived")}` : project.key}
+            </Body>
+            {workspaceName && (
+              <Body muted small>
+                {workspaceName}
+              </Body>
+            )}
+            {!picker && (
+              <Body muted small>
+                {t("ticket.list.count", { count: project.openTickets })}
+              </Body>
+            )}
+          </>
+        )
+      }
+      {...(picker && workspaceName ? { caption: workspaceName } : {})}
       onPress={onPress}
     />
   );
 }
+export { Tickets } from "./ticket-list.tsx";
 
-function ProjectAction() {
-  const [open, setOpen] = useState(false),
-    [name, setName] = useState(""),
+function ProjectAction({
+  workspaceId,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onCreated: (projectId: string) => void;
+}) {
+  const [name, setName] = useState(""),
     [key, setKey] = useState(""),
-    [description, setDescription] = useState("");
-  const create = useOperation("create_project"),
-    navigation = useNavigation();
+    [description, setDescription] = useState(""),
+    [visibility, setVisibility] = useState<"private" | "workspace">("private");
+  const create = useOperation("create_project");
   return (
     <>
-      <Button title={t("native.projects.new")} plain compact onPress={() => setOpen(true)} />
-      <Sheet title={t("native.projects.new")} open={open} onClose={() => setOpen(false)}>
+      <Sheet title={t("native.projects.new")} open onClose={onClose}>
         <Field
           label={t("native.projects.name")}
           value={name}
@@ -223,16 +372,28 @@ function ProjectAction() {
           maxLength={5000}
         />
         <ErrorNotice error={create.error} />
+        <Choice
+          label={t("settings.project.access")}
+          value={visibility}
+          options={(["private", "workspace"] as const).map((value) => ({
+            value,
+            label: t(`settings.project.visibility.${value}`),
+          }))}
+          onChange={(value) => setVisibility(value === "workspace" ? "workspace" : "private")}
+        />
         <Button
           title={t("native.projects.create")}
           disabled={create.isPending || !name.trim() || key.length < 2}
           primary
           onPress={() => {
             void create
-              .mutateAsync({ name, key, description })
+              .mutateAsync({ workspaceId, name, key, description, visibility })
               .then((project) => {
-                setOpen(false);
-                navigation.navigate("Tickets", { projectId: project.id, name: project.name });
+                onClose();
+                setName("");
+                setKey("");
+                setDescription("");
+                onCreated(project.id);
               })
               .catch(() => {});
           }}

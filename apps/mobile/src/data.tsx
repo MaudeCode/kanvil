@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAuthClient } from "better-auth/react";
 import { adminClient, emailOTPClient } from "better-auth/client/plugins";
 import { expoClient } from "@better-auth/expo/client";
@@ -7,7 +8,13 @@ import * as Crypto from "expo-crypto";
 import { fetch as expoFetch } from "expo/fetch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@kanvil/client";
-import { type Operation } from "@kanvil/contracts";
+import {
+  capabilitiesOf,
+  permissions,
+  type Operation,
+  type Permission,
+  type Workspace,
+} from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 
 export async function connect(url: string) {
@@ -44,7 +51,21 @@ export async function connect(url: string) {
 }
 export type Connection = Awaited<ReturnType<typeof connect>>;
 export const ConnectionContext = createContext<Connection | null>(null);
-export const Identity = createContext({ id: "", name: "", email: "", admin: false });
+export const Identity = createContext<{
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  admin: boolean;
+  clearPrivateData: () => Promise<void>;
+}>({
+  id: "",
+  name: "",
+  email: "",
+  image: null,
+  admin: false,
+  clearPrivateData: async () => {},
+});
 export const useIdentity = () => useContext(Identity);
 export function useConnection() {
   const connection = useContext(ConnectionContext);
@@ -59,9 +80,87 @@ export function useOperation<K extends Operation>(name: K) {
     onSuccess: () => cache.invalidateQueries({ queryKey: ["kanvil"] }),
   });
 }
-export function useProjects() {
+const WorkspaceSelection = createContext<{
+  active: Workspace | undefined;
+  workspaces: Workspace[];
+  pending: boolean;
+  error: unknown;
+  select: (id: string) => void;
+}>({ active: undefined, workspaces: [], pending: true, error: undefined, select: () => {} });
+export const useWorkspace = () => useContext(WorkspaceSelection);
+export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { api, prefix } = useConnection(),
+    identity = useIdentity();
+  const spaces = useQuery(api.query("list_workspaces", {}));
+  const key = `${prefix}:${identity.id}:workspace`;
+  const [selection, setSelection] = useState<string | null>(),
+    [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    void AsyncStorage.getItem(key)
+      .then((value) => {
+        if (mounted) {
+          setSelection(value);
+          setLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (mounted) setLoaded(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [key]);
+  const active = spaces.data?.find((space) => space.id === selection) ?? spaces.data?.[0];
+  useEffect(() => {
+    if (loaded && active) void AsyncStorage.setItem(key, active.id).catch(() => {});
+  }, [key, loaded, active]);
+  return (
+    <WorkspaceSelection
+      value={{
+        active,
+        workspaces: spaces.data ?? [],
+        pending: !loaded || spaces.isPending,
+        error: spaces.error,
+        select: setSelection,
+      }}
+    >
+      {children}
+    </WorkspaceSelection>
+  );
+}
+export function useAllProjects() {
   const { api } = useConnection();
-  return useQuery(api.query("list_projects", {}));
+  return useQuery(api.query("list_projects", { archived: "include" }));
+}
+export function useProjects(includeArchived = false) {
+  const { active } = useWorkspace();
+  const projects = useAllProjects();
+  return {
+    ...projects,
+    data: projects.data?.filter(
+      (project) => project.workspaceId === active?.id && (includeArchived || !project.archivedAt),
+    ),
+  };
+}
+export function useProjectAccess(projectId: string) {
+  const identity = useIdentity();
+  const projects = useAllProjects();
+  const project = projects.data?.find(
+    (item) => item.id === projectId || item.key === projectId.toUpperCase(),
+  );
+  const actions = identity.admin ? permissions : capabilitiesOf(project ?? { role: null });
+  const holds = (action: Permission) => actions.includes(action);
+  return {
+    project,
+    canWrite: !project?.archivedAt && holds("ticket.write"),
+    canAdmin: !project?.archivedAt && holds("project.manage"),
+    canManage: holds("project.manage"),
+    canDelete: !project?.archivedAt && holds("ticket.delete"),
+    canManageMembers: holds("member.manage"),
+    canShare: holds("sharing.manage"),
+    actions,
+  };
 }
 export function useLive() {
   const { api } = useConnection(),
@@ -82,3 +181,32 @@ export function useLive() {
   }, [api, cache]);
   return state;
 }
+
+// A grouped list must finish its bounded fetches before treating section counts as final.
+export function useFetchRemaining(
+  result: {
+    hasNextPage: boolean;
+    isFetchingNextPage: boolean;
+    isError: boolean;
+    fetchNextPage: () => Promise<unknown>;
+  },
+  enabled = true,
+) {
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = result;
+  useEffect(() => {
+    if (enabled && hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage();
+  }, [enabled, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+}
+
+const CurrentTime = createContext(0);
+export const useNow = () => useContext(CurrentTime);
+export function ClockProvider({ children }: { children: ReactNode }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  return <CurrentTime value={now}>{children}</CurrentTime>;
+}
+
+export const LiveStatus = createContext<ReturnType<typeof useLive>>("connecting");

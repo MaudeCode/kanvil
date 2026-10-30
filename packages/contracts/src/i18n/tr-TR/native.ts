@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Son projeler",
+  "navigation.switchProject": "Çalışma alanını veya projeyi değiştir",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Kapat",
@@ -48,6 +51,11 @@ export default {
     create: "Proje oluştur",
   },
   tickets: {
+    options: "Liste seçenekleri",
+    expandAll: "Tüm bölümleri genişlet",
+    collapseAll: "Tüm bölümleri daralt",
+    select: "Biletleri seç",
+
     search: "Taleplerde ara",
     searchPlaceholder: "Başlık, açıklama veya anahtar",
     allStatuses: "Tüm durumlar",
@@ -174,6 +182,7 @@ export default {
     next: "Sonraki etkinlik",
   },
   inbox: {
+    read: "Okundu",
     markAllRead: "Tümünü okundu işaretle",
     empty: "Bildirim yok",
   },

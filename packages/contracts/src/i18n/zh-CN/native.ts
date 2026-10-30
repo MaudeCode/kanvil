@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "最近的项目",
+  "navigation.switchProject": "切换工作区或项目",
   labelValue: "{{label}}：{{value}}",
   ui: {
     dismiss: "关闭",
@@ -47,6 +50,11 @@ export default {
     create: "创建项目",
   },
   tickets: {
+    options: "列表选项",
+    expandAll: "展开所有分组",
+    collapseAll: "折叠所有分组",
+    select: "选择工单",
+
     search: "搜索工单",
     searchPlaceholder: "标题、描述或编号",
     allStatuses: "所有状态",
@@ -173,6 +181,7 @@ export default {
     next: "较新的动态",
   },
   inbox: {
+    read: "已读",
     markAllRead: "全部标记为已读",
     empty: "没有通知",
   },

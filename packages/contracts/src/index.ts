@@ -1,3 +1,4 @@
+import { ticketSymbols } from "./icons.ts";
 import { authenticationPolicySchema } from "./instance.ts";
 import type { palettes } from "./theme.ts";
 import { z } from "zod";
@@ -103,12 +104,12 @@ export const stagedUploadLifetime = 86_400_000;
 export const stateLabels = labelTable(states, (value) => t(`common.status.${value}`));
 export const priorityLabels = labelTable(priorities, (value) => t(`common.priority.${value}`));
 export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
-  backlog: "muted",
-  todo: "foreground",
-  in_progress: "warning",
-  in_review: "accent",
-  done: "success",
-  cancelled: "muted",
+  backlog: ticketSymbols.status.backlog.tone,
+  todo: ticketSymbols.status.todo.tone,
+  in_progress: ticketSymbols.status.in_progress.tone,
+  in_review: ticketSymbols.status.in_review.tone,
+  done: ticketSymbols.status.done.tone,
+  cancelled: ticketSymbols.status.cancelled.tone,
 };
 
 const id = z.string().min(1).max(80);
@@ -1331,6 +1332,23 @@ export function remoteKindLabel(kind: (typeof remoteKinds)[number], provider: st
   const host = Object.values(repositoryProviderDefinitions).find((item) => item.label === provider);
   return kind === "pull_request" && host ? host.change : remoteKindLabels[kind];
 }
+const remoteStates = ["open", "closed", "merged", "draft", "active", "deleted"] as const;
+export function resourceRemoteLabel({
+  remoteKind,
+  remoteState,
+  provider,
+}: Pick<z.output<typeof resourceSchema>, "remoteKind" | "remoteState" | "provider">) {
+  if (!remoteState) return t("detail.link.stateUnknown");
+  // A state this release has no wording for shows as the host reported it.
+  const known = remoteStates.find((value) => value === remoteState),
+    state = known
+      ? t(`detail.link.remoteState.${known}`)
+      : remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
+  return remoteKind
+    ? t("detail.link.remote", { kind: remoteKindLabel(remoteKind, provider), state })
+    : state;
+}
+
 export const repositorySecretFields = ["token", "webhookSecret"] as const;
 // Slash-separated path segments; each provider's handler checks how many it takes.
 const repositoryName = z

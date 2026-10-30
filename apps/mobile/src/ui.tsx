@@ -1,10 +1,36 @@
-import { LegendList, type LegendListProps } from "@legendapp/list/react-native";
-import { useMemo, useState, type ReactNode } from "react";
+import { MenuView, type MenuAction } from "@expo/ui/community/menu";
+import { nativeMenuSymbol } from "./native-menu-symbols.ts";
+import SegmentedControl from "@expo/ui/community/segmented-control";
+import { inlineItemCount } from "./pane-layout.ts";
+import { ticketScheduleText } from "@kanvil/contracts/schedule";
+import { LegendList, type LegendListProps, type LegendListRef } from "@legendapp/list/react-native";
+import { HeaderHeightContext } from "@react-navigation/elements";
+import {
+  lazy,
+  Suspense,
+  createElement,
+  isValidElement,
+  createContext,
+  useCallback,
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useId,
+  type ComponentProps,
+  type ComponentRef,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
+  InputAccessoryView,
+  Switch,
+  I18nManager,
+  Button as SystemButton,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -13,35 +39,453 @@ import {
   TextInput,
   View,
   useColorScheme,
-  type TextInputProps,
+  useWindowDimensions,
   type ViewStyle,
   type StyleProp,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Picker } from "@react-native-picker/picker";
+import {
+  ReservedRegionsProvider,
+  useReservedRegions,
+  useReservedRegionsReady,
+  type ReservedRegion,
+} from "react-native-reserved-regions";
+import { usableViewport } from "./pane-layout.ts";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  NavigationContainer,
+  NavigationIndependentTree,
+  DefaultTheme,
+  DarkTheme,
+  useNavigation,
+  useNavigationContainerRef,
+  NavigationContext,
+} from "@react-navigation/native";
+import {
+  createNativeStackNavigator,
+  type NativeStackHeaderItem,
+  type NativeStackHeaderItemMenu,
+  type NativeStackNavigationOptions,
+} from "@react-navigation/native-stack";
+import {
+  HeaderButton,
+  createHeaderAction,
+  createHeaderFallback,
+  type HeaderAction,
+} from "./navigation-actions.tsx";
+import { markdownIcons } from "@kanvil/contracts/icons";
+import { ProjectIcon } from "./project-icon.tsx";
+import {
+  PropertyValue,
+  TicketTag,
+  TicketGlyph,
+  useTicketCatalog,
+  propertyDescription,
+} from "./ticket-values.tsx";
+export { PropertyValue, TicketGlyph, UserAvatar } from "./ticket-values.tsx";
+import { useNativePalette } from "./theme.ts";
+import { AccountImage } from "./image.tsx";
+import {
+  formats,
+  markdownFormats,
+  formatMarkdown,
+  type MarkdownFormat,
+} from "@kanvil/contracts/markdown";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Svg, { Path } from "react-native-svg";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Renderer, useMarkdown } from "react-native-marked";
-import { brandMark, palettes } from "@kanvil/contracts/theme";
+import { brandMark } from "@kanvil/contracts/theme";
 import { useQuery } from "@tanstack/react-query";
-import { useConnection } from "./data.tsx";
+import { useConnection, useWorkspace, useAllProjects, useNow, LiveStatus } from "./data.tsx";
+import { AfterSheet, useProjectNavigation } from "./navigation.ts";
 import {
   errorMessage,
+  ApiError,
   mentionScheme,
-  priorityLabels,
-  stateLabels,
-  stateTones,
+  isPresetColor,
+  projectIconColors,
   type Ticket,
-  presentWorkflow,
+  type CustomField,
+  type CustomFieldValue,
 } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
-// "High priority"; no priority reads as itself rather than "No priority priority".
-export const priorityText = (priority: Ticket["priority"]) =>
-  priority === "none"
-    ? priorityLabels.none
-    : t("native.ticket.priority", { priority: priorityLabels[priority] });
+import { activeLocale, formatDate, formatNumber, formatList, t } from "@kanvil/contracts/i18n";
+// Shared UI glyphs decorate controls whose text already provides their accessible name.
+function DecorativeIcon(props: ComponentProps<typeof Ionicons>) {
+  return (
+    <Ionicons
+      {...props}
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
+  );
+}
+export const usePalette = useNativePalette;
+type SheetRoutes = { Hidden: undefined; Sheet: undefined };
+const SheetStack = createNativeStackNavigator<SheetRoutes>();
+type ButtonAction = HeaderAction;
+const FormAction = createContext<((action: ButtonAction | undefined) => void) | null>(null);
+const InsetsConsumed = createContext(false);
+const PaddedContent = createContext(false);
+const ScrollingHeader = createContext<ReactNode>(null);
+export const GroupedSurface = createContext(false);
+const InsideGroupedSection = createContext(false);
+const ScrollEdgeAttachment = createContext<(() => void) | null>(null);
+const ScrollHeaderInset = createContext(0);
+const SidebarSurface = createContext(false);
+export const ManualScrollInsets = createContext(false);
 
-export const usePalette = () => palettes[useColorScheme() === "dark" ? "dark" : "light"];
+function useScrollEdgeAttachment(onLayout: ComponentProps<typeof ScrollView>["onLayout"]) {
+  const attach = useContext(ScrollEdgeAttachment),
+    attached = useRef(false);
+  useLayoutEffect(() => {
+    if (attached.current) attach?.();
+  }, [attach]);
+  return useCallback<NonNullable<typeof onLayout>>(
+    (event) => {
+      if (!attached.current && attach) {
+        attached.current = true;
+        attach();
+      }
+      onLayout?.(event);
+    },
+    [attach, onLayout],
+  );
+}
+const scrollInsetsDefaults: Pick<
+  ComponentProps<typeof ScrollView>,
+  | "contentInsetAdjustmentBehavior"
+  | "automaticallyAdjustKeyboardInsets"
+  | "automaticallyAdjustsScrollIndicatorInsets"
+> = {
+  contentInsetAdjustmentBehavior: "automatic",
+  automaticallyAdjustKeyboardInsets: true,
+  automaticallyAdjustsScrollIndicatorInsets: true,
+};
+function useScrollInsets(horizontal = false) {
+  const manual = useContext(ManualScrollInsets),
+    sidebar = useContext(SidebarSurface),
+    headerInset = useContext(ScrollHeaderInset),
+    safe = useSafeAreaInsets();
+  const top = manual && !horizontal ? headerInset : 0;
+  return {
+    manual,
+    top,
+    props: manual
+      ? {
+          contentInsetAdjustmentBehavior: "never" as const,
+          automaticallyAdjustContentInsets: false,
+          automaticallyAdjustsScrollIndicatorInsets: false,
+          contentInset: { top: 0, bottom: safe.bottom },
+          scrollIndicatorInsets: {
+            top,
+            bottom: safe.bottom,
+            right: sidebar ? 8 : 0,
+          },
+        }
+      : {},
+  };
+}
+
+const ViewportContext = createContext<{
+  bounds: { width: number; height: number };
+  regions: readonly ReservedRegion[];
+} | null>(null);
+export function useNativeViewport() {
+  const viewport = useContext(ViewportContext);
+  if (!viewport) throw new Error("A native viewport requires Screen");
+  return viewport;
+}
+// Shared by ordinary screens and list/detail panes; coordinates remain physical in RTL.
+export function ViewportPane({
+  children,
+  rect,
+  viewportWidth,
+  visible = true,
+  inheritHeader = true,
+  sidebar,
+  manualInsets,
+  insetHeader = false,
+}: {
+  children: ReactNode;
+  rect: ReservedRegion["frame"];
+  viewportWidth: number;
+  visible?: boolean;
+  inheritHeader?: boolean;
+  sidebar?: boolean;
+  manualInsets?: boolean;
+  insetHeader?: boolean;
+}) {
+  const headerInset = useContext(ScrollHeaderInset);
+  const scrollingHeader = useContext(ScrollingHeader);
+  const inheritedSidebar = useContext(SidebarSurface),
+    inheritedManual = useContext(ManualScrollInsets),
+    color = usePalette();
+  const top = Math.max(0, headerInset - rect.y);
+  return (
+    <View
+      pointerEvents={visible ? "auto" : "none"}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+      style={{
+        position: "absolute",
+        start: I18nManager.isRTL ? viewportWidth - rect.x - rect.width : rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        opacity: visible ? 1 : 0,
+        overflow: "hidden",
+        paddingTop: insetHeader ? top : 0,
+        ...(sidebar ? { backgroundColor: color.sidebar } : {}),
+      }}
+    >
+      <ScrollingHeader value={inheritHeader ? scrollingHeader : null}>
+        <ScrollHeaderInset value={insetHeader ? 0 : top}>
+          <ManualScrollInsets value={manualInsets ?? inheritedManual}>
+            <SidebarSurface value={sidebar ?? inheritedSidebar}>{children}</SidebarSurface>
+          </ManualScrollInsets>
+        </ScrollHeaderInset>
+      </ScrollingHeader>
+    </View>
+  );
+}
+function ViewportContent({
+  children,
+  bounds,
+  allowDivision,
+}: {
+  children: ReactNode;
+  bounds: { width: number; height: number };
+  allowDivision: boolean;
+}) {
+  const regions = useReservedRegions(),
+    ready = useReservedRegionsReady();
+  if (!ready || !bounds.width || !bounds.height) return <Loading />;
+  const rect = allowDivision ? { x: 0, y: 0, ...bounds } : usableViewport(bounds, regions);
+  const localRegions = regions.map((region) => ({
+    ...region,
+    frame: {
+      ...region.frame,
+      x: region.frame.x - rect.x,
+      y: region.frame.y - rect.y,
+    },
+  }));
+  return (
+    <View style={{ flex: 1 }}>
+      <ViewportPane rect={rect} viewportWidth={bounds.width}>
+        <ViewportContext
+          value={{ bounds: { width: rect.width, height: rect.height }, regions: localRegions }}
+        >
+          {children}
+        </ViewportContext>
+      </ViewportPane>
+    </View>
+  );
+}
+export function MeasuredViewport({
+  children,
+  allowDivision = false,
+}: {
+  children: ReactNode;
+  allowDivision?: boolean;
+}) {
+  const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  return (
+    <ReservedRegionsProvider
+      style={{ flex: 1 }}
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        if (width > 0 && height > 0) setBounds({ width, height });
+      }}
+    >
+      <ViewportContent bounds={bounds} allowDivision={allowDivision}>
+        {children}
+      </ViewportContent>
+    </ReservedRegionsProvider>
+  );
+}
+// One native screen boundary owns bar insets; nested content measures its own fold coordinates.
+function ContentArea({
+  children,
+  enabled = true,
+  allowDivision,
+  scrollInsets,
+}: {
+  children: ReactNode;
+  enabled?: boolean;
+  allowDivision: boolean;
+  scrollInsets: boolean;
+}) {
+  const consumed = useContext(InsetsConsumed);
+  return (
+    <SafeAreaProvider style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={
+          enabled && !consumed
+            ? scrollInsets
+              ? ["left", "right"]
+              : ["left", "right", "top", "bottom"]
+            : []
+        }
+        style={{ flex: 1 }}
+      >
+        <InsetsConsumed value={consumed || enabled}>
+          <MeasuredViewport allowDivision={allowDivision}>{children}</MeasuredViewport>
+        </InsetsConsumed>
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+}
+
+// Extend the native item description once: UIKit owns iOS bars; Android uses the same actions
+// through our existing Sheet/Row primitives. Choice is flat and cannot represent bar submenus.
+export function nativeHeaderOptions<const T extends NativeStackNavigationOptions>(options: T) {
+  if (Platform.OS === "ios") return options;
+  const left = options.unstable_headerLeftItems,
+    right = options.unstable_headerRightItems;
+  return {
+    ...options,
+    ...(left ? { headerLeft: createHeaderItemsFallback(left({})) } : {}),
+    ...(right ? { headerRight: createHeaderItemsFallback(right({})) } : {}),
+  };
+}
+function createHeaderItemsFallback(items: NativeStackHeaderItem[]) {
+  return function HeaderItems() {
+    return <HeaderItemsFallback items={items} />;
+  };
+}
+function HeaderItemsFallback({ items }: { items: NativeStackHeaderItem[] }) {
+  const [open, setOpen] = useState(false);
+  const color = usePalette();
+  const actions = items.filter((item) => item.type === "button" || item.type === "menu");
+  if (!actions.length) return null;
+  const first = actions[0],
+    title = actions.length === 1 ? (first?.label ?? "") : t("ticket.selection.more");
+  function menuRows(entries: NativeStackHeaderItemMenu["menu"]["items"]): ReactNode {
+    return entries.map((item, index) =>
+      item.type === "submenu" ? (
+        <Section key={`${index}:${item.label}`} title={item.label}>
+          {menuRows(item.items)}
+        </Section>
+      ) : item.hidden ? null : (
+        <Row
+          key={`${index}:${item.label}`}
+          title={item.label}
+          interaction={item.state === undefined ? "action" : "choice"}
+          {...(item.description ? { caption: item.description } : {})}
+          disabled={item.disabled ?? false}
+          selected={item.state === "on"}
+          onPress={() => {
+            setOpen(false);
+            item.onPress();
+          }}
+        />
+      ),
+    );
+  }
+  return (
+    <>
+      <SystemButton
+        title={title}
+        color={color.accent}
+        disabled={actions.length === 1 && first?.disabled}
+        onPress={() => {
+          if (actions.length === 1 && first?.type === "button") first.onPress();
+          else setOpen(true);
+        }}
+      />
+      <Sheet title={title} open={open} onClose={() => setOpen(false)}>
+        {actions.map((item, index) =>
+          item.type === "menu" ? (
+            <Section key={`${index}:${item.label}`} title={item.label}>
+              {menuRows(item.menu.items)}
+            </Section>
+          ) : (
+            <Row
+              key={`${index}:${item.label}`}
+              title={item.label}
+              interaction="action"
+              disabled={item.disabled ?? false}
+              onPress={() => {
+                setOpen(false);
+                item.onPress();
+              }}
+            />
+          ),
+        )}
+      </Sheet>
+    </>
+  );
+}
+const IOSMenu = lazy(() => import("./native-menu.ios.tsx"));
+export function Menu({
+  title,
+  items,
+  children,
+  fill = false,
+}: {
+  title: string;
+  items: NativeStackHeaderItemMenu["menu"]["items"];
+  children: ReactNode;
+  fill?: boolean;
+}) {
+  const [width, setWidth] = useState(0);
+  const grouped = useContext(InsideGroupedSection);
+  const handlers = new Map<string, () => void>();
+  function actions(entries: NativeStackHeaderItemMenu["menu"]["items"], prefix = ""): MenuAction[] {
+    return entries.map((item, index) => {
+      const id = `${prefix}${index}`;
+      if (item.type === "submenu")
+        return {
+          id,
+          title: item.label,
+          ...(item.inline === undefined ? {} : { displayInline: item.inline }),
+          subactions: actions(item.items, `${id}.`),
+        };
+      handlers.set(id, item.onPress);
+      return {
+        id,
+        title: item.label,
+        ...(item.state === "on" || item.state === "off" ? { state: item.state } : {}),
+        attributes: {
+          ...(item.disabled === undefined ? {} : { disabled: item.disabled }),
+          ...(item.hidden === undefined ? {} : { hidden: item.hidden }),
+          ...(item.destructive === undefined ? {} : { destructive: item.destructive }),
+        },
+      };
+    });
+  }
+  const content = fill ? <View style={{ width }}>{children}</View> : children;
+  const menu =
+    Platform.OS === "ios" ? (
+      <Suspense fallback={content}>
+        <IOSMenu title={title} items={items}>
+          {content}
+        </IOSMenu>
+      </Suspense>
+    ) : (
+      <MenuView
+        title={title}
+        actions={actions(items)}
+        onPressAction={({ nativeEvent }) => handlers.get(nativeEvent.event)?.()}
+      >
+        {content}
+      </MenuView>
+    );
+  // SwiftUI measures menu labels intrinsically; form rows take their measured RN container width.
+  return fill ? (
+    <View
+      style={{ alignSelf: "stretch", minHeight: grouped ? 52 : 44 }}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
+      {width > 0 && menu}
+    </View>
+  ) : (
+    menu
+  );
+}
+
 export function Brand() {
   const color = usePalette();
   return (
@@ -71,6 +515,10 @@ export function Button({
   compact = false,
   plain = false,
   disclosure = false,
+  leading,
+  trailing,
+  children,
+  dismissKeyboard = true,
 }: {
   title: string;
   onPress: () => void;
@@ -81,130 +529,518 @@ export function Button({
   compact?: boolean;
   plain?: boolean;
   disclosure?: boolean;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  children?: ReactNode;
+  dismissKeyboard?: boolean;
 }) {
   const color = usePalette();
+  const formAction = useContext(FormAction);
+  useEffect(() => {
+    if (!primary || !formAction) return undefined;
+    formAction({ title, onPress, disabled });
+    return () => formAction(undefined);
+  }, [primary, formAction, title, onPress, disabled]);
+  if (primary && formAction) return null;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ disabled }}
       onPress={() => {
-        Keyboard.dismiss();
+        if (dismissKeyboard) Keyboard.dismiss();
         onPress();
       }}
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,
         {
-          borderColor: plain ? "transparent" : primary ? color.accent : color.line,
-          backgroundColor: plain ? "transparent" : primary ? color.accent : color.background,
-          opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+          borderWidth: 0,
+          borderColor: primary ? color.accent : color.line,
+          backgroundColor: primary
+            ? color.accent
+            : pressed
+              ? color.accentSurface
+              : compact && !plain
+                ? color.background
+                : "transparent",
+          alignItems: primary ? "center" : "flex-start",
+          opacity: disabled ? 0.45 : 1,
+          paddingHorizontal: primary ? 16 : 0,
         },
-        compact && { paddingHorizontal: 10, paddingVertical: 8 },
-        disclosure && { flexDirection: "row", justifyContent: "space-between" },
+        compact && { paddingHorizontal: 9, paddingVertical: 7 },
+        !!(disclosure || leading || trailing) && {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        },
+        disclosure && { justifyContent: "space-between" },
       ]}
     >
-      <Text
-        style={{
-          color: danger
-            ? color.danger
-            : primary
-              ? color.surface
-              : plain
-                ? color.accent
-                : color.foreground,
-          fontWeight: primary || plain ? "600" : "500",
-          fontSize: 15,
-          flexShrink: 1,
-        }}
-      >
-        {title}
-      </Text>
-      {disclosure && <Ionicons name="chevron-down" size={16} color={color.muted} />}
+      {leading}
+      {children ?? (
+        <Text
+          style={{
+            color: danger
+              ? color.danger
+              : primary
+                ? color.accentForeground
+                : compact
+                  ? color.foreground
+                  : color.accent,
+            fontWeight: primary || plain ? "600" : "500",
+            fontSize: 15,
+            flexShrink: 1,
+          }}
+        >
+          {title}
+        </Text>
+      )}
+      {trailing}
+      {disclosure && <DecorativeIcon name="chevron-down" size={16} color={color.muted} />}
     </Pressable>
   );
 }
-export function Field({ label, ...props }: TextInputProps & { label: string }) {
-  const color = usePalette();
+export function Field({
+  label,
+  variant = "standard",
+  labelHidden = false,
+  ...props
+}: ComponentProps<typeof TextInput> & {
+  label: string;
+  variant?: "standard" | "title" | "search";
+  labelHidden?: boolean;
+}) {
+  const color = usePalette(),
+    [focused, setFocused] = useState(false);
+  const colorScheme = useColorScheme();
+  const readOnly = !props.secureTextEntry && (props.editable === false || props.readOnly === true);
+  const staticValue =
+    props.value || props.defaultValue || props.placeholder || t("ticket.field.noValue");
+  return (
+    <View
+      style={
+        variant === "standard" && !props.multiline && !labelHidden
+          ? {
+              flexDirection: "row",
+              alignItems: "center",
+              minHeight: 52,
+              gap: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: focused ? color.accent : color.line,
+            }
+          : [styles.field, props.multiline && variant === "standard" && { paddingVertical: 12 }]
+      }
+    >
+      {!labelHidden && (
+        <Text
+          style={[
+            styles.label,
+            { color: props.multiline ? color.muted : color.foreground },
+            !props.multiline &&
+              variant === "standard" && {
+                maxWidth: "50%",
+                flexShrink: 1,
+                fontSize: 16,
+                lineHeight: 22,
+                fontWeight: "400",
+              },
+          ]}
+        >
+          {label}
+        </Text>
+      )}
+      {readOnly ? (
+        <View
+          style={
+            !props.multiline && !labelHidden && variant === "standard"
+              ? { flex: 1, minWidth: 0 }
+              : undefined
+          }
+        >
+          <Text
+            selectable
+            accessibilityLabel={t("native.labelValue", { label, value: staticValue })}
+            style={[
+              { color: color.foreground, fontSize: 16, lineHeight: 24, paddingVertical: 10 },
+              !props.multiline &&
+                !labelHidden &&
+                variant === "standard" && {
+                  textAlign: I18nManager.isRTL ? "left" : "right",
+                },
+              props.style,
+            ]}
+          >
+            {staticValue}
+          </Text>
+        </View>
+      ) : (
+        <TextInput
+          autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
+          autoCorrect={!props.secureTextEntry}
+          {...props}
+          accessibilityLabel={label}
+          onFocus={(event) => {
+            setFocused(true);
+            props.onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            props.onBlur?.(event);
+          }}
+          placeholderTextColor={color.muted}
+          keyboardAppearance={colorScheme === "dark" ? "dark" : "light"}
+          style={[
+            styles.input,
+            {
+              color: color.foreground,
+              borderColor: focused ? color.accent : color.line,
+              backgroundColor: "transparent",
+              ...(!props.multiline && !labelHidden && variant === "standard"
+                ? { flex: 1, minWidth: 0, textAlign: I18nManager.isRTL ? "left" : "right" }
+                : {}),
+              ...(variant === "search"
+                ? { paddingHorizontal: 12, backgroundColor: color.background, borderRadius: 10 }
+                : {}),
+            },
+            props.multiline && {
+              minHeight: variant === "title" ? 42 : 88,
+              textAlignVertical: "top",
+            },
+            variant === "title" && {
+              paddingHorizontal: 0,
+              paddingVertical: 8,
+              borderWidth: 0,
+              backgroundColor: "transparent",
+              fontSize: 24,
+              lineHeight: 30,
+              fontWeight: "600",
+              letterSpacing: -0.4,
+            },
+            props.style,
+          ]}
+        />
+      )}
+    </View>
+  );
+}
+export function MarkdownField({
+  label,
+  value,
+  onChangeText,
+  maxLength,
+  status,
+  autoFocus = false,
+  labelHidden = false,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  maxLength?: number;
+  status?: ReactNode;
+  autoFocus?: boolean;
+  labelHidden?: boolean;
+}) {
+  const input = useRef<ComponentRef<typeof TextInput>>(null),
+    color = usePalette();
+  const [selection, setSelection] = useState({ start: 0, end: 0 }),
+    [preview, setPreview] = useState(false);
+  const accessoryId = useId();
+  function apply(format: MarkdownFormat) {
+    const edit = formatMarkdown(value, selection.start, selection.end, format);
+    onChangeText(value.slice(0, edit.from) + edit.text + value.slice(edit.to));
+    setSelection({ start: edit.start, end: edit.end });
+    input.current?.focus();
+  }
+  const toolbar = (
+    <ScrollView
+      horizontal
+      keyboardShouldPersistTaps="always"
+      showsHorizontalScrollIndicator={false}
+      style={{ backgroundColor: color.background, borderRadius: 10 }}
+      contentContainerStyle={{ gap: 0, paddingHorizontal: 2 }}
+    >
+      {markdownFormats.map((format) => (
+        <Button
+          compact
+          plain
+          dismissKeyboard={false}
+          key={format}
+          title=""
+          accessibilityLabel={formats[format].label}
+          leading={<TicketGlyph name={markdownIcons[format]} color={color.muted} />}
+          disabled={format === "link" && selection.start === selection.end}
+          onPress={() => apply(format)}
+        />
+      ))}
+    </ScrollView>
+  );
+  return (
+    <View style={{ gap: 6 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <View style={{ flex: 1, gap: 2 }}>
+          {!labelHidden && <Text style={[styles.label, { color: color.muted }]}>{label}</Text>}
+          {status}
+        </View>
+        <SegmentedControl
+          values={[t("detail.markdown.write"), t("detail.markdown.preview")]}
+          selectedIndex={preview ? 1 : 0}
+          onChange={({ nativeEvent }) => setPreview(nativeEvent.selectedSegmentIndex === 1)}
+          accessibilityLabel={label}
+          style={{ minWidth: 168, height: 32 }}
+        />
+      </View>
+      {!preview &&
+        (Platform.OS === "ios" ? (
+          <InputAccessoryView nativeID={accessoryId} backgroundColor={color.background}>
+            {toolbar}
+          </InputAccessoryView>
+        ) : (
+          toolbar
+        ))}
+      {preview ? (
+        <Markdown>{value}</Markdown>
+      ) : (
+        <Field
+          ref={input}
+          inputAccessoryViewID={Platform.OS === "ios" ? accessoryId : undefined}
+          label={label}
+          labelHidden
+          autoFocus={autoFocus}
+          style={{ minHeight: 144 }}
+          value={value}
+          onChangeText={onChangeText}
+          multiline
+          selection={selection}
+          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+          {...(maxLength ? { maxLength } : {})}
+        />
+      )}
+    </View>
+  );
+}
+export function TicketPicker({
+  projectId,
+  label,
+  value,
+  onChange,
+  excludeId,
+}: {
+  projectId: string;
+  label: string;
+  value: string | null;
+  onChange: (id: string | null) => void;
+  excludeId?: string;
+}) {
+  const { api } = useConnection(),
+    [open, setOpen] = useState(false),
+    [query, setQuery] = useState("");
+  const q = useDeferredValue(query);
+  const ticket = useQuery({
+    ...api.query("get_ticket", { projectId, ticketId: value ?? "" }),
+    enabled: !!value,
+  });
+  const matches = useQuery({
+    ...api.query("list_tickets", { projectId, q, limit: 50 }),
+    enabled: open,
+  });
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
-      <TextInput
-        autoCapitalize={props.secureTextEntry ? "none" : "sentences"}
-        autoCorrect={!props.secureTextEntry}
-        {...props}
-        accessibilityLabel={label}
-        placeholderTextColor={color.muted}
-        keyboardAppearance={useColorScheme() === "dark" ? "dark" : "light"}
-        style={[
-          styles.input,
-          { color: color.foreground, borderColor: color.line, backgroundColor: color.background },
-          props.multiline && { minHeight: 110, textAlignVertical: "top" },
-          props.style,
-        ]}
+      <Text style={[styles.label, { color: usePalette().muted }]}>{label}</Text>
+      <Button
+        disclosure
+        title={
+          ticket.data
+            ? `${ticket.data.ticket.key} · ${ticket.data.ticket.title}`
+            : t("ticket.picker.noParent")
+        }
+        onPress={() => {
+          setQuery("");
+          setOpen(true);
+        }}
       />
+      <Sheet title={label} open={open} onClose={() => setOpen(false)}>
+        <Field
+          label={t("ticket.picker.searchLabel", { label })}
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t("ticket.picker.searchPlaceholder")}
+          autoFocus
+        />
+        <Button
+          title={t("ticket.picker.noParent")}
+          onPress={() => {
+            onChange(null);
+            setOpen(false);
+          }}
+        />
+        <ErrorNotice error={matches.error} />
+        {matches.isPending ? (
+          <Loading />
+        ) : (
+          matches.data?.items
+            .filter((item) => item.id !== excludeId)
+            .map((item) => (
+              <TicketRow
+                key={item.id}
+                ticket={item}
+                onPress={() => {
+                  onChange(item.id);
+                  setOpen(false);
+                }}
+              />
+            ))
+        )}
+      </Sheet>
     </View>
+  );
+}
+function SheetCloseButton() {
+  const navigation = useNavigation(),
+    color = usePalette();
+  return (
+    <HeaderButton
+      action={{ title: t("common.action.close"), onPress: () => navigation.goBack() }}
+      color={color.accent}
+    />
   );
 }
 export function Sheet({
   title,
   open,
   onClose,
+  onDismissed,
   children,
+  scroll = true,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
+  onDismissed?: () => void;
   children: ReactNode;
+  scroll?: boolean;
 }) {
-  const color = usePalette();
+  const color = usePalette(),
+    parentAfterSheet = useContext(AfterSheet);
+  const pending = useRef<(() => void) | undefined>(undefined);
+  const [submit, setSubmit] = useState<ButtonAction>();
+  const navigation = useNavigationContainerRef<SheetRoutes>();
+  const [presented, setPresented] = useState(false);
+  const close = useCallback(() => navigation.goBack(), [navigation]);
+  const afterSheet = useCallback(
+    (action: () => void) => {
+      pending.current = action;
+      close();
+    },
+    [close],
+  );
+  const dark = useColorScheme() === "dark";
+  useEffect(() => {
+    if (!open && presented && navigation.isReady() && navigation.canGoBack()) navigation.goBack();
+  }, [open, presented, navigation]);
+  if (!open && !presented) return null;
+  // Full-screen native presentation keeps one touch surface and gives the presenting screen
+  // an appearance event after dismissal, so its temporary navigator can be removed safely.
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={[styles.modal, { backgroundColor: color.backdrop }]}
-      >
-        <Pressable
-          accessibilityLabel={t("native.ui.dismiss")}
-          accessibilityRole="button"
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-        />
-        <SafeAreaView
-          edges={["bottom"]}
-          style={{
-            backgroundColor: color.surface,
-            maxHeight: "88%",
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <NavigationIndependentTree>
+        <NavigationContainer
+          ref={navigation}
+          onReady={() => setPresented(true)}
+          theme={dark ? DarkTheme : DefaultTheme}
+          initialState={{ index: 1, routes: [{ name: "Hidden" }, { name: "Sheet" }] }}
+          onStateChange={(state) => {
+            if (state?.routes[state.index]?.name === "Hidden") onClose();
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: color.line,
-              alignSelf: "center",
-              marginTop: 10,
+          <SheetStack.Navigator
+            screenOptions={{
+              headerShadowVisible: false,
+              contentStyle: { backgroundColor: color.surface },
+              headerStyle: { backgroundColor: color.surface },
+              headerTintColor: color.accent,
+              headerTitleStyle: { color: color.foreground },
             }}
-          />
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            contentContainerStyle={{ padding: 20, gap: 16 }}
           >
-            <View style={[styles.actions, { justifyContent: "space-between" }]}>
-              <View style={{ flex: 1 }}>
-                <Heading>{title}</Heading>
-              </View>
-              <Button title={t("common.action.close")} plain compact onPress={onClose} />
-            </View>
-            {children}
-          </ScrollView>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    </Modal>
+            <SheetStack.Screen
+              name="Hidden"
+              options={{ headerShown: false, contentStyle: { backgroundColor: "transparent" } }}
+              listeners={{
+                transitionEnd: (event) => {
+                  if (!open && !event.data.closing) {
+                    setPresented(false);
+                    const action = pending.current;
+                    pending.current = undefined;
+                    onDismissed?.();
+                    if (action) {
+                      if (parentAfterSheet) parentAfterSheet(action);
+                      else action();
+                    }
+                  }
+                },
+              }}
+            >
+              {() => null}
+            </SheetStack.Screen>
+            <SheetStack.Screen
+              name="Sheet"
+              options={{
+                presentation: "fullScreenModal",
+                gestureEnabled: false,
+                title,
+                headerLeft: SheetCloseButton,
+                headerRight: createHeaderFallback(submit, color.accent),
+                unstable_headerLeftItems: () => [
+                  createHeaderAction(t("common.action.close"), close, {
+                    type: "sfSymbol",
+                    name: "xmark",
+                  }),
+                ],
+                unstable_headerRightItems: () =>
+                  submit
+                    ? [
+                        {
+                          ...createHeaderAction(
+                            submit.title,
+                            submit.onPress,
+                            { type: "sfSymbol", name: "checkmark" },
+                            submit.disabled,
+                            { visibilityPriority: "high", identifier: "sheet-submit" },
+                          ),
+                          variant: "done",
+                        },
+                      ]
+                    : [],
+              }}
+            >
+              {() => (
+                <ManualScrollInsets value={false}>
+                  <SidebarSurface value={false}>
+                    <InsetsConsumed value={false}>
+                      <SafeAreaProvider style={{ backgroundColor: color.surface }}>
+                        <FormAction value={setSubmit}>
+                          <AfterSheet value={afterSheet}>
+                            <Screen scroll={scroll}>{children}</Screen>
+                          </AfterSheet>
+                        </FormAction>
+                      </SafeAreaProvider>
+                    </InsetsConsumed>
+                  </SidebarSurface>
+                </ManualScrollInsets>
+              )}
+            </SheetStack.Screen>
+          </SheetStack.Navigator>
+        </NavigationContainer>
+      </NavigationIndependentTree>
+    </View>
   );
 }
 export function Choice({
@@ -212,106 +1048,544 @@ export function Choice({
   value,
   options,
   onChange,
+  selected,
+  onToggle,
+  emptyLabel = t("ticket.field.noValue"),
+  disabled = false,
+  compact = false,
+  summary,
+  inline = false,
+  disclosure = false,
 }: {
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; leading?: ReactNode; symbol?: string }[];
   onChange: (value: string) => void;
+  selected?: string[];
+  onToggle?: (value: string) => void;
+  emptyLabel?: string;
+  disabled?: boolean;
+  compact?: boolean;
+  summary?: ReactNode;
+  inline?: boolean;
+  disclosure?: boolean;
 }) {
   const color = usePalette(),
     [open, setOpen] = useState(false),
-    selected = options.find((option) => option.value === value)?.label ?? value;
+    [query, setQuery] = useState("");
+  const current = selected
+    ? options
+        .filter((option) => selected.includes(option.value))
+        .map((option) => option.label)
+        .join(", ") || emptyLabel
+    : (options.find((option) => option.value === value)?.label ?? (value || emptyLabel));
+  const anchored = !selected && options.length > 0 && options.length <= 7;
+  const choices = (
+    <>
+      {options.length > 7 && (
+        <Field
+          label={t("ticket.property.search", { label })}
+          value={query}
+          onChangeText={setQuery}
+          autoFocus
+          variant="search"
+          labelHidden
+          placeholder={t("ticket.property.search", { label })}
+          autoCorrect={false}
+        />
+      )}
+      {options
+        .filter((option) => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+        .map((option) =>
+          selected ? (
+            <Check
+              key={option.value}
+              label={option.label}
+              checked={selected.includes(option.value)}
+              variant="checkbox"
+              leading={option.leading}
+              onChange={() => onToggle?.(option.value)}
+            />
+          ) : (
+            <Row
+              key={option.value}
+              title={option.label}
+              leading={option.leading}
+              accessibilityLabel={t("native.labelValue", { label, value: option.label })}
+              interaction="choice"
+              selected={option.value === value}
+              trailing={option.value === value ? undefined : <View />}
+              onPress={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            />
+          ),
+        )}
+    </>
+  );
+  const trigger = compact ? (
+    <Button
+      compact
+      plain
+      disclosure={disclosure}
+      title={selected?.length === 0 && emptyLabel === t("ticket.field.noValue") ? label : current}
+      disabled={disabled}
+      leading={summary ? undefined : options.find((option) => option.value === value)?.leading}
+      accessibilityLabel={t("native.labelValue", { label, value: current })}
+      onPress={() => {
+        if (!anchored) {
+          setQuery("");
+          setOpen(true);
+        }
+      }}
+    >
+      {summary}
+    </Button>
+  ) : (
+    <Row
+      compact
+      title={label}
+      disabled={disabled}
+      accessibilityLabel={t("native.labelValue", { label, value: current })}
+      onPress={() => {
+        if (!anchored) {
+          setQuery("");
+          setOpen(true);
+        }
+      }}
+      trailing={
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center", maxWidth: "56%" }}>
+          {options.find((option) => option.value === value)?.leading}
+          {summary ?? (
+            <Text style={{ color: color.muted, fontSize: 15, flexShrink: 1 }}>
+              {selected && selected.length > 1
+                ? t("ticket.selection.selected", { count: selected.length })
+                : current}
+            </Text>
+          )}
+          <DecorativeIcon name="chevron-down" color={color.muted} size={14} accessible={false} />
+        </View>
+      }
+    />
+  );
+  const items: NativeStackHeaderItemMenu["menu"]["items"] = options.map((option) => {
+    const symbol = option.symbol ? nativeMenuSymbol(option.symbol) : undefined;
+    return {
+      type: "action",
+      label: option.label,
+      state: option.value === value ? "on" : "off",
+      ...(symbol ? { icon: { type: "sfSymbol", name: symbol } } : {}),
+      onPress: () => {
+        if (!disabled) onChange(option.value);
+      },
+    };
+  });
   return (
-    <View style={styles.field}>
-      <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
-      <Button
-        disclosure
-        title={selected}
-        accessibilityLabel={t("native.labelValue", { label, value: selected })}
-        onPress={() => setOpen(true)}
-      />
-      <Sheet title={label} open={open} onClose={() => setOpen(false)}>
-        <Picker
-          accessibilityLabel={label}
-          selectedValue={value}
-          onValueChange={(next) => onChange(next)}
-          itemStyle={{ color: color.foreground }}
-          style={{ color: color.foreground }}
-        >
-          {options.map((option) => (
-            <Picker.Item key={option.value} value={option.value} label={option.label} />
-          ))}
-        </Picker>
-      </Sheet>
+    <View style={[styles.field, compact && { maxWidth: "100%", alignSelf: "flex-start" }]}>
+      {anchored && !disabled ? (
+        <Menu title={label} items={items} fill={!compact}>
+          {trigger}
+        </Menu>
+      ) : (
+        trigger
+      )}
+      {!anchored &&
+        (inline ? (
+          open && <View>{choices}</View>
+        ) : (
+          <Sheet title={label} open={open} onClose={() => setOpen(false)}>
+            {choices}
+          </Sheet>
+        ))}
     </View>
+  );
+}
+// Icon, workflow and label editors share color names, actual swatches and custom color entry.
+export function ColorChoice({
+  label,
+  value,
+  onChange,
+  presetsOnly = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  presetsOnly?: boolean;
+}) {
+  const custom = !isPresetColor(value);
+  return (
+    <>
+      <Choice
+        label={label}
+        value={custom ? "custom" : value}
+        onChange={(next) => onChange(next === "custom" ? "#" : next)}
+        options={[
+          ...projectIconColors.map((tone) => ({
+            value: tone,
+            label: t(`settings.color.${tone}`),
+            leading: <TicketTag tag={tone} color={tone} indicatorOnly />,
+          })),
+          ...(presetsOnly ? [] : [{ value: "custom", label: t("settings.color.custom") }]),
+        ]}
+      />
+      {custom && !presetsOnly && (
+        <Field
+          label={t("settings.color.custom")}
+          value={value}
+          onChangeText={onChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={7}
+          placeholder="#3458c5"
+        />
+      )}
+    </>
   );
 }
 export function Check({
   label,
+  accessibilityLabel = label,
   checked,
   onChange,
   disabled = false,
+  leading,
+  variant = "switch",
 }: {
   label: string;
+  accessibilityLabel?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
+  leading?: ReactNode;
+  variant?: "switch" | "checkbox";
 }) {
   const color = usePalette();
+  if (variant === "switch")
+    return (
+      <Pressable
+        accessible={false}
+        disabled={disabled}
+        onPress={() => onChange(!checked)}
+        style={({ pressed }) => ({
+          minHeight: 52,
+          paddingVertical: Platform.OS === "ios" ? 10 : 0,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: color.line,
+          backgroundColor: pressed ? color.accentSurface : "transparent",
+        })}
+      >
+        {leading}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            accessible={false}
+            style={{
+              color: disabled ? color.muted : color.foreground,
+              fontSize: 16,
+              lineHeight: 22,
+            }}
+          >
+            {label}
+          </Text>
+        </View>
+        <Switch
+          accessibilityLabel={accessibilityLabel}
+          style={{ alignSelf: "center", flexShrink: 0 }}
+          disabled={disabled}
+          value={checked}
+          onValueChange={onChange}
+          trackColor={{ true: color.accent }}
+        />
+      </Pressable>
+    );
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ checked, disabled }}
       disabled={disabled}
       onPress={() => onChange(!checked)}
       style={styles.check}
     >
-      <Ionicons
+      <DecorativeIcon
         name={checked ? "checkbox" : "square-outline"}
         size={24}
         color={checked ? color.accent : color.muted}
       />
-      <Text style={{ color: color.foreground, flex: 1, fontSize: 15, lineHeight: 22 }}>
-        {label}
-      </Text>
+      {leading}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: color.foreground, fontSize: 16, lineHeight: 22 }}>{label}</Text>
+      </View>
     </Pressable>
   );
 }
-export function ErrorNotice({ error }: { error: unknown }) {
-  const color = usePalette();
-  return error ? (
-    <Text
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      style={{ color: color.danger, marginVertical: 12 }}
-    >
-      {errorMessage(error)}
-    </Text>
-  ) : null;
+// Date and custom-field editors extend the same Choice/Field/Check controls used by forms.
+export function NativeDatePicker(
+  props: Pick<
+    ComponentProps<typeof DateTimePicker>,
+    "value" | "minimumDate" | "maximumDate" | "timeZoneName" | "onChange"
+  >,
+) {
+  return (
+    <DateTimePicker
+      {...props}
+      mode="date"
+      display={Platform.OS === "ios" ? "inline" : "default"}
+      locale={activeLocale()}
+      accentColor={usePalette().accent}
+      style={Platform.OS === "ios" ? { height: 360, alignSelf: "stretch" } : undefined}
+    />
+  );
 }
-export function Loading() {
+export function DateField({
+  label,
+  value,
+  onChange,
+  dayBoundary,
+  bounds,
+  clearable = true,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  dayBoundary?: "start" | "end";
+  bounds?: { from?: string | null; to?: string | null };
+  clearable?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [today] = useState(() => new Date());
   const color = usePalette();
   return (
+    <View style={styles.field}>
+      <Text style={[styles.label, { color: color.muted }]}>{label}</Text>
+      <Button
+        disclosure
+        title={
+          value
+            ? formatDate(value, {
+                dateStyle: "medium",
+                ...(!dayBoundary ? { timeZone: "UTC" } : {}),
+              })
+            : t("ticket.date.placeholder")
+        }
+        accessibilityLabel={label}
+        onPress={() => setOpen(true)}
+      />
+      <Sheet title={label} open={open} onClose={() => setOpen(false)}>
+        <NativeDatePicker
+          {...(!dayBoundary ? { timeZoneName: "UTC" } : {})}
+          value={value ? new Date(dayBoundary ? value : `${value}T12:00:00Z`) : today}
+          {...(bounds?.from ? { minimumDate: new Date(bounds.from) } : {})}
+          {...(bounds?.to ? { maximumDate: new Date(bounds.to) } : {})}
+          onChange={(event, date) => {
+            if (event.type === "set" && date) {
+              if (dayBoundary) {
+                date.setHours(
+                  dayBoundary === "end" ? 23 : 0,
+                  dayBoundary === "end" ? 59 : 0,
+                  dayBoundary === "end" ? 59 : 0,
+                  dayBoundary === "end" ? 999 : 0,
+                );
+                onChange(date.toISOString());
+              } else onChange(date.toISOString().slice(0, 10));
+            }
+            if (Platform.OS === "android") setOpen(false);
+          }}
+        />
+        {clearable && (
+          <Button
+            title={t("ticket.date.clear", { label })}
+            onPress={() => {
+              onChange(null);
+              setOpen(false);
+            }}
+          />
+        )}
+      </Sheet>
+    </View>
+  );
+}
+export function CustomFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: Pick<CustomField, "name" | "type" | "options">;
+  value: CustomFieldValue | null | undefined;
+  onChange: (value: CustomFieldValue | null) => void;
+}) {
+  if (field.type === "checkbox")
+    return <Check label={field.name} checked={value === true} onChange={onChange} />;
+  if (field.type === "date")
+    return (
+      <DateField
+        label={field.name}
+        value={typeof value === "string" ? value : null}
+        onChange={onChange}
+      />
+    );
+  if (field.type === "select" || field.type === "multiselect")
+    return (
+      <Choice
+        label={field.name}
+        value={typeof value === "string" ? value : ""}
+        options={[
+          { value: "", label: t("ticket.field.noValue") },
+          ...field.options.map((option) => ({ value: option.id, label: option.name })),
+        ]}
+        {...(field.type === "multiselect"
+          ? {
+              selected: Array.isArray(value) ? value : [],
+              onToggle: (option: string) => {
+                const previous = Array.isArray(value) ? value : [];
+                onChange(
+                  option
+                    ? previous.includes(option)
+                      ? previous.filter((item) => item !== option)
+                      : [...previous, option]
+                    : [],
+                );
+              },
+            }
+          : {})}
+        onChange={(next) => onChange(next || null)}
+      />
+    );
+  return (
+    <Field
+      label={field.name}
+      value={typeof value === "string" || typeof value === "number" ? String(value) : ""}
+      keyboardType={field.type === "number" ? "decimal-pad" : "default"}
+      onChangeText={(next) => onChange(next === "" ? null : next)}
+    />
+  );
+}
+export function ErrorNotice({
+  error,
+  onRetry,
+  retrying = false,
+  background = false,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  retrying?: boolean;
+  background?: boolean;
+}) {
+  const color = usePalette(),
+    live = useContext(LiveStatus),
+    navigation = useContext(NavigationContext),
+    insideScreen = useContext(InsetsConsumed);
+  if (!error) return null;
+  if (background && live === "offline" && !(error instanceof ApiError && error.status < 500))
+    return null;
+  const message = (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginVertical: 12 }}>
+      <View style={{ paddingTop: 1 }}>
+        <DecorativeIcon
+          name="alert-circle-outline"
+          size={18}
+          color={background ? color.muted : color.danger}
+          accessible={false}
+        />
+      </View>
+      <Text
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={{
+          color: background ? color.muted : color.danger,
+          flexShrink: 1,
+          fontSize: 14,
+          lineHeight: 20,
+        }}
+      >
+        {errorMessage(error)}
+      </Text>
+    </View>
+  );
+  const notice = onRetry ? (
+    <View>
+      {message}
+      <Button plain title={t("common.action.retry")} disabled={retrying} onPress={onRetry} />
+      {retrying && <Loading />}
+    </View>
+  ) : (
+    message
+  );
+  return navigation && !insideScreen ? <Screen>{notice}</Screen> : notice;
+}
+export function Loading() {
+  const color = usePalette(),
+    navigation = useContext(NavigationContext),
+    insideScreen = useContext(InsetsConsumed);
+  const indicator = (
     <ActivityIndicator
       accessibilityLabel={t("native.ui.loading")}
       color={color.accent}
       style={{ margin: 24 }}
     />
   );
+  // Initial reads use the same screen boundary as their loaded content.
+  return navigation && !insideScreen ? <Screen>{indicator}</Screen> : indicator;
+}
+// Collections share one empty presentation; forms and reading screens retain their own content.
+export function EmptyState({
+  title,
+  icon = "ticket",
+  children,
+}: {
+  title: string;
+  icon?: string;
+  children?: ReactNode;
+}) {
+  const color = usePalette();
+  return (
+    <View
+      style={{
+        paddingHorizontal: 24,
+        paddingVertical: 48,
+        gap: 16,
+        alignItems: "center",
+        maxWidth: 420,
+        width: "100%",
+        alignSelf: "center",
+      }}
+    >
+      <View
+        accessible={false}
+        style={{
+          width: 60,
+          height: 60,
+          borderRadius: 18,
+          backgroundColor: color.accentSurface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <TicketGlyph name={icon} size={30} color={color.accent} weight={1.5} />
+      </View>
+      <Heading align="center">{title}</Heading>
+      {children}
+    </View>
+  );
 }
 export function Body({
   children,
   muted = false,
   small = false,
+  accessibilityLabel,
 }: {
   children: ReactNode;
   muted?: boolean;
   small?: boolean;
+  accessibilityLabel?: string;
 }) {
   const color = usePalette();
   return (
     <Text
+      accessibilityLabel={accessibilityLabel}
       style={{
         color: muted ? color.muted : color.foreground,
         lineHeight: small ? 20 : 24,
@@ -322,27 +1596,189 @@ export function Body({
     </Text>
   );
 }
-export function Heading({ children }: { children: ReactNode }) {
-  const color = usePalette();
-  return (
-    <Text accessibilityRole="header" style={[styles.heading, { color: color.foreground }]}>
+export function Heading({
+  children,
+  compact = false,
+  disclosure,
+  leading,
+  count,
+  sticky = false,
+  align = "auto",
+}: {
+  children: ReactNode;
+  compact?: boolean;
+  leading?: ReactNode;
+  count?: number;
+  sticky?: boolean;
+  align?: "auto" | "center";
+  disclosure?: {
+    expanded: boolean;
+    count?: number;
+    countLabel?: string;
+    leading?: ReactNode;
+    label: string;
+    onPress: () => void;
+  };
+}) {
+  const color = usePalette(),
+    padded = useContext(PaddedContent),
+    sidebar = useContext(SidebarSurface);
+  const title = (
+    <Text
+      accessibilityRole="header"
+      style={[
+        styles.heading,
+        { color: compact && !disclosure ? color.muted : color.foreground, textAlign: align },
+        compact && { fontSize: 13, lineHeight: 20, letterSpacing: 0, fontWeight: "600" },
+      ]}
+    >
       {children}
     </Text>
   );
+  return disclosure ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={disclosure.label}
+      accessibilityState={{ expanded: disclosure.expanded }}
+      {...(disclosure.count === undefined
+        ? {}
+        : {
+            accessibilityValue: {
+              text: disclosure.countLabel ?? t("ticket.list.count", { count: disclosure.count }),
+            },
+          })}
+      onPress={disclosure.onPress}
+      style={({ pressed }) => ({
+        minHeight: 44,
+        paddingHorizontal: padded ? 0 : 20,
+        paddingVertical: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        backgroundColor: pressed
+          ? color.accentSurface
+          : sticky
+            ? sidebar
+              ? color.sidebar
+              : color.surface
+            : "transparent",
+      })}
+    >
+      {disclosure.leading}
+      <View style={{ flexShrink: 1, minWidth: 0 }}>{title}</View>
+      {disclosure.count !== undefined && (
+        <Text style={{ color: color.muted, fontSize: 12, fontVariant: ["tabular-nums"] }}>
+          {formatNumber(disclosure.count)}
+        </Text>
+      )}
+      <View style={{ flex: 1 }} />
+      <DecorativeIcon
+        name={
+          disclosure.expanded
+            ? "chevron-down"
+            : I18nManager.isRTL
+              ? "chevron-back"
+              : "chevron-forward"
+        }
+        size={14}
+        color={color.muted}
+        accessible={false}
+      />
+    </Pressable>
+  ) : leading || count !== undefined ? (
+    <View
+      accessible
+      accessibilityRole="header"
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}
+    >
+      {leading}
+      <View style={{ flex: 1 }}>{title}</View>
+      {count !== undefined && (
+        <Text style={{ color: color.muted, fontSize: 12 }}>{formatNumber(count)}</Text>
+      )}
+    </View>
+  ) : (
+    title
+  );
 }
-export function Section({ title, children }: { title: string; children: ReactNode }) {
-  const color = usePalette();
+export function Section({
+  title,
+  children,
+  collapsible = false,
+  initiallyOpen = false,
+  summary,
+  count,
+  countLabel,
+  action,
+}: {
+  title?: string;
+  children: ReactNode;
+  count?: number | undefined;
+  countLabel?: string;
+  action?: ReactNode;
+  collapsible?: boolean;
+  initiallyOpen?: boolean;
+  summary?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(initiallyOpen);
+  const color = usePalette(),
+    groupedSurface = useContext(GroupedSurface),
+    insideGroup = useContext(InsideGroupedSection),
+    grouped = groupedSurface && !insideGroup;
   return (
     <View
       style={{
-        borderTopWidth: StyleSheet.hairlineWidth,
-        borderColor: color.line,
-        paddingVertical: 26,
-        gap: 14,
+        paddingTop: insideGroup ? 8 : 12,
+        gap: 8,
       }}
     >
-      <Heading>{title}</Heading>
-      {children}
+      {title && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Heading
+              compact
+              {...(!collapsible && count !== undefined ? { count } : {})}
+              {...(collapsible
+                ? {
+                    disclosure: {
+                      expanded,
+                      ...(count === undefined
+                        ? {}
+                        : { count, countLabel: countLabel ?? formatNumber(count) }),
+                      label: t(expanded ? "shell.ui.hideValue" : "shell.ui.showValue", {
+                        label: title,
+                      }),
+                      onPress: () => setExpanded((value) => !value),
+                    },
+                  }
+                : {})}
+            >
+              {title}
+            </Heading>
+          </View>
+          {action}
+        </View>
+      )}
+      {(!title || !collapsible || expanded || !!summary) && (
+        <InsideGroupedSection value={grouped || insideGroup}>
+          <View
+            style={
+              grouped
+                ? {
+                    backgroundColor: color.surface,
+                    borderRadius: 12,
+                    paddingHorizontal: 14,
+                    paddingVertical: 0,
+                    gap: 0,
+                    overflow: "hidden",
+                  }
+                : { gap: 8 }
+            }
+          >
+            {!collapsible || expanded ? children : summary}
+          </View>
+        </InsideGroupedSection>
+      )}
     </View>
   );
 }
@@ -350,34 +1786,369 @@ export function Screen({
   children,
   scroll = true,
   style,
+  form = false,
+  background,
+  safeArea = true,
+  allowDivision = false,
+  scrollRef,
+  header,
+  scrollInsets = scroll,
+  grouped,
+  connectionStatus = true,
 }: {
   children: ReactNode;
   scroll?: boolean;
   style?: StyleProp<ViewStyle>;
+  form?: boolean;
+  background?: string | null;
+  safeArea?: boolean;
+  allowDivision?: boolean;
+  scrollRef?: ComponentProps<typeof ScrollView>["ref"];
+  header?: ReactNode;
+  scrollInsets?: boolean;
+  grouped?: boolean;
+  connectionStatus?: boolean;
 }) {
-  const color = usePalette();
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
-      style={[{ flex: 1, backgroundColor: color.surface }, style]}
+  const color = usePalette(),
+    live = useContext(LiveStatus),
+    boundary = !useContext(InsetsConsumed),
+    sidebarSurface = useContext(SidebarSurface);
+  const navigation = useContext(NavigationContext),
+    headerHeight = useContext(HeaderHeightContext) ?? 0,
+    inheritedScrollInset = useContext(ScrollHeaderInset),
+    inheritedHeader = useContext(ScrollingHeader),
+    inheritedEdges = useContext(ScrollEdgeAttachment),
+    inheritedGroup = useContext(InsideGroupedSection),
+    inheritedGrouped = useContext(GroupedSurface),
+    groupedSurface = grouped ?? inheritedGrouped;
+  const ios = Platform.OS === "ios",
+    modern = ios && Number.parseInt(String(Platform.Version), 10) >= 26;
+  const nativeScroll = !!navigation && ios && (allowDivision || (scrollInsets && !background));
+  const transparentHeader = !!navigation && ios && (modern || nativeScroll);
+  const edgeFrame = useRef<number | undefined>(undefined);
+  const attachEdges = useCallback(() => {
+    if (!navigation || !nativeScroll || !modern) return;
+    if (edgeFrame.current !== undefined) cancelAnimationFrame(edgeFrame.current);
+    navigation.setOptions({ scrollEdgeEffects: { top: "automatic", bottom: "automatic" } });
+    edgeFrame.current = requestAnimationFrame(() => {
+      navigation.setOptions({ scrollEdgeEffects: { top: "soft", bottom: "soft" } });
+    });
+  }, [navigation, nativeScroll, modern]);
+  useEffect(
+    () => () => {
+      if (edgeFrame.current !== undefined) cancelAnimationFrame(edgeFrame.current);
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    if (!navigation || !boundary || !ios) return;
+    navigation.setOptions(
+      nativeHeaderOptions({
+        headerTransparent: transparentHeader,
+        headerStyle: { backgroundColor: transparentHeader ? "transparent" : color.surface },
+        headerBlurEffect: nativeScroll && !modern ? "systemMaterial" : "none",
+      }),
+    );
+  }, [navigation, boundary, ios, nativeScroll, transparentHeader, modern, color.surface]);
+  const status =
+    connectionStatus && boundary && (live === "offline" || live === "signedOut") ? (
+      <View style={{ paddingHorizontal: 16, paddingVertical: 6 }} accessibilityLiveRegion="polite">
+        <Body small muted>
+          {t(`native.connection.${live}`)}
+        </Body>
+      </View>
+    ) : null;
+  const top =
+    status || header || (!boundary && inheritedHeader) ? (
+      <>
+        {!boundary && inheritedHeader}
+        {status}
+        {header}
+      </>
+    ) : null;
+  const content = (
+    <View
+      collapsable={false}
+      style={[
+        {
+          flex: 1,
+          backgroundColor: sidebarSurface
+            ? color.sidebar
+            : groupedSurface
+              ? color.background
+              : color.surface,
+        },
+        style,
+      ]}
     >
-      {scroll ? (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          contentContainerStyle={{ padding: 22, paddingBottom: 48, gap: 16 }}
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        children
+      {background && (
+        <AccountImage uri={background} style={[StyleSheet.absoluteFill, { opacity: 0.08 }]} />
       )}
-    </KeyboardAvoidingView>
+      <ScrollHeaderInset
+        value={boundary ? (nativeScroll ? headerHeight : 0) : inheritedScrollInset}
+      >
+        <ContentArea
+          enabled={!!navigation && safeArea}
+          allowDivision={allowDivision}
+          scrollInsets={nativeScroll}
+        >
+          <InsideGroupedSection value={boundary ? false : inheritedGroup}>
+            <GroupedSurface value={groupedSurface}>
+              <ScrollEdgeAttachment value={boundary ? attachEdges : inheritedEdges}>
+                <ScrollingHeader value={top}>
+                  <PaddedContent value={scroll}>
+                    {scroll ? (
+                      <Scroll
+                        ref={scrollRef}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
+                        contentContainerStyle={{
+                          paddingHorizontal: 16,
+                          paddingTop: 12,
+                          paddingBottom: 40,
+                          gap: 12,
+                          width: "100%",
+                          maxWidth: navigation ? 720 : 560,
+                          alignSelf: "center",
+                        }}
+                      >
+                        {children}
+                      </Scroll>
+                    ) : (
+                      children
+                    )}
+                  </PaddedContent>
+                </ScrollingHeader>
+              </ScrollEdgeAttachment>
+            </GroupedSurface>
+          </InsideGroupedSection>
+        </ContentArea>
+      </ScrollHeaderInset>
+    </View>
+  );
+  return form ? <NativeForm>{content}</NativeForm> : content;
+}
+// Screen's scrolling primitive also serves layouts that own their scrolling content.
+export function Scroll({ children, ...props }: ComponentProps<typeof ScrollView>) {
+  const header = useContext(ScrollingHeader);
+  const insets = useScrollInsets(props.horizontal);
+  const style = StyleSheet.flatten(props.contentContainerStyle);
+  const gap = style?.rowGap ?? style?.gap ?? 0;
+  const clearance = Math.max(0, insets.top - (typeof gap === "number" ? gap : 0));
+  const onLayout = useScrollEdgeAttachment(props.horizontal ? undefined : props.onLayout);
+  return (
+    <ScrollView
+      {...scrollInsetsDefaults}
+      {...props}
+      {...insets.props}
+      onLayout={props.horizontal ? props.onLayout : onLayout}
+    >
+      <ScrollingHeader value={props.horizontal ? header : null}>
+        {insets.top > 0 && <View style={{ height: clearance }} />}
+        {!props.horizontal && header}
+        {children}
+      </ScrollingHeader>
+    </ScrollView>
   );
 }
-export function List<T>(props: LegendListProps<T>) {
-  return <LegendList recycleItems keyboardDismissMode="interactive" {...props} />;
+function NativeForm({ children }: { children: ReactNode }) {
+  const navigation = useNavigation(),
+    color = usePalette(),
+    [submit, setSubmit] = useState<ButtonAction>();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: createHeaderFallback(submit, color.accent),
+      unstable_headerRightItems: () =>
+        submit
+          ? [
+              {
+                ...createHeaderAction(
+                  submit.title,
+                  submit.onPress,
+                  { type: "sfSymbol", name: "checkmark" },
+                  submit.disabled,
+                  { visibilityPriority: "high", identifier: "form-submit" },
+                ),
+                variant: "done",
+              },
+            ]
+          : [],
+    });
+  }, [navigation, submit, color.accent]);
+  return <FormAction value={setSubmit}>{children}</FormAction>;
+}
+export function Pager({
+  offset,
+  total,
+  limit = 25,
+  onChange,
+  noun,
+}: {
+  offset: number;
+  total: number | undefined;
+  limit?: number;
+  onChange: (offset: number) => void;
+  noun: string;
+}) {
+  if (!offset && (total === undefined || total <= limit)) return null;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        paddingVertical: 16,
+      }}
+    >
+      <Button
+        compact
+        title={t("shell.ui.previousPage", { noun })}
+        disabled={!offset}
+        onPress={() => onChange(Math.max(0, offset - limit))}
+      />
+      {total !== undefined && (
+        <Body small muted>
+          {t("shell.ui.pageRange", {
+            from: formatNumber(total ? offset + 1 : 0),
+            to: formatNumber(Math.min(total, offset + limit)),
+            total: formatNumber(total),
+          })}
+        </Body>
+      )}
+      <Button
+        compact
+        title={t("shell.ui.nextPage", { noun })}
+        disabled={total === undefined || offset + limit >= total}
+        onPress={() => onChange(offset + limit)}
+      />
+    </View>
+  );
+}
+export function List<T>({
+  onRefresh,
+  ...props
+}: Omit<LegendListProps<T>, "onRefresh" | "refreshing"> & {
+  onRefresh?: () => Promise<unknown>;
+}) {
+  const onLayout = useScrollEdgeAttachment(props.onLayout);
+  const headerInset = useContext(ScrollHeaderInset);
+  const insets = useScrollInsets(props.horizontal);
+  const list = useRef<LegendListRef>(null),
+    resetFrame = useRef<number | undefined>(undefined),
+    interacted = useRef(false),
+    collectionKey = useRef(props.dataKey);
+  const resetCollectionScroll = useCallback(() => {
+    if (props.dataKey === undefined || interacted.current) return;
+    if (resetFrame.current !== undefined) cancelAnimationFrame(resetFrame.current);
+    resetFrame.current = requestAnimationFrame(() => {
+      // UIKit's search/keyboard presentation can reset the raw offset to zero. Legend's
+      // public scrollToOffset and RN's default command both clamp against unadjusted
+      // contentInset. Permit the measured negative bar offset on replaceable collections;
+      // UIKit retains automatic keyboard and bottom-bar adjustment.
+      if (!interacted.current)
+        list.current
+          ?.getNativeScrollRef()
+          ?.scrollTo({ y: insets.manual ? 0 : -headerInset, animated: false });
+    });
+  }, [headerInset, props.dataKey, insets.manual]);
+  useLayoutEffect(() => {
+    if (collectionKey.current !== props.dataKey) {
+      interacted.current = false;
+      collectionKey.current = props.dataKey;
+    }
+  }, [props.dataKey]);
+  useLayoutEffect(resetCollectionScroll, [resetCollectionScroll]);
+  useEffect(() => {
+    if (props.dataKey === undefined || Platform.OS !== "ios") return undefined;
+    const keyboard = Keyboard.addListener("keyboardDidShow", resetCollectionScroll);
+    return () => keyboard.remove();
+  }, [props.dataKey, resetCollectionScroll]);
+  useEffect(
+    () => () => {
+      if (resetFrame.current !== undefined) cancelAnimationFrame(resetFrame.current);
+    },
+    [],
+  );
+  // Legend starts its animated offset at zero before UIKit supplies the adjusted inset.
+  // Attach sticky positioning after native scrolling begins so it cannot cover initial rows.
+  const [stickyReady, setStickyReady] = useState(false);
+  const [refreshing, setRefreshing] = useState(false),
+    header = useContext(ScrollingHeader);
+  const original = props.ListHeaderComponent;
+  const listHeader =
+    header || insets.top > 0 ? (
+      <>
+        {insets.top > 0 && <View style={{ height: insets.top }} />}
+        {header}
+        {isValidElement(original) ? original : original ? createElement(original) : null}
+      </>
+    ) : (
+      original
+    );
+  async function refresh() {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } catch {
+      /* The owning query renders the failure; this state tracks only the gesture. */
+    } finally {
+      setRefreshing(false);
+    }
+  }
+  return (
+    <ScrollingHeader value={null}>
+      <LegendList
+        recycleItems
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        {...scrollInsetsDefaults}
+        {...props}
+        {...insets.props}
+        ref={list}
+        {...(insets.manual ? { progressViewOffset: props.progressViewOffset ?? headerInset } : {})}
+        scrollToOverflowEnabled={
+          props.scrollToOverflowEnabled ?? (props.dataKey !== undefined && headerInset > 0)
+        }
+        onContentSizeChange={(width, height) => {
+          resetCollectionScroll();
+          props.onContentSizeChange?.(width, height);
+        }}
+        stickyHeaderIndices={stickyReady ? (props.stickyHeaderIndices ?? []) : []}
+        onScrollBeginDrag={(event) => {
+          interacted.current = true;
+          setStickyReady(true);
+          props.onScrollBeginDrag?.(event);
+        }}
+        onScroll={(event) => {
+          if (event.nativeEvent.contentOffset.y > 0) setStickyReady(true);
+          props.onScroll?.(event);
+        }}
+        {...(props.stickyHeaderIndices?.length
+          ? {
+              stickyHeaderConfig: {
+                ...props.stickyHeaderConfig,
+                offset: props.stickyHeaderConfig?.offset ?? headerInset,
+              },
+            }
+          : {})}
+        onLayout={onLayout}
+        ListHeaderComponent={listHeader}
+        // Recycled rows memoize data; renderer state also owns selection and active styling.
+        extraData={props.extraData ?? props.renderItem}
+        refreshing={refreshing}
+        {...(onRefresh
+          ? {
+              onRefresh: () => {
+                void refresh();
+              },
+            }
+          : {})}
+      />
+    </ScrollingHeader>
+  );
 }
 export function Row({
   title,
@@ -387,6 +2158,18 @@ export function Row({
   overline,
   metadata,
   onPress,
+  onLongPress,
+  selected,
+  active = false,
+  dense = false,
+  compact = false,
+  disabled = false,
+  accessibilityLabel,
+  style,
+  interaction = "navigate",
+  emphasized = false,
+  captionLines,
+  sidebar = false,
 }: {
   title: string;
   caption?: string;
@@ -395,81 +2178,547 @@ export function Row({
   overline?: string;
   metadata?: ReactNode;
   onPress: () => void;
+  onLongPress?: (() => void) | undefined;
+  selected?: boolean | undefined;
+  active?: boolean;
+  dense?: boolean;
+  compact?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>;
+  interaction?: "navigate" | "choice" | "action" | "content";
+  emphasized?: boolean;
+  captionLines?: number;
+  sidebar?: boolean;
 }) {
   const color = usePalette();
+  const suppliedPadding = StyleSheet.flatten(style)?.paddingVertical;
+  const verticalPadding =
+    typeof suppliedPadding === "number" ? suppliedPadding : compact || dense ? 10 : 12;
+  const padded = useContext(PaddedContent),
+    grouped = useContext(InsideGroupedSection);
+  const highlightInset = sidebar ? 0 : grouped ? -6 : padded || compact ? -8 : 6;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{
+        ...(selected !== undefined || active ? { selected: selected ?? active } : {}),
+        disabled,
+      }}
+      disabled={disabled}
+      hitSlop={highlightInset < 0 ? { left: -highlightInset, right: -highlightInset } : undefined}
+      onLongPress={onLongPress}
       onPress={() => {
         Keyboard.dismiss();
         onPress();
       }}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 22,
-        paddingHorizontal: 20,
-        gap: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderColor: color.line,
-        backgroundColor: pressed ? color.accentSurface : color.surface,
-      })}
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          minHeight: grouped ? 52 : 44,
+          paddingVertical: verticalPadding,
+          paddingHorizontal: sidebar ? 12 : compact || padded ? 0 : 16,
+          gap: 12,
+          opacity: disabled ? 0.45 : 1,
+        },
+        style,
+      ]}
     >
-      {leading}
-      <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-        {overline && (
-          <Text
+      {({ pressed }) => (
+        <>
+          <View
+            pointerEvents="none"
             style={{
-              color: color.muted,
-              fontSize: 12,
-              fontWeight: "500",
-              fontVariant: ["tabular-nums"],
+              position: "absolute",
+              start: highlightInset,
+              end: highlightInset,
+              top: 3,
+              bottom: 3,
+              borderRadius: 10,
+              backgroundColor: sidebar
+                ? active
+                  ? color.accentSurface
+                  : pressed
+                    ? color.selection
+                    : "transparent"
+                : selected || active || pressed
+                  ? color.accentSurface
+                  : "transparent",
             }}
-          >
-            {overline}
-          </Text>
-        )}
-        <Text
-          style={{
-            color: color.foreground,
-            fontSize: 17,
-            fontWeight: "600",
-            lineHeight: 25,
-            letterSpacing: -0.2,
-          }}
-        >
-          {title}
-        </Text>
-        {caption && (
-          <Text style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}>{caption}</Text>
-        )}
-        {metadata && <View style={[styles.actions, { marginTop: 3 }]}>{metadata}</View>}
-      </View>
-      {trailing ?? <Ionicons name="chevron-forward" size={16} color={color.muted} />}
+          />
+          {leading}
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            {!sidebar && !active && !selected && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  start: 0,
+                  end: 0,
+                  bottom: -verticalPadding,
+                  height: StyleSheet.hairlineWidth,
+                  backgroundColor: color.line,
+                }}
+              />
+            )}
+            {overline && (
+              <Text
+                style={{
+                  color: color.muted,
+                  fontSize: 12,
+                  fontWeight: "500",
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {overline}
+              </Text>
+            )}
+            <Text
+              style={{
+                color: sidebar ? color.sidebarForeground : color.foreground,
+                fontSize: compact && !grouped ? 15 : 16,
+                fontWeight: emphasized || active || selected ? "600" : grouped ? "400" : "500",
+                lineHeight: grouped ? 22 : 23,
+                letterSpacing: -0.2,
+              }}
+            >
+              {title}
+            </Text>
+            {caption && (
+              <Text
+                numberOfLines={captionLines}
+                style={{
+                  color: color.muted,
+                  fontSize: 13,
+                  lineHeight: 18,
+                }}
+              >
+                {caption}
+              </Text>
+            )}
+            {metadata && (
+              <View style={[styles.actions, { columnGap: 10, rowGap: 2 }]}>{metadata}</View>
+            )}
+          </View>
+          {trailing ??
+            ((selected || interaction === "navigate") && (
+              <DecorativeIcon
+                name={
+                  selected ? "checkmark" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"
+                }
+                size={16}
+                color={selected ? color.accent : color.muted}
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              />
+            ))}
+        </>
+      )}
     </Pressable>
   );
 }
-// A ticket's workflow state, tinted by its category. Older servers show the canonical status.
-export function Status({ ticket }: { ticket: Pick<Ticket, "projectId" | "status" | "stateId"> }) {
+export function TicketRow({
+  ticket,
+  onPress,
+  onLongPress,
+  selected,
+  active = false,
+  showStatus = true,
+  selecting = false,
+  showProject = false,
+  density = "compact",
+}: {
+  ticket: Pick<Ticket, "id" | "projectId" | "key" | "title" | "status"> & Partial<Ticket>;
+  onPress: () => void;
+  onLongPress?: (() => void) | undefined;
+  selected?: boolean | undefined;
+  active?: boolean;
+  showStatus?: boolean;
+  selecting?: boolean;
+  showProject?: boolean;
+  density?: "standard" | "compact" | "schedule";
+}) {
+  const schedule = density === "schedule";
   const color = usePalette(),
-    { api } = useConnection();
-  const workflow = useQuery({
-    ...api.query("list_workflow_states", { projectId: ticket.projectId }),
-    select: presentWorkflow,
-    enabled: !!ticket.stateId,
-  });
-  const name = workflow.data?.find((state) => state.id === ticket.stateId)?.name;
+    projects = useAllProjects(),
+    now = useNow();
+  const project = showProject
+    ? projects.data?.find((item) => item.id === ticket.projectId)
+    : undefined;
+  const overdue =
+    !!ticket.dueAt &&
+    new Date(ticket.dueAt).getTime() < now &&
+    !["done", "cancelled"].includes(ticket.status);
+  const catalog = useTicketCatalog(ticket.projectId, ticket.stateId, ticket.assigneeId);
+  const spoken = formatList([
+    ticket.key,
+    ticket.title,
+    propertyDescription(
+      { property: "status", value: ticket.status, stateId: ticket.stateId },
+      catalog,
+    ),
+    ...(ticket.priority === undefined
+      ? []
+      : [propertyDescription({ property: "priority", value: ticket.priority }, catalog)]),
+    ...(ticket.kind === undefined
+      ? []
+      : [propertyDescription({ property: "kind", value: ticket.kind }, catalog)]),
+    ...(ticket.difficulty === undefined
+      ? []
+      : [propertyDescription({ property: "difficulty", value: ticket.difficulty }, catalog)]),
+    ...(ticket.assigneeId === undefined
+      ? []
+      : [propertyDescription({ property: "assignee", value: ticket.assigneeId }, catalog)]),
+    ...(ticket.labels?.length
+      ? [
+          t("ticket.tags.summary", {
+            label: t("ticket.tags.labels"),
+            tags: formatList(ticket.labels),
+          }),
+        ]
+      : []),
+    ...(ticket.scopes?.length
+      ? [
+          t("ticket.tags.summary", {
+            label: t("ticket.tags.scopes"),
+            tags: formatList(ticket.scopes),
+          }),
+        ]
+      : []),
+    ...(ticket.startAt || ticket.dueAt ? [ticketScheduleText(ticket)] : []),
+  ]);
   return (
-    <Text
+    <Row
+      title={ticket.title}
+      accessibilityLabel={spoken}
+      dense
+      style={schedule ? { paddingVertical: 8, paddingHorizontal: 12 } : undefined}
+      active={active}
+      leading={
+        !showStatus ? (
+          <View style={{ alignSelf: "flex-start", paddingTop: 3 }}>
+            <PropertyValue
+              projectId={ticket.projectId}
+              property="status"
+              value={ticket.status}
+              stateId={ticket.stateId ?? null}
+              iconOnly
+            />
+          </View>
+        ) : undefined
+      }
+      trailing={
+        selecting ? (
+          <DecorativeIcon
+            name={selected ? "checkmark-circle" : "ellipse-outline"}
+            size={22}
+            color={selected ? color.accent : color.muted}
+          />
+        ) : (
+          false
+        )
+      }
+      metadata={
+        <TicketTags
+          projectId={ticket.projectId}
+          tags={ticket.labels ?? []}
+          scopes={ticket.scopes ?? []}
+          preview={density !== "standard"}
+          prefix={
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                alignItems: "center",
+                columnGap: schedule ? 6 : 10,
+                rowGap: 4,
+              }}
+            >
+              {project && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <ProjectIcon project={project} size={14} />
+                  <Body muted small>
+                    {project.name}
+                  </Body>
+                </View>
+              )}
+              <Body muted small>
+                {ticket.key}
+              </Body>
+              {showStatus && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="status"
+                  value={ticket.status}
+                  stateId={ticket.stateId ?? null}
+                  iconOnly
+                />
+              )}
+              {ticket.priority !== undefined && ticket.priority !== "none" && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="priority"
+                  value={ticket.priority}
+                  iconOnly
+                />
+              )}
+              {!schedule && ticket.kind !== undefined && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="kind"
+                  value={ticket.kind}
+                  iconOnly
+                />
+              )}
+              {density === "standard" && ticket.difficulty && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="difficulty"
+                  value={ticket.difficulty}
+                  iconOnly
+                />
+              )}
+              {ticket.assigneeId && (
+                <PropertyValue
+                  projectId={ticket.projectId}
+                  property="assignee"
+                  value={ticket.assigneeId ?? null}
+                  iconOnly
+                />
+              )}
+              {!schedule && (ticket.dueAt || ticket.startAt) && (
+                <View
+                  accessible
+                  accessibilityLabel={
+                    ticket.dueAt
+                      ? t("native.ticket.due", { date: formatDate(ticket.dueAt) })
+                      : t("native.ticket.starts", { date: formatDate(ticket.startAt ?? "") })
+                  }
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <TicketGlyph
+                    name="calendar-clock"
+                    color={overdue ? color.danger : color.muted}
+                    size={14}
+                  />
+                  <Text style={{ color: overdue ? color.danger : color.muted, fontSize: 12 }}>
+                    {formatDate(ticket.dueAt ?? ticket.startAt ?? "", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </Text>
+                </View>
+              )}
+            </View>
+          }
+        />
+      }
+      onPress={onPress}
+      onLongPress={onLongPress}
+      selected={selected}
+    />
+  );
+}
+
+// Ticket surfaces share a single wrapping label/scope flow.
+export function TicketTags({
+  projectId,
+  tags,
+  scopes = [],
+  preview = false,
+  prefix,
+}: {
+  projectId: string;
+  tags: string[];
+  scopes?: string[];
+  preview?: boolean;
+  prefix?: ReactNode;
+}) {
+  const { api } = useConnection(),
+    color = usePalette(),
+    { fontScale } = useWindowDimensions();
+  const catalog = useQuery({
+    ...api.query("list_project_labels", { projectId }),
+    enabled: tags.length > 0,
+  });
+  const [available, setAvailable] = useState(0),
+    [prefixWidth, setPrefixWidth] = useState(0),
+    [widths, setWidths] = useState<Record<string, number>>({});
+  const items = [
+    ...tags.map((tag) => ({ tag, kind: "label" as const })),
+    ...scopes.map((tag) => ({ tag, kind: "scope" as const })),
+  ];
+  const keyOf = (item: { tag: string; kind: string }) => `${fontScale}:${item.kind}:${item.tag}`;
+  const overflowKey = `${fontScale}:overflow:${items.length}`;
+  const measured =
+    items.every((item) => widths[keyOf(item)] !== undefined) && widths[overflowKey] !== undefined;
+  const count = !preview
+    ? items.length
+    : measured
+      ? inlineItemCount(
+          items.map((item) => widths[keyOf(item)] ?? 0),
+          Math.max(0, available - (prefix ? prefixWidth + 5 : 0)),
+          widths[overflowKey] ?? 0,
+        )
+      : 0;
+  const label = formatList([
+    ...(tags.length
+      ? [t("ticket.tags.summary", { label: t("ticket.tags.labels"), tags: formatList(tags) })]
+      : []),
+    ...(scopes.length
+      ? [t("ticket.tags.summary", { label: t("ticket.tags.scopes"), tags: formatList(scopes) })]
+      : []),
+  ]);
+  function measure(key: string, width: number) {
+    setWidths((previous) => (previous[key] === width ? previous : { ...previous, [key]: width }));
+  }
+  const chip = (item: { tag: string; kind: "label" | "scope" }, measuring = false) => (
+    <TicketTag
+      key={keyOf(item)}
+      tag={item.tag}
+      kind={item.kind}
+      plain={preview}
+      color={catalog.data?.find((entry) => entry.name === item.tag)?.color ?? "gray"}
+      {...(measuring
+        ? { onLayout: (event) => measure(keyOf(item), event.nativeEvent.layout.width) }
+        : {})}
+    />
+  );
+  if (!items.length && !prefix) return null;
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      onLayout={preview ? (event) => setAvailable(event.nativeEvent.layout.width) : undefined}
+      style={[
+        { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5 },
+        preview && { width: "100%", minHeight: 22 },
+      ]}
+    >
+      {prefix && (
+        <View
+          style={{ maxWidth: "100%" }}
+          onLayout={(event) => setPrefixWidth(event.nativeEvent.layout.width)}
+        >
+          {prefix}
+        </View>
+      )}
+      {items.slice(0, count).map((item) => chip(item))}
+      {count < items.length && (
+        <Text
+          style={{ color: color.muted, fontSize: 12, lineHeight: 18 }}
+        >{`+${formatNumber(items.length - count)}`}</Text>
+      )}
+      {preview && (
+        <View
+          pointerEvents="none"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            start: 0,
+            top: 0,
+            width: "100%",
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 5,
+            opacity: 0,
+          }}
+        >
+          {items.map((item) => chip(item, true))}
+          <Text
+            onLayout={(event) => measure(overflowKey, event.nativeEvent.layout.width)}
+            style={{ fontSize: 12, lineHeight: 18 }}
+          >{`+${formatNumber(items.length)}`}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+export function RemovableSummary({
+  value,
+  label,
+  icon = "search",
+  onClear,
+}: {
+  value: string;
+  label: string;
+  icon?: ComponentProps<typeof Ionicons>["name"];
+  onClear: () => void;
+}) {
+  const color = usePalette();
+  return value.trim() ? (
+    <Row
+      title={value}
+      dense
+      accessibilityLabel={t("native.labelValue", {
+        label,
+        value,
+      })}
+      leading={<DecorativeIcon name={icon} size={16} color={color.muted} accessible={false} />}
+      trailing={
+        <DecorativeIcon name="close-circle" size={18} color={color.muted} accessible={false} />
+      }
+      onPress={onClear}
+    />
+  ) : null;
+}
+
+export function ContextBar({ children }: { children: ReactNode }) {
+  const padded = useContext(PaddedContent);
+  return (
+    <View
       style={{
-        color: color[stateTones[ticket.status]],
-        fontSize: 13,
-        fontWeight: "500",
-        lineHeight: 20,
+        paddingHorizontal: padded ? 0 : 16,
+        paddingVertical: 4,
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 4,
       }}
     >
-      ● {name ?? stateLabels[ticket.status]}
-    </Text>
+      {children}
+    </View>
+  );
+}
+export function WorkspaceScope({ children }: { children?: ReactNode }) {
+  const { active, workspaces } = useWorkspace(),
+    { selectWorkspace } = useProjectNavigation(),
+    color = usePalette();
+  return (
+    <ContextBar>
+      <Choice
+        compact
+        disclosure
+        label={t("shell.workspace.switch")}
+        value={active?.id ?? ""}
+        emptyLabel={t("shell.app.noWorkspaceSelected")}
+        options={workspaces.map((space) => ({
+          value: space.id,
+          label: space.name,
+          leading: <TicketGlyph name="building-2" size={16} color={color.muted} />,
+          symbol: "building-2",
+        }))}
+        onChange={selectWorkspace}
+      />
+      {children}
+    </ContextBar>
+  );
+}
+// Compatibility entrypoint for relationships and schedules, using the common property renderer.
+export function Status({ ticket }: { ticket: Pick<Ticket, "projectId" | "status" | "stateId"> }) {
+  return (
+    <PropertyValue
+      projectId={ticket.projectId}
+      property="status"
+      value={ticket.status}
+      stateId={ticket.stateId}
+    />
   );
 }
 // A mention has nothing to open, so it reads as emphasized "@Name" text instead of a link.
@@ -499,13 +2748,21 @@ export function Markdown({ children }: { children: string }) {
     colorScheme: colorScheme === "dark" ? "dark" : "light",
     theme,
     renderer: markdownRenderer,
+    styles: {
+      text: { fontSize: 16, lineHeight: 24 },
+      h1: { fontSize: 22, lineHeight: 29 },
+      h2: { fontSize: 20, lineHeight: 27 },
+      h3: { fontSize: 18, lineHeight: 25 },
+      h4: { fontSize: 16, lineHeight: 23 },
+    },
   });
   return <View>{elements}</View>;
 }
 export const styles = StyleSheet.create({
   button: {
     minHeight: 44,
-    borderWidth: 1,
+    minWidth: 44,
+    borderWidth: 0,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -514,8 +2771,15 @@ export const styles = StyleSheet.create({
   },
   field: { gap: 8 },
   label: { fontSize: 13, fontWeight: "500" },
-  input: { borderWidth: 1, borderRadius: 10, padding: 14, minHeight: 48, fontSize: 16 },
-  heading: { fontSize: 21, fontWeight: "600", letterSpacing: -0.4 },
+  input: {
+    borderWidth: 0,
+    borderRadius: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+    minHeight: 48,
+    fontSize: 16,
+  },
+  heading: { fontSize: 21, lineHeight: 28, fontWeight: "600", letterSpacing: -0.4 },
   check: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: 10 },
   modal: { flex: 1, justifyContent: "flex-end" },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

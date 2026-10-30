@@ -4,13 +4,13 @@ import {
   relationChoices,
   parseRelationChoice,
 } from "@kanvil/contracts";
-import { t } from "@kanvil/contracts/i18n";
+import { t, formatRelativeTime } from "@kanvil/contracts/i18n";
 import { useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
 import { memberName, type Ticket, type Output } from "@kanvil/contracts";
-import { useConnection, useIdentity, useOperation } from "./data.tsx";
+import { useConnection, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
 import {
   Body,
   Button,
@@ -21,8 +21,14 @@ import {
   Section,
   Sheet,
   Row,
-  Status,
+  TicketRow,
   styles,
+  Pager,
+  MarkdownField,
+  Menu,
+  TicketGlyph,
+  UserAvatar,
+  usePalette,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -31,8 +37,10 @@ export function Relations({
   navigation,
 }: {
   ticket: Ticket;
-  navigation: ScreenProps<"Ticket">["navigation"];
+  navigation: Pick<ScreenProps<"Ticket">["navigation"], "navigate" | "push">;
 }) {
+  const access = useProjectAccess(ticket.projectId),
+    color = usePalette();
   const { api } = useConnection(),
     [open, setOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -58,13 +66,24 @@ export function Relations({
   const relations = useQuery(
       api.query("list_relations", { projectId: ticket.projectId, ticketId: ticket.id }),
     ),
-    matches = useQuery(
-      api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
-    );
+    matches = useQuery({
+      ...api.query("list_tickets", { projectId: ticket.projectId, q: query, limit: 30 }),
+      enabled: open && access.canWrite,
+    });
   const add = useOperation("add_relation"),
     remove = useOperation("remove_relation");
   return (
-    <Section title={t("native.relations.title")}>
+    <Section
+      title={t("native.relations.title")}
+      count={
+        (relations.data?.length ?? 0) + (children.data?.total ?? 0) + (ticket.parentId ? 1 : 0)
+      }
+      action={
+        access.canWrite && (
+          <Button compact plain title={t("native.relations.add")} onPress={() => setOpen(true)} />
+        )
+      }
+    >
       {ticket.parentId && (
         <Button
           title={
@@ -84,10 +103,9 @@ export function Relations({
         <>
           <Body>{t("native.relations.children")}</Body>
           {children.data.items.map((child) => (
-            <Row
+            <TicketRow
               key={child.id}
-              title={`${child.key} · ${child.title}`}
-              trailing={<Status ticket={child} />}
+              ticket={child}
               onPress={() =>
                 navigation.push("Ticket", { projectId: ticket.projectId, ticketId: child.id })
               }
@@ -112,37 +130,50 @@ export function Relations({
       {relations.data?.map((relation) => {
         const reference = relationReference(relation, ticket.id);
         return (
-          <View key={relation.id} style={{ gap: 8 }}>
-            <Button
-              title={`${reference.label} · ${reference.title}`}
-              disabled={reference.restricted}
-              onPress={() =>
-                navigation.push("Ticket", {
-                  projectId: reference.projectId ?? ticket.projectId,
-                  ticketId: reference.id,
-                })
-              }
-            />
-            <Button
-              title={t("native.relations.remove")}
-              onPress={() =>
-                Alert.alert(t("native.relations.removeTitle"), "", [
-                  { text: t("common.action.cancel"), style: "cancel" },
-                  {
-                    text: t("common.action.remove"),
-                    style: "destructive",
-                    onPress: () =>
-                      remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
-                  },
-                ])
-              }
-            />
-          </View>
+          <Row
+            key={relation.id}
+            overline={reference.label}
+            title={reference.title}
+            disabled={reference.restricted}
+            onPress={() =>
+              navigation.push("Ticket", {
+                projectId: reference.projectId ?? ticket.projectId,
+                ticketId: reference.id,
+              })
+            }
+            trailing={
+              access.canWrite ? (
+                <Button
+                  compact
+                  plain
+                  title=""
+                  accessibilityLabel={t("native.relations.remove")}
+                  leading={<TicketGlyph name="x" color={color.muted} size={18} />}
+                  onPress={() =>
+                    Alert.alert(t("native.relations.removeTitle"), "", [
+                      { text: t("common.action.cancel"), style: "cancel" },
+                      {
+                        text: t("common.action.remove"),
+                        style: "destructive",
+                        onPress: () =>
+                          remove.mutate({ projectId: ticket.projectId, relationId: relation.id }),
+                      },
+                    ])
+                  }
+                />
+              ) : (
+                <View />
+              )
+            }
+          />
         );
       })}
-      <Button title={t("native.relations.add")} onPress={() => setOpen(true)} />
       <ErrorNotice error={relations.error ?? remove.error ?? parent.error ?? children.error} />
-      <Sheet title={t("native.relations.add")} open={open} onClose={() => setOpen(false)}>
+      <Sheet
+        title={t("native.relations.add")}
+        open={open && access.canWrite}
+        onClose={() => setOpen(false)}
+      >
         <Field label={t("native.relations.find")} value={query} onChangeText={setQuery} />
         <Choice
           label={t("native.relations.type")}
@@ -165,8 +196,9 @@ export function Relations({
         <Button
           title={t("common.action.add")}
           primary
-          disabled={!target || add.isPending}
+          disabled={!access.canWrite || !target || add.isPending}
           onPress={() => {
+            if (!access.canWrite) return;
             void add
               .mutateAsync({
                 projectId: ticket.projectId,
@@ -187,7 +219,9 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     identity = useIdentity(),
     [offset, setOffset] = useState(0),
     [body, setBody] = useState(""),
-    [error, setError] = useState<unknown>();
+    [error, setError] = useState<unknown>(),
+    [replying, setReplying] = useState(false);
+  const access = useProjectAccess(ticket.projectId);
   const key = `${prefix}:${identity.id}:comment:${ticket.id}`;
   const comments = useQuery(
       api.query("list_comments", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
@@ -205,51 +239,79 @@ export function Discussion({ ticket }: { ticket: Ticket }) {
     };
   }, [key]);
   return (
-    <Section title={t("native.discussion.title")}>
+    <Section
+      title={t("native.discussion.title")}
+      count={comments.data?.total}
+      action={
+        access.canWrite && (
+          <Button
+            compact
+            plain
+            title={t("native.discussion.submit")}
+            onPress={() => setReplying(true)}
+          />
+        )
+      }
+    >
+      <ErrorNotice
+        error={comments.error}
+        retrying={comments.isFetching}
+        onRetry={() => {
+          void comments.refetch();
+        }}
+      />
       {comments.data?.items.map((comment) => (
         <Comment key={comment.id} comment={comment} />
       ))}
-      <View style={styles.actions}>
-        <Button
-          title={t("native.discussion.previous")}
-          disabled={!offset}
-          onPress={() => setOffset(Math.max(0, offset - 50))}
-        />
-        <Button
-          title={t("native.discussion.next")}
-          disabled={offset + 50 >= (comments.data?.total ?? 0)}
-          onPress={() => setOffset(offset + 50)}
-        />
-      </View>
-      <Field
-        label={t("native.discussion.field")}
-        value={body}
-        onChangeText={(value) => {
-          setBody(value);
-          void AsyncStorage.setItem(key, value).catch(setError);
-        }}
-        multiline
-        maxLength={50000}
+      <Pager
+        offset={offset}
+        total={comments.data?.total}
+        limit={50}
+        noun={t("native.discussion.title")}
+        onChange={setOffset}
       />
-      <ErrorNotice error={error ?? comments.error ?? add.error} />
-      <Button
+      {body.trim() && (
+        <Body muted small>
+          {t("detail.editor.savedLocally")}
+        </Body>
+      )}
+      <Sheet
         title={t("native.discussion.submit")}
-        primary
-        disabled={!body.trim() || add.isPending}
-        onPress={() => {
-          void add
-            .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
-            .then(async () => {
-              setBody("");
-              await AsyncStorage.removeItem(key);
-            })
-            .catch(setError);
-        }}
-      />
+        open={replying}
+        onClose={() => setReplying(false)}
+      >
+        <MarkdownField
+          label={t("detail.discussion.comment")}
+          autoFocus
+          value={body}
+          onChangeText={(value) => {
+            setBody(value);
+            void AsyncStorage.setItem(key, value).catch(setError);
+          }}
+          maxLength={50000}
+        />
+        <ErrorNotice error={error ?? comments.error ?? add.error} />
+        <Button
+          title={t("native.discussion.submit")}
+          primary
+          disabled={!body.trim() || add.isPending}
+          onPress={() => {
+            void add
+              .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
+              .then(async () => {
+                setBody("");
+                await AsyncStorage.removeItem(key);
+                setReplying(false);
+              })
+              .catch(setError);
+          }}
+        />
+      </Sheet>
     </Section>
   );
 }
 function Comment({ comment }: { comment: Output<"list_comments">["items"][number] }) {
+  const color = usePalette();
   const identity = useIdentity(),
     { api } = useConnection(),
     [open, setOpen] = useState(false),
@@ -264,48 +326,72 @@ function Comment({ comment }: { comment: Output<"list_comments">["items"][number
     remove = useOperation("delete_comment");
   return (
     <View style={{ gap: 10, paddingVertical: 12 }}>
-      <Body muted>
-        {comment.actorId === identity.id
-          ? t("native.discussion.you")
-          : memberName(members.data, deleted.data, comment.actorId)}{" "}
-        · {formatTimestamp(comment.createdAt)}
-      </Body>
-      <Markdown>{comment.body}</Markdown>
-      {(comment.actorId === identity.id || identity.admin) && (
-        <View style={styles.actions}>
-          <Button
-            title={t("native.discussion.edit")}
-            onPress={() => {
-              setBody(comment.body);
-              setEditingVersion(comment.version);
-              setOpen(true);
-            }}
-          />
-          <Button
-            title={t("native.discussion.delete")}
-            danger
-            onPress={() =>
-              Alert.alert(
-                t("native.discussion.deleteTitle"),
-                t("native.discussion.deleteMessage"),
-                [
-                  { text: t("common.action.cancel"), style: "cancel" },
-                  {
-                    text: t("common.action.delete"),
-                    style: "destructive",
-                    onPress: () =>
-                      remove.mutate({
-                        projectId: comment.projectId,
-                        commentId: comment.id,
-                        expectedVersion: comment.version,
-                      }),
-                  },
-                ],
-              )
-            }
-          />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <UserAvatar
+          name={memberName(members.data, deleted.data, comment.actorId)}
+          image={members.data?.find((member) => member.userId === comment.actorId)?.image ?? null}
+          size={28}
+        />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Body small>
+            {comment.actorId === identity.id
+              ? t("native.discussion.you")
+              : memberName(members.data, deleted.data, comment.actorId)}
+          </Body>
+          <Body muted small accessibilityLabel={formatTimestamp(comment.createdAt)}>
+            {formatRelativeTime(comment.createdAt)}
+          </Body>
         </View>
-      )}
+        {(comment.actorId === identity.id || identity.admin) && (
+          <Menu
+            title={t("ticket.selection.more")}
+            items={[
+              {
+                type: "action",
+                label: t("native.discussion.edit"),
+                onPress: () => {
+                  setBody(comment.body);
+                  setEditingVersion(comment.version);
+                  setOpen(true);
+                },
+              },
+              {
+                type: "action",
+                label: t("native.discussion.delete"),
+                destructive: true,
+                onPress: () =>
+                  Alert.alert(
+                    t("native.discussion.deleteTitle"),
+                    t("native.discussion.deleteMessage"),
+                    [
+                      { text: t("common.action.cancel"), style: "cancel" },
+                      {
+                        text: t("common.action.delete"),
+                        style: "destructive",
+                        onPress: () =>
+                          remove.mutate({
+                            projectId: comment.projectId,
+                            commentId: comment.id,
+                            expectedVersion: comment.version,
+                          }),
+                      },
+                    ],
+                  ),
+              },
+            ]}
+          >
+            <Button
+              compact
+              plain
+              title=""
+              accessibilityLabel={t("ticket.selection.more")}
+              leading={<TicketGlyph name="ellipsis" color={color.muted} />}
+              onPress={() => {}}
+            />
+          </Menu>
+        )}
+      </View>
+      <Markdown>{comment.body}</Markdown>
       <ErrorNotice error={remove.error} />
       <Sheet title={t("native.discussion.edit")} open={open} onClose={() => setOpen(false)}>
         <Field

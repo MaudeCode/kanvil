@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Неодамнешни проекти",
+  "navigation.switchProject": "Промени работен простор или проект",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Отфрли",
@@ -48,6 +51,11 @@ export default {
     create: "Креирај проект",
   },
   tickets: {
+    options: "Опции за листата",
+    expandAll: "Прошири ги сите секции",
+    collapseAll: "Собери ги сите секции",
+    select: "Избери тикети",
+
     search: "Пребарај тикети",
     searchPlaceholder: "Наслов, опис или клуч",
     allStatuses: "Сите статуси",
@@ -174,6 +182,7 @@ export default {
     next: "Следна активност",
   },
   inbox: {
+    read: "Прочитано",
     markAllRead: "Означи сè како прочитано",
     empty: "Нема известувања",
   },

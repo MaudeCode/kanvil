@@ -1,17 +1,20 @@
+import { ticketScheduleText } from "@kanvil/contracts/schedule";
 import {
-  difficultyLabels,
   formatCustomFieldValue,
   formatTimestamp,
-  kindLabels,
   readinessReasonText,
+  ApiError,
 } from "@kanvil/contracts";
-import { formatDate, t } from "@kanvil/contracts/i18n";
-import { createHeaderAction } from "./navigation-actions.tsx";
-import { useLayoutEffect, useState } from "react";
-import { Alert, Share, Text, View } from "react-native";
+import { t } from "@kanvil/contracts/i18n";
+import { ticketHeaderItems } from "./navigation-actions.tsx";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { Alert, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { useConnection, useOperation } from "./data.tsx";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useConnection, useOperation, useProjectAccess } from "./data.tsx";
 import {
+  nativeHeaderOptions,
   Body,
   Button,
   ErrorNotice,
@@ -24,120 +27,153 @@ import {
   Status,
   styles,
   usePalette,
-  priorityText,
+  PropertyValue,
+  TicketTags,
 } from "./ui.tsx";
-import { Attachments, Evidence, Activity } from "./ticket-resources.tsx";
+import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import { Discussion, Relations } from "./collaboration.tsx";
-import type { ScreenProps } from "./navigation.ts";
+import type { ScreenProps, Routes } from "./navigation.ts";
+import { TicketProperties, propertyChanges } from "./ticket-properties.tsx";
+import { TicketActions } from "./ticket-actions.tsx";
 
-// Start and due dates are whole days; editing them stays on the web for now.
-const day = (value: string) => formatDate(value, { dateStyle: "medium" });
-function scheduleText(ticket: { startAt: string | null; dueAt: string | null }) {
-  return [
-    ticket.startAt && t("native.ticket.starts", { date: day(ticket.startAt) }),
-    ticket.dueAt && t("native.ticket.due", { date: day(ticket.dueAt) }),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 export function TicketDetail(props: ScreenProps<"Ticket">) {
   return (
-    <TicketScreen
+    <TicketContent
       key={`${props.route.params.projectId}:${props.route.params.ticketId}`}
-      {...props}
+      projectId={props.route.params.projectId}
+      ticketId={props.route.params.ticketId}
     />
   );
 }
-function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
-  const { api, baseUrl } = useConnection(),
-    { projectId, ticketId } = route.params,
+export function TicketContent({
+  projectId,
+  ticketId,
+  preview = false,
+  onUnavailable,
+}: {
+  projectId: string;
+  ticketId: string;
+  preview?: boolean;
+  onUnavailable?: () => void;
+}) {
+  const navigation = useNavigation<NativeStackNavigationProp<Routes>>();
+  const { api } = useConnection(),
     color = usePalette();
+  const access = useProjectAccess(projectId);
   const result = useQuery(api.query("get_ticket", { projectId, ticketId }));
+  useEffect(() => {
+    if (preview && result.error instanceof ApiError && result.error.code === "not_found")
+      onUnavailable?.();
+  }, [preview, result.error, onUnavailable]);
   const fields = useQuery(api.query("list_custom_fields", { projectId }));
-  const update = useOperation("update_ticket"),
-    subscribe = useOperation("set_subscription"),
-    release = useOperation("release_claim"),
+  const update = useOperation("update_ticket");
+  const release = useOperation("release_claim"),
     recover = useOperation("recover_claim");
   const [recovering, setRecovering] = useState(false),
-    [reason, setReason] = useState("");
+    [reason, setReason] = useState(""),
+    [actions, setActions] = useState(false);
   useLayoutEffect(() => {
-    navigation.setOptions({
-      title: result.data?.ticket.key ?? t("native.screen.ticket"),
-      headerRight: createHeaderAction(t("common.action.edit"), () =>
-        navigation.navigate("Edit", { projectId, ticketId }),
-      ),
-    });
-  }, [navigation, projectId, ticketId, result.data?.ticket.key]);
+    if (preview) return;
+    navigation.setOptions(
+      nativeHeaderOptions({
+        title: result.data?.ticket.key ?? t("native.screen.ticket"),
+        unstable_headerRightItems: () =>
+          ticketHeaderItems(
+            !result.data || access.canWrite
+              ? {
+                  title: t("common.action.edit"),
+                  onPress: () => navigation.navigate("Edit", { projectId, ticketId }),
+                  disabled: !result.data || !access.canWrite,
+                }
+              : undefined,
+            {
+              title: t("ticket.selection.more"),
+              onPress: () => setActions(true),
+              disabled: !result.data,
+            },
+          ),
+      }),
+    );
+  }, [preview, navigation, projectId, ticketId, result.data, access.canWrite]);
   if (result.isPending) return <Loading />;
-  if (!result.data) return <ErrorNotice error={result.error} />;
-  const { ticket, readiness, claim, canReleaseClaim, subscribed } = result.data;
-  // Custom field values read on the phone; editing them stays on the web for now.
+  if (!result.data)
+    return (
+      <Screen>
+        <ErrorNotice
+          error={result.error}
+          retrying={result.isFetching}
+          onRetry={() => {
+            void result.refetch();
+          }}
+        />
+      </Screen>
+    );
+  const { ticket, readiness, claim, canReleaseClaim } = result.data;
   const valued = (fields.data ?? []).filter((field) => ticket.customFields[field.id] !== undefined);
   return (
     <Screen>
-      <View style={styles.actions}>
-        <Status ticket={ticket} />
+      {preview && (
         <Body muted small>
-          {priorityText(ticket.priority)}
+          {ticket.key}
         </Body>
-        <Body muted small>
-          {kindLabels[ticket.kind]}
-        </Body>
-        <Body muted small>
-          {ticket.difficulty
-            ? difficultyLabels[ticket.difficulty]
-            : t("native.ticket.noDifficulty")}
-        </Body>
-        <Body muted small>
-          {t("native.ticket.version", { version: ticket.version })}
-        </Body>
-        {(ticket.startAt || ticket.dueAt) && (
-          <Body muted small>
-            {scheduleText(ticket)}
-          </Body>
-        )}
-      </View>
+      )}
       <Text
         accessibilityRole="header"
         selectable
         style={{
           color: color.foreground,
-          fontSize: 29,
+          fontSize: 24,
           fontWeight: "600",
-          lineHeight: 37,
+          lineHeight: 30,
           letterSpacing: -0.6,
         }}
       >
         {ticket.title}
       </Text>
-      {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
-      {ticket.labels.length > 0 && (
+      {access.canWrite ? (
+        <TicketProperties
+          compact
+          projectId={projectId}
+          value={ticket}
+          disabled={update.isPending}
+          onChange={(changes) =>
+            update.mutate({
+              projectId,
+              ticketId: ticket.id,
+              expectedVersion: ticket.version,
+              changes: propertyChanges(changes),
+            })
+          }
+        />
+      ) : (
+        <View style={styles.actions}>
+          <Status ticket={ticket} />
+          <PropertyValue projectId={projectId} property="priority" value={ticket.priority} />
+          <PropertyValue projectId={projectId} property="kind" value={ticket.kind} />
+          <PropertyValue projectId={projectId} property="difficulty" value={ticket.difficulty} />
+          <PropertyValue projectId={projectId} property="assignee" value={ticket.assigneeId} />
+        </View>
+      )}
+      {(ticket.startAt || ticket.dueAt) && (
         <Body muted small>
-          {ticket.labels.map((label) => `#${label}`).join(" ")}
+          {ticketScheduleText(ticket)}
         </Body>
       )}
-      <View style={styles.actions}>
-        <Button
-          title={subscribed ? t("native.detail.unsubscribe") : t("native.detail.subscribe")}
-          disabled={subscribe.isPending}
-          onPress={() => subscribe.mutate({ projectId, ticketId: ticket.id, enabled: !subscribed })}
-        />
-        <Button
-          title={t("native.detail.share")}
-          onPress={() => {
-            void Share.share({
-              message: `${ticket.key}: ${ticket.title}\n${baseUrl}/projects/${ticket.projectId}/tickets/${ticket.id}\nkanvil://projects/${ticket.projectId}/tickets/${ticket.id}`,
-            });
-          }}
-        />
-      </View>
-      <ErrorNotice error={result.error ?? subscribe.error ?? update.error ?? release.error} />
-      <Section title={t("native.detail.description")}>
-        <Markdown>{ticket.description || t("native.detail.noDescription")}</Markdown>
-      </Section>
-      <Section title={t("native.detail.acceptanceCriteria")}>
-        <Markdown>{ticket.acceptanceCriteria || t("native.detail.noAcceptanceCriteria")}</Markdown>
-      </Section>
+      {ticket.archived && <Body muted>{t("native.detail.archived")}</Body>}
+      <TicketTags projectId={projectId} tags={ticket.labels} scopes={ticket.scopes} />
+      <ErrorNotice error={result.error ?? release.error ?? update.error} />
+      {ticket.description ? (
+        <Markdown>{ticket.description}</Markdown>
+      ) : (
+        <Body muted small>
+          {t("native.detail.noDescription")}
+        </Body>
+      )}
+      {ticket.acceptanceCriteria && (
+        <Section title={t("native.detail.acceptanceCriteria")}>
+          <Markdown>{ticket.acceptanceCriteria}</Markdown>
+        </Section>
+      )}
       {valued.length > 0 && (
         <Section title={t("native.detail.fields")}>
           {valued.map((field) => (
@@ -150,7 +186,16 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
           ))}
         </Section>
       )}
-      <Section title={t("native.readiness.title")}>
+      <Section
+        title={t("native.readiness.title")}
+        collapsible
+        initiallyOpen={!!claim}
+        summary={
+          <Body muted small>
+            {readiness.ready ? t("native.readiness.ready") : t("native.readiness.notReady")}
+          </Body>
+        }
+      >
         <Body>
           {readiness.ready ? t("native.readiness.ready") : t("native.readiness.notReady")}
         </Body>
@@ -190,10 +235,12 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
                 }
               />
             )}
-            <Button
-              title={t("native.readiness.recover.action")}
-              onPress={() => setRecovering(true)}
-            />
+            {access.canAdmin && (
+              <Button
+                title={t("native.readiness.recover.action")}
+                onPress={() => setRecovering(true)}
+              />
+            )}
             <Sheet
               title={t("native.readiness.recover.action")}
               open={recovering}
@@ -231,34 +278,12 @@ function TicketScreen({ route, navigation }: ScreenProps<"Ticket">) {
       <Relations ticket={ticket} navigation={navigation} />
       <Discussion ticket={ticket} />
       <Attachments ticket={ticket} />
+      <Links ticket={ticket} />
       <Evidence ticket={ticket} />
       <Activity ticket={ticket} />
-      <Button
-        title={
-          ticket.archived ? t("native.detail.unarchive.action") : t("native.detail.archive.action")
-        }
-        onPress={() =>
-          Alert.alert(
-            ticket.archived ? t("native.detail.unarchive.title") : t("native.detail.archive.title"),
-            ticket.archived
-              ? t("native.detail.unarchive.message")
-              : t("native.detail.archive.message"),
-            [
-              { text: t("common.action.cancel"), style: "cancel" },
-              {
-                text: t("common.action.confirm"),
-                onPress: () =>
-                  update.mutate({
-                    projectId,
-                    ticketId: ticket.id,
-                    expectedVersion: ticket.version,
-                    changes: { archived: !ticket.archived },
-                  }),
-              },
-            ],
-          )
-        }
-      />
+      <Sheet title={ticket.key} open={actions} onClose={() => setActions(false)}>
+        <TicketActions ticket={ticket} detail={!preview} onClose={() => setActions(false)} />
+      </Sheet>
     </Screen>
   );
 }

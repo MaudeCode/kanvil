@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import {
   adminInstanceSchema,
-  instanceUpdateSchema,
+  initialInstanceDraft as initial,
+  instanceDraftInput,
   searchAuthenticationSchema,
   type AdminInstance,
 } from "@kanvil/contracts/instance";
@@ -55,37 +56,6 @@ export function AdminSettings({ section }: { section: (typeof adminSections)[num
     <ErrorNotice error={result.error} />
   );
 }
-function initial(data: AdminInstance) {
-  return {
-    expectedVersion: data.version,
-    authentication: data.authentication,
-    name: data.name,
-    description: data.description,
-    storageProvider: data.storage.provider,
-    s3: {
-      endpoint: "",
-      region: "us-east-1",
-      bucket: "",
-      prefix: "kanvil/",
-      forcePathStyle: true,
-      accessKeyId: "",
-      ...data.storage.settings,
-      secretAccessKey: "",
-    },
-    brokerProvider: data.broker.provider,
-    rabbit: { url: "", exchange: data.broker.settings?.exchange ?? "kanvil.events" },
-    searchProvider: data.search.provider,
-    elastic: {
-      url: "",
-      index: `kanvil-${data.id}`,
-      username: "",
-      ...data.search.settings,
-      auth: data.search.settings?.auth ?? "none",
-      apiKey: "",
-      password: "",
-    },
-  };
-}
 function InstanceSettings({ data, section }: { data: AdminInstance; section: string }) {
   const cache = useQueryClient(),
     info = useInfo(),
@@ -124,22 +94,7 @@ function InstanceSettings({ data, section }: { data: AdminInstance; section: str
     }
   }
   async function save() {
-    const payload = instanceUpdateSchema.parse({
-      expectedVersion: draft.expectedVersion,
-      ...(section === "authentication" ? { authentication: draft.authentication } : {}),
-      name: draft.name,
-      description: draft.description,
-      storage:
-        draft.storageProvider === "s3" ? { provider: "s3", ...draft.s3 } : { provider: "local" },
-      broker:
-        draft.brokerProvider === "rabbitmq"
-          ? { provider: "rabbitmq", ...draft.rabbit, url: draft.rabbit.url || undefined }
-          : { provider: "postgres" },
-      search:
-        draft.searchProvider === "elasticsearch"
-          ? { provider: "elasticsearch", ...draft.elastic }
-          : { provider: "postgres" },
-    });
+    const payload = instanceDraftInput(draft, section === "authentication");
     await api.request("/api/v1/admin/instance", okSchema, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

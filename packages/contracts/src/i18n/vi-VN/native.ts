@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Dự án gần đây",
+  "navigation.switchProject": "Chuyển không gian làm việc hoặc dự án",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Bỏ qua",
@@ -48,6 +51,11 @@ export default {
     create: "Tạo dự án",
   },
   tickets: {
+    options: "Tùy chọn danh sách",
+    expandAll: "Mở rộng tất cả các phần",
+    collapseAll: "Thu gọn tất cả các phần",
+    select: "Chọn phiếu",
+
     search: "Tìm phiếu",
     searchPlaceholder: "Tiêu đề, mô tả hoặc mã",
     allStatuses: "Mọi trạng thái",
@@ -174,6 +182,7 @@ export default {
     next: "Hoạt động tiếp theo",
   },
   inbox: {
+    read: "Đã đọc",
     markAllRead: "Đánh dấu tất cả đã đọc",
     empty: "Không có thông báo",
   },

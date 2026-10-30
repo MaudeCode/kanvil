@@ -20,7 +20,14 @@ it("keeps all bundled theme pairs readable and exports portable custom themes", 
       expect(
         contrast(theme[mode].background, variables["muted-foreground"] ?? theme[mode].foreground),
       ).toBeGreaterThanOrEqual(4.5);
-      for (const surface of ["background", "sidebar", "secondary", "accent", "popover"]) {
+      for (const surface of [
+        "background",
+        "sidebar",
+        "secondary",
+        "accent",
+        "primary-surface",
+        "popover",
+      ]) {
         expect(
           contrast(variables[surface]!, variables.foreground!),
           `${theme.name} ${mode} ${surface} text`,

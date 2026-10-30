@@ -49,3 +49,12 @@ export const adminWorkspacesSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 export type AdminWorkspace = z.output<typeof adminWorkspacesSchema>["workspaces"][number];
+
+export const avatarInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.slice(0, 1))
+    .join("")
+    .toUpperCase() || "?";

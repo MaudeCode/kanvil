@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { avatarInitials } from "@kanvil/contracts/users";
 import { cn } from "@/lib/utils";
 export function UserAvatar({
   name,
@@ -16,13 +17,7 @@ export function UserAvatar({
     >
       {image && <AvatarImage src={image} alt="" />}
       <AvatarFallback className="rounded-full bg-primary/10 font-medium text-primary text-[length:inherit]">
-        {name
-          .trim()
-          .split(/\s+/)
-          .slice(0, 2)
-          .map((word) => word.slice(0, 1))
-          .join("")
-          .toUpperCase() || "?"}
+        {avatarInitials(name)}
       </AvatarFallback>
     </Avatar>
   );

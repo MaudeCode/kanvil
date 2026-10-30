@@ -1,5 +1,6 @@
 export default {
   list: {
+    manageViews: "Gestionar vistas",
     selectSection: "Seleccionar tickets de {{section}}",
     expandSection: "Expandir tickets de {{section}}",
     collapseSection: "Contraer tickets de {{section}}",
@@ -133,6 +134,7 @@ export default {
     noDue: "Sin fecha límite",
   },
   filter: {
+    add: "Añadir filtro",
     me: "Yo",
     searchTickets: "Buscar tickets",
     searchTicketsPlaceholder: "Buscar tickets…",

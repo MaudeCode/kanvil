@@ -14,13 +14,16 @@ const config: ExpoConfig = {
     : {}),
   ios: {
     bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "2",
+    buildNumber: "26",
     supportsTablet: true,
-    infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
+    infoPlist: {
+      NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
+      KanvilStartupDiagnostics: process.env.EXPO_PUBLIC_STARTUP_DIAGNOSTICS === "1",
+    },
   },
   android: {
     package: "com.maudecode.kanvil",
-    versionCode: 2,
+    versionCode: 13,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       monochromeImage: "./assets/adaptive-icon.png",
@@ -45,7 +48,7 @@ const config: ExpoConfig = {
       },
     ],
     "expo-font",
-    ["expo-build-properties", { ios: { enableSceneSupport: true } }],
+    "./plugins/with-startup-diagnostics.cjs",
   ],
 };
 export default config;

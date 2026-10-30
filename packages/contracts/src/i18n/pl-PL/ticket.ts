@@ -4,6 +4,7 @@ export default {
   // The ticket list, board, and planning view. {{section}} is a section's name: a workflow state,
   // project, due window, or planning group.
   list: {
+    manageViews: "Zarządzaj widokami",
     selectSection: "Zaznacz zadania: {{section}}",
     expandSection: "Rozwiń zadania: {{section}}",
     collapseSection: "Zwiń zadania: {{section}}",
@@ -153,6 +154,7 @@ export default {
   },
   // The list's search and filter controls and the active filter chips.
   filter: {
+    add: "Dodaj filtr",
     me: "Ja",
     searchTickets: "Szukaj zadań",
     searchTicketsPlaceholder: "Szukaj zadań…",

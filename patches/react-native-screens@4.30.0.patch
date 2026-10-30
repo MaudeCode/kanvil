@@ -1,0 +1,497 @@
+diff --git a/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt b/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
+index fa1b77317f609983ae2434764174072e51130550..9ba9f1cbf6c4e572021e8a01340c02df5858354e 100644
+--- a/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
++++ b/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
+@@ -251,6 +251,11 @@ class ScreenStackHeaderConfigViewManager :
+         value: Boolean,
+     ) = Unit
+ 
++    override fun setMinimizationEnabled(
++        view: ScreenStackHeaderConfig?,
++        value: Boolean,
++    ) = Unit
++
+     override fun setLargeTitle(
+         view: ScreenStackHeaderConfig?,
+         value: Boolean,
+diff --git a/ios/RNSBarButtonItem.h b/ios/RNSBarButtonItem.h
+index a26d1254eafd89268f65d968988cf6a3b8c1e457..5ff324406d6d4c5485760d635553eddb5bd7d72a 100644
+--- a/ios/RNSBarButtonItem.h
++++ b/ios/RNSBarButtonItem.h
+@@ -10,6 +10,8 @@ typedef void (^RNSBarButtonMenuItemAction)(NSString *menuId);
+ 
+ @interface RNSBarButtonItem : UIBarButtonItem
+ 
++@property (nonatomic, copy, readonly) NSDictionary<NSString *, id> *rnsConfiguration;
++
+ #if defined(__cplusplus)
+ - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
+                         action:(RNSBarButtonItemAction)action
+diff --git a/ios/RNSBarButtonItem.mm b/ios/RNSBarButtonItem.mm
+index c435fdd1dab11f39dc78367860e8f568c953ea8c..0034ff91cbaf6dfd4f3d0afa70e81202d75bd5b4 100644
+--- a/ios/RNSBarButtonItem.mm
++++ b/ios/RNSBarButtonItem.mm
+@@ -21,6 +21,8 @@ - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
+     return self;
+   }
+ 
++  _rnsConfiguration = [dict copy];
++
+   [[self class] resolveImageFromConfig:dict
+                            imageLoader:imageLoader
+                        completionBlock:^(UIImage *img) {
+diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
+index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..f933429cfafff740dcd324037cdb17ef949a01d1 100644
+--- a/ios/RNSScreen.mm
++++ b/ios/RNSScreen.mm
+@@ -51,6 +51,17 @@ @interface RNSScreenView () <UIAdaptivePresentationControllerDelegate,
+                              CAAnimationDelegate>
+ @end
+ 
++static void RNSCollectRootScrollViews(UIView *view, UIView *root, NSMutableArray<UIScrollView *> *result)
++{
++  if (view.hidden || view.alpha <= 0) return;
++  if (view != root && [view isKindOfClass:RNSScreenView.class]) return;
++  if ([view isKindOfClass:UIScrollView.class]) {
++    [result addObject:(UIScrollView *)view];
++    return;
++  }
++  for (UIView *child in view.subviews) RNSCollectRootScrollViews(child, root, result);
++}
++
+ @implementation RNSScreenView {
+   __weak RCTScrollViewComponentView *_sheetsScrollView;
+   /// Tag of `_sheetsScrollView` at the time we started observing it. Fabric changes the tag when it recycles
+@@ -1153,8 +1164,19 @@ - (void)overrideScrollViewBehaviorInFirstDescendantChainIfNeeded
+ 
+ - (void)updateContentScrollViewEdgeEffectsIfExists
+ {
+-  [RNSScrollEdgeEffectApplicator applyToScrollView:[RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self]
+-                                      withProvider:self];
++  UIScrollView *scrollView = [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self];
++  // Explicit association is required through measured wrappers and when split panes switch.
++  if (@available(iOS 15.0, tvOS 15.0, *)) {
++    if ([_controller contentScrollViewForEdge:NSDirectionalRectEdgeTop] != scrollView) {
++      [_controller setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeAll];
++    }
++  }
++  [RNSScrollEdgeEffectApplicator applyToScrollView:scrollView withProvider:self];
++  NSMutableArray<UIScrollView *> *scrollers = [NSMutableArray new];
++  RNSCollectRootScrollViews(self, self, scrollers);
++  for (UIScrollView *content in scrollers)
++    [RNSScrollEdgeEffectApplicator applyToScrollView:content withProvider:self];
++
+ }
+ 
+ #pragma mark - RNSSafeAreaProviding
+@@ -1589,6 +1611,8 @@ - (void)viewDidDisappear:(BOOL)animated
+ - (void)viewDidLayoutSubviews
+ {
+   [super viewDidLayoutSubviews];
++  // Measured content and active split panes can change after screen props are applied.
++  [self.screenView updateContentScrollViewEdgeEffectsIfExists];
+ 
+   // The below code makes the screen view adapt dimensions provided by the system. We take these
+   // into account only when the view is mounted under RNSNavigationController, in which case the
+@@ -1653,6 +1677,12 @@ - (CGFloat)calculateHeaderHeightIsModal:(BOOL)isModal
+ {
+   UINavigationController *navctr = [self getVisibleNavigationControllerIsModal:isModal];
+ 
++  RNSScreenStackHeaderConfig *config = [self.screenView findHeaderConfig];
++  if (navctr != nil && config.show && !config.minimizationEnabled) {
++    // Stable pane chrome uses the current public bar frame, including rotation and search changes.
++    return CGRectGetMaxY([navctr.navigationBar convertRect:navctr.navigationBar.bounds toView:navctr.view]);
++  }
++
+   // If there's no navigation controller for the modal (or the navigation bar is hidden), we simply don't want to
+   // return header height, as modal possibly does not have header when navigation controller is nil,
+   // and we don't want to count status bar if navigation bar is hidden (inset could be negative).
+@@ -1710,6 +1740,7 @@ - (void)calculateAndNotifyHeaderHeightChangeIsModal:(BOOL)isModal
+ {
+   CGFloat totalHeight = [self calculateHeaderHeightIsModal:isModal];
+   [self.screenView notifyHeaderHeightChange:totalHeight];
++  [self.screenView updateContentScrollViewEdgeEffectsIfExists];
+ }
+ 
+ - (void)notifyFinishTransitioning
+diff --git a/ios/RNSScreenStackHeaderConfig.h b/ios/RNSScreenStackHeaderConfig.h
+index 8f99f5b5b9d3f184f36613d51174cb9393d2cdd6..9b1b2a9529e6c67e8b23deab7fb5fa7bea7a647d 100644
+--- a/ios/RNSScreenStackHeaderConfig.h
++++ b/ios/RNSScreenStackHeaderConfig.h
+@@ -45,6 +45,7 @@ NS_ASSUME_NONNULL_BEGIN
+ @property (nonatomic) BOOL disableBackButtonMenu;
+ @property (nonatomic) BOOL hideShadow;
+ @property (nonatomic) BOOL translucent;
++@property (nonatomic) BOOL minimizationEnabled;
+ @property (nonatomic) BOOL backButtonInCustomView;
+ @property (nonatomic) UISemanticContentAttribute direction;
+ @property (nonatomic) UINavigationItemBackButtonDisplayMode backButtonDisplayMode;
+diff --git a/ios/RNSScreenStackHeaderConfig.mm b/ios/RNSScreenStackHeaderConfig.mm
+index e217b2411d20c85db3ec84bb87765c1e9407fd3b..ba3e0c01477cc4f76790f5e322cd4f3a6d631e41 100644
+--- a/ios/RNSScreenStackHeaderConfig.mm
++++ b/ios/RNSScreenStackHeaderConfig.mm
+@@ -45,6 +45,65 @@ + (BOOL)rnscreens_isBlankOrNull:(NSString *)string
+ 
+ @end
+ 
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++// The existing title slot owns local legibility; no scroll content or viewport is covered.
++@interface RNSGlassTitleView : UIVisualEffectView
++- (void)configureTitle:(NSString *)title attributes:(NSDictionary *)attributes;
++@end
++@implementation RNSGlassTitleView {
++  UILabel *_titleLabel;
++  NSDictionary *_attributes;
++}
++- (instancetype)init
++{
++  UIVisualEffect *effect = nil;
++  if (@available(iOS 26.0, *)) effect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
++  if (self = [super initWithEffect:effect]) {
++    self.userInteractionEnabled = NO;
++    _titleLabel = [UILabel new];
++    _titleLabel.adjustsFontForContentSizeCategory = YES;
++    _titleLabel.accessibilityTraits = UIAccessibilityTraitHeader;
++    _titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
++    [self.contentView addSubview:_titleLabel];
++    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateTextSize)
++        name:UIContentSizeCategoryDidChangeNotification object:nil];
++  }
++  return self;
++}
++- (void)configureTitle:(NSString *)title attributes:(NSDictionary *)attributes
++{
++  _titleLabel.text = title;
++  _attributes = attributes;
++  [self updateTextSize];
++}
++- (void)updateTextSize
++{
++  UIFont *font = _attributes[NSFontAttributeName];
++  _titleLabel.font = font ? [[UIFontMetrics metricsForTextStyle:UIFontTextStyleHeadline] scaledFontForFont:font]
++                         : [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
++  _titleLabel.textColor = _attributes[NSForegroundColorAttributeName] ?: UIColor.labelColor;
++  [self invalidateIntrinsicContentSize];
++  [self setNeedsLayout];
++}
++- (CGSize)intrinsicContentSize
++{
++  CGSize size = _titleLabel.intrinsicContentSize;
++  return CGSizeMake(size.width + 24, size.height + 12);
++}
++- (void)layoutSubviews
++{
++  [super layoutSubviews];
++  _titleLabel.frame = CGRectInset(self.bounds, 12, 6);
++  self.layer.cornerRadius = self.bounds.size.height / 2;
++  self.clipsToBounds = YES;
++}
++- (void)dealloc
++{
++  [[NSNotificationCenter defaultCenter] removeObserver:self];
++}
++@end
++#endif
++
+ @interface RNSScreenStackHeaderConfig () <RCTMountingTransactionObserving>
+ @end
+ 
+@@ -84,6 +143,7 @@ - (void)initProps
+   self.hidden = YES;
+   _reactSubviews = [NSMutableArray new];
+   _backTitleVisible = YES;
++  _minimizationEnabled = YES;
+   _blurEffect = RNSBlurEffectStyleNone;
+   _synchronousShadowStateUpdatesEnabled = YES;
+ }
+@@ -527,6 +587,8 @@ + (void)updateViewController:(UIViewController *)vc
+ 
+   BOOL wasHidden = navctr.navigationBarHidden;
+   BOOL shouldHide = config == nil || !config.shouldHeaderBeVisible;
++  BOOL animateItems = animated && vc.viewIfLoaded.window != nil && vc.transitionCoordinator == nil &&
++      !UIAccessibilityIsReduceMotionEnabled();
+ 
+   if (!shouldHide && !config.translucent && ![self screensExtendUnderOpaqueNavigationBar]) {
+     // When nav bar is not translucent we change edgesForExtendedLayout to avoid system laying out
+@@ -556,19 +618,33 @@ + (void)updateViewController:(UIViewController *)vc
+ #if !TARGET_OS_TV
+   [config configureBackItem:prevItem withPrevVC:prevVC];
+ 
+-  if (config.largeTitle) {
++  if (config.largeTitle && !navctr.navigationBar.prefersLargeTitles) {
+     navctr.navigationBar.prefersLargeTitles = YES;
+   }
+-  navitem.largeTitleDisplayMode =
++  UINavigationItemLargeTitleDisplayMode titleMode =
+       config.largeTitle ? UINavigationItemLargeTitleDisplayModeAlways : UINavigationItemLargeTitleDisplayModeNever;
++  if (navitem.largeTitleDisplayMode != titleMode) {
++    navitem.largeTitleDisplayMode = titleMode;
++  }
++
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(27_1) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (@available(iOS 27.1, *)) {
++    navitem.verticalBarCompressionBehavior = UIVerticalBarCompressionBehaviorPrefersBarItems;
++  }
++#endif
+ 
+ #if RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
+   if (@available(iOS 27.0, *)) {
+     // Due to native limitations related to opaque header and minimization behavior, we disable it for opaque headers.
+-    UIBarMinimization *minimization = [UIBarMinimization new];
+-    minimization.minimizationBehavior =
+-        config.translucent ? UIBarMinimizationBehaviorAutomatic : UIBarMinimizationBehaviorNever;
+-    navitem.navigationBarMinimization = minimization;
++    UIBarMinimizationBehavior behavior =
++        config.translucent && config.minimizationEnabled ? UIBarMinimizationBehaviorAutomatic
++                                                        : UIBarMinimizationBehaviorNever;
++    if (navitem.navigationBarMinimization == nil ||
++        navitem.navigationBarMinimization.minimizationBehavior != behavior) {
++      UIBarMinimization *minimization = [UIBarMinimization new];
++      minimization.minimizationBehavior = behavior;
++      navitem.navigationBarMinimization = minimization;
++    }
+   }
+ #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
+ #endif
+@@ -603,12 +679,18 @@ + (void)updateViewController:(UIViewController *)vc
+   }
+   navitem.scrollEdgeAppearance = scrollEdgeAppearance;
+ #if !TARGET_OS_TV
+-  navitem.hidesBackButton = config.hideBackButton;
++  [navitem setHidesBackButton:config.hideBackButton animated:animateItems];
+   navitem.leftItemsSupplementBackButton = config.backButtonInCustomView;
+ #endif
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (![navitem.titleView isKindOfClass:RNSGlassTitleView.class]) navitem.titleView = nil;
++#else
+   navitem.titleView = nil;
+-  navitem.leftBarButtonItems = nil;
+-  navitem.rightBarButtonItems = nil;
++#endif
++  NSArray<UIBarButtonItem *> *previousLeftItems = navitem.leftBarButtonItems;
++  NSArray<UIBarButtonItem *> *previousRightItems = navitem.rightBarButtonItems;
++  NSMutableArray<UIBarButtonItem *> *leftItems = [NSMutableArray new];
++  NSMutableArray<UIBarButtonItem *> *rightItems = [NSMutableArray new];
+ 
+ #if !TARGET_OS_TV
+   // We want to set navitem.searchController to nil only if we are sure
+@@ -621,17 +703,11 @@ + (void)updateViewController:(UIViewController *)vc
+     // `- [RNSScreenStackHeaderConfig replaceNavigationBarViewsWithSnapshotOfSubview:]` method.
+     switch (subview.type) {
+       case RNSScreenStackHeaderSubviewTypeLeft: {
+-        NSArray<UIBarButtonItem *> *currentItems = navitem.leftBarButtonItems ?: @[];
+-        NSMutableArray<UIBarButtonItem *> *mutableItems = [currentItems mutableCopy];
+-        [mutableItems addObject:[subview getUIBarButtonItem]];
+-        navitem.leftBarButtonItems = mutableItems;
++        [leftItems addObject:[subview getUIBarButtonItem]];
+         break;
+       }
+       case RNSScreenStackHeaderSubviewTypeRight: {
+-        NSArray<UIBarButtonItem *> *currentItems = navitem.rightBarButtonItems ?: @[];
+-        NSMutableArray<UIBarButtonItem *> *mutableItems = [currentItems mutableCopy];
+-        [mutableItems addObject:[subview getUIBarButtonItem]];
+-        navitem.rightBarButtonItems = mutableItems;
++        [rightItems addObject:[subview getUIBarButtonItem]];
+         break;
+       }
+       case RNSScreenStackHeaderSubviewTypeCenter:
+@@ -693,13 +769,37 @@ + (void)updateViewController:(UIViewController *)vc
+   }
+ #endif /* !TARGET_OS_TV */
+ 
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
++  if (@available(iOS 26.0, *)) {
++    BOOL hasGlassTitle = [navitem.titleView isKindOfClass:RNSGlassTitleView.class];
++    if (config.translucent && config.title.length && (navitem.titleView == nil || hasGlassTitle)) {
++      RNSGlassTitleView *titleView = hasGlassTitle ? (RNSGlassTitleView *)navitem.titleView : [RNSGlassTitleView new];
++      [titleView configureTitle:config.title attributes:appearance.titleTextAttributes];
++      if (!hasGlassTitle) {
++        titleView.frame = (CGRect){CGPointZero, titleView.intrinsicContentSize};
++        navitem.titleView = titleView;
++      }
++    } else if (hasGlassTitle) navitem.titleView = nil;
++  }
++#endif
++
+   // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
+   // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
+   navitem.title = config.title;
+-  navitem.leftBarButtonItems = [config barButtonItemsFromConfigs:config.headerLeftBarButtonItems
+-                                                withCurrentItems:navitem.leftBarButtonItems];
+-  navitem.rightBarButtonItems = [config barButtonItemsFromConfigs:config.headerRightBarButtonItems
+-                                                 withCurrentItems:navitem.rightBarButtonItems];
++  NSArray<UIBarButtonItem *> *nextLeftItems = [config barButtonItemsFromConfigs:config.headerLeftBarButtonItems
++                                                           withCurrentItems:leftItems
++                                                               reusingItems:previousLeftItems];
++  NSArray<UIBarButtonItem *> *nextRightItems = [config barButtonItemsFromConfigs:config.headerRightBarButtonItems
++                                                            withCurrentItems:rightItems
++                                                                reusingItems:previousRightItems];
++  // Preserve native item identity and let UIKit animate visible in-page changes.
++
++  if (![nextLeftItems isEqualToArray:previousLeftItems ?: @[]]) {
++    [navitem setLeftBarButtonItems:nextLeftItems animated:animateItems];
++  }
++  if (![nextRightItems isEqualToArray:previousRightItems ?: @[]]) {
++    [navitem setRightBarButtonItems:nextRightItems animated:animateItems];
++  }
+ 
+   // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
+   // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
+@@ -832,6 +932,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+ 
+ - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
+                                          withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
++                                             reusingItems:(NSArray<UIBarButtonItem *> *)previousItems
+ {
+   if (dicts.count == 0) {
+     return currentItems;
+@@ -841,7 +942,15 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+   for (NSUInteger i = 0; i < dicts.count; i++) {
+     NSDictionary *dict = dicts[i];
+     if (dict[@"buttonId"] || dict[@"menu"]) {
+-      RNSBarButtonItem *item = [[RNSBarButtonItem alloc] initWithConfig:dict
++      RNSBarButtonItem *item = nil;
++      for (UIBarButtonItem *candidate in previousItems) {
++        if ([candidate isKindOfClass:RNSBarButtonItem.class] &&
++            [((RNSBarButtonItem *)candidate).rnsConfiguration isEqualToDictionary:dict]) {
++          item = (RNSBarButtonItem *)candidate;
++          break;
++        }
++      }
++      if (item == nil) item = [[RNSBarButtonItem alloc] initWithConfig:dict
+           action:^(NSString *buttonId) {
+             auto eventEmitter = std::static_pointer_cast<const facebook::react::RNSScreenStackHeaderConfigEventEmitter>(
+                 self->_eventEmitter);
+@@ -1068,6 +1177,11 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+     needsNavigationControllerLayout = YES;
+   }
+ 
++  if (newScreenProps.minimizationEnabled != _minimizationEnabled) {
++    _minimizationEnabled = newScreenProps.minimizationEnabled;
++    needsNavigationControllerLayout = YES;
++  }
++
+   if (newScreenProps.translucent != _translucent) {
+     _translucent = newScreenProps.translucent;
+     needsNavigationControllerLayout = YES;
+diff --git a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
+index c0fb1333ea2ab281f057cff15b2d0aad7f0043f1..95057f00609ada7cca6a2aee5aa96f36e435f3d2 100644
+--- a/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
++++ b/ios/helpers/scroll-view/RNSScrollEdgeEffectApplicator.mm
+@@ -2,7 +2,6 @@
+ #import <React/RCTLog.h>
+ #import "RNSDefines.h"
+ #import "RNSEnums.h"
+-
+ @implementation RNSScrollEdgeEffectApplicator
+ 
+ + (void)applyToScrollView:(nonnull UIScrollView *)scrollView
+diff --git a/ios/tabs/host/RNSTabBarController.mm b/ios/tabs/host/RNSTabBarController.mm
+index bc9c64436da76959ecdc22539b94ce459e1e4ed2..a7821301f32e83319fa3c91808b4b942d6ab93fa 100644
+--- a/ios/tabs/host/RNSTabBarController.mm
++++ b/ios/tabs/host/RNSTabBarController.mm
+@@ -12,6 +12,39 @@
+ #import "RNSTabsHostComponentView.h"
+ #import "RNSTabsNavigationStateObserverRegistry.h"
+ 
++// Stack animators require RNSScreen controllers; native tabs contain RNSTabsScreen controllers.
++@interface RNSTabFadeAnimator : NSObject <UIViewControllerAnimatedTransitioning>
++@end
++
++@implementation RNSTabFadeAnimator
++- (NSTimeInterval)transitionDuration:(id<UIViewControllerContextTransitioning>)context
++{
++  return UIAccessibilityIsReduceMotionEnabled() ? 0 : 0.2;
++}
++
++- (void)animateTransition:(id<UIViewControllerContextTransitioning>)context
++{
++  UIView *fromView = [context viewForKey:UITransitionContextFromViewKey];
++  UIView *toView = [context viewForKey:UITransitionContextToViewKey];
++  UIViewController *toController = [context viewControllerForKey:UITransitionContextToViewControllerKey];
++  toView.frame = [context finalFrameForViewController:toController];
++  [context.containerView addSubview:toView];
++  toView.alpha = 0;
++  [UIView animateWithDuration:[self transitionDuration:context]
++      delay:0
++      options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
++      animations:^{
++        fromView.alpha = 0;
++        toView.alpha = 1;
++      }
++      completion:^(BOOL finished) {
++        fromView.alpha = 1;
++        toView.alpha = 1;
++        [context completeTransition:!context.transitionWasCancelled];
++      }];
++}
++@end
++
+ #define RNS_MORE_NAVIGATION_CONTROLLER_AVAILABLE !TARGET_OS_TV && !TARGET_OS_VISION
+ 
+ // https://developer.apple.com/documentation/uikit/uitabbarcontroller?language=objc#The-More-navigation-controller
+@@ -458,6 +491,13 @@ - (BOOL)shouldPreventNativeTabSelection:(nonnull UIViewController *)nextViewCont
+   return screenViewController.isPreventNativeSelectionEnabled;
+ }
+ 
++- (id<UIViewControllerAnimatedTransitioning>)tabBarController:(UITabBarController *)tabBarController
++            animationControllerForTransitionFromViewController:(UIViewController *)fromVC
++                                              toViewController:(UIViewController *)toVC
++{
++  return [RNSTabFadeAnimator new];
++}
++
+ /// Shared handling for the `shouldSelect` delegate callbacks - the legacy
+ /// `tabBarController:shouldSelectViewController:` and the `UITab` `tabBarController:shouldSelectTab:`.
+ - (BOOL)interceptUserSelectionOfViewController:(nonnull UIViewController *)viewController
+diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
+index 69bd2fc9cde3b064eda587703386bd98009e13d3..2a71b5662d858d576918cddc3e2037116517b099 100644
+--- a/ios/tabs/host/RNSTabsHostComponentView.mm
++++ b/ios/tabs/host/RNSTabsHostComponentView.mm
+@@ -129,6 +129,8 @@ - (void)invalidateImpl
+ - (void)didMoveToWindow
+ {
+   if (self.window != nil && _controller.parentViewController == nil) {
++    // UIKit must see the active display size before constructing its native bars.
++    _controller.view.frame = self.bounds;
+     BOOL mountResult = [RNSContainerHelpers addChildViewController:_controller
+                                           toViewControllerManaging:self.reactSuperview
+                                                  withContainerView:self];
+diff --git a/lib/typescript/types.d.ts b/lib/typescript/types.d.ts
+index e0d252421edab7a289efc8b7287343b509c721a5..fff0e6d8307d6fdad7907ce058b424fa09fb02b3 100644
+--- a/lib/typescript/types.d.ts
++++ b/lib/typescript/types.d.ts
+@@ -801,6 +801,8 @@ export interface ScreenStackHeaderConfigProps extends ViewProps {
+      * Boolean indicating whether the navigation bar is translucent.
+      */
+     translucent?: boolean | undefined;
++    /** Allow iOS 27 native bar minimization independently of translucency. */
++    minimizationEnabled?: boolean | undefined;
+     /**
+      * Allows to override system appearance for the navigation bar.
+      *
+diff --git a/src/fabric/ScreenStackHeaderConfigNativeComponent.ts b/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
+index da28c51c6ffd29b996c876742a11cfdf322db969..8a1be554f642620d7c63ed4bd111a50f1d62473b 100644
+--- a/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
++++ b/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
+@@ -65,6 +65,7 @@ export interface NativeProps extends ViewProps {
+   largeTitleHideShadow?: boolean | undefined;
+   largeTitleColor?: ColorValue | undefined;
+   translucent?: boolean | undefined;
++  minimizationEnabled?: CT.WithDefault<boolean, true>;
+   title?: string | undefined;
+   titleFontFamily?: string | undefined;
+   titleFontSize?: CT.Int32 | undefined;
+diff --git a/src/types.tsx b/src/types.tsx
+index 3ec38fa0c19fc3aa444394e22737d23d4220e978..e393bc9662ac90344cf21575c30a6ba1f5016ef0 100644
+--- a/src/types.tsx
++++ b/src/types.tsx
+@@ -907,6 +907,8 @@ export interface ScreenStackHeaderConfigProps extends ViewProps {
+    * Boolean indicating whether the navigation bar is translucent.
+    */
+   translucent?: boolean | undefined;
++  /** Allow iOS 27 native bar minimization independently of translucency. */
++  minimizationEnabled?: boolean | undefined;
+   /**
+    * Allows to override system appearance for the navigation bar.
+    *

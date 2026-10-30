@@ -1,3 +1,4 @@
+import { dueWindows, dueWindow, dueWindowLabel } from "@kanvil/contracts/schedule";
 import { toast } from "sonner";
 import { createQuerySnapshot } from "./lib/query-snapshot.ts";
 import { VirtualTicketRows } from "./components/virtual-ticket-rows.tsx";
@@ -41,7 +42,6 @@ import {
   ticketFilter,
   closedStates,
   defaultOrder,
-  dueFilterLabels,
   states,
   stateLabels,
   type CustomField,
@@ -192,20 +192,6 @@ function TicketSectionHeader({
       </Button>
     </div>
   );
-}
-// Due-date windows for My work, measured from now like the server's due filters.
-const dueWindows = [
-  ["overdue", 0],
-  ["today", 86_400_000],
-  ["week", 7 * 86_400_000],
-  ["later", Infinity],
-] as const;
-const dueWindowLabel = (id: (typeof dueWindows)[number][0] | "none") =>
-  id === "later" ? t("ticket.list.later") : dueFilterLabels[id];
-function dueWindow(ticket: Ticket, now: number) {
-  if (!ticket.dueAt) return "none";
-  const left = new Date(ticket.dueAt).getTime() - now;
-  return dueWindows.find(([, within]) => left < within)?.[0] ?? "later";
 }
 // Inline property editing on a row; readers see the plain value.
 const PropertyCell = memo(function TicketPropertyCell<P extends PropertyName>({

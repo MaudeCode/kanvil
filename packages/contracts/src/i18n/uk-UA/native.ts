@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Нещодавні проєкти",
+  "navigation.switchProject": "Змінити робочий простір або проєкт",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Закрити",
@@ -47,6 +50,11 @@ export default {
     create: "Створити проєкт",
   },
   tickets: {
+    options: "Параметри списку",
+    expandAll: "Розгорнути всі розділи",
+    collapseAll: "Згорнути всі розділи",
+    select: "Вибрати завдання",
+
     search: "Пошук тікетів",
     searchPlaceholder: "Назва, опис або ключ",
     allStatuses: "Усі статуси",
@@ -173,6 +181,7 @@ export default {
     next: "Наступні дії",
   },
   inbox: {
+    read: "Прочитано",
     markAllRead: "Позначити всі як прочитані",
     empty: "Немає сповіщень",
   },

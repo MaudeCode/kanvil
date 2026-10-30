@@ -1,28 +1,26 @@
-import { useEffect, useState } from "react";
-import { View } from "react-native";
+import type { ScrollView } from "react-native";
+import { ProjectIcon } from "./project-icon.tsx";
+import { labelOptions } from "./ticket-values.tsx";
+import { TicketProperties } from "./ticket-properties.tsx";
+import { useEffect, useState, useRef, type ComponentRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
-import {
-  difficulties,
-  difficultyLabels,
-  kinds,
-  kindLabels,
-  priorities,
-  priorityLabels,
-  stateLabels,
-  states,
-  type Ticket,
-  presentWorkflow,
-} from "@kanvil/contracts";
+import { type Ticket, capabilitiesOf } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import {
   createTicketDraft,
   draftFields,
   splitTags,
   ticketDraftSchema,
+  parseCustomFieldDraft,
 } from "@kanvil/contracts/drafts";
-import { useConnection, useIdentity, useOperation } from "./data.tsx";
+import {
+  useConnection,
+  useIdentity,
+  useOperation,
+  useAllProjects,
+  useProjectAccess,
+} from "./data.tsx";
 import {
   Body,
   Button,
@@ -31,9 +29,14 @@ import {
   ErrorNotice,
   Field,
   Loading,
-  Markdown,
   Screen,
-  styles,
+  Section,
+  Sheet,
+  DateField,
+  CustomFieldInput,
+  MarkdownField,
+  TicketPicker,
+  TicketTags,
 } from "./ui.tsx";
 import type { ScreenProps } from "./navigation.ts";
 
@@ -45,7 +48,18 @@ export function EditTicket({ route, navigation }: ScreenProps<"Edit">) {
     enabled: !!ticketId,
   });
   if (ticketId && current.isPending) return <Loading />;
-  if (ticketId && !current.data) return <ErrorNotice error={current.error} />;
+  if (ticketId && !current.data)
+    return (
+      <Screen>
+        <ErrorNotice
+          error={current.error}
+          retrying={current.isFetching}
+          onRetry={() => {
+            void current.refetch();
+          }}
+        />
+      </Screen>
+    );
   return (
     <Editor
       key={`${projectId}:${ticketId ?? "new"}`}
@@ -53,13 +67,13 @@ export function EditTicket({ route, navigation }: ScreenProps<"Edit">) {
       {...(current.data ? { ticket: current.data.ticket } : {})}
       onSaved={(ticket) => {
         if (ticketId) navigation.goBack();
-        else navigation.replace("Ticket", { projectId, ticketId: ticket.id });
+        else navigation.replace("Ticket", { projectId: ticket.projectId, ticketId: ticket.id });
       }}
     />
   );
 }
 function Editor({
-  projectId,
+  projectId: initialProjectId,
   ticket,
   onSaved,
 }: {
@@ -69,22 +83,23 @@ function Editor({
 }) {
   const { api, prefix } = useConnection(),
     identity = useIdentity();
-  const key = `${prefix}:${identity.id}:draft:${ticket?.projectId ?? projectId}:${ticket?.id ?? "new"}`;
+  const key = `${prefix}:${identity.id}:draft:${ticket?.projectId ?? initialProjectId}:${ticket?.id ?? "new"}`;
   const [initialTicket] = useState(ticket);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [draft, setDraft] = useState(() => createTicketDraft(ticket)),
     [ready, setReady] = useState(false),
     [error, setError] = useState<unknown>(),
-    [preview, setPreview] = useState(false);
+    [discarding, setDiscarding] = useState(false);
+  const [createMore, setCreateMore] = useState(false);
   const [labels, setLabels] = useState(draft.fields.labels.join(", ")),
     [scopesText, setScopesText] = useState(draft.fields.scopes.join(", "));
   const create = useOperation("create_ticket"),
     update = useOperation("update_ticket");
-  const members = useQuery(api.query("list_members", { projectId }));
-  // Older servers have no workflow; the editor then offers the canonical statuses.
-  const workflow = useQuery({
-    ...api.query("list_workflow_states", { projectId }),
-    select: presentWorkflow,
-  });
+  const projectId = ticket?.projectId ?? draft.projectId ?? initialProjectId;
+  const projects = useAllProjects(),
+    access = useProjectAccess(projectId);
+  const customFields = useQuery(api.query("list_custom_fields", { projectId }));
+  const catalog = useQuery(api.query("list_project_labels", { projectId }));
   useEffect(() => {
     let mounted = true;
     void AsyncStorage.getItem(key)
@@ -122,6 +137,12 @@ function Editor({
         ...draft.fields,
         labels: splitTags(labels),
         scopes: splitTags(scopesText),
+        customFields: Object.fromEntries(
+          Object.entries(draft.fields.customFields).map(([id, value]) => {
+            const field = customFields.data?.find((item) => item.id === id);
+            return [id, field ? parseCustomFieldDraft(field, value) : value];
+          }),
+        ),
       });
       const result = ticket
         ? await update.mutateAsync({
@@ -132,7 +153,14 @@ function Editor({
           })
         : await create.mutateAsync({ projectId, ...fields });
       await AsyncStorage.removeItem(key);
-      onSaved(result);
+      if (!ticket && createMore) {
+        change({
+          fields: { ...draft.fields, title: "", description: "", acceptanceCriteria: "" },
+          projectId,
+          uploads: [],
+        });
+        scroll.current?.scrollTo({ y: 0, animated: true });
+      } else onSaved(result);
     } catch (cause) {
       setError(cause);
     }
@@ -140,8 +168,16 @@ function Editor({
   if (!ready) return <Loading />;
   const fields = draft.fields,
     stale = !!ticket && ticket.version !== draft.version;
+  const propertySummary = [
+    fields.parentId ? t("detail.field.parentTicket") : "",
+    fields.startAt ? t("ticket.date.start") : "",
+    fields.dueAt ? t("ticket.date.due") : "",
+    fields.scopes.length ? fields.scopes.join(", ") : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <Screen>
+    <Screen form scrollRef={scroll}>
       {stale && (
         <>
           <Body>{t("native.editor.stale", { version: draft.version ?? "" })}</Body>
@@ -159,137 +195,197 @@ function Editor({
       <ErrorNotice error={error ?? create.error ?? update.error} />
       <Field
         label={t("native.editor.title")}
+        labelHidden
+        variant="title"
+        placeholder={t("native.editor.title")}
         value={fields.title}
         onChangeText={(value) => set("title", value)}
         maxLength={500}
         multiline
       />
-      <Choice
-        label={t("common.filterField.status")}
-        value={
-          fields.stateId ??
-          workflow.data?.find((state) => state.category === fields.status)?.id ??
-          fields.status
+      <TicketProperties
+        compact
+        projectId={projectId}
+        value={fields}
+        onChange={(changes) => change({ ...draft, fields: { ...draft.fields, ...changes } })}
+        disabled={!access.canWrite}
+        leading={
+          !ticket && (
+            <Choice
+              label={t("ticket.project.label")}
+              value={projectId}
+              compact
+              options={(projects.data ?? [])
+                .filter(
+                  (project) =>
+                    !project.archivedAt &&
+                    (identity.admin || capabilitiesOf(project).includes("ticket.write")),
+                )
+                .map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                  leading: <ProjectIcon project={project} size={18} />,
+                }))}
+              onChange={(next) => {
+                change({
+                  ...draft,
+                  projectId: next,
+                  fields: {
+                    ...draft.fields,
+                    stateId: null,
+                    parentId: null,
+                    assigneeId: null,
+                    labels: [],
+                    customFields: {},
+                  },
+                });
+                setLabels("");
+              }}
+            />
+          )
         }
-        options={
-          workflow.data?.length
-            ? workflow.data.map((state) => ({ value: state.id, label: state.name }))
-            : states.map((value) => ({ value, label: stateLabels[value] }))
+      >
+        <Choice
+          label={t("ticket.tags.labels")}
+          compact
+          value=""
+          selected={draft.fields.labels}
+          summary={
+            draft.fields.labels.length ? (
+              <TicketTags projectId={projectId} tags={draft.fields.labels} />
+            ) : undefined
+          }
+          options={labelOptions(catalog.data ?? [])}
+          onChange={() => {}}
+          onToggle={(label) => {
+            const next = draft.fields.labels.includes(label)
+              ? draft.fields.labels.filter((value) => value !== label)
+              : [...draft.fields.labels, label];
+            set("labels", next);
+            setLabels(next.join(", "));
+          }}
+        />
+      </TicketProperties>
+      <MarkdownField
+        label={t("native.detail.description")}
+        status={
+          <Body muted small>
+            {t("detail.editor.savedLocally")}
+          </Body>
         }
-        onChange={(value) => {
-          const state = workflow.data?.find((item) => item.id === value);
-          change({
-            ...draft,
-            fields: {
-              ...draft.fields,
-              ...(state
-                ? { status: state.category, stateId: state.id }
-                : { status: z.enum(states).parse(value), stateId: null }),
-            },
-          });
-        }}
+        value={fields.description}
+        onChangeText={(value) => set("description", value)}
+        maxLength={100000}
       />
-      <Choice
-        label={t("common.filterField.priority")}
-        value={fields.priority}
-        options={priorities.map((value) => ({ value, label: priorityLabels[value] }))}
-        onChange={(value) => set("priority", z.enum(priorities).parse(value))}
-      />
-      <Choice
-        label={t("common.filterField.kind")}
-        value={fields.kind}
-        options={kinds.map((value) => ({ value, label: kindLabels[value] }))}
-        onChange={(value) => set("kind", z.enum(kinds).parse(value))}
-      />
-      <Choice
-        label={t("common.filterField.difficulty")}
-        value={fields.difficulty ?? ""}
-        options={[
-          { value: "", label: t("native.editor.noDifficulty") },
-          ...difficulties.map((value) => ({ value, label: difficultyLabels[value] })),
-        ]}
-        onChange={(value) => set("difficulty", value ? z.enum(difficulties).parse(value) : null)}
-      />
-      <Choice
-        label={t("common.filterField.assigneeId")}
-        value={fields.assigneeId ?? ""}
-        options={[
-          { value: "", label: t("common.state.unassigned") },
-          ...(members.data?.map((member) => ({ value: member.userId, label: member.name })) ?? []),
-        ]}
-        onChange={(value) => set("assigneeId", value || null)}
-      />
-      <Field
-        label={t("native.editor.labels")}
-        value={labels}
-        onChangeText={(value) => {
-          setLabels(value);
-          set("labels", splitTags(value));
-        }}
-      />
-      <Field
-        label={t("native.editor.scopes")}
-        value={scopesText}
-        onChangeText={(value) => {
-          setScopesText(value);
-          set("scopes", splitTags(value));
-        }}
-      />
-      <Button
-        title={preview ? t("native.editor.editMarkdown") : t("native.editor.previewMarkdown")}
-        onPress={() => setPreview(!preview)}
-      />
-      {preview ? (
-        <>
-          <Markdown>{fields.description}</Markdown>
-          <Markdown>{fields.acceptanceCriteria}</Markdown>
-        </>
-      ) : (
-        <>
-          <Field
-            label={t("native.editor.description")}
-            value={fields.description}
-            onChangeText={(value) => set("description", value)}
-            multiline
-            maxLength={100000}
+      <Section
+        title={t("native.detail.acceptanceCriteria")}
+        collapsible
+        initiallyOpen={!!fields.acceptanceCriteria}
+      >
+        <MarkdownField
+          labelHidden
+          label={t("native.detail.acceptanceCriteria")}
+          value={fields.acceptanceCriteria}
+          onChangeText={(value) => set("acceptanceCriteria", value)}
+          maxLength={50000}
+        />
+      </Section>
+      <Section
+        title={t("detail.editor.moreProperties")}
+        collapsible
+        summary={
+          propertySummary ? (
+            <Body muted small>
+              {propertySummary}
+            </Body>
+          ) : undefined
+        }
+      >
+        <Field
+          label={t("native.editor.scopes")}
+          value={scopesText}
+          onChangeText={(value) => {
+            setScopesText(value);
+            set("scopes", splitTags(value));
+          }}
+        />
+        <TicketPicker
+          label={t("detail.field.parentTicket")}
+          projectId={projectId}
+          value={fields.parentId}
+          {...(ticket ? { excludeId: ticket.id } : {})}
+          onChange={(value) => set("parentId", value)}
+        />
+        <DateField
+          label={t("ticket.date.start")}
+          value={fields.startAt}
+          dayBoundary="start"
+          bounds={{ to: fields.dueAt }}
+          onChange={(value) => set("startAt", value)}
+        />
+        <DateField
+          label={t("ticket.date.due")}
+          value={fields.dueAt}
+          dayBoundary="end"
+          bounds={{ from: fields.startAt }}
+          onChange={(value) => set("dueAt", value)}
+        />
+        {customFields.data?.map((field) => (
+          <CustomFieldInput
+            key={field.id}
+            field={field}
+            value={fields.customFields[field.id]}
+            onChange={(value) => set("customFields", { ...fields.customFields, [field.id]: value })}
           />
-          <Field
-            label={t("native.editor.acceptanceCriteria")}
-            value={fields.acceptanceCriteria}
-            onChangeText={(value) => set("acceptanceCriteria", value)}
-            multiline
-            maxLength={50000}
-          />
-        </>
-      )}
-      <Field
-        label={t("native.editor.parent")}
-        value={fields.parentId ?? ""}
-        autoCapitalize="none"
-        onChangeText={(value) => set("parentId", value || null)}
-      />
-      <Check
-        label={t("native.editor.automationReady")}
-        checked={fields.automationReady}
-        onChange={(value) => set("automationReady", value)}
-      />
-      <Field
-        label={t("native.editor.holdReason")}
-        value={fields.holdReason ?? ""}
-        onChangeText={(value) => set("holdReason", value || null)}
-        maxLength={2000}
-      />
-      <View style={styles.actions}>
-        <Body muted>{t("native.editor.draftSaved")}</Body>
-      </View>
+        ))}
+        <Check
+          label={t("native.editor.automationReady")}
+          checked={fields.automationReady}
+          onChange={(value) => set("automationReady", value)}
+        />
+        <Field
+          label={t("native.editor.holdReason")}
+          value={fields.holdReason ?? ""}
+          onChangeText={(value) => set("holdReason", value || null)}
+          maxLength={2000}
+        />
+      </Section>
+      <Button title={t("detail.editor.discardDraft")} danger onPress={() => setDiscarding(true)} />
+      <Sheet
+        title={t("detail.editor.discardDraft")}
+        open={discarding}
+        onClose={() => setDiscarding(false)}
+      >
+        <Button
+          title={t("detail.editor.discardDraft")}
+          danger
+          onPress={() => {
+            const next = createTicketDraft(ticket);
+            change(next);
+            setLabels(next.fields.labels.join(", "));
+            setScopesText(next.fields.scopes.join(", "));
+            setDiscarding(false);
+          }}
+        />
+      </Sheet>
+
       <Button
         title={t("native.editor.save")}
         primary
-        disabled={stale || create.isPending || update.isPending}
+        disabled={
+          stale || create.isPending || update.isPending || !access.canWrite || !fields.title.trim()
+        }
         onPress={() => {
           void save();
         }}
       />
+      {!ticket && (
+        <Check
+          label={t("detail.editor.createMore")}
+          checked={createMore}
+          onChange={setCreateMore}
+        />
+      )}
     </Screen>
   );
 }

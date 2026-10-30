@@ -34,7 +34,7 @@ import {
   attachmentLimit,
   attachmentPath,
   evidenceFields,
-  remoteKindLabel,
+  resourceRemoteLabel as remoteLabel,
   resourceHost,
   type Output,
   type Ticket,
@@ -424,18 +424,6 @@ export function Evidence({ ticket }: { ticket: Ticket }) {
 }
 type Resource = Output<"list_resources">[number];
 // What a connection verified, such as "Pull request · Merged"; unknown without one.
-const remoteStates = ["open", "closed", "merged", "draft", "active", "deleted"] as const;
-function remoteLabel({ remoteKind, remoteState, provider }: Resource) {
-  if (!remoteState) return t("detail.link.stateUnknown");
-  // A state this release has no wording for shows as the host reported it.
-  const known = remoteStates.find((value) => value === remoteState),
-    state = known
-      ? t(`detail.link.remoteState.${known}`)
-      : remoteState.charAt(0).toUpperCase() + remoteState.slice(1);
-  return remoteKind
-    ? t("detail.link.remote", { kind: remoteKindLabel(remoteKind, provider), state })
-    : state;
-}
 export function Links({ ticket }: { ticket: Ticket }) {
   const access = useProjectAccess(ticket.projectId),
     items = useQuery(

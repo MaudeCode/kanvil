@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Projets récents",
+  "navigation.switchProject": "Changer d’espace de travail ou de projet",
   labelValue: "{{label}} : {{value}}",
   ui: {
     dismiss: "Ignorer",
@@ -48,6 +51,11 @@ export default {
     create: "Créer le projet",
   },
   tickets: {
+    options: "Options de la liste",
+    expandAll: "Développer toutes les sections",
+    collapseAll: "Réduire toutes les sections",
+    select: "Sélectionner des tickets",
+
     search: "Rechercher des tickets",
     searchPlaceholder: "Titre, description ou clé",
     allStatuses: "Tous les statuts",
@@ -174,6 +182,7 @@ export default {
     next: "Activité suivante",
   },
   inbox: {
+    read: "Lue",
     markAllRead: "Tout marquer comme lu",
     empty: "Aucune notification",
   },

@@ -1,4 +1,7 @@
 export default {
+  "navigation.projectButton": "{{project}} ⌄",
+  "navigation.recentProjects": "Son layihələr",
+  "navigation.switchProject": "İş sahəsini və ya layihəni dəyiş",
   labelValue: "{{label}}: {{value}}",
   ui: {
     dismiss: "Bağla",
@@ -48,6 +51,11 @@ export default {
     create: "Layihə yarat",
   },
   tickets: {
+    options: "Siyahı seçimləri",
+    expandAll: "Bütün bölmələri genişləndir",
+    collapseAll: "Bütün bölmələri yığ",
+    select: "Biletləri seç",
+
     search: "Tiketlərdə axtar",
     searchPlaceholder: "Başlıq, təsvir və ya açar",
     allStatuses: "Bütün statuslar",
@@ -175,6 +183,7 @@ export default {
     next: "Növbəti fəaliyyət",
   },
   inbox: {
+    read: "Oxunub",
     markAllRead: "Hamısını oxunmuş kimi qeyd et",
     empty: "Bildiriş yoxdur",
   },
