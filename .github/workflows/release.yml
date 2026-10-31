@@ -70,9 +70,16 @@ jobs:
       version: ${{ needs.preflight.outputs.version }}
       revision: ${{ github.sha }}
 
+  ios:
+    needs: [preflight, validate]
+    uses: ./.github/workflows/testflight.yml
+    with:
+      version: ${{ needs.preflight.outputs.version }}
+    secrets: inherit
+
   release:
     name: Create GitHub release
-    needs: [npm, images]
+    needs: [npm, images, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write

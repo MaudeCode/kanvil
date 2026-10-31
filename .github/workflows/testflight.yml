@@ -1,0 +1,149 @@
+name: TestFlight
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish iOS to TestFlight
+    runs-on: xcode-27
+    environment: testflight
+    timeout-minutes: 60
+    concurrency:
+      group: kanvil-testflight
+      cancel-in-progress: false
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      KANVIL_IOS_VERSION: ${{ inputs.version }}
+      TEAM_ID: ${{ secrets.APPLE_DEVELOPMENT_TEAM_ID }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check signing configuration
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = tag
+          for name in TEAM_ID APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID \
+            APP_STORE_CONNECT_PRIVATE_KEY IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; do
+            [[ -n "${!name}" ]] || { echo "::error::Missing secret: $name"; exit 1; }
+          done
+          work=$(mktemp -d "$RUNNER_TEMP/kanvil-testflight.XXXXXX")
+          echo "RELEASE_DIRECTORY=$work" >> "$GITHUB_ENV"
+          (umask 077; printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$work/AuthKey.p8")
+          echo "APP_STORE_CONNECT_KEY_PATH=$work/AuthKey.p8" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/setup
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "27.1"
+      - name: Resolve app identity and next build number
+        run: |
+          bundle=$(node --input-type=module -e "import config from './apps/mobile/app.config.ts'; console.log(config.ios.bundleIdentifier)")
+          echo "BUNDLE_ID=$bundle" >> "$GITHUB_ENV"
+          number=$(node scripts/testflight.ts select)
+          echo "KANVIL_IOS_BUILD_NUMBER=$number" >> "$GITHUB_ENV"
+      - name: Generate native project
+        run: |
+          pnpm --filter @kanvil/mobile exec expo prebuild --platform ios --no-install
+          cd apps/mobile/ios
+          pod install
+      - uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7
+        with:
+          p12-file-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+      - uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7
+        id: profile
+        with:
+          bundle-id: ${{ env.BUNDLE_ID }}
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      - name: Archive and export
+        env:
+          PROFILES: ${{ steps.profile.outputs.profiles }}
+        run: |
+          set -euo pipefail
+          export PROFILE_NAME
+          PROFILE_NAME=$(jq -er '[.[] | select(.type == "IOS_APP_STORE")] | first | .name | select(length > 0)' <<< "$PROFILES")
+          # Set signing on the app target only; Pods must not receive its profile.
+          pnpm --filter @kanvil/mobile exec node <<'JS'
+          const { writeFileSync } = require('node:fs');
+          const { XcodeUtils } = require('expo/config-plugins').IOSConfig;
+          const project = XcodeUtils.getPbxproj(process.cwd());
+          const { target } = XcodeUtils.getApplicationNativeTarget({ project, projectName: 'Kanvil' });
+          for (const [, configuration] of XcodeUtils.getBuildConfigurationsForListId(project, target.buildConfigurationList)) {
+            Object.assign(configuration.buildSettings, {
+              CODE_SIGN_STYLE: 'Manual', CODE_SIGN_IDENTITY: '"Apple Distribution"',
+              DEVELOPMENT_TEAM: process.env.TEAM_ID,
+              PROVISIONING_PROFILE_SPECIFIER: JSON.stringify(process.env.PROFILE_NAME)
+            });
+          }
+          writeFileSync('ios/Kanvil.xcodeproj/project.pbxproj', project.writeSync());
+          JS
+          xcodebuild archive -workspace apps/mobile/ios/Kanvil.xcworkspace -scheme Kanvil \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RELEASE_DIRECTORY/Kanvil.xcarchive" \
+            -derivedDataPath "$RELEASE_DIRECTORY/DerivedData"
+          node scripts/verify-ios-tabs.ts "$RELEASE_DIRECTORY/Kanvil.xcarchive/Products/Applications/Kanvil.app/Kanvil"
+          python3 - <<'PY'
+          import os, plistlib
+          env = os.environ
+          options = dict(method='app-store-connect', destination='export', signingStyle='manual',
+                         signingCertificate='Apple Distribution', teamID=env['TEAM_ID'],
+                         manageAppVersionAndBuildNumber=False, uploadSymbols=True,
+                         provisioningProfiles={env['BUNDLE_ID']: env['PROFILE_NAME']})
+          with open(env['RELEASE_DIRECTORY'] + '/ExportOptions.plist', 'wb') as output:
+              plistlib.dump(options, output)
+          PY
+          xcodebuild -exportArchive -archivePath "$RELEASE_DIRECTORY/Kanvil.xcarchive" \
+            -exportPath "$RELEASE_DIRECTORY/export" \
+            -exportOptionsPlist "$RELEASE_DIRECTORY/ExportOptions.plist"
+          unzip -q "$RELEASE_DIRECTORY/export/Kanvil.ipa" -d "$RELEASE_DIRECTORY/ipa"
+          python3 - <<'PY'
+          import os, plistlib
+          env = os.environ
+          with open(env['RELEASE_DIRECTORY'] + '/ipa/Payload/Kanvil.app/Info.plist', 'rb') as source:
+              info = plistlib.load(source)
+          assert info['CFBundleIdentifier'] == env['BUNDLE_ID']
+          assert info['CFBundleShortVersionString'] == env['GITHUB_REF_NAME'][1:]
+          assert info['CFBundleVersion'] == env['KANVIL_IOS_BUILD_NUMBER']
+          assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
+          assert info['ITSAppUsesNonExemptEncryption'] is False
+          assert os.path.getsize(env['RELEASE_DIRECTORY'] + '/ipa/Payload/Kanvil.app/main.jsbundle') > 0
+          PY
+          codesign --verify --deep --strict "$RELEASE_DIRECTORY/ipa/Payload/Kanvil.app"
+          node scripts/verify-ios-tabs.ts "$RELEASE_DIRECTORY/ipa/Payload/Kanvil.app/Kanvil"
+      - name: Upload and wait for Apple processing
+        uses: apple-actions/upload-testflight-build@b5270248e0ee7f200475125bddf7c0e5616386b5 # v4
+        with:
+          app-path: ${{ env.RELEASE_DIRECTORY }}/export/Kanvil.ipa
+          app-type: ios
+          backend: appstoreApi
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          wait-for-processing: "true"
+      - name: Verify published build
+        run: node scripts/testflight.ts verify >> "$GITHUB_STEP_SUMMARY"
+      - name: Clean up release files
+        if: always()
+        run: |
+          if [[ -n "${RELEASE_DIRECTORY:-}" ]]; then rm -rf "$RELEASE_DIRECTORY"; fi
+          # The upload action leaves its API key behind on failure. This runner is job-owned.
+          rm -f "$HOME"/private_keys/AuthKey_*.p8
