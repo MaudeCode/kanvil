@@ -102,7 +102,7 @@ pnpm --filter @kanvil/mobile exec expo run:ios --configuration Release
 
 A Release app requires HTTPS and includes its JavaScript bundle, so Metro is unnecessary. Keep simulator ad-hoc signing enabled; removing signing also removes the entitlements SecureStore needs. For an isolated simulator backend using HTTPS, run `pnpm native:auth-fixture --https --simulator <udid>` and connect to `https://localhost:5188`. Only this test process and selected simulator trust the temporary certificate.
 
-Increment `ios.buildNumber` and `android.versionCode` in `app.config.ts` for subsequent distributed builds. Keep signing material outside the repository. Building a simulator app or preview APK does not publish to an app store or install on a physical device.
+Tagged releases publish iOS to TestFlight after CI passes, using the tag's version and a build number above every uploaded build for that version. See [releases](releasing.md). Local and EAS builds retain the versions in `app.config.ts`; increment `ios.buildNumber` and `android.versionCode` for subsequent builds distributed through those paths. Keep signing material outside the repository. Building a simulator app or preview APK does not publish to an app store or install on a physical device.
 
 After changing a native dependency patch, regenerate the native project and reinstall Pods. CocoaPods can retain a path to an older pnpm patch directory even when the dependency version is unchanged. A JavaScript export or incremental archive does not establish which native implementation was linked. Verify the archived executable before exporting, and repeat against the executable extracted from the final IPA:
 

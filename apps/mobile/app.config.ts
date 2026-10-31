@@ -1,9 +1,10 @@
 import type { ExpoConfig } from "expo/config";
 import { palettes } from "../../packages/contracts/src/theme.ts";
+const applicationId = "dev.kil.kanvil";
 const config: ExpoConfig = {
   name: "Kanvil",
   slug: "kanvil",
-  version: "0.1.0",
+  version: process.env.KANVIL_IOS_VERSION ?? "0.1.0",
   scheme: "kanvil",
   icon: "./assets/icon.png",
   orientation: "default",
@@ -13,16 +14,17 @@ const config: ExpoConfig = {
     ? { extra: { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } } }
     : {}),
   ios: {
-    bundleIdentifier: "com.maudecode.kanvil",
-    buildNumber: "26",
+    bundleIdentifier: applicationId,
+    buildNumber: process.env.KANVIL_IOS_BUILD_NUMBER ?? "26",
     supportsTablet: true,
     infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
       NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
       KanvilStartupDiagnostics: process.env.EXPO_PUBLIC_STARTUP_DIAGNOSTICS === "1",
     },
   },
   android: {
-    package: "com.maudecode.kanvil",
+    package: applicationId,
     versionCode: 13,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
