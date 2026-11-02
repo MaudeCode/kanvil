@@ -56,6 +56,7 @@ import { deliverBatch } from "./outbox.ts";
 import { processImports } from "./import-operations.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import { receiveRepositoryWebhook } from "./repository-operations.ts";
+import { receiveUpload } from "./collaboration-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -321,6 +322,29 @@ async function initializeApplication(
       },
     });
   });
+  // Upload URLs from create_upload_url authenticate by their secret path and take one PUT, so an
+  // agent can send a file with `curl --upload-file` instead of inlining it in a tool call.
+  app.openAPIRegistry.registerPath({
+    method: "put",
+    path: "/api/uploads/{token}",
+    request: {
+      params: z.object({ token: z.string() }),
+      body: { content: { "application/octet-stream": { schema: z.string() } } },
+    },
+    responses: {
+      200: { description: "The staged upload, or the attachment when the URL names a ticket" },
+      400: { description: "The body is not the declared size" },
+      404: { description: "Unknown upload URL" },
+      410: { description: "The upload URL was already used or expired" },
+    },
+  });
+  app.put("/api/uploads/:token", async (c) =>
+    Response.json(
+      await receiveUpload(domain, c.req.param("token"), async () =>
+        Buffer.from(await c.req.arrayBuffer()),
+      ),
+    ),
+  );
   // Repository webhooks authenticate by their signature under the connection's saved secret.
   app.openAPIRegistry.registerPath({
     method: "post",

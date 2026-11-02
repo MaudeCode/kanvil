@@ -6,10 +6,16 @@ import {
 } from "./blob-storage.ts";
 import {
   attachmentLimit,
+  attachmentSchema,
   resourceProvider,
+  scopes,
   stagedUploadLifetime,
+  stagedUploadSchema,
+  uploadUrlLifetime,
   type ParsedInput,
 } from "@kanvil/contracts";
+import { createHash, randomBytes } from "node:crypto";
+import { z } from "zod";
 import {
   and,
   asc,
@@ -39,7 +45,9 @@ import {
   projects,
   stagedUploads,
   tickets,
+  uploadUrls,
 } from "./schema.ts";
+import { apikey } from "./auth-schema.ts";
 import { accessibleProjectRows } from "./project-access.ts";
 import { assertNoCycle, readableTicket } from "./ticket-operations.ts";
 import { mentionedUserIds } from "./mentions.ts";
@@ -49,6 +57,7 @@ import {
   context,
   fail,
   getTicket,
+  json,
   intakeHoldReason,
   intakeOnly,
   project,
@@ -59,6 +68,7 @@ import {
   requireRow,
   subscribe,
   type Context,
+  type Domain,
   type Handlers,
   one,
 } from "./domain.ts";
@@ -131,6 +141,152 @@ export async function addComment(ctx: Context, input: ParsedInput<"add_comment">
   });
   return row;
 }
+type FileMetadata = { name: string; contentType: string };
+async function attachFile(
+  ctx: Context,
+  ticket: typeof tickets.$inferSelect,
+  id: string,
+  bytes: Buffer,
+  file: FileMetadata,
+) {
+  if (intakeOnly(ctx.actor)) {
+    const stored = one(
+      await ctx.db
+        .select({
+          files:
+            sql<number>`count(*) filter (where ${attachments.ticketId} = ${ticket.id})`.mapWith(
+              Number,
+            ),
+          bytes: sql<number>`coalesce(sum(${attachments.size}), 0)`.mapWith(Number),
+        })
+        .from(attachments)
+        .innerJoin(tickets, eq(tickets.id, attachments.ticketId))
+        .where(
+          and(
+            eq(tickets.intakeCredentialId, ctx.actor.ownerId),
+            eq(tickets.holdReason, intakeHoldReason),
+          ),
+        ),
+    );
+    if (stored.files >= intakeAttachmentLimit)
+      fail(
+        409,
+        "attachment_limit",
+        `An intake credential can attach at most ${intakeAttachmentLimit} files to a ticket`,
+      );
+    if (stored.bytes + bytes.length > intakeByteQuota)
+      fail(
+        409,
+        "attachment_limit",
+        "This intake credential's untriaged tickets hold too many attachment bytes",
+      );
+  }
+  await ctx.blobs.put(ctx.db, id, bytes, file.contentType);
+  const row = one(
+    await ctx.db
+      .insert(attachments)
+      .values({
+        id,
+        objectId: id,
+        projectId: project(ctx).id,
+        ticketId: ticket.id,
+        actorId: ctx.actor.id,
+        name: file.name,
+        contentType: file.contentType,
+        size: bytes.length,
+      })
+      .returning(),
+  );
+  await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
+  return row;
+}
+// No event: a staged upload is private to its uploader until create_ticket claims it and
+// publishes the attachment with the ticket.
+async function stageFile(ctx: Context, id: string, bytes: Buffer, file: FileMetadata) {
+  await ctx.blobs.put(ctx.db, id, bytes, file.contentType);
+  const row = one(
+    await ctx.db
+      .insert(stagedUploads)
+      .values({
+        id,
+        projectId: project(ctx).id,
+        actorId: ctx.actor.id,
+        name: file.name,
+        contentType: file.contentType,
+        size: bytes.length,
+      })
+      .returning(),
+  );
+  return { ...row, expiresAt: new Date(row.createdAt.getTime() + stagedUploadLifetime) };
+}
+const uploadToken = /^kvup_[A-Za-z0-9_-]{43}$/;
+const hashUploadToken = (token: string) => createHash("sha256").update(token).digest("hex");
+const uploadCredential = z
+  .object({
+    ownerId: z.string(),
+    scopes: z.array(z.enum(scopes)),
+    projectIds: z.array(z.string()).optional(),
+    // An API key, as opposed to an MCP OAuth grant: the PUT checks it was not revoked since.
+    apiKey: z.boolean(),
+  })
+  .nullable();
+function assertUploadUrlOpen(row: { usedAt: Date | null; expiresAt: Date }) {
+  if (row.usedAt) fail(410, "upload_url_unavailable", "This upload URL was already used");
+  if (row.expiresAt.getTime() <= Date.now())
+    fail(410, "upload_url_unavailable", "This upload URL expired; request a new one");
+}
+// The PUT behind a create_upload_url URL. The token is its only credential, so it reaches one
+// upload: unknown tokens read as not found and the URL serves no read. The write then runs as the
+// issuer with the issuing credential's limits, and needs their current write access to the
+// project (and ticket). Only a stored upload uses the URL; a wrong size leaves it usable.
+export async function receiveUpload(domain: Domain, token: string, body: () => Promise<Buffer>) {
+  const row = uploadToken.test(token)
+    ? (
+        await domain.database.db
+          .select()
+          .from(uploadUrls)
+          .where(eq(uploadUrls.tokenHash, hashUploadToken(token)))
+      )[0]
+    : undefined;
+  if (!row) return fail(404, "not_found", "This upload URL does not exist");
+  assertUploadUrlOpen(row);
+  const bytes = await body();
+  if (bytes.length !== row.size)
+    fail(
+      400,
+      "invalid_attachment",
+      `This upload URL takes exactly ${row.size} bytes; the request sent ${bytes.length}`,
+    );
+  const credential = uploadCredential.parse(row.credential);
+  if (credential?.apiKey) {
+    const key = (
+      await domain.database.db.select().from(apikey).where(eq(apikey.id, credential.ownerId))
+    )[0];
+    if (!key?.enabled || (key.expiresAt && key.expiresAt <= new Date()))
+      fail(401, "unauthorized", "The API credential that requested this upload URL was revoked");
+  }
+  const actor = await domain.actor(
+    row.actorId,
+    credential
+      ? {
+          ownerId: credential.ownerId,
+          scopes: credential.scopes,
+          ...(credential.projectIds ? { projectIds: credential.projectIds } : {}),
+        }
+      : undefined,
+  );
+  return domain.transact(async (tx, as) => {
+    const current = one(await tx.select().from(uploadUrls).where(eq(uploadUrls.id, row.id)));
+    assertUploadUrlOpen(current);
+    const ctx = await as(actor, row.projectId);
+    await tx.update(uploadUrls).set({ usedAt: new Date() }).where(eq(uploadUrls.id, row.id));
+    return row.ticketId
+      ? attachmentSchema.parse(
+          json(await attachFile(ctx, await getTicket(ctx, row.ticketId), row.id, bytes, row)),
+        )
+      : stagedUploadSchema.parse(json(await stageFile(ctx, row.id, bytes, row)));
+  });
+}
 export const collaborationHandlers: Pick<
   Handlers,
   | "list_relations"
@@ -143,6 +299,7 @@ export const collaborationHandlers: Pick<
   | "list_activity"
   | "upload_attachment"
   | "stage_upload"
+  | "create_upload_url"
   | "discard_upload"
   | "list_attachments"
   | "delete_attachment"
@@ -305,80 +462,49 @@ export const collaborationHandlers: Pick<
     };
   },
   async upload_attachment(ctx, input) {
-    const ticket = await getTicket(ctx, input.ticketId);
-    const bytes = decodeBlobData(input.data, attachmentLimit);
-    if (intakeOnly(ctx.actor)) {
-      const stored = one(
-        await ctx.db
-          .select({
-            files:
-              sql<number>`count(*) filter (where ${attachments.ticketId} = ${ticket.id})`.mapWith(
-                Number,
-              ),
-            bytes: sql<number>`coalesce(sum(${attachments.size}), 0)`.mapWith(Number),
-          })
-          .from(attachments)
-          .innerJoin(tickets, eq(tickets.id, attachments.ticketId))
-          .where(
-            and(
-              eq(tickets.intakeCredentialId, ctx.actor.ownerId),
-              eq(tickets.holdReason, intakeHoldReason),
-            ),
-          ),
-      );
-      if (stored.files >= intakeAttachmentLimit)
-        fail(
-          409,
-          "attachment_limit",
-          `An intake credential can attach at most ${intakeAttachmentLimit} files to a ticket`,
-        );
-      if (stored.bytes + bytes.length > intakeByteQuota)
-        fail(
-          409,
-          "attachment_limit",
-          "This intake credential's untriaged tickets hold too many attachment bytes",
-        );
-    }
-    const id = crypto.randomUUID();
-    await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
-    const row = one(
-      await ctx.db
-        .insert(attachments)
-        .values({
-          id,
-          objectId: id,
-          projectId: project(ctx).id,
-          ticketId: ticket.id,
-          actorId: ctx.actor.id,
-          name: input.name,
-          contentType: input.contentType,
-          size: bytes.length,
-        })
-        .returning(),
+    return attachFile(
+      ctx,
+      await getTicket(ctx, input.ticketId),
+      crypto.randomUUID(),
+      decodeBlobData(input.data, attachmentLimit),
+      input,
     );
-    await publish(ctx, "attachment.created", ticket.id, { attachmentId: row.id, size: row.size });
-    return row;
   },
-  // No event: a staged upload is private to its uploader until create_ticket claims it and
-  // publishes the attachment with the ticket.
   async stage_upload(ctx, input) {
-    const bytes = decodeBlobData(input.data, attachmentLimit);
-    const id = crypto.randomUUID();
-    await ctx.blobs.put(ctx.db, id, bytes, input.contentType);
+    return stageFile(ctx, crypto.randomUUID(), decodeBlobData(input.data, attachmentLimit), input);
+  },
+  // No event: nothing exists until the PUT stores the bytes. No requestId either: a receipt would
+  // keep the URL's token.
+  async create_upload_url(ctx, input) {
+    const ticket = input.ticketId ? await getTicket(ctx, input.ticketId) : undefined,
+      token = `kvup_${randomBytes(32).toString("base64url")}`,
+      { id, ownerId, scopes: granted, projectIds, machine } = ctx.actor,
+      apiKey =
+        machine &&
+        (await ctx.db.select({ id: apikey.id }).from(apikey).where(eq(apikey.id, ownerId))).length >
+          0;
     const row = one(
       await ctx.db
-        .insert(stagedUploads)
+        .insert(uploadUrls)
         .values({
-          id,
+          id: crypto.randomUUID(),
           projectId: project(ctx).id,
-          actorId: ctx.actor.id,
+          ticketId: ticket?.id ?? null,
+          actorId: id,
+          credential: machine ? { ownerId, scopes: granted, projectIds, apiKey } : null,
           name: input.name,
           contentType: input.contentType,
-          size: bytes.length,
+          size: input.size,
+          tokenHash: hashUploadToken(token),
+          expiresAt: new Date(Date.now() + uploadUrlLifetime),
         })
         .returning(),
     );
-    return { ...row, expiresAt: new Date(row.createdAt.getTime() + stagedUploadLifetime) };
+    return {
+      uploadId: row.id,
+      url: new URL(`/api/uploads/${token}`, ctx.publicUrl).href,
+      expiresAt: row.expiresAt,
+    };
   },
   async discard_upload(ctx, input) {
     const row = one(

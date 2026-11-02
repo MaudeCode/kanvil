@@ -516,6 +516,31 @@ export const stagedUploads = pgTable(
   },
   (table) => [index("staged_uploads_created").on(table.createdAt)],
 );
+// A single-use URL that accepts one file's bytes by PUT, so an agent never inlines them. Its ID
+// becomes the staged upload's or attachment's ID; `credential` keeps the issuing credential's
+// limits for the write the PUT makes.
+export const uploadUrls = pgTable(
+  "upload_urls",
+  {
+    id: uuid("id").primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id").references(() => tickets.id, { onDelete: "cascade" }),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credential: jsonb("credential"),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: time("created_at"),
+  },
+  (table) => [index("upload_urls_expires").on(table.expiresAt)],
+);
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 export const attachmentContent = pgTable("attachment_content", {
   id: uuid("id")
