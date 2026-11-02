@@ -1866,9 +1866,20 @@ describe("HTTP, realtime, and MCP", () => {
     expect((await request(path(dropped.id), { headers: sessionHeaders() })).status).toBe(404);
   });
   const uploadUrlResult = z.object({ uploadId: z.uuid(), url: z.string(), expiresAt: z.string() });
-  // The upload URL is the whole credential: the PUT carries no session or bearer token.
-  const putUpload = (target: string, body: Uint8Array) =>
-    application.app.fetch(new Request(target, { method: "PUT", body }));
+  // The upload URL is the whole credential: the PUT carries no session or bearer token. Like
+  // `curl --upload-file`, it announces the body's length unless a case says otherwise.
+  const putUpload = (
+    target: string,
+    body: Uint8Array,
+    length: string | null = String(body.length),
+  ) =>
+    application.app.fetch(
+      new Request(target, {
+        method: "PUT",
+        body,
+        headers: length === null ? {} : { "Content-Length": length },
+      }),
+    );
   it("lets an MCP agent PUT a file to a single-use upload URL instead of inlining base64", async () => {
     const project = await newProject(),
       ticket = await client().call("create_ticket", {
@@ -1987,9 +1998,15 @@ describe("HTTP, realtime, and MCP", () => {
       status: 404,
       code: "not_found",
     });
-    // A size mismatch stores nothing and leaves the URL usable.
-    for (const wrong of [bytes.subarray(1), Buffer.concat([bytes, Buffer.from("!")])])
-      expect(await failure(await putUpload(once.url, wrong))).toEqual({
+    // A size mismatch, announced or not, stores nothing and leaves the URL usable.
+    const longer = Buffer.concat([bytes, Buffer.from("!")]);
+    for (const [wrong, length] of [
+      [bytes.subarray(1), undefined],
+      [longer, undefined],
+      [longer, String(bytes.length)],
+      [bytes, null],
+    ] as const)
+      expect(await failure(await putUpload(once.url, wrong, length))).toEqual({
         status: 400,
         code: "invalid_attachment",
       });
@@ -1998,6 +2015,33 @@ describe("HTTP, realtime, and MCP", () => {
       status: 410,
       code: "upload_url_unavailable",
     });
+    // While one PUT streams its body, the URL is reserved: a concurrent PUT buffers nothing.
+    const held = await issue();
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const first = application.app.fetch(
+      new Request(held.url, {
+        method: "PUT",
+        headers: { "Content-Length": String(bytes.length) },
+        body: new ReadableStream<Uint8Array>({ start: (controller) => void (stream = controller) }),
+        duplex: "half",
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(
+        (
+          await fixture.database.pool.query("SELECT used_at FROM upload_urls WHERE id = $1", [
+            held.uploadId,
+          ])
+        ).rows[0]?.used_at,
+      ).toBeTruthy(),
+    );
+    expect(await failure(await putUpload(held.url, bytes))).toEqual({
+      status: 410,
+      code: "upload_url_unavailable",
+    });
+    stream.enqueue(bytes);
+    stream.close();
+    expect((await first).status).toBe(200);
     const late = await issue();
     await fixture.database.pool.query(
       "UPDATE upload_urls SET expires_at = now() - interval '1 second' WHERE id = $1",

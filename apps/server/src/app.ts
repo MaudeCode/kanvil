@@ -187,17 +187,16 @@ async function initializeApplication(
     },
   });
   app.use("*", secureHeaders());
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: 15_000_000,
-      onError: () =>
-        Response.json(
-          { error: { code: "payload_too_large", message: "The request exceeds the upload limit" } },
-          { status: 413 },
-        ),
-    }),
-  );
+  const limitBody = bodyLimit({
+    maxSize: 15_000_000,
+    onError: () =>
+      Response.json(
+        { error: { code: "payload_too_large", message: "The request exceeds the upload limit" } },
+        { status: 413 },
+      ),
+  });
+  // An upload URL bounds its own body by the declared size, without buffering a chunked one here.
+  app.use("*", (c, next) => (c.req.path.startsWith("/api/uploads/") ? next() : limitBody(c, next)));
   app.onError((error) => {
     if (error instanceof AuthAPIError && error.statusCode >= 400 && error.statusCode < 500)
       return Response.json(
@@ -333,15 +332,32 @@ async function initializeApplication(
     },
     responses: {
       200: { description: "The staged upload, or the attachment when the URL names a ticket" },
-      400: { description: "The body is not the declared size" },
+      400: { description: "The body or its Content-Length is not the declared size" },
       404: { description: "Unknown upload URL" },
       410: { description: "The upload URL was already used or expired" },
     },
   });
+  // Reads at most one byte past the declared size, so a longer body is refused without buffering it.
   app.put("/api/uploads/:token", async (c) =>
     Response.json(
-      await receiveUpload(domain, c.req.param("token"), async () =>
-        Buffer.from(await c.req.arrayBuffer()),
+      await receiveUpload(
+        domain,
+        c.req.param("token"),
+        c.req.header("content-length"),
+        async (limit) => {
+          const chunks: Uint8Array[] = [],
+            reader = c.req.raw.body?.getReader();
+          if (!reader) return Buffer.alloc(0);
+          let total = 0;
+          while (total <= limit) {
+            const { done, value } = await reader.read();
+            if (done) return Buffer.concat(chunks);
+            chunks.push(value);
+            total += value.length;
+          }
+          await reader.cancel();
+          return Buffer.concat(chunks);
+        },
       ),
     ),
   );

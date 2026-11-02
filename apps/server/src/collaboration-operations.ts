@@ -236,56 +236,80 @@ function assertUploadUrlOpen(row: { usedAt: Date | null; expiresAt: Date }) {
     fail(410, "upload_url_unavailable", "This upload URL expired; request a new one");
 }
 // The PUT behind a create_upload_url URL. The token is its only credential, so it reaches one
-// upload: unknown tokens read as not found and the URL serves no read. The write then runs as the
-// issuer with the issuing credential's limits, and needs their current write access to the
-// project (and ticket). Only a stored upload uses the URL; a wrong size leaves it usable.
-export async function receiveUpload(domain: Domain, token: string, body: () => Promise<Buffer>) {
-  const row = uploadToken.test(token)
-    ? (
-        await domain.database.db
-          .select()
-          .from(uploadUrls)
-          .where(eq(uploadUrls.tokenHash, hashUploadToken(token)))
-      )[0]
-    : undefined;
+// upload: unknown tokens read as not found and the URL serves no read. The request must announce
+// the declared size as its Content-Length, and the URL is reserved before the body is read, so
+// only one request at a time reads at most that many bytes. The write then
+// runs as the issuer with the issuing credential's limits, and needs their current write access
+// to the project (and ticket). Only a stored upload uses the URL: any failure, such as a wrong
+// size, releases the reservation and leaves the URL usable.
+export async function receiveUpload(
+  domain: Domain,
+  token: string,
+  contentLength: string | undefined,
+  read: (limit: number) => Promise<Buffer>,
+) {
+  const { db } = domain.database,
+    row = uploadToken.test(token)
+      ? (
+          await db
+            .select()
+            .from(uploadUrls)
+            .where(eq(uploadUrls.tokenHash, hashUploadToken(token)))
+        )[0]
+      : undefined;
   if (!row) return fail(404, "not_found", "This upload URL does not exist");
   assertUploadUrlOpen(row);
-  const bytes = await body();
-  if (bytes.length !== row.size)
+  const wrongSize = (sent: string) =>
     fail(
       400,
       "invalid_attachment",
-      `This upload URL takes exactly ${row.size} bytes; the request sent ${bytes.length}`,
+      `This upload URL takes exactly ${row.size} bytes with that Content-Length; the request sent ${sent}`,
     );
-  const credential = uploadCredential.parse(row.credential);
-  if (credential?.apiKey) {
-    const key = (
-      await domain.database.db.select().from(apikey).where(eq(apikey.id, credential.ownerId))
-    )[0];
-    if (!key?.enabled || (key.expiresAt && key.expiresAt <= new Date()))
-      fail(401, "unauthorized", "The API credential that requested this upload URL was revoked");
+  if (contentLength !== String(row.size)) wrongSize(contentLength ?? "no Content-Length");
+  const reserved = new Date();
+  const [held] = await db
+    .update(uploadUrls)
+    .set({ usedAt: reserved })
+    .where(
+      and(eq(uploadUrls.id, row.id), isNull(uploadUrls.usedAt), gt(uploadUrls.expiresAt, reserved)),
+    )
+    .returning({ id: uploadUrls.id });
+  if (!held) fail(410, "upload_url_unavailable", "This upload URL is already receiving an upload");
+  try {
+    const bytes = await read(row.size);
+    if (bytes.length !== row.size)
+      wrongSize(bytes.length > row.size ? "more" : String(bytes.length));
+    const credential = uploadCredential.parse(row.credential);
+    if (credential?.apiKey) {
+      const key = (await db.select().from(apikey).where(eq(apikey.id, credential.ownerId)))[0];
+      if (!key?.enabled || (key.expiresAt && key.expiresAt <= new Date()))
+        fail(401, "unauthorized", "The API credential that requested this upload URL was revoked");
+    }
+    const actor = await domain.actor(
+      row.actorId,
+      credential
+        ? {
+            ownerId: credential.ownerId,
+            scopes: credential.scopes,
+            ...(credential.projectIds ? { projectIds: credential.projectIds } : {}),
+          }
+        : undefined,
+    );
+    return await domain.transact(async (tx, as) => {
+      const ctx = await as(actor, row.projectId);
+      return row.ticketId
+        ? attachmentSchema.parse(
+            json(await attachFile(ctx, await getTicket(ctx, row.ticketId), row.id, bytes, row)),
+          )
+        : stagedUploadSchema.parse(json(await stageFile(ctx, row.id, bytes, row)));
+    });
+  } catch (error) {
+    await db
+      .update(uploadUrls)
+      .set({ usedAt: null })
+      .where(and(eq(uploadUrls.id, row.id), eq(uploadUrls.usedAt, reserved)));
+    throw error;
   }
-  const actor = await domain.actor(
-    row.actorId,
-    credential
-      ? {
-          ownerId: credential.ownerId,
-          scopes: credential.scopes,
-          ...(credential.projectIds ? { projectIds: credential.projectIds } : {}),
-        }
-      : undefined,
-  );
-  return domain.transact(async (tx, as) => {
-    const current = one(await tx.select().from(uploadUrls).where(eq(uploadUrls.id, row.id)));
-    assertUploadUrlOpen(current);
-    const ctx = await as(actor, row.projectId);
-    await tx.update(uploadUrls).set({ usedAt: new Date() }).where(eq(uploadUrls.id, row.id));
-    return row.ticketId
-      ? attachmentSchema.parse(
-          json(await attachFile(ctx, await getTicket(ctx, row.ticketId), row.id, bytes, row)),
-        )
-      : stagedUploadSchema.parse(json(await stageFile(ctx, row.id, bytes, row)));
-  });
 }
 export const collaborationHandlers: Pick<
   Handlers,
