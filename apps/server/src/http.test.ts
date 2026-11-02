@@ -65,6 +65,11 @@ function httpRejection(call: Promise<unknown>) {
     },
   );
 }
+// The status and stable error code of a rejected raw response.
+const failure = async (response: Response) => ({
+  status: response.status,
+  code: errorSchema.parse(await response.json()).error.code,
+});
 
 describe("HTTP, realtime, and MCP", () => {
   let fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -1859,6 +1864,209 @@ describe("HTTP, realtime, and MCP", () => {
     expect((await request(path(kept.id), { headers: sessionHeaders() })).status).toBe(200);
     await api.call("discard_upload", { projectId: project.id, uploadId: dropped.id });
     expect((await request(path(dropped.id), { headers: sessionHeaders() })).status).toBe(404);
+  });
+  const uploadUrlResult = z.object({ uploadId: z.uuid(), url: z.string(), expiresAt: z.string() });
+  // The upload URL is the whole credential: the PUT carries no session or bearer token. Like
+  // `curl --upload-file`, it announces the body's length unless a case says otherwise.
+  const putUpload = (
+    target: string,
+    body: Uint8Array,
+    length: string | null = String(body.length),
+  ) =>
+    application.app.fetch(
+      new Request(target, {
+        method: "PUT",
+        body,
+        headers: length === null ? {} : { "Content-Length": length },
+      }),
+    );
+  it("lets an MCP agent PUT a file to a single-use upload URL instead of inlining base64", async () => {
+    const project = await newProject(),
+      ticket = await client().call("create_ticket", {
+        projectId: project.id,
+        title: "Has a recording",
+      }),
+      token = await credential(project.id),
+      sdk = await mcpClient(token.key),
+      bytes = Buffer.from(`screen recording ${crypto.randomUUID()}`);
+    try {
+      const uploadUrl = async (args: Record<string, unknown>) => {
+        const response = await sdk.callTool({
+          name: "create_upload_url",
+          arguments: {
+            projectId: project.id,
+            name: "recording.mp4",
+            contentType: "video/mp4",
+            size: bytes.length,
+            ...args,
+          },
+        });
+        expect(response.isError, JSON.stringify(response.content)).toBeFalsy();
+        return uploadUrlResult.parse(
+          z.object({ result: z.unknown() }).parse(response.structuredContent).result,
+        );
+      };
+      // Without a ticket, the PUT stages the file and create_ticket claims it like any staged upload.
+      const staged = await uploadUrl({});
+      expect(Date.parse(staged.expiresAt) - Date.now()).toBeGreaterThan(14 * 60_000);
+      expect(Date.parse(staged.expiresAt) - Date.now()).toBeLessThanOrEqual(15 * 60_000);
+      const stored = await putUpload(staged.url, bytes);
+      expect(stored.status).toBe(200);
+      expect(await stored.json()).toMatchObject({
+        id: staged.uploadId,
+        projectId: project.id,
+        name: "recording.mp4",
+        contentType: "video/mp4",
+        size: bytes.length,
+      });
+      const created = await client().call("create_ticket", {
+        projectId: project.id,
+        title: "Recorded",
+        uploads: [staged.uploadId],
+      });
+      expect(
+        await client().call("list_attachments", { projectId: project.id, ticketId: created.id }),
+      ).toMatchObject([{ id: staged.uploadId, name: "recording.mp4", size: bytes.length }]);
+      const content = await request(attachmentPath(project.id, staged.uploadId), {
+        headers: sessionHeaders(),
+      });
+      expect(Buffer.from(await content.arrayBuffer())).toEqual(bytes);
+      // With a ticket, the PUT attaches the file to it.
+      const direct = await uploadUrl({ ticketId: ticket.key });
+      const attached = await putUpload(direct.url, bytes);
+      expect(attached.status).toBe(200);
+      expect(await attached.json()).toMatchObject({ id: direct.uploadId, ticketId: ticket.id });
+      expect(
+        await client().call("list_attachments", { projectId: project.id, ticketId: ticket.id }),
+      ).toMatchObject([{ id: direct.uploadId, name: "recording.mp4", size: bytes.length }]);
+      const { tools } = await sdk.listTools();
+      for (const name of ["stage_upload", "upload_attachment"])
+        expect(tools.find((tool) => tool.name === name)?.description).toContain(
+          "create_upload_url",
+        );
+      // Revoking the credential that requested a URL stops the URL too.
+      const orphaned = await uploadUrl({});
+      expect(
+        (
+          await request(`/api/v1/credentials/${token.id}`, {
+            method: "DELETE",
+            headers: sessionHeaders(),
+          })
+        ).status,
+      ).toBe(200);
+      expect(await failure(await putUpload(orphaned.url, bytes))).toEqual({
+        status: 401,
+        code: "unauthorized",
+      });
+    } finally {
+      await sdk.close();
+    }
+  });
+  it("rejects reused, expired, mismatched, and cross-project upload URLs and grants no read", async () => {
+    const project = await newProject(),
+      other = await newProject(),
+      elsewhere = await client().call("create_ticket", { projectId: other.id, title: "Elsewhere" }),
+      bytes = Buffer.from("exact declared bytes");
+    const create = (input: Record<string, unknown>) =>
+      request(`/api/v1/projects/${project.id}/upload-urls`, {
+        method: "POST",
+        headers: sessionHeaders(),
+        body: JSON.stringify({
+          name: "log.txt",
+          contentType: "text/plain",
+          size: bytes.length,
+          ...input,
+        }),
+      });
+    const issue = async (input: Record<string, unknown> = {}) => {
+      const response = await create(input);
+      expect(response.status, await response.clone().text()).toBe(200);
+      return uploadUrlResult.parse(await response.json());
+    };
+    const once = await issue();
+    // The same limits as stage_upload, checked before any URL exists.
+    expect(await failure(await create({ size: attachmentLimit + 1 }))).toEqual({
+      status: 400,
+      code: "validation_error",
+    });
+    expect(await failure(await create({ contentType: "not a type" }))).toEqual({
+      status: 400,
+      code: "validation_error",
+    });
+    // A ticket of another project is not reachable through this project.
+    expect(await failure(await create({ ticketId: elsewhere.id }))).toEqual({
+      status: 404,
+      code: "not_found",
+    });
+    // A size mismatch, announced or not, stores nothing and leaves the URL usable.
+    const longer = Buffer.concat([bytes, Buffer.from("!")]);
+    for (const [wrong, length] of [
+      [bytes.subarray(1), undefined],
+      [longer, undefined],
+      [longer, String(bytes.length)],
+      [bytes, null],
+    ] as const)
+      expect(await failure(await putUpload(once.url, wrong, length))).toEqual({
+        status: 400,
+        code: "invalid_attachment",
+      });
+    expect((await putUpload(once.url, bytes)).status).toBe(200);
+    expect(await failure(await putUpload(once.url, bytes))).toEqual({
+      status: 410,
+      code: "upload_url_unavailable",
+    });
+    // While one PUT streams its body, the URL is reserved: a concurrent PUT buffers nothing.
+    const held = await issue();
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const first = application.app.fetch(
+      new Request(held.url, {
+        method: "PUT",
+        headers: { "Content-Length": String(bytes.length) },
+        body: new ReadableStream<Uint8Array>({ start: (controller) => void (stream = controller) }),
+        duplex: "half",
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(
+        (
+          await fixture.database.pool.query("SELECT used_at FROM upload_urls WHERE id = $1", [
+            held.uploadId,
+          ])
+        ).rows[0]?.used_at,
+      ).toBeTruthy(),
+    );
+    expect(await failure(await putUpload(held.url, bytes))).toEqual({
+      status: 410,
+      code: "upload_url_unavailable",
+    });
+    stream.enqueue(bytes);
+    stream.close();
+    expect((await first).status).toBe(200);
+    const late = await issue();
+    await fixture.database.pool.query(
+      "UPDATE upload_urls SET expires_at = now() - interval '1 second' WHERE id = $1",
+      [late.uploadId],
+    );
+    expect(await failure(await putUpload(late.url, bytes))).toEqual({
+      status: 410,
+      code: "upload_url_unavailable",
+    });
+    // The URL reads nothing, and an unknown token reaches no upload.
+    expect((await application.app.fetch(new Request(once.url))).status).toBe(404);
+    expect((await request(attachmentPath(project.id, once.uploadId))).status).toBe(401);
+    expect(
+      await failure(await putUpload(url(`/api/uploads/kvup_${"A".repeat(43)}`), bytes)),
+    ).toEqual({ status: 404, code: "not_found" });
+    // The upload belongs to its project: another project cannot claim it.
+    expect(
+      await httpRejection(
+        client().call("create_ticket", {
+          projectId: other.id,
+          title: "Not here",
+          uploads: [once.uploadId],
+        }),
+      ),
+    ).toMatchObject({ status: 404, code: "not_found" });
   });
   it("archives, restores, previews, and deletes a project through HTTP", async () => {
     const project = await newProject();

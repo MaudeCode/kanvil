@@ -56,6 +56,7 @@ import { deliverBatch } from "./outbox.ts";
 import { processImports } from "./import-operations.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import { receiveRepositoryWebhook } from "./repository-operations.ts";
+import { receiveUpload } from "./collaboration-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
@@ -186,17 +187,16 @@ async function initializeApplication(
     },
   });
   app.use("*", secureHeaders());
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: 15_000_000,
-      onError: () =>
-        Response.json(
-          { error: { code: "payload_too_large", message: "The request exceeds the upload limit" } },
-          { status: 413 },
-        ),
-    }),
-  );
+  const limitBody = bodyLimit({
+    maxSize: 15_000_000,
+    onError: () =>
+      Response.json(
+        { error: { code: "payload_too_large", message: "The request exceeds the upload limit" } },
+        { status: 413 },
+      ),
+  });
+  // An upload URL bounds its own body by the declared size, without buffering a chunked one here.
+  app.use("*", (c, next) => (c.req.path.startsWith("/api/uploads/") ? next() : limitBody(c, next)));
   app.onError((error) => {
     if (error instanceof AuthAPIError && error.statusCode >= 400 && error.statusCode < 500)
       return Response.json(
@@ -321,6 +321,46 @@ async function initializeApplication(
       },
     });
   });
+  // Upload URLs from create_upload_url authenticate by their secret path and take one PUT, so an
+  // agent can send a file with `curl --upload-file` instead of inlining it in a tool call.
+  app.openAPIRegistry.registerPath({
+    method: "put",
+    path: "/api/uploads/{token}",
+    request: {
+      params: z.object({ token: z.string() }),
+      body: { content: { "application/octet-stream": { schema: z.string() } } },
+    },
+    responses: {
+      200: { description: "The staged upload, or the attachment when the URL names a ticket" },
+      400: { description: "The body or its Content-Length is not the declared size" },
+      404: { description: "Unknown upload URL" },
+      410: { description: "The upload URL was already used or expired" },
+    },
+  });
+  // Reads at most one byte past the declared size, so a longer body is refused without buffering it.
+  app.put("/api/uploads/:token", async (c) =>
+    Response.json(
+      await receiveUpload(
+        domain,
+        c.req.param("token"),
+        c.req.header("content-length"),
+        async (limit) => {
+          const chunks: Uint8Array[] = [],
+            reader = c.req.raw.body?.getReader();
+          if (!reader) return Buffer.alloc(0);
+          let total = 0;
+          while (total <= limit) {
+            const { done, value } = await reader.read();
+            if (done) return Buffer.concat(chunks);
+            chunks.push(value);
+            total += value.length;
+          }
+          await reader.cancel();
+          return Buffer.concat(chunks);
+        },
+      ),
+    ),
+  );
   // Repository webhooks authenticate by their signature under the connection's saved secret.
   app.openAPIRegistry.registerPath({
     method: "post",

@@ -101,6 +101,8 @@ export const scopes = ["read", "write", "claim", "admin", "intake"] as const;
 export const attachmentLimit = 10_000_000;
 // An inline upload staged before its ticket exists stays claimable for this long.
 export const stagedUploadLifetime = 86_400_000;
+// An upload URL from create_upload_url accepts its one PUT for this long.
+export const uploadUrlLifetime = 15 * 60_000;
 export const stateLabels = labelTable(states, (value) => t(`common.status.${value}`));
 export const priorityLabels = labelTable(priorities, (value) => t(`common.priority.${value}`));
 export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
@@ -852,6 +854,11 @@ export const attachmentSchema = z.object({
 export const stagedUploadSchema = attachmentSchema
   .omit({ ticketId: true })
   .extend({ expiresAt: timestamp });
+export const uploadUrlSchema = z.object({
+  uploadId: z.uuid(),
+  url: z.url(),
+  expiresAt: timestamp,
+});
 // The authorized address of an attachment's bytes. A staged upload keeps this address once
 // create_ticket claims it, so Markdown that embeds it needs no rewrite.
 export const attachmentPath = (projectId: string, attachmentId: string) =>
@@ -1843,8 +1850,8 @@ export const importSourceProjectSchema = z.object({
 export type ImportSourceProject = z.output<typeof importSourceProjectSchema>;
 export const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int().nonnegative() });
-// One uploaded file: attachments and staged inline uploads accept the same bytes.
-const fileFields = {
+// One uploaded file: attachments, staged inline uploads, and upload URLs accept the same files.
+const fileMetadata = {
   name: text.max(255).refine((value) => {
     for (const character of value)
       if (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) return false;
@@ -1855,8 +1862,8 @@ const fileFields = {
     .max(120)
     .regex(/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i)
     .default("application/octet-stream"),
-  data: z.string().max(Math.ceil(attachmentLimit / 3) * 4),
 };
+const fileFields = { ...fileMetadata, data: z.string().max(Math.ceil(attachmentLimit / 3) * 4) };
 const op = <I extends z.ZodObject, O extends z.ZodType>(
   input: I,
   output: O,
@@ -3022,7 +3029,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/attachments",
     "write",
-    "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path. An intake credential can attach up to 10 files to a quarantined ticket it created, within 1 GB across its quarantined tickets.",
+    "Upload up to 10 MB of base64-encoded bytes. The original filename is metadata, never a filesystem path. An intake credential can attach up to 10 files to a quarantined ticket it created, within 1 GB across its quarantined tickets. For a file on disk, use create_upload_url instead of inlining it.",
   ),
   stage_upload: op(
     projectInput.extend({ ...mutation, ...fileFields }).strict(),
@@ -3030,7 +3037,21 @@ export const operations = {
     "POST",
     "/projects/{projectId}/uploads",
     "write",
-    "Stage up to 10 MB of base64-encoded bytes for a ticket that does not exist yet. Only you can read it, at its attachment content address, until create_ticket claims it; unclaimed uploads expire after 24 hours.",
+    "Stage up to 10 MB of base64-encoded bytes for a ticket that does not exist yet. Only you can read it, at its attachment content address, until create_ticket claims it; unclaimed uploads expire after 24 hours. For a file on disk, use create_upload_url instead of inlining it.",
+  ),
+  create_upload_url: op(
+    projectInput
+      .extend({
+        ...fileMetadata,
+        ticketId: id.optional(),
+        size: z.number().int().nonnegative().max(attachmentLimit),
+      })
+      .strict(),
+    uploadUrlSchema,
+    "POST",
+    "/projects/{projectId}/upload-urls",
+    "write",
+    "Get a single-use URL for one file of up to 10 MB, so its bytes never pass through the tool call. PUT exactly `size` bytes to `url` within 15 minutes, for example `curl --upload-file <path> <url>`; the URL needs no other credential and reads nothing. With `ticketId` the file becomes that ticket's attachment; without it, it is a staged upload that create_ticket `uploads` claims by `uploadId`.",
   ),
   discard_upload: op(
     projectInput.extend({ ...mutation, uploadId: z.uuid() }).strict(),
