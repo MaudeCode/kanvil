@@ -63,7 +63,7 @@ import {
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
 import { projectStates, resolveState } from "./workflow-operations.ts";
-import { likePattern, parseQuery, querySegments } from "./search.ts";
+import { likePattern, parseQuery, postgresSearch, querySegments } from "./search.ts";
 import {
   applyCustomFieldValues,
   assertCustomFieldFilters,
@@ -410,11 +410,14 @@ function predicateSQL({ field, operator, values }: TicketPredicate) {
 export const predicateWhere = (filter: Parameters<typeof ticketPredicates>[0]) =>
   and(...ticketPredicates(filter).map(predicateSQL));
 // Every ticket listing orders the same way: the chosen sort, then the ticket number.
-function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">) {
-  const direction = input.order ?? defaultOrder[input.sort];
+function ticketOrder({
+  sort = "priority",
+  order,
+}: Pick<ParsedInput<"list_tickets">, "sort" | "order">) {
+  const direction = order ?? defaultOrder[sort];
   const by = (column: SQL | AnyColumn) =>
     direction === "asc" ? sql`${column} ASC NULLS LAST` : sql`${column} DESC NULLS LAST`;
-  const primary: Record<typeof input.sort, SQL> = {
+  const primary: Record<typeof sort, SQL> = {
     priority: by(rank(tickets.priority, priorities)),
     updated: by(tickets.updatedAt),
     created: by(tickets.createdAt),
@@ -432,7 +435,28 @@ function ticketOrder(input: Pick<ParsedInput<"list_tickets">, "sort" | "order">)
     assignee: by(sql`(SELECT lower(name) FROM "user" WHERE id = ${tickets.assigneeId})`),
     manual: by(tickets.position),
   };
-  return [primary[input.sort], asc(tickets.number)];
+  return [primary[sort], asc(tickets.number)];
+}
+// Exact key matches first, then the search engine's relevance, then the most recently updated.
+const relevanceOrder = (q: string, relevance: SQL<number>) => [
+  sql`CASE WHEN ${ticketMatch(q)} THEN 0 ELSE 1 END`,
+  sql`${relevance} NULLS LAST`,
+  desc(tickets.updatedAt),
+];
+// A ticket list's `q` keeps what search_tickets matches on PostgreSQL on every engine: the exact key
+// or ID, or every quoted phrase and the free text as written. The external index's fuzzy terms would
+// let `oxlint` match `lint` and inflate `total`, so the index only ranks. Without `sort`, a query
+// orders by relevance.
+async function listQuery(
+  ctx: Context,
+  projectIds: readonly string[],
+  input: Pick<ParsedInput<"list_tickets">, "q" | "sort" | "order">,
+) {
+  if (!input.q) return { where: undefined, order: ticketOrder(input) };
+  const where = or(ticketMatch(input.q), postgresSearch(input.q));
+  if (input.sort) return { where, order: ticketOrder(input) };
+  const match = await ctx.search.where(ctx.db, projectIds, input.q);
+  return { where, order: [...relevanceOrder(input.q, match.rank), asc(tickets.number)] };
 }
 // One round trip returns the page and its total; a second count runs only for an empty page past the start.
 async function pageOf(
@@ -793,7 +817,7 @@ export const ticketHandlers: Pick<
   async list_tickets(ctx, input) {
     const parent = input.parentId ? await getTicket(ctx, input.parentId) : undefined;
     const related = input.relatedTo ? await getTicket(ctx, input.relatedTo) : undefined;
-    const search = input.q ? await ctx.search.where(ctx.db, [project(ctx).id], input.q) : undefined;
+    const search = await listQuery(ctx, [project(ctx).id], input);
     await assertCustomFieldFilters(ctx, [project(ctx).id], input);
     const where = and(
       eq(tickets.projectId, project(ctx).id),
@@ -822,21 +846,22 @@ export const ticketHandlers: Pick<
       input.stateId ? eq(tickets.stateId, input.stateId) : undefined,
       input.scheduledFrom ? sql`${scheduleEnd} >= ${input.scheduledFrom}::timestamptz` : undefined,
       input.scheduledTo ? sql`${scheduleStart} < ${input.scheduledTo}::timestamptz` : undefined,
-      search?.where,
+      search.where,
     );
-    const page = await pageOf(ctx, where, ticketOrder(input), input);
+    const page = await pageOf(ctx, where, search.order, input);
     return input.view === "summary" ? { ...page, items: page.items.map(summarize) } : page;
   },
   async list_my_work(ctx, input) {
     const allowed = await accessibleProjectRows(ctx.db, ctx.actor, input.workspaceId, "exclude");
     if (!allowed.length) return { items: [], total: 0, activity: [] };
-    const ids = allowed.map((row) => row.id);
+    const ids = allowed.map((row) => row.id),
+      search = await listQuery(ctx, ids, input);
     const where = and(
       inArray(tickets.projectId, ids),
       eq(tickets.assigneeId, ctx.actor.id),
       eq(tickets.archived, false),
       openTicket,
-      input.q ? (await ctx.search.where(ctx.db, ids, input.q)).where : undefined,
+      search.where,
     );
     const activity = input.activity
       ? await ctx.db
@@ -846,7 +871,7 @@ export const ticketHandlers: Pick<
           .orderBy(desc(events.id))
           .limit(input.activity)
       : [];
-    return { ...(await pageOf(ctx, where, ticketOrder(input), input)), activity };
+    return { ...(await pageOf(ctx, where, search.order, input)), activity };
   },
   async get_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
@@ -1115,11 +1140,7 @@ export const ticketHandlers: Pick<
           or(ticketMatch(input.q), match.where),
         ),
       )
-      .orderBy(
-        sql`CASE WHEN ${ticketMatch(input.q)} THEN 0 ELSE 1 END`,
-        sql`${match.rank} NULLS LAST`,
-        desc(tickets.updatedAt),
-      )
+      .orderBy(...relevanceOrder(input.q, match.rank))
       .limit(input.limit);
     return {
       items: rows.flatMap((ticket) => {

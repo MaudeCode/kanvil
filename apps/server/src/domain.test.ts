@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { parseQuery } from "./search.ts";
 import { createFixture } from "./test-fixture.ts";
-import { notifications } from "./schema.ts";
+import { notifications, tickets as ticketTable } from "./schema.ts";
 import { createDomain, requireRow, type Actor, type Domain } from "./domain.ts";
 import { relationReference, relationChoices, type Project } from "@kanvil/contracts";
 
@@ -1230,6 +1230,44 @@ describe("ticket operations on PostgreSQL", () => {
       ["ticket.deleted", parent.id, parent.key],
       ["ticket.deleted", leaves.id, leaves.key],
     ]);
+  });
+  it("lists only tickets that contain the query text, by relevance unless sorted", async () => {
+    const projectId = project.id;
+    const create = (title: string, priority: "low" | "urgent", description = "") =>
+      domain.execute(
+        "create_ticket",
+        { projectId, title, priority, description, assigneeId: owner.id },
+        owner,
+      );
+    const titled = await create("Configure oxlint rules", "low");
+    const described = await create("Tidy the CI config", "urgent", "Run oxlint before the tests.");
+    const near = await create("Fix lint warnings", "urgent");
+    // An external index with fuzzy terms also returns `lint` for `oxlint`, ranked below exact hits.
+    const ranked = [titled.id, described.id, near.id];
+    const fuzzy = createDomain(fixture.database, {
+      search: {
+        where: async () => ({
+          where: inArray(ticketTable.id, ranked),
+          rank: sql<number>`array_position(${`{${ranked.join(",")}}`}::uuid[], ${ticketTable.id})`,
+          engine: "index",
+          indexing: false,
+        }),
+      },
+    });
+    for (const engine of [fuzzy, domain]) {
+      const list = (input: { sort?: "priority" } = {}) =>
+        engine.execute("list_tickets", { projectId, q: "oxlint", ...input }, owner);
+      const relevant = await list();
+      expect(relevant.items.map((row) => row.id)).toEqual([titled.id, described.id]);
+      expect(relevant.total).toBe(2);
+      expect((await list({ sort: "priority" })).items.map((row) => row.id)).toEqual([
+        described.id,
+        titled.id,
+      ]);
+      const work = await engine.execute("list_my_work", { q: "oxlint" }, owner);
+      expect(work.items.map((row) => row.id)).toEqual([titled.id, described.id]);
+      expect(work.total).toBe(2);
+    }
   });
   it("searches tickets by key or text across accessible projects", async () => {
     const other = await domain.execute(
