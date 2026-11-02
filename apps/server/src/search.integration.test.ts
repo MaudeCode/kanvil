@@ -55,12 +55,13 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
     );
     await app.search.sync();
     expect(await app.search.status()).toMatchObject({ status: "ready" });
-    const fuzzy = await app.domain.execute(
-      "list_tickets",
-      { projectId: a.id, q: "recoverr" },
-      actor,
-    );
-    expect(fuzzy.items.map((row) => row.id)).toEqual([first.id]);
+    const fuzzy = (who: Actor) =>
+      app.domain.execute("search_tickets", { q: "recoverr", workspaceId: a.workspaceId }, who);
+    expect((await fuzzy(actor)).items.map((item) => item.ticket.id)).toEqual([first.id]);
+    // A ticket list keeps only tickets that contain the text; the index only ranks them.
+    expect(
+      (await app.domain.execute("list_tickets", { projectId: a.id, q: "recoverr" }, actor)).total,
+    ).toBe(0);
     const readerUser = await app.auth.api.createUser({
       body: {
         name: "Reader",
@@ -123,9 +124,7 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
       actor,
     );
     await app.search.sync();
-    expect(
-      (await app.domain.execute("list_tickets", { projectId: a.id, q: "recoverr" }, reader)).total,
-    ).toBe(0);
+    expect((await fuzzy(reader)).items).toEqual([]);
   });
   it("orders index matches by relevance and matches quoted phrases exactly", async () => {
     const project = await app.domain.execute(
@@ -152,6 +151,11 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
     );
     expect(results.engine).toBe("index");
     expect(results.items.map((item) => item.id)).toEqual([exact.id, fuzzy.id]);
+    expect(
+      (
+        await app.domain.execute("list_tickets", { projectId: project.id, q: "zephyrine" }, actor)
+      ).items.map((row) => row.id),
+    ).toEqual([exact.id]);
     // Equally relevant hits fall back to the most recently updated.
     const older = await create("Inspect quillwort gauges");
     const newer = await create("Inspect quillwort gauges");
@@ -180,9 +184,15 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
       ).items.map((row) => row.id);
     expect(await found('"live activity"')).toEqual([live.id, titled.id]);
     expect(await found('"live activity" acknowledge')).toEqual([live.id]);
-    // Outside quotes terms stay fuzzy; an unpaired quote is a literal character.
-    expect(await found("live activity")).toEqual([live.id, titled.id, like.id]);
-    expect(await found('live "activity')).toEqual([live.id, titled.id, like.id]);
+    // Outside quotes the text must appear as written, not fuzzily; an unpaired quote is literal.
+    expect(await found("live activity")).toEqual([live.id, titled.id]);
+    expect(await found('live "activity')).toEqual([]);
+    // search_tickets keeps fuzzy terms.
+    expect(
+      (
+        await app.domain.execute("search_tickets", { q: "live activity", ...scope }, actor)
+      ).items.map((item) => item.ticket.id),
+    ).toContain(like.id);
     expect(await found('"activity"')).toContain(native.id);
   });
   it("reindexes every ticket of a project whose prefix changes", async () => {

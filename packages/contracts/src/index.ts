@@ -491,6 +491,9 @@ export const ticketFilter = z
   })
   .strict()
   .superRefine(rejectConflicts);
+// A ticket list's order. Left unset with `q`, the matches order by relevance, as in search_tickets;
+// otherwise by priority.
+const listSort = ticketFilter.shape.sort.unwrap().optional();
 export const sortLabels = labelTable(ticketFilter.shape.sort.unwrap().options, (sort) =>
   t(`common.sort.${sort}`),
 );
@@ -2463,6 +2466,7 @@ export const operations = {
     projectInput
       .extend({
         ...ticketFilter.shape,
+        sort: listSort,
         ...pagination,
         // A ticket ID or key: only tickets linked to it by a relationship, in either direction.
         relatedTo: id.optional(),
@@ -2479,7 +2483,7 @@ export const operations = {
     "GET",
     "/projects/{projectId}/tickets",
     "read",
-    'Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values. Double-quoted segments of `q` match as exact phrases. Pass `view: "summary"` when scanning results: rows then omit the description and acceptance criteria.',
+    'Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values. `q` keeps only tickets whose key, title, description, acceptance criteria, labels, or scopes contain its text as written, or whose key or ID it names exactly; double-quoted segments are exact phrases that must each appear. With `q` and no `sort`, results order by relevance as in search_tickets; otherwise by `sort` (default `priority`). Pass `view: "summary"` when scanning results: rows then omit the description and acceptance criteria.',
   ),
   list_ticket_labels: op(
     projectInput.extend({ archived: ticketFilter.shape.archived }),
@@ -2912,7 +2916,7 @@ export const operations = {
       .object({
         workspaceId: z.uuid().optional(),
         q: ticketFilter.shape.q,
-        sort: ticketFilter.shape.sort,
+        sort: listSort,
         order: ticketFilter.shape.order,
         // How many of the most recent accessible events to return alongside the tickets.
         activity: z.coerce.number().int().min(0).max(50).default(0),
@@ -2923,7 +2927,7 @@ export const operations = {
     "GET",
     "/my-work",
     "read",
-    "List open, unarchived tickets assigned to the current identity across every accessible project, optionally within one workspace, with the most recent accessible activity when `activity` is set.",
+    "List open, unarchived tickets assigned to the current identity across every accessible project, optionally within one workspace, with the most recent accessible activity when `activity` is set. `q` and `sort` work as in list_tickets.",
   ),
   list_eligible_tickets: op(
     projectInput.extend(pagination),
