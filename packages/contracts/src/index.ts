@@ -2539,7 +2539,7 @@ export const operations = {
     "GET",
     "/projects/{projectId}/tickets",
     "read",
-    'Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values. `q` keeps only tickets whose key, title, description, acceptance criteria, labels, or scopes contain its text as written, or whose key or ID it names exactly; double-quoted segments are exact phrases that must each appear. With `q` and no `sort`, results order by relevance as in search_tickets; otherwise by `sort` (default `priority`). Pass `view: "summary"` when scanning results: rows then omit the description and acceptance criteria.',
+    'Search tickets with server-side filters, stable ordering, and pagination. Each property filter takes one value or a repeated list (any of them); its `Not` twin excludes values. `q` keeps only tickets whose key, title, description, acceptance criteria, labels, or scopes contain its text as written, or whose key or ID it names exactly; double-quoted segments are exact phrases that must each appear. With `q` and no `sort`, results order by relevance as in search_tickets; otherwise by `sort` (default `priority`). With `view: "summary"`, rows omit the description and acceptance criteria.',
   ),
   list_ticket_labels: op(
     projectInput.extend({ archived: ticketFilter.shape.archived }),
@@ -2942,7 +2942,7 @@ export const operations = {
     "GET",
     "/tickets/search",
     "read",
-    'Search unarchived tickets by key or text across every accessible project, optionally within one workspace. Results order by exact key match, then relevance, then recency. Double-quoted segments of `q` match as exact phrases. Pass `view: "summary"` when scanning results: each ticket is then a compact row and the result carries a `snippet` of the matching text.',
+    'Search unarchived tickets by key or text across every accessible project, optionally within one workspace. Results order by exact key match, then relevance, then recency. Double-quoted segments of `q` match as exact phrases. With `view: "summary"`, each ticket is a compact row and the result carries a `snippet` of the matching text.',
     { mcp: "core" },
   ),
   search_workspace: op(
@@ -2970,7 +2970,7 @@ export const operations = {
     "GET",
     "/search",
     "read",
-    'Search accessible tickets, projects, comments, and activity by text or ticket key, optionally within one workspace or one result type. Property filters restrict results to matching tickets. Results order by exact key match, then type, then ticket relevance, then recency. Double-quoted segments of `q` match ticket text as exact phrases. Pass `view: "summary"` when scanning results: ticket results then carry their summary row and each result a `snippet` of the matching text.',
+    'Search accessible tickets, projects, comments, and activity by text or ticket key, optionally within one workspace or one result type. Property filters restrict results to matching tickets. Results order by exact key match, then type, then ticket relevance, then recency. Double-quoted segments of `q` match ticket text as exact phrases. With `view: "summary"`, ticket results carry their summary row and each result a `snippet` of the matching text.',
   ),
   list_my_work: op(
     z

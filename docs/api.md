@@ -305,7 +305,15 @@ The authenticated Streamable HTTP endpoint is `/mcp`. Tool inputs use the shared
 
 The runners call the same implementation as a direct tool, so results, error envelopes, scopes, and permissions match. An unknown name returns `404 not_found` from all three tools.
 
-The `initialize` response carries `instructions`, at most 600 characters of English for agents: what ticket keys look like, how to work a ticket through claim, status, comment, evidence, `done`, and release, that tickets with `automationReady: false` stay with people, and how to use the discovery tools.
+Results from operations, through their own tools and the runners, are smaller than the same HTTP responses:
+
+- **Summary rows by default.** An operation with a `view` input (`list_tickets`, `search_tickets`, `search_workspace`) defaults to `view: "summary"`. Pass `view: "full"` for whole tickets. HTTP keeps its default of `full`.
+- **No echoed bodies.** When an operation takes `description` or `acceptanceCriteria` as input, at the top level or inside `changes` (`create_ticket`, `update_ticket`, `bulk_update_tickets`), tickets in its result leave that field out, even when this call did not change it. Read it with `get_ticket`. Other operations return tickets with their bodies, and a project keeps its `description`.
+- **No empty keys.** Object keys whose value is `null`, `[]`, or `{}` are removed at any depth, so a missing key means null or empty. `false`, `0`, and `""` stay, and the top-level `result` property is always present. Results therefore do not validate against the HTTP output schemas. An `export_project` bundle read this way does not import; export over HTTP to get a file for `preview_import`.
+
+`find_operation` is not an operation result: its input schemas keep their empty values, such as `default: null`.
+
+The `initialize` response carries `instructions`, at most 600 characters of English for agents: what ticket keys look like, how to work a ticket through claim, status, comment, evidence, `done`, and release, that tickets with `automationReady: false` stay with people, how to use the discovery tools, and how replies are shortened.
 
 Clients supporting custom headers can connect using a scoped API credential. Interactive clients can discover OAuth authorization through the endpoint's protected-resource metadata, then sign in and consent through Kanvil. Resource scopes are `kanvil:read`, `kanvil:write`, `kanvil:claim`, and `kanvil:admin`. The web app supplies the login and consent pages. Configure OIDC callback URLs as `/api/auth/callback/oidc` and explicitly link an existing local account from Settings before using OIDC sign-in. Protocol compatibility is tested using the official SDK, including discovery, tool listing, and writes.
 

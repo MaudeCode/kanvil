@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { errorSchema, isOperation, operations, parseOutput } from "@kanvil/contracts";
+import { errorSchema, isOperation, operations } from "@kanvil/contracts";
 import { z } from "zod";
 import { createApplication } from "./app.ts";
 import { createFixture } from "./test-fixture.ts";
@@ -30,6 +30,17 @@ const errorOf = (response: Awaited<ReturnType<Client["callTool"]>>) => {
   expect(response.isError).toBe(true);
   const [content] = z.array(z.object({ text: z.string() })).parse(response.content);
   return errorSchema.parse(JSON.parse(content!.text)).error;
+};
+
+const rowsOf = (result: unknown) =>
+  z.object({ items: z.array(z.record(z.string(), z.unknown())) }).parse(result).items;
+// The paths of keys holding null, [], or {}, at any depth.
+const emptyKeys = (value: unknown, path = "result"): string[] => {
+  if (typeof value !== "object" || value === null) return [];
+  return Object.entries(value).flatMap(([key, field]: [string, unknown]) => {
+    const empty = field === null || (typeof field === "object" && Object.keys(field).length === 0);
+    return empty && !Array.isArray(value) ? [`${path}.${key}`] : emptyKeys(field, `${path}.${key}`);
+  });
 };
 
 const run = (client: Client, tool: string, name: string, input: Record<string, unknown>) =>
@@ -144,7 +155,6 @@ describe("MCP tool list", () => {
     );
     const subject = { projectId: project.id, ticketId: ticket.id };
     const direct = resultOf(await agent.callTool({ name: "get_ticket", arguments: subject }));
-    expect(parseOutput("get_ticket", direct)).toEqual(direct);
     expect(resultOf(await run(agent, "read_operation", "get_ticket", subject))).toEqual(direct);
 
     const write = { projectId: project.id, name: "Not created" };
@@ -167,7 +177,7 @@ describe("MCP tool list", () => {
         name: "Discovered",
       }),
     );
-    expect(created).toEqual(parseOutput("create_project_label", created));
+    expect(created).toMatchObject({ name: "Discovered" });
     expect(
       await application.domain.execute("list_project_labels", { projectId: project.id }, owner),
     ).toMatchObject([{ name: "Discovered" }]);
@@ -229,6 +239,185 @@ describe("MCP tool list", () => {
         inputSchema: { type: "object" },
       });
     }
+  });
+
+  it("answers lists with summary rows unless asked for full ones, and leaves HTTP's default alone", async () => {
+    const title = `Summary ${crypto.randomUUID()}`;
+    await application.domain.execute(
+      "create_ticket",
+      { projectId: project.id, title, description: "Body", acceptanceCriteria: "Criteria" },
+      owner,
+    );
+    const listInput = { projectId: project.id, q: title };
+    const read = (view: object) => ({
+      list: run(agent, "read_operation", "list_tickets", { ...listInput, ...view }),
+      search: agent.callTool({ name: "search_tickets", arguments: { q: title, ...view } }),
+      runnerSearch: run(agent, "read_operation", "search_tickets", { q: title, ...view }),
+    });
+    const summaries = read({}),
+      full = read({ view: "full" });
+
+    const [summaryRow] = rowsOf(resultOf(await summaries.list));
+    expect(summaryRow).toMatchObject({ title });
+    expect(summaryRow).not.toHaveProperty("description");
+    expect(rowsOf(resultOf(await full.list))).toMatchObject([
+      { title, description: "Body", acceptanceCriteria: "Criteria" },
+    ]);
+    for (const summary of [await summaries.search, await summaries.runnerSearch]) {
+      const [row] = rowsOf(resultOf(summary));
+      expect(row?.ticket).toMatchObject({ title });
+      expect(row?.ticket).not.toHaveProperty("description");
+    }
+    for (const whole of [await full.search, await full.runnerSearch])
+      expect(rowsOf(resultOf(whole))).toMatchObject([
+        { ticket: { title, description: "Body", acceptanceCriteria: "Criteria" } },
+      ]);
+    // search_workspace's summary row is the only one of its views with `number`.
+    expect(
+      rowsOf(resultOf(await run(agent, "read_operation", "search_workspace", { q: title }))),
+    ).toMatchObject([{ ticket: { title, number: expect.any(Number) } }]);
+
+    // What a client reads about the default matches what the server does.
+    const { tools } = await agent.listTools();
+    expect(
+      tools.find((tool) => tool.name === "search_tickets")?.inputSchema.properties?.view,
+    ).toMatchObject({ default: "summary" });
+    expect(
+      resultOf(
+        await agent.callTool({ name: "find_operation", arguments: { name: "list_tickets" } }),
+      ),
+    ).toMatchObject({ inputSchema: { properties: { view: { default: "summary" } } } });
+
+    const response = await application.app.fetch(
+      new Request(`${fixture.config.KANVIL_URL}/api/v1/projects/${project.id}/tickets?q=${title}`, {
+        headers: { Authorization: `Bearer ${await keyFor(["read"])}` },
+      }),
+    );
+    expect(rowsOf(await response.json())).toMatchObject([
+      { title, description: "Body", acceptanceCriteria: "Criteria", assigneeId: null },
+    ]);
+  });
+
+  it("leaves out the ticket bodies of a tool that takes them, and only those", async () => {
+    const body = { description: "Sent body", acceptanceCriteria: "Sent criteria" };
+    const created = z
+      .object({ id: z.string(), version: z.number() })
+      .loose()
+      .parse(
+        resultOf(
+          await agent.callTool({
+            name: "create_ticket",
+            arguments: {
+              projectId: project.id,
+              title: "Echoless",
+              labels: ["echo"],
+              scopes: ["server"],
+              holdReason: "Held",
+              ...body,
+            },
+          }),
+        ),
+      );
+    expect(created).toMatchObject({
+      key: expect.any(String),
+      projectId: project.id,
+      version: 1,
+      labels: ["echo"],
+      scopes: ["server"],
+      automationReady: false,
+      holdReason: "Held",
+    });
+    expect(created).not.toHaveProperty("description");
+    expect(created).not.toHaveProperty("acceptanceCriteria");
+
+    const subject = { projectId: project.id, ticketId: created.id };
+    const updated = resultOf(
+      await agent.callTool({
+        name: "update_ticket",
+        arguments: { ...subject, expectedVersion: 1, changes: { priority: "high" } },
+      }),
+    );
+    expect(updated).toMatchObject({ priority: "high", version: 2 });
+    expect(updated).not.toHaveProperty("description");
+    // Nested in an array, through a runner.
+    const [bulk] = z.array(z.unknown()).parse(
+      resultOf(
+        await run(agent, "run_operation", "bulk_update_tickets", {
+          projectId: project.id,
+          tickets: [{ ticketId: created.id, expectedVersion: 2 }],
+          changes: { priority: "low" },
+        }),
+      ),
+    );
+    expect(bulk).toMatchObject({ priority: "low", version: 3 });
+    expect(bulk).not.toHaveProperty("acceptanceCriteria");
+
+    // Nothing the caller sent: the body stays, on tickets from reads and from other writes.
+    const expected = { ticket: body };
+    expect(
+      resultOf(await agent.callTool({ name: "get_ticket", arguments: subject })),
+    ).toMatchObject(expected);
+    expect(resultOf(await run(agent, "read_operation", "get_ticket", subject))).toMatchObject(
+      expected,
+    );
+    expect(resultOf(await run(agent, "run_operation", "duplicate_ticket", subject))).toMatchObject(
+      body,
+    );
+    // A project's description is not a ticket body, though update_project takes it.
+    expect(
+      resultOf(
+        await run(agent, "run_operation", "update_project", {
+          projectId: project.id,
+          expectedVersion: project.version,
+          name: project.name,
+          description: "Project text",
+        }),
+      ),
+    ).toMatchObject({ description: "Project text" });
+  });
+
+  it("drops null and empty keys from operation results, and keeps false, 0, and empty strings", async () => {
+    const { id } = await application.domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Sparse" },
+      owner,
+    );
+    const subject = { projectId: project.id, ticketId: id };
+    const replies = [
+      await agent.callTool({ name: "get_ticket", arguments: subject }),
+      await run(agent, "read_operation", "get_ticket", subject),
+      await run(agent, "read_operation", "list_tickets", {
+        projectId: project.id,
+        view: "full",
+      }),
+    ].map(resultOf);
+    for (const reply of replies) expect(emptyKeys(reply)).toEqual([]);
+    const { ticket } = z.object({ ticket: z.record(z.string(), z.unknown()) }).parse(replies[0]);
+    expect(ticket).toMatchObject({ archived: false, description: "", acceptanceCriteria: "" });
+    expect(ticket).not.toHaveProperty("assigneeId");
+    expect(replies[0]).not.toHaveProperty("claim");
+
+    // An empty page keeps its count, and a write through the runner follows the same rule.
+    expect(
+      resultOf(
+        await run(agent, "read_operation", "list_tickets", {
+          projectId: project.id,
+          q: crypto.randomUUID(),
+        }),
+      ),
+    ).toEqual({ total: 0 });
+    expect(
+      emptyKeys(resultOf(await run(agent, "run_operation", "duplicate_ticket", subject))),
+    ).toEqual([]);
+
+    // An input schema is not a result: a default of null or [] is what a caller needs to read.
+    expect(
+      resultOf(
+        await agent.callTool({ name: "find_operation", arguments: { name: "create_ticket" } }),
+      ),
+    ).toMatchObject({
+      inputSchema: { properties: { assigneeId: { default: null }, labels: { default: [] } } },
+    });
   });
 
   it("counts OAuth writes through run_operation, but not reads or refusals", async () => {

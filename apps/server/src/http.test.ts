@@ -609,7 +609,10 @@ describe("HTTP, realtime, and MCP", () => {
         if (!mcp) return api.call("create_ticket", args);
         const result = await sdk.callTool({ name: "create_ticket", arguments: args });
         expect(result.isError).not.toBe(true);
-        return z.object({ result: ticketSchema }).parse(result.structuredContent).result;
+        const { id } = z
+          .object({ result: z.object({ id: z.string() }) })
+          .parse(result.structuredContent).result;
+        return (await human.call("get_ticket", { projectId: project.id, ticketId: id })).ticket;
       };
       const created = await create(input);
       expect(created).toMatchObject({
@@ -1572,11 +1575,11 @@ describe("HTTP, realtime, and MCP", () => {
         ).toMatchObject({ labels: ["after"], version: labeled.version + 1 });
         const spaces = await mcpCall(sdk, "list_workspaces", {});
         const discovered = z
-          .object({ result: z.array(z.object({ id: z.string(), role: z.string().nullable() })) })
+          .object({ result: z.array(z.object({ id: z.string(), role: z.string().optional() })) })
           .parse(spaces.structuredContent);
         if (global)
           expect(discovered.result).toContainEqual({ id: project.workspaceId, role: "admin" });
-        else expect(discovered.result).toEqual([{ id: project.workspaceId, role: null }]);
+        else expect(discovered.result).toEqual([{ id: project.workspaceId }]);
         const forbidden = await mcpCall(sdk, "list_workspace_members", {
           workspaceId: project.workspaceId,
         });
@@ -1587,7 +1590,9 @@ describe("HTTP, realtime, and MCP", () => {
           arguments: { projectId: project.id, title: "Created through MCP" },
         });
         expect(response.isError).not.toBe(true);
-        const result = z.object({ result: ticketSchema }).parse(response.structuredContent).result;
+        const result = z
+          .object({ result: z.object({ id: z.string() }) })
+          .parse(response.structuredContent).result;
         expect(
           (await client().call("get_ticket", { projectId: project.id, ticketId: result.id })).ticket
             .title,
@@ -1746,15 +1751,19 @@ describe("HTTP, realtime, and MCP", () => {
       }),
     );
     try {
-      const created = z.object({ result: timeEntrySchema }).parse(
-        (
-          await mcpCall(sdk, "create_time_entry", {
-            ...subject,
-            startAt: "2026-10-01T11:00:00.000Z",
-          })
-        ).structuredContent,
-      ).result;
-      expect(created.durationMs).toBeNull();
+      const created = z
+        .object({
+          result: timeEntrySchema.partial({ durationMs: true, endAt: true }),
+        })
+        .parse(
+          (
+            await mcpCall(sdk, "create_time_entry", {
+              ...subject,
+              startAt: "2026-10-01T11:00:00.000Z",
+            })
+          ).structuredContent,
+        ).result;
+      expect(created).not.toHaveProperty("durationMs");
       expect(
         (
           await mcpCall(sdk, "update_time_entry", {
