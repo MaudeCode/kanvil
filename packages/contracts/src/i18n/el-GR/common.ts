@@ -83,9 +83,14 @@ export default {
     priority: "Προτεραιότητα",
     kind: "Τύπος",
     difficulty: "Δυσκολία",
+    automation: "Ετοιμότητα για πράκτορες",
     label: "Ετικέτα",
     assigneeId: "Υπεύθυνος",
     customField: "Πεδίο",
+  },
+  automationFilter: {
+    ready: "Έτοιμο για πράκτορες",
+    manual: "Χρειάζεται άνθρωπο",
   },
   sort: {
     priority: "Προτεραιότητα",

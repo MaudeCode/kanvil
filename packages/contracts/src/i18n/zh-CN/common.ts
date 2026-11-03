@@ -75,9 +75,14 @@ export default {
     priority: "优先级",
     kind: "类型",
     difficulty: "难度",
+    automation: "智能体就绪状态",
     label: "标签",
     assigneeId: "负责人",
     customField: "字段",
+  },
+  automationFilter: {
+    ready: "可供智能体处理",
+    manual: "需要人工处理",
   },
   sort: {
     priority: "优先级",

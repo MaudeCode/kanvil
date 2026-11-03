@@ -78,9 +78,14 @@ export default {
     priority: "Prioritas",
     kind: "Jenis",
     difficulty: "Tingkat kesulitan",
+    automation: "Kesiapan agen",
     label: "Label",
     assigneeId: "Penerima tugas",
     customField: "Bidang",
+  },
+  automationFilter: {
+    ready: "Siap untuk agen",
+    manual: "Perlu orang",
   },
   sort: {
     priority: "Prioritas",

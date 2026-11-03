@@ -90,9 +90,14 @@ export default {
     priority: "Priorité",
     kind: "Type",
     difficulty: "Difficulté",
+    automation: "Disponibilité pour les agents",
     label: "Étiquette",
     assigneeId: "Responsable",
     customField: "Champ",
+  },
+  automationFilter: {
+    ready: "Prêt pour les agents",
+    manual: "Nécessite une personne",
   },
   sort: {
     priority: "Priorité",

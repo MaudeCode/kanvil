@@ -1461,8 +1461,19 @@ describe("ticket operations on PostgreSQL", () => {
         difficulty: "med",
         assigneeId: owner.id,
       }),
-      beta = await create("Beta", { status: "in_progress", priority: "low", labels: ["y"] }),
-      gamma = await create("Gamma", { status: "done", labels: ["x", "y, z"], difficulty: "high" });
+      beta = await create("Beta", {
+        status: "in_progress",
+        priority: "low",
+        labels: ["y"],
+        automationReady: true,
+      }),
+      gamma = await create("Gamma", {
+        status: "done",
+        labels: ["x", "y, z"],
+        difficulty: "high",
+        automationReady: true,
+        holdReason: "Waiting on a person",
+      });
     const ids = async (filter: Record<string, unknown>) =>
       (await domain.execute("list_tickets", { projectId: project.id, ...filter }, owner)).items
         .map((row) => row.id)
@@ -1478,6 +1489,22 @@ describe("ticket operations on PostgreSQL", () => {
     // Excluding a value keeps tickets where the field is unset.
     expect(await ids({ difficultyNot: ["med"] })).toEqual(sorted(beta, gamma));
     expect(await ids({ priority: ["high", "low"], labelNot: ["y"] })).toEqual(sorted(alpha));
+    // Not ready and held both need a person.
+    expect(await ids({ automation: "manual" })).toEqual(sorted(alpha, gamma));
+    expect(await ids({ automation: "ready" })).toEqual(sorted(beta));
+    expect(await ids({ automationNot: "manual" })).toEqual(sorted(beta));
+    expect(await ids({ automationNot: "ready" })).toEqual(sorted(alpha, gamma));
+    expect(await ids({ automation: ["ready", "manual"] })).toEqual(sorted(alpha, beta, gamma));
+    await domain.execute(
+      "save_view",
+      { projectId: project.id, name: "Needs a person", filters: { automation: "manual" } },
+      owner,
+    );
+    const manualView = (await domain.execute("list_views", { projectId: project.id }, owner)).find(
+      (view) => view.name === "Needs a person",
+    );
+    expect(manualView?.filters.automation).toBe("manual");
+    expect(await ids({ ...manualView?.filters })).toEqual(sorted(alpha, gamma));
     await expect(
       domain.execute(
         "list_tickets",

@@ -82,9 +82,14 @@ export default {
     priority: "Mức ưu tiên",
     kind: "Loại",
     difficulty: "Độ khó",
+    automation: "Mức sẵn sàng cho tác tử",
     label: "Nhãn",
     assigneeId: "Người được giao",
     customField: "Trường",
+  },
+  automationFilter: {
+    ready: "Sẵn sàng cho tác tử",
+    manual: "Cần con người",
   },
   sort: {
     priority: "Mức ưu tiên",

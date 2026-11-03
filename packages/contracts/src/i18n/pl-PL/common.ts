@@ -91,9 +91,14 @@ export default {
     priority: "Priorytet",
     kind: "Rodzaj",
     difficulty: "Trudność",
+    automation: "Gotowość dla agentów",
     label: "Etykieta",
     assigneeId: "Osoba przypisana",
     customField: "Pole",
+  },
+  automationFilter: {
+    ready: "Gotowe dla agentów",
+    manual: "Wymaga człowieka",
   },
   sort: {
     priority: "Priorytet",

@@ -75,9 +75,14 @@ export default {
     priority: "우선순위",
     kind: "유형",
     difficulty: "난이도",
+    automation: "에이전트 준비 상태",
     label: "레이블",
     assigneeId: "담당자",
     customField: "필드",
+  },
+  automationFilter: {
+    ready: "에이전트 작업 가능",
+    manual: "사람이 필요함",
   },
   sort: {
     priority: "우선순위",

@@ -87,9 +87,14 @@ export default {
     priority: "Приоритет",
     kind: "Вид",
     difficulty: "Тежина",
+    automation: "Подготвеност за агенти",
     label: "Ознака",
     assigneeId: "Извршител",
     customField: "Поле",
+  },
+  automationFilter: {
+    ready: "Подготвен за агенти",
+    manual: "Потребен е човек",
   },
   sort: {
     priority: "Приоритет",

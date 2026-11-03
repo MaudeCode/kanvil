@@ -84,9 +84,14 @@ export default {
     priority: "Priorità",
     kind: "Tipo",
     difficulty: "Difficoltà",
+    automation: "Idoneità per agenti",
     label: "Etichetta",
     assigneeId: "Assegnatario",
     customField: "Campo",
+  },
+  automationFilter: {
+    ready: "Pronto per gli agenti",
+    manual: "Richiede una persona",
   },
   sort: {
     priority: "Priorità",

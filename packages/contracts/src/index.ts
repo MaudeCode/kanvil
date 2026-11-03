@@ -416,16 +416,23 @@ export const filterFieldNames = [
   "priority",
   "kind",
   "difficulty",
+  "automation",
   "label",
   "assigneeId",
   "customField",
 ] as const;
 export type FilterField = (typeof filterFieldNames)[number];
+// `ready` is enabled for agents with no hold reason; `manual` is everything else.
+export const automationFilters = ["ready", "manual"] as const;
+export const automationFilterLabels = labelTable(automationFilters, (value) =>
+  t(`common.automationFilter.${value}`),
+);
 export const filterFields = {
   status: z.enum(states),
   priority: z.enum(priorities),
   kind: z.enum(kinds),
   difficulty: z.enum(difficulties),
+  automation: z.enum(automationFilters),
   label: z.string().max(40),
   // A user id, or "none" for unassigned tickets.
   assigneeId: z.union([id, z.literal("none")]),
@@ -452,6 +459,8 @@ const filterShape = {
   kindNot: filterValues(filterFields.kind),
   difficulty: filterValues(filterFields.difficulty),
   difficultyNot: filterValues(filterFields.difficulty),
+  automation: filterValues(filterFields.automation),
+  automationNot: filterValues(filterFields.automation),
   label: filterValues(filterFields.label),
   labelNot: filterValues(filterFields.label),
   assigneeId: filterValues(filterFields.assigneeId),

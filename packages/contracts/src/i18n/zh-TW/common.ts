@@ -75,9 +75,14 @@ export default {
     priority: "優先順序",
     kind: "類型",
     difficulty: "難度",
+    automation: "代理程式就緒狀態",
     label: "標籤",
     assigneeId: "負責人",
     customField: "欄位",
+  },
+  automationFilter: {
+    ready: "可供代理程式處理",
+    manual: "需要人工處理",
   },
   sort: {
     priority: "優先順序",

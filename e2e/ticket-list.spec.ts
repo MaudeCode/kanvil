@@ -251,6 +251,55 @@ test("priority icons distinguish every level and keep names in pickers", async (
   await expect(table.getByRole("link", { name: "Priority urgent", exact: true })).toBeVisible();
 });
 
+test("the agent readiness filter keeps the tickets only people can do through a reload and a saved view", async ({
+  page,
+}) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "READYUX", name: "Agent readiness" },
+    })
+  ).json();
+  for (const [title, automationReady] of [
+    ["Agent ticket", true],
+    ["Person ticket", false],
+  ] as const) {
+    const result = await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+      data: { title, automationReady },
+    });
+    expect(result.ok()).toBe(true);
+  }
+  await page.goto(`/projects/${project.id}`);
+  await expectTicketCount(page, 2);
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const readiness = page.getByRole("combobox", { name: "Agent readiness", exact: true });
+  await expect(readiness).toBeVisible();
+  await readiness.click();
+  await expect(page.getByRole("option", { name: "Ready for agents", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "Needs a person", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const onlyPersonTicket = async () => {
+    await expect(ticketRows(page)).toHaveCount(1);
+    await expect(ticketRows(page).first()).toContainText("Person ticket");
+  };
+  await onlyPersonTicket();
+  await expect(
+    page.getByRole("button", { name: "Agent readiness: Needs a person", exact: true }),
+  ).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("automation")).toContain("manual");
+  await page.reload();
+  await onlyPersonTicket();
+  await openSaveView(page);
+  await page.getByLabel("View name", { exact: true }).fill("Needs a person");
+  await page.getByRole("button", { name: "Save view", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await expectTicketCount(page, 2);
+  await chooseTicketView(page, "Needs a person");
+  await onlyPersonTicket();
+});
+
 test("list properties persist and labels filter and sort the entire project", async ({ page }) => {
   await signIn(page);
   const project = await (

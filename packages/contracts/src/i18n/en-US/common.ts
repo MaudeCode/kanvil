@@ -77,9 +77,14 @@ export default {
     priority: "Priority",
     kind: "Kind",
     difficulty: "Difficulty",
+    automation: "Agent readiness",
     label: "Label",
     assigneeId: "Assignee",
     customField: "Field",
+  },
+  automationFilter: {
+    ready: "Ready for agents",
+    manual: "Needs a person",
   },
   sort: {
     priority: "Priority",
