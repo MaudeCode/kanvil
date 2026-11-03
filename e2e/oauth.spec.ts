@@ -90,12 +90,15 @@ test("interactive MCP authorization uses sign-in, explicit consent, PKCE, and sc
         requestInit: { headers: { Authorization: `Bearer ${token.access_token}` } },
       }),
     );
-    const result = await sdk.callTool({ name: "list_projects", arguments: {} });
+    const result = await sdk.callTool({
+      name: "read_operation",
+      arguments: { name: "list_projects" },
+    });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toHaveProperty("result");
     const denied = await sdk.callTool({
-      name: "create_project",
-      arguments: { key: "DENIED", name: "No write scope" },
+      name: "run_operation",
+      arguments: { name: "create_project", input: { key: "DENIED", name: "No write scope" } },
     });
     expect(denied.isError).toBe(true);
   } finally {
