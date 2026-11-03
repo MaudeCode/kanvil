@@ -1022,7 +1022,15 @@ export function createDomain(
       // author's receipt.
       if (receipt && (name === "delete_project" || name === "delete_workspace"))
         return parseOutput<K, I>(name, receipt.result);
-      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission, name);
+      const ctx = await context(
+        tx,
+        actor,
+        spec.scope,
+        receipt?.projectId ?? projectId,
+        workspaceId,
+        permission,
+        name,
+      );
       if (receipt) {
         // Time-entry receipts must not disclose a moved or deleted ticket through its old project.
         if (
@@ -1047,9 +1055,14 @@ export function createDomain(
         fail(409, "project_archived", "Restore this archived project before changing it");
       const result = await invoke(ctx);
       if (requestId)
-        await tx
-          .insert(receipts)
-          .values({ actorId: actor.id, requestId, hash, operation: name, result });
+        await tx.insert(receipts).values({
+          actorId: actor.id,
+          requestId,
+          hash,
+          operation: name,
+          result,
+          projectId: ctx.project?.id ?? null,
+        });
       return result;
     });
     // ponytail: mail sends once after commit and a failure is only logged; the sender still has

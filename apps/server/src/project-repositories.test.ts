@@ -209,6 +209,61 @@ describe("project repositories", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("replays a write's receipt after that write removed the remote it was addressed by", async () => {
+    const { project, spellings } = await linked(unique()),
+      current = await domain.execute("get_project", { projectId: project.id }, owner),
+      retried = {
+        projectId: requireRow(spellings[0]),
+        expectedVersion: current.version,
+        name: current.name,
+        description: current.description,
+        repositories: [],
+        requestId: crypto.randomUUID(),
+      };
+    const first = await domain.execute("update_project", retried, owner);
+    expect(first.repositories).toEqual([]);
+    await expect(domain.execute("update_project", retried, owner)).resolves.toEqual(first);
+    // The replay still authorizes against the project it wrote to.
+    await expect(
+      domain.execute("update_project", retried, { ...owner, projectIds: [crypto.randomUUID()] }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("requires project management for any change to the list, whatever its spelling", async () => {
+    const workspace = await space(),
+      project = await newProject(workspace),
+      { id: roleId } = await domain.execute(
+        "create_workspace_role",
+        {
+          workspaceId: workspace.id,
+          name: `Sharer ${unique()}`,
+          permissions: ["sharing.manage"],
+        },
+        owner,
+      );
+    await domain.execute(
+      "set_workspace_member",
+      { workspaceId: workspace.id, email: "other@repositories.test", role: roleId },
+      owner,
+    );
+    const held = ["github.com/acme/a", "github.com/acme/b"];
+    const updated = await link(project, held);
+    await expect(
+      domain.execute(
+        "update_project",
+        {
+          projectId: project.id,
+          expectedVersion: updated.version,
+          name: updated.name,
+          description: updated.description,
+          publicReadEnabled: true,
+          repositories: [held.join()],
+        },
+        other,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
   it("refuses to guess between accessible projects in two workspaces", async () => {
     const name = unique(),
       first = await linked(name),

@@ -425,6 +425,9 @@ export const receipts = pgTable(
     operation: text("operation").notNull(),
     hash: text("hash").notNull(),
     result: jsonb("result").notNull(),
+    // The project the write acted on. A replay authorizes against it, since the remote that named
+    // it can stop naming it. Empty for writes outside a project and for earlier receipts.
+    projectId: uuid("project_id"),
     createdAt: time("created_at"),
   },
   (table) => [primaryKey({ columns: [table.actorId, table.requestId] })],

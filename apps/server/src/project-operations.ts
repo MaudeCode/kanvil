@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
 import { and, arrayOverlaps, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
@@ -283,7 +284,7 @@ export const projectHandlers: Pick<
         input.name !== current.name ||
         input.description !== current.description ||
         (!!input.visibility && input.visibility !== current.visibility) ||
-        (!!input.repositories && input.repositories.join() !== current.repositories.join());
+        (!!input.repositories && !isDeepStrictEqual(input.repositories, current.repositories));
     if (sharing) requirePermission(ctx.permissions, "sharing.manage", "project");
     if (details || !sharing) requirePermission(ctx.permissions, "project.manage", "project");
     if (key !== current.key) {
