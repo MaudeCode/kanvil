@@ -29,7 +29,8 @@ export interface TicketIndexDocument {
   labels: string[];
   scopes: string[];
 }
-// A search: exact `phrases` from double-quoted segments, and the free-text `terms` around them.
+// A search: exact `phrases` from double-quoted segments, matched on word boundaries, and the
+// free-text `terms` around them.
 export interface SearchQuery {
   phrases: string[];
   terms: string;
