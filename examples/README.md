@@ -22,9 +22,11 @@ Stop with Ctrl-C or SIGTERM. The mirror is a local reading cache; writes remain 
 pnpm example:mcp --project KAN
 ```
 
-This read-only example uses the official MCP SDK and Streamable HTTP at `/mcp`. It lists authorized projects, the first page of tickets, and eligibility with explicit reasons. It validates structured results with Kanvil's operation contracts. List results include `total`; follow their pagination for complete collections.
+This read-only example uses the official MCP SDK and Streamable HTTP at `/mcp`. It lists authorized projects, the first page of tickets, and eligibility with explicit reasons, reading each through `read_operation`. It validates structured results with Kanvil's operation contracts. List results include `total`; follow their pagination for complete collections.
 
 For an interactive MCP client, configure the server URL `https://kanvil.example.com/mcp` and use its OAuth discovery/sign-in/consent flow. For a headless client supporting custom headers, send `Authorization: Bearer <scoped-credential>`. Client configuration syntax varies; the example shows the protocol connection directly. Never put an API credential into the URL.
+
+The server lists a small agent core plus `find_operation`, `read_operation`, and `run_operation`, which reach every other operation, and sends agents short usage instructions in its handshake. See [MCP](../docs/api.md#mcp).
 
 ## Worker ownership contract
 

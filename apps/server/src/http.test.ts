@@ -17,10 +17,12 @@ import {
   attachmentPath,
   attachmentSchema,
   errorSchema,
+  operations,
   ticketSchema,
   timeEntrySchema,
   snapshotSchema,
   type ChangeEvent,
+  type Operation,
 } from "@kanvil/contracts";
 import { createApplication } from "./app.ts";
 import { createDatabase } from "./database.ts";
@@ -40,9 +42,18 @@ async function readSseUntil(reader: ReadableStreamDefaultReader<Uint8Array>, val
   return received;
 }
 
+// Calls an operation the way an MCP agent does: its own tool if it is in the core, else a runner.
+function mcpCall(mcp: Client, name: Operation, args: Record<string, unknown>) {
+  const spec = operations[name];
+  if (spec.mcp === "core") return mcp.callTool({ name, arguments: args });
+  return mcp.callTool({
+    name: spec.method === "GET" ? "read_operation" : "run_operation",
+    arguments: { name, input: args },
+  });
+}
 // Reads a rejected tool call's error envelope, and the same fields from a rejected HTTP call.
-async function mcpRejection(mcp: Client, name: string, args: Record<string, unknown>) {
-  const response = await mcp.callTool({ name, arguments: args });
+async function mcpRejection(mcp: Client, name: Operation, args: Record<string, unknown>) {
+  const response = await mcpCall(mcp, name, args);
   expect(response.isError).toBe(true);
   expect(response.structuredContent).toBeUndefined();
   const [content] = z
@@ -710,8 +721,8 @@ describe("HTTP, realtime, and MCP", () => {
       try {
         type Upload = { projectId: string; ticketId: string; name: string; data: string };
         type Ticket = { projectId: string; ticketId: string };
-        const tool = async (name: string, args: Upload | Ticket) => {
-          const result = await sdk.callTool({ name, arguments: args });
+        const tool = async (name: Operation, args: Upload | Ticket) => {
+          const result = await mcpCall(sdk, name, args);
           expect(result.isError, name).not.toBe(true);
           return z.object({ result: z.unknown() }).parse(result.structuredContent).result;
         };
@@ -1236,7 +1247,7 @@ describe("HTTP, realtime, and MCP", () => {
         });
         try {
           await sdk.connect(transport);
-          const result = await sdk.callTool({ name: "list_projects", arguments: {} });
+          const result = await mcpCall(sdk, "list_projects", {});
           expect(result.isError).not.toBe(true);
         } finally {
           await sdk.close();
@@ -1307,7 +1318,7 @@ describe("HTTP, realtime, and MCP", () => {
               ),
             ),
             sdk.connect(transport).then(async () => {
-              const result = await sdk.callTool({ name: "list_projects", arguments: {} });
+              const result = await mcpCall(sdk, "list_projects", {});
               expect(result.isError).not.toBe(true);
             }),
           ]);
@@ -1521,37 +1532,18 @@ describe("HTTP, realtime, and MCP", () => {
         await sdk.connect(transport);
         const tools = await sdk.listTools();
         expect(tools.tools.some((tool) => tool.name === "claim_ticket")).toBe(true);
-        for (const name of [
-          "list_project_labels",
-          "create_project_label",
-          "update_project_label",
-          "delete_project_label",
-          "list_workspace_labels",
-          "create_workspace_label",
-          "update_workspace_label",
-          "delete_workspace_label",
-          "update_ticket_labels",
-          "archive_project",
-          "get_project_impact",
-          "transfer_project",
-          "delete_project",
-        ])
-          expect(tools.tools.some((tool) => tool.name === name)).toBe(true);
         const managedLabel = await client().call("create_project_label", {
           projectId: project.id,
           name: "MCP label",
           color: "blue",
         });
-        const catalog = await sdk.callTool({
-          name: "list_project_labels",
-          arguments: { projectId: project.id },
-        });
+        const catalog = await mcpCall(sdk, "list_project_labels", { projectId: project.id });
         expect(catalog.structuredContent).toMatchObject({
           result: [{ id: managedLabel.id, name: "MCP label", color: "blue", count: 0 }],
         });
-        const deniedLabel = await sdk.callTool({
-          name: "create_project_label",
-          arguments: { projectId: project.id, name: "Requires admin" },
+        const deniedLabel = await mcpCall(sdk, "create_project_label", {
+          projectId: project.id,
+          name: "Requires admin",
         });
         expect(deniedLabel.isError).toBe(true);
         // Relabeling one ticket is label administration: a write credential cannot, a session can.
@@ -1560,14 +1552,11 @@ describe("HTTP, realtime, and MCP", () => {
           title: "Relabeled over HTTP",
           labels: ["before"],
         });
-        const deniedRelabel = await sdk.callTool({
-          name: "update_ticket_labels",
-          arguments: {
-            projectId: project.id,
-            ticketId: labeled.id,
-            expectedVersion: labeled.version,
-            labels: ["denied"],
-          },
+        const deniedRelabel = await mcpCall(sdk, "update_ticket_labels", {
+          projectId: project.id,
+          ticketId: labeled.id,
+          expectedVersion: labeled.version,
+          labels: ["denied"],
         });
         expect(deniedRelabel.isError).toBe(true);
         expect(
@@ -1578,16 +1567,15 @@ describe("HTTP, realtime, and MCP", () => {
             labels: ["after"],
           }),
         ).toMatchObject({ labels: ["after"], version: labeled.version + 1 });
-        const spaces = await sdk.callTool({ name: "list_workspaces", arguments: {} });
+        const spaces = await mcpCall(sdk, "list_workspaces", {});
         const discovered = z
           .object({ result: z.array(z.object({ id: z.string(), role: z.string().nullable() })) })
           .parse(spaces.structuredContent);
         if (global)
           expect(discovered.result).toContainEqual({ id: project.workspaceId, role: "admin" });
         else expect(discovered.result).toEqual([{ id: project.workspaceId, role: null }]);
-        const forbidden = await sdk.callTool({
-          name: "list_workspace_members",
-          arguments: { workspaceId: project.workspaceId },
+        const forbidden = await mcpCall(sdk, "list_workspace_members", {
+          workspaceId: project.workspaceId,
         });
         expect(forbidden.isError ?? false).toBe(!global);
 
@@ -1671,16 +1659,17 @@ describe("HTTP, realtime, and MCP", () => {
       }),
     );
     try {
-      const listed = await sdk.callTool({
-        name: "list_resources",
-        arguments: { projectId: project.id, ticketId: ticket.key },
+      const listed = await mcpCall(sdk, "list_resources", {
+        projectId: project.id,
+        ticketId: ticket.key,
       });
       expect(listed.structuredContent).toMatchObject({
         result: [{ id: resource.id, title: "Renamed", version: 2 }],
       });
-      const denied = await sdk.callTool({
-        name: "delete_resource",
-        arguments: { projectId: project.id, resourceId: resource.id, expectedVersion: 2 },
+      const denied = await mcpCall(sdk, "delete_resource", {
+        projectId: project.id,
+        resourceId: resource.id,
+        expectedVersion: 2,
       });
       expect(denied.isError).toBe(true);
     } finally {
@@ -1754,56 +1743,40 @@ describe("HTTP, realtime, and MCP", () => {
       }),
     );
     try {
-      const tools = await sdk.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(
-        expect.arrayContaining([
-          "create_time_entry",
-          "get_time_entry",
-          "list_time_entries",
-          "update_time_entry",
-          "delete_time_entry",
-        ]),
-      );
       const created = z.object({ result: timeEntrySchema }).parse(
         (
-          await sdk.callTool({
-            name: "create_time_entry",
-            arguments: { ...subject, startAt: "2026-10-01T11:00:00.000Z" },
+          await mcpCall(sdk, "create_time_entry", {
+            ...subject,
+            startAt: "2026-10-01T11:00:00.000Z",
           })
         ).structuredContent,
       ).result;
       expect(created.durationMs).toBeNull();
       expect(
         (
-          await sdk.callTool({
-            name: "update_time_entry",
-            arguments: {
-              ...subject,
-              timeEntryId: created.id,
-              expectedVersion: 1,
-              endAt: "2026-10-01T11:00:30.000Z",
-            },
+          await mcpCall(sdk, "update_time_entry", {
+            ...subject,
+            timeEntryId: created.id,
+            expectedVersion: 1,
+            endAt: "2026-10-01T11:00:30.000Z",
           })
         ).structuredContent,
       ).toMatchObject({
         result: { id: created.id, version: 2, durationMs: 30_000, actorId: created.actorId },
       });
       expect(
-        (
-          await sdk.callTool({
-            name: "get_time_entry",
-            arguments: { ...subject, timeEntryId: created.id },
-          })
-        ).structuredContent,
+        (await mcpCall(sdk, "get_time_entry", { ...subject, timeEntryId: created.id }))
+          .structuredContent,
       ).toMatchObject({ result: { version: 2, durationMs: 30_000 } });
-      expect(
-        (await sdk.callTool({ name: "list_time_entries", arguments: subject })).structuredContent,
-      ).toMatchObject({ result: { total: 3 } });
+      expect((await mcpCall(sdk, "list_time_entries", subject)).structuredContent).toMatchObject({
+        result: { total: 3 },
+      });
       expect(
         (
-          await sdk.callTool({
-            name: "delete_time_entry",
-            arguments: { ...subject, timeEntryId: created.id, expectedVersion: 2 },
+          await mcpCall(sdk, "delete_time_entry", {
+            ...subject,
+            timeEntryId: created.id,
+            expectedVersion: 2,
           })
         ).structuredContent,
       ).toEqual({ result: { ok: true } });
@@ -1927,15 +1900,12 @@ describe("HTTP, realtime, and MCP", () => {
       bytes = Buffer.from(`screen recording ${crypto.randomUUID()}`);
     try {
       const uploadUrl = async (args: Record<string, unknown>) => {
-        const response = await sdk.callTool({
-          name: "create_upload_url",
-          arguments: {
-            projectId: project.id,
-            name: "recording.mp4",
-            contentType: "video/mp4",
-            size: bytes.length,
-            ...args,
-          },
+        const response = await mcpCall(sdk, "create_upload_url", {
+          projectId: project.id,
+          name: "recording.mp4",
+          contentType: "video/mp4",
+          size: bytes.length,
+          ...args,
         });
         expect(response.isError, JSON.stringify(response.content)).toBeFalsy();
         return uploadUrlResult.parse(
@@ -1975,11 +1945,10 @@ describe("HTTP, realtime, and MCP", () => {
       expect(
         await client().call("list_attachments", { projectId: project.id, ticketId: ticket.id }),
       ).toMatchObject([{ id: direct.uploadId, name: "recording.mp4", size: bytes.length }]);
-      const { tools } = await sdk.listTools();
       for (const name of ["stage_upload", "upload_attachment"])
-        expect(tools.find((tool) => tool.name === name)?.description).toContain(
-          "create_upload_url",
-        );
+        expect(
+          (await sdk.callTool({ name: "find_operation", arguments: { name } })).structuredContent,
+        ).toMatchObject({ result: { description: expect.stringContaining("create_upload_url") } });
       // Revoking the credential that requested a URL stops the URL too.
       const orphaned = await uploadUrl({});
       expect(

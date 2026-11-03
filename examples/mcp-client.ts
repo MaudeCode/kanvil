@@ -18,8 +18,8 @@ export async function inspectMcpProject(options: {
   const client = new Client({ name: "kanvil-reference-client", version: "0.1.0" });
   async function call<K extends Operation>(name: K, input: Input<K>) {
     const response = await client.callTool({
-      name,
-      arguments: operations[name].input.parse(input),
+      name: "read_operation",
+      arguments: { name, input: operations[name].input.parse(input) },
     });
     if (response.isError)
       throw new Error(

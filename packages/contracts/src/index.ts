@@ -1917,7 +1917,9 @@ const op = <I extends z.ZodObject, O extends z.ZodType>(
   path: string,
   scope: (typeof scopes)[number],
   description: string,
-) => ({ input, output, method, path, scope, description });
+  // `core` serves the operation as its own MCP tool; the rest are reached through discovery.
+  options: { mcp?: "core" } = {},
+) => ({ input, output, method, path, scope, description, ...options });
 
 export const operations = {
   list_workspaces: op(
@@ -2756,6 +2758,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}",
     "read",
     "Read a ticket by ID or key, with readiness and ownership.",
+    { mcp: "core" },
   ),
   create_ticket: op(
     projectInput
@@ -2788,6 +2791,7 @@ export const operations = {
     "/projects/{projectId}/tickets",
     "write",
     "Create a ticket. `customFields` maps field IDs from list_custom_fields to values; omitted fields take their default, and a required field must end with a value. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. Reuse requestId when retrying this write.",
+    { mcp: "core" },
   ),
   duplicate_ticket: op(
     ticketInput.extend(mutation).strict(),
@@ -2811,6 +2815,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}",
     "write",
     "Update a ticket with optimistic concurrency. Worker completion requires its active claim. `changes.customFields` sets only the named fields; null clears one.",
+    { mcp: "core" },
   ),
   update_ticket_labels: op(
     ticketInput.extend({ ...mutation, expectedVersion: version, labels: tags }).strict(),
@@ -2883,6 +2888,7 @@ export const operations = {
     "/tickets/resolve",
     "read",
     "Find a ticket by ID, current key, or any earlier key from a prefix change or a move, across every accessible project. An unknown or inaccessible ticket reads as not found.",
+    { mcp: "core" },
   ),
   bulk_update_tickets: op(
     projectInput
@@ -2937,6 +2943,7 @@ export const operations = {
     "/tickets/search",
     "read",
     'Search unarchived tickets by key or text across every accessible project, optionally within one workspace. Results order by exact key match, then relevance, then recency. Double-quoted segments of `q` match as exact phrases. Pass `view: "summary"` when scanning results: each ticket is then a compact row and the result carries a `snippet` of the matching text.',
+    { mcp: "core" },
   ),
   search_workspace: op(
     z
@@ -2982,6 +2989,7 @@ export const operations = {
     "/my-work",
     "read",
     "List open, unarchived tickets assigned to the current identity across every accessible project, optionally within one workspace, with the most recent accessible activity when `activity` is set. `q` and `sort` work as in list_tickets.",
+    { mcp: "core" },
   ),
   list_eligible_tickets: op(
     projectInput.extend(pagination),
@@ -2990,6 +2998,7 @@ export const operations = {
     "/projects/{projectId}/eligibility",
     "read",
     "Inspect eligibility and explicit blocking reasons for open tickets.",
+    { mcp: "core" },
   ),
   list_relations: op(
     ticketInput,
@@ -3038,6 +3047,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/comments",
     "write",
     "Add a comment with authenticated attribution. Mention a project member with `[@Name](mention:<user id>)` from list_members; members who can read the project are notified.",
+    { mcp: "core" },
   ),
   update_comment: op(
     projectInput
@@ -3141,6 +3151,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/evidence",
     "write",
     "Attach evidence with its commit and provenance.",
+    { mcp: "core" },
   ),
   list_time_entries: op(
     ticketInput.extend(pagination),
@@ -3275,6 +3286,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/claim",
     "claim",
     "Atomically claim ready work. Expired claims require explicit recovery.",
+    { mcp: "core" },
   ),
   renew_claim: op(
     ticketInput
@@ -3289,6 +3301,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/claim/renew",
     "claim",
     "Renew the caller's unexpired claim.",
+    { mcp: "core" },
   ),
   release_claim: op(
     ticketInput.extend({ ...mutation, claimId: z.uuid() }).strict(),
@@ -3297,6 +3310,7 @@ export const operations = {
     "/projects/{projectId}/tickets/{ticketId}/claim/release",
     "claim",
     "Release the caller's claim.",
+    { mcp: "core" },
   ),
   recover_claim: op(
     ticketInput
