@@ -14,7 +14,41 @@ const coreNames = operationNames.filter((name) => operations[name].mcp === "core
 // Agent protocol sent in the handshake, so it stays in English. mcp.test.ts holds it to 600
 // characters and to the names of listed tools.
 const instructions =
-  "Ticket keys look like KAN-12, and a key's prefix or the project's linked git remote works as projectId. To work a ticket: claim_ticket, keep its status current with update_ticket, add_comment on what you did, add_evidence, then set status done and release_claim. Leave tickets with automationReady false to people. The core tools are listed. Reach every other operation with find_operation, then read_operation for reads or run_operation for writes.";
+  "Ticket keys look like KAN-12, and a key's prefix or the project's linked git remote works as projectId. To work a ticket: claim_ticket, keep its status current with update_ticket, add_comment on what you did, add_evidence, then set status done and release_claim. Leave tickets with automationReady false to people. The core tools are listed. Reach every other operation with find_operation, then read_operation for reads or run_operation for writes. In replies, a missing key means null or empty; lists return summary rows unless view is full.";
+
+// MCP lists default to summary rows, unlike HTTP. A tool's parsed input already carries the default
+// its schema names, so the override has to reach what the tool and find_operation advertise.
+const defaultView = "summary";
+const toolInput = (name: Operation): z.ZodObject => {
+  const input: z.ZodObject = operations[name].input;
+  return "view" in input.shape
+    ? input.safeExtend({ view: z.enum([defaultView, "full"]).default(defaultView) })
+    : input;
+};
+
+// The ticket body fields an operation takes as input, which its reply need not repeat.
+const echoedFields = (name: Operation) => {
+  const { shape } = toolInput(name);
+  const { changes } = shape;
+  return ["description", "acceptanceCriteria"].filter(
+    (field) => field in shape || (changes instanceof z.ZodObject && field in changes.shape),
+  );
+};
+const isEmpty = (value: unknown) =>
+  value === null || (typeof value === "object" && Object.keys(value).length === 0);
+// Shrinks an operation's result for an agent: tickets lose `echoed` fields, and objects lose keys
+// that say nothing. Only tickets have `acceptanceCriteria`; a project keeps its `description`.
+const compact = (value: unknown, echoed: string[]): unknown => {
+  if (Array.isArray(value)) return value.map((item) => compact(item, echoed));
+  if (typeof value !== "object" || value === null) return value;
+  const dropped = "acceptanceCriteria" in value ? echoed : [];
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !dropped.includes(key))
+      .map(([key, field]) => [key, compact(field, echoed)] as const)
+      .filter(([, field]) => !isEmpty(field)),
+  );
+};
 
 const known = (name: string) => {
   if (!isOperation(name)) throw new ApiError(404, "not_found", `No operation is named ${name}`);
@@ -39,7 +73,7 @@ function findOperation({
       ...summary(operation),
       method: spec.method,
       scope: spec.scope,
-      inputSchema: z.toJSONSchema(spec.input, { io: "input" }),
+      inputSchema: z.toJSONSchema(toolInput(operation), { io: "input" }),
     };
   }
   const terms = query.toLowerCase().split(/\s+/);
@@ -80,12 +114,15 @@ export function createMcp(
   limitWrite: (key: string) => void,
 ) {
   const serve = (request: Request, identity: Actor, limited = false) => {
-    const execute = (name: Operation, input: unknown) => {
+    // Every operation call, from its own tool or a runner, passes through here.
+    const execute = async (name: Operation, input: Record<string, unknown>) => {
       if (limited && operations[name].method !== "GET") limitWrite(identity.ownerId);
-      return domain.execute(name, input, identity);
+      const value =
+        "view" in operations[name].input.shape ? { view: defaultView, ...input } : input;
+      return compact(await domain.execute(name, value, identity), echoedFields(name));
     };
     // Separate tools, so a client permission rule can allow reads without allowing deletes.
-    const runner = (write: boolean) => (args: { name: string; input: unknown }) =>
+    const runner = (write: boolean) => (args: { name: string; input: Record<string, unknown> }) =>
       reply(args.name, () => {
         const name = known(args.name);
         if ((operations[name].method !== "GET") !== write)
@@ -104,7 +141,7 @@ export function createMcp(
         );
         for (const name of coreNames) {
           const spec = operations[name];
-          const inputSchema: Record<string, z.ZodType> = spec.input.shape;
+          const inputSchema: Record<string, z.ZodType> = toolInput(name).shape;
           server.registerTool(
             name,
             {
