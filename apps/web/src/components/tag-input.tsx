@@ -67,7 +67,12 @@ export function TagInput({
       </FieldLabel>
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         {value.map((tag) => (
-          <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">
+          <TicketTag
+            tag={tag}
+            kind={kind}
+            key={tag}
+            className="h-auto min-h-5 max-w-full gap-1 pr-0.5"
+          >
             <span dir="auto" className="break-words whitespace-normal">
               {tag}
             </span>

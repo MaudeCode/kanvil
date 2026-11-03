@@ -48,7 +48,7 @@ async function takePrefix(ctx: Context, prefix: string, projectId?: string) {
     ctx.db.insert(projectPrefixes).values({ prefix, projectId: owner }).onConflictDoNothing();
 }
 // Within a workspace only one unarchived project can hold a remote, so the remote names one project
-// there. The global write lock makes this check race-free. Callers skip it for an archived project.
+// there. The global write lock makes this check race-free. A project staying archived skips it.
 export async function assertRepositoriesFree(
   ctx: Context,
   projectId: string,
