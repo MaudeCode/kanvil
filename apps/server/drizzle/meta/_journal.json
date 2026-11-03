@@ -288,6 +288,13 @@
       "when": 1793577448877,
       "tag": "0040_upload_urls",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793746582464,
+      "tag": "0041_project_repositories",
+      "breakpoints": true
     }
   ]
 }

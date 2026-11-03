@@ -316,6 +316,8 @@ export default {
       time_entry_conflict: "Ten użytkownik ma już aktywny wpis czasu w tym zgłoszeniu.",
       claim_conflict: "To zadanie jest przejęte przez innego wykonawcę.",
       idempotency_conflict: "To żądanie zostało już użyte dla innej zmiany.",
+      duplicate_repository:
+        "Inny projekt w tej przestrzeni roboczej ma już połączone to repozytorium.",
       project_archived: "Przywróć zarchiwizowany projekt, zanim go zmienisz.",
       rate_limited: "Zbyt wiele zmian w krótkim czasie. Odczekaj i spróbuj ponownie.",
       snapshot_required: "Kanał na żywo jest opóźniony. Odśwież, aby kontynuować.",

@@ -302,6 +302,7 @@ export default {
       time_entry_conflict: "Bu istifadəçinin tapşırıqda artıq davam edən vaxt qeydi var.",
       claim_conflict: "Bu tiket başqa işçidədir.",
       idempotency_conflict: "Bu sorğu artıq başqa dəyişiklik üçün istifadə edilib.",
+      duplicate_repository: "Bu iş sahəsindəki başqa layihə bu repozitoriyaya bağlıdır.",
       project_archived: "Dəyişməzdən əvvəl arxivləşdirilmiş layihəni bərpa edin.",
       rate_limited: "Qısa müddətdə həddən artıq dəyişiklik. Gözləyib yenidən cəhd edin.",
       snapshot_required: "Canlı lent geri qaldı. Davam etmək üçün yenidən yükləyin.",

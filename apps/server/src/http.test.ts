@@ -405,6 +405,45 @@ describe("HTTP, realtime, and MCP", () => {
       ticket: { id: ticket.id, key: `${renamed.key}-1` },
     });
   });
+  it("names a project by its git remote in a URL path, a query, and an MCP tool call", async () => {
+    const api = client(),
+      project = await newProject(),
+      name = crypto.randomUUID(),
+      linked = await api.call("update_project", {
+        projectId: project.id,
+        expectedVersion: project.version,
+        name: project.name,
+        description: "",
+        repositories: [`git@github.com:acme/${name}.git`],
+      }),
+      remote = `https://github.com/Acme/${name}.git`;
+    expect(linked.repositories).toEqual([`github.com/acme/${name}`]);
+    const byPath = await request(`/api/v1/projects/${encodeURIComponent(remote)}`, {
+      headers: sessionHeaders(),
+    });
+    expect(byPath.status).toBe(200);
+    expect(await byPath.json()).toMatchObject({ id: project.id });
+    expect((await api.call("get_project", { projectId: remote })).id).toBe(project.id);
+    const ticket = await api.call("create_ticket", { projectId: remote, title: "By remote" });
+    expect(ticket.projectId).toBe(project.id);
+    const snapshot = await request(`/api/v1/snapshot?projectId=${encodeURIComponent(remote)}`, {
+      headers: sessionHeaders(),
+    });
+    expect(snapshot.status).toBe(200);
+    const { key } = await credential(project.id),
+      mcp = await mcpClient(key);
+    try {
+      const result = await mcp.callTool({
+        name: "get_ticket",
+        arguments: { projectId: remote, ticketId: ticket.id },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ result: { ticket: { id: ticket.id } } });
+    } finally {
+      await mcp.close();
+    }
+  });
+
   it("evaluates repeated filter parameters over HTTP", async () => {
     const project = await newProject(),
       api = client(),

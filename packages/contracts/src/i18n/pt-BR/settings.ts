@@ -209,6 +209,9 @@ export default {
       "Todos os tickets de {{name}} recebem o novo prefixo e mantêm o número.",
     changing: "Alterando…",
     prefixChanged: "Os tickets agora usam {{key}}",
+    repositories: "Repositórios",
+    repositoriesDescription: "Os agentes podem informar um destes remotos git como ID do projeto.",
+    repositoriesInvalid: "Insira até 20 remotos git, como git@github.com:owner/repo.git.",
     publicLink: "Link público",
     publicDisclosure:
       "Qualquer pessoa com o link pode ler o título, a descrição, os critérios de aceitação, o status, a prioridade, o tipo, a dificuldade, as etiquetas, os escopos, as datas e os links para outros tickets deste projeto de todos os tickets não arquivados. Pessoas, comentários, atividade, anexos, evidências e reservas continuam privados.",

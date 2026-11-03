@@ -14,7 +14,7 @@ const coreNames = operationNames.filter((name) => operations[name].mcp === "core
 // Agent protocol sent in the handshake, so it stays in English. mcp.test.ts holds it to 600
 // characters and to the names of listed tools.
 const instructions =
-  "Ticket keys look like KAN-12, and a key's prefix works as projectId. To work a ticket: claim_ticket, keep its status current with update_ticket, add_comment on what you did, add_evidence, then set status done and release_claim. Leave tickets with automationReady false to people. The core tools are listed. Reach every other operation with find_operation, then read_operation for reads or run_operation for writes.";
+  "Ticket keys look like KAN-12, and a key's prefix or the project's linked git remote works as projectId. To work a ticket: claim_ticket, keep its status current with update_ticket, add_comment on what you did, add_evidence, then set status done and release_claim. Leave tickets with automationReady false to people. The core tools are listed. Reach every other operation with find_operation, then read_operation for reads or run_operation for writes.";
 
 const known = (name: string) => {
   if (!isOperation(name)) throw new ApiError(404, "not_found", `No operation is named ${name}`);

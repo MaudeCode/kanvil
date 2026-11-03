@@ -189,6 +189,9 @@ export default {
     changePrefixDescription: "{{name}} 中的所有工單都會使用新前綴，並保留原本的編號。",
     changing: "變更中…",
     prefixChanged: "工單現在使用 {{key}}",
+    repositories: "存放庫",
+    repositoriesDescription: "代理程式可以將其中一個 git 遠端位址作為專案 ID 傳入。",
+    repositoriesInvalid: "最多輸入 20 個 git 遠端位址,例如 git@github.com:owner/repo.git。",
     publicLink: "公開連結",
     publicDisclosure:
       "任何持有連結的人都能讀取此專案中所有未封存工單的標題、說明、驗收條件、狀態、優先順序、類型、難度、標籤、範圍、日期，以及指向其他工單的連結。人員、留言、活動、附件、佐證和認領仍維持私密。",

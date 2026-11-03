@@ -177,6 +177,7 @@ export const families: readonly Family[] = [
       "apps/server/src/notification-categories.test.ts": 4,
       "apps/server/src/outbox.test.ts": 14,
       "apps/server/src/project-lifecycle.test.ts": 6,
+      "apps/server/src/project-repositories.test.ts": 8,
       "apps/server/src/public-read.test.ts": 7,
       "apps/server/src/relocation.test.ts": 11,
       "apps/server/src/reminders.test.ts": 5,
@@ -197,7 +198,7 @@ export const families: readonly Family[] = [
       "Adapters speak HTTP, SMTP, and OIDC to fakes on loopback, so request framing, headers, redirects, response limits, signatures, and the outbound sender's address checks run as in production, against PostgreSQL-backed services.",
     cases: {
       "apps/server/src/delivery.test.ts": 11,
-      "apps/server/src/http.test.ts": 45,
+      "apps/server/src/http.test.ts": 46,
       "apps/server/src/import-sources.test.ts": 26,
       "apps/server/src/instance.test.ts": 6,
       "apps/server/src/issue-sync.test.ts": 18,
@@ -310,8 +311,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "project-lifecycle.spec.ts",
-    1,
-    "Archive, restore, move, and delete flows with read-only notices and typed confirmation.",
+    2,
+    "Archive, restore, move, and delete flows with read-only notices and typed confirmation, and linked repositories that survive a reload.",
   ),
   spec(
     "public-sharing.spec.ts",

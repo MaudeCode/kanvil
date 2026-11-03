@@ -199,6 +199,9 @@ export default {
       "Setiap tiket di {{name}} memakai awalan baru dan tetap memakai nomornya.",
     changing: "Mengubah…",
     prefixChanged: "Tiket kini menggunakan {{key}}",
+    repositories: "Repositori",
+    repositoriesDescription: "Agen dapat memberikan salah satu remote git ini sebagai ID proyek.",
+    repositoriesInvalid: "Masukkan hingga 20 remote git, seperti git@github.com:owner/repo.git.",
     publicLink: "Tautan publik",
     publicDisclosure:
       "Siapa pun yang memiliki tautan dapat membaca judul, deskripsi, kriteria penerimaan, status, prioritas, jenis, tingkat kesulitan, label, cakupan, tanggal, dan tautan ke tiket lain dari setiap tiket yang tidak diarsipkan di proyek ini. Orang, komentar, aktivitas, lampiran, bukti, dan klaim tetap privat.",

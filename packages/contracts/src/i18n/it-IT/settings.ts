@@ -209,6 +209,11 @@ export default {
       "Ogni ticket di {{name}} assume il nuovo prefisso e mantiene il suo numero.",
     changing: "Modifica…",
     prefixChanged: "I ticket ora usano {{key}}",
+    repositories: "Repository",
+    repositoriesDescription:
+      "Gli agenti possono indicare uno di questi remote git come ID del progetto.",
+    repositoriesInvalid:
+      "Inserisci fino a 20 remote git, ad esempio git@github.com:owner/repo.git.",
     publicLink: "Link pubblico",
     publicDisclosure:
       "Chiunque abbia il link può leggere titolo, descrizione, criteri di accettazione, stato, priorità, tipo, difficoltà, etichette, ambiti, date e link ad altri ticket di ogni ticket non archiviato di questo progetto. Persone, commenti, attività, allegati, prove e prese in carico restano privati.",

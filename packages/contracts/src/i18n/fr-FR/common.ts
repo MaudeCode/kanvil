@@ -306,6 +306,7 @@ export default {
       time_entry_conflict: "Cet utilisateur a déjà une entrée de temps en cours sur ce ticket.",
       claim_conflict: "Un autre exécutant a pris en charge ce ticket.",
       idempotency_conflict: "Cette requête a déjà servi à une autre modification.",
+      duplicate_repository: "Un autre projet de cet espace de travail est déjà lié à ce dépôt.",
       project_archived: "Restaurez le projet archivé avant de le modifier.",
       rate_limited: "Trop de modifications en peu de temps. Patientez et réessayez.",
       snapshot_required: "Le flux en direct a pris du retard. Rechargez pour continuer.",

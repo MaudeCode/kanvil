@@ -116,6 +116,8 @@ export const projects = pgTable(
     key: text("key").notNull().unique(),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
+    // Linked git remotes in `normalizeRemote` spelling; `context()` resolves them as `projectId`.
+    repositories: text("repositories").array().notNull().default([]),
     nextNumber: integer("next_number").notNull().default(1),
     // Place in the workspace's shared project order; see ordering.ts.
     position: bigint("position", { mode: "number" }).notNull().default(0),
@@ -423,6 +425,9 @@ export const receipts = pgTable(
     operation: text("operation").notNull(),
     hash: text("hash").notNull(),
     result: jsonb("result").notNull(),
+    // The project the write acted on. A replay authorizes against it, since the remote that named
+    // it can stop naming it. Empty for writes outside a project and for earlier receipts.
+    projectId: uuid("project_id"),
     createdAt: time("created_at"),
   },
   (table) => [primaryKey({ columns: [table.actorId, table.requestId] })],

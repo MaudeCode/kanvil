@@ -305,6 +305,7 @@ export default {
       time_entry_conflict: "Bu kullanıcının bu bilette zaten devam eden bir zaman kaydı var.",
       claim_conflict: "Bu talebi başka bir çalışan üstlenmiş.",
       idempotency_conflict: "Bu istek başka bir değişiklik için zaten kullanıldı.",
+      duplicate_repository: "Bu çalışma alanındaki başka bir proje bu depoyu zaten bağlıyor.",
       project_archived: "Değiştirmeden önce arşivlenmiş projeyi geri yükleyin.",
       rate_limited: "Kısa sürede çok fazla değişiklik. Bekleyip yeniden deneyin.",
       snapshot_required: "Canlı akış geride kaldı. Devam etmek için yeniden yükleyin.",

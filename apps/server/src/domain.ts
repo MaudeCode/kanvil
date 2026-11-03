@@ -1,7 +1,19 @@
 import { writeLocalBlob, type BlobWriter } from "./blob-storage.ts";
 import { builtinSearch, type TicketSearchProvider } from "./search.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { and, asc, eq, gt, inArray, isNull, ne, or, sql, type SQLWrapper } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
 import {
   closedStates,
   defaultClaimMaxLeaseSeconds,
@@ -18,6 +30,7 @@ import {
   workspaceSchema,
   scopes,
   snapshotSchema,
+  normalizeRemote,
   projectSchema,
   ticketSchema,
   hasAdminRole,
@@ -340,6 +353,34 @@ export const projectMatch = (identifier: string) =>
     eq(projects.key, identifier.toUpperCase()),
     sql`${projects.id} IN (SELECT pp.project_id FROM ${projectPrefixes} pp WHERE pp.prefix = ${identifier.toUpperCase()})`,
   );
+// IDs and keys never contain these, so an identifier that does names a linked git remote.
+const namesRemote = (identifier: string) => /[/@]/.test(identifier);
+// The one project a linked remote names for this caller. Projects the caller cannot reach are left
+// out, so a remote linked only to those reads like an unknown one. An archived project yields to
+// a live one, which may hold the same remote in its workspace.
+async function projectByRemote(db: Context["db"], actor: Actor, identifier: string) {
+  const remote = normalizeRemote(identifier);
+  const linked = remote
+    ? await db
+        .select()
+        .from(projects)
+        .where(and(isNull(projects.deletedAt), arrayContains(projects.repositories, [remote])))
+    : [];
+  const reachable = [];
+  for (const row of linked)
+    if (
+      (!actor.projectIds || actor.projectIds.includes(row.id)) &&
+      (await projectAccess(db, actor, row))
+    )
+      reachable.push(row);
+  const live = reachable.filter((row) => !row.archivedAt),
+    named = live.length ? live : reachable;
+  if (named.length > 1)
+    fail(409, "ambiguous_project", "More than one of your projects links this repository", {
+      projects: named.map((row) => row.key),
+    });
+  return one(named);
+}
 const issuedKey = /^([A-Z][A-Z0-9]{1,9})-([1-9]\d{0,8})$/;
 export function ticketMatch(identifier: string) {
   const key = identifier.toUpperCase(),
@@ -380,13 +421,15 @@ export async function context(
     ctx.permissions = access.permissions;
   }
   if (!projectId) return ctx;
-  const row = one(
-    await db
-      .select()
-      .from(projects)
-      .where(and(isNull(projects.deletedAt), projectMatch(projectId)))
-      .limit(1),
-  );
+  const row = namesRemote(projectId)
+    ? await projectByRemote(db, actor, projectId)
+    : one(
+        await db
+          .select()
+          .from(projects)
+          .where(and(isNull(projects.deletedAt), projectMatch(projectId)))
+          .limit(1),
+      );
   if (actor.projectIds && !actor.projectIds.includes(row.id))
     fail(404, "not_found", "Project was not found");
   const access = await projectAccess(db, actor, row);
@@ -979,7 +1022,15 @@ export function createDomain(
       // author's receipt.
       if (receipt && (name === "delete_project" || name === "delete_workspace"))
         return parseOutput<K, I>(name, receipt.result);
-      const ctx = await context(tx, actor, spec.scope, projectId, workspaceId, permission, name);
+      const ctx = await context(
+        tx,
+        actor,
+        spec.scope,
+        receipt?.projectId ?? projectId,
+        workspaceId,
+        permission,
+        name,
+      );
       if (receipt) {
         // Time-entry receipts must not disclose a moved or deleted ticket through its old project.
         if (
@@ -1004,9 +1055,14 @@ export function createDomain(
         fail(409, "project_archived", "Restore this archived project before changing it");
       const result = await invoke(ctx);
       if (requestId)
-        await tx
-          .insert(receipts)
-          .values({ actorId: actor.id, requestId, hash, operation: name, result });
+        await tx.insert(receipts).values({
+          actorId: actor.id,
+          requestId,
+          hash,
+          operation: name,
+          result,
+          projectId: ctx.project?.id ?? null,
+        });
       return result;
     });
     // ponytail: mail sends once after commit and a failure is only logged; the sender still has
@@ -1043,12 +1099,14 @@ export function createDomain(
   async function readEvents(identity: Actor, cursor: bigint, projectId?: string) {
     if (!hasScope(identity, "read")) fail(403, "insufficient_scope", "Read permission is required");
     const allowed = await accessibleProjects(identity),
-      named = projectId
-        ? await database.db
-            .select({ id: projects.id })
-            .from(projects)
-            .where(projectMatch(projectId))
-        : [];
+      named = !projectId
+        ? []
+        : namesRemote(projectId)
+          ? [await projectByRemote(database.db, identity, projectId)]
+          : await database.db
+              .select({ id: projects.id })
+              .from(projects)
+              .where(projectMatch(projectId));
     const ids = allowed
       .filter((row) => !projectId || named.some((match) => match.id === row.id))
       .map((row) => row.id);

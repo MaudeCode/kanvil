@@ -9,6 +9,7 @@ import {
 import { user } from "./auth-schema.ts";
 import { dropProjectFromInvitations } from "./invitation-operations.ts";
 import { projectRoleSQL } from "./project-access.ts";
+import { assertRepositoriesFree } from "./project-operations.ts";
 import { endPosition, projectPositions } from "./ordering.ts";
 import { labelUsage } from "./ticket-operations.ts";
 import { requireOwner, requireWorkspace } from "./workspace-operations.ts";
@@ -108,6 +109,8 @@ async function assertTransferable(ctx: Context, workspaceId: string) {
   if (workspaceId === current.workspaceId)
     fail(400, "validation_error", "The project is already in this workspace");
   await requireWorkspace(ctx, current.workspaceId, "project.manage");
+  if (!current.archivedAt)
+    await assertRepositoriesFree(ctx, current.id, workspaceId, current.repositories);
 }
 // Active members of the project and its workspaces, with their read access now (`before`) and with
 // the project in `workspaceId` (`after`). Instance administrators read every project, so no
@@ -363,6 +366,7 @@ export const lifecycleHandlers: Pick<
     );
     if (!!current.archivedAt === input.archived) return current;
     if (input.archived) assertNoBlockers(await claimBlockers(ctx));
+    else await assertRepositoriesFree(ctx, current.id, current.workspaceId, current.repositories);
     const row = await changed(ctx, { archivedAt: input.archived ? new Date() : null });
     await publish(ctx, input.archived ? "project.archived" : "project.restored", null, {
       version: row.version,

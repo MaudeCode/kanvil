@@ -277,6 +277,7 @@ export default {
       time_entry_conflict: "此用户在该工单上已有进行中的时间记录。",
       claim_conflict: "另一个执行者已认领此工单。",
       idempotency_conflict: "此请求已用于另一项更改。",
+      duplicate_repository: "此工作区的另一个项目已关联此仓库。",
       project_archived: "请先恢复已归档的项目再进行更改。",
       rate_limited: "短时间内更改过多。请稍后重试。",
       snapshot_required: "实时数据流已落后。请重新加载以继续。",

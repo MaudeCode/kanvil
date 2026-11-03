@@ -305,6 +305,7 @@ export default {
       time_entry_conflict: "Este usuário já tem um registro de tempo em andamento neste ticket.",
       claim_conflict: "Outro executor reservou este ticket.",
       idempotency_conflict: "Esta solicitação já foi usada para outra alteração.",
+      duplicate_repository: "Outro projeto deste espaço de trabalho já vincula este repositório.",
       project_archived: "Restaure o projeto arquivado antes de alterá-lo.",
       rate_limited: "Muitas alterações em pouco tempo. Aguarde e tente novamente.",
       snapshot_required: "O feed ao vivo ficou para trás. Recarregue para continuar.",

@@ -210,6 +210,9 @@ export default {
     changePrefixDescription: "Every ticket in {{name}} takes the new prefix and keeps its number.",
     changing: "Changing…",
     prefixChanged: "Tickets now use {{key}}",
+    repositories: "Repositories",
+    repositoriesDescription: "Agents can pass one of these git remotes as the project ID.",
+    repositoriesInvalid: "Enter up to 20 git remotes, such as git@github.com:owner/repo.git.",
     publicLink: "Public link",
     publicDisclosure:
       "Anyone with the link can read every unarchived ticket's title, description, acceptance criteria, status, priority, kind, difficulty, labels, scopes, dates, and links to other tickets in this project. People, comments, activity, attachments, evidence, and claims stay private.",

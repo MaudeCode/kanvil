@@ -278,6 +278,7 @@ export default {
       time_entry_conflict: "이 사용자는 이 티켓에 이미 진행 중인 시간 기록이 있습니다.",
       claim_conflict: "다른 워커가 이 티켓을 선점하고 있습니다.",
       idempotency_conflict: "이 요청은 이미 다른 변경에 사용되었습니다.",
+      duplicate_repository: "이 워크스페이스의 다른 프로젝트가 이미 이 저장소를 연결했습니다.",
       project_archived: "변경하기 전에 보관된 프로젝트를 복원하세요.",
       rate_limited: "짧은 시간에 변경이 너무 많습니다. 잠시 후 다시 시도하세요.",
       snapshot_required: "실시간 피드가 뒤처졌습니다. 계속하려면 새로고침하세요.",
