@@ -3,7 +3,7 @@ import type { JobScheduler } from "./adapters/ports.ts";
 import { createTicketIndex } from "./adapters/ticket-indexes.ts";
 import type { SearchQuery, TicketIndexFactory } from "./adapters/ports.ts";
 import { createHmac } from "node:crypto";
-import { and, eq, inArray, sql, ilike, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, or, type SQL, type SQLWrapper } from "drizzle-orm";
 import { searchState, tickets, events, eventClock } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
@@ -15,9 +15,9 @@ export const likePattern = (query: string) =>
   `%${query.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 // Each phrase costs a predicate per searchable field, so only this many distinct ones count.
 export const phraseLimit = 8;
-// Double-quoted segments are exact phrases and the rest is free text; an unpaired quote stays a
-// literal character. Repeated phrases count once and phrases past `phraseLimit` are dropped, which
-// can only widen the result. A query of only empty quotes searches for itself.
+// Double-quoted segments are exact phrases on word boundaries and the rest is free text; an unpaired
+// quote stays a literal character. Repeated phrases count once and phrases past `phraseLimit` are
+// dropped, which can only widen the result. A query of only empty quotes searches for itself.
 export function parseQuery(query: string): SearchQuery {
   const phrases: string[] = [];
   const terms = query
@@ -35,30 +35,36 @@ export function parseQuery(query: string): SearchQuery {
     .trim();
   return phrases.length || terms ? { phrases, terms } : { phrases, terms: query };
 }
-// Every phrase and the free text, each of which must match somewhere.
-export const querySegments = ({ phrases, terms }: SearchQuery) =>
-  terms ? [...phrases, terms] : phrases;
-export function postgresSearch(query: string): SQL | undefined {
-  return and(
-    ...querySegments(parseQuery(query)).map((segment) => {
-      const value = likePattern(segment);
-      return or(
-        ilike(tickets.title, value),
-        ilike(tickets.description, value),
-        ilike(tickets.key, value),
-        ilike(tickets.acceptanceCriteria, value),
-        sql`array_to_string(${tickets.labels}, ' ') ILIKE ${value}`,
-        sql`array_to_string(${tickets.scopes}, ' ') ILIKE ${value}`,
-      );
-    }),
-  );
-}
+// A quoted phrase as a regular expression: its text literally, any whitespace between its words,
+// and no `word` character against either outer edge. `word` is that class in the matcher's dialect.
+const phrasePattern = (phrase: string, word: string) =>
+  `(?<!${word})${phrase.replace(/[\\^$.|?*+()[\]{}]/gu, "\\$&").replaceAll(" ", "\\s+")}(?!${word})`;
+export const phraseRegExp = (phrase: string) =>
+  new RegExp(phrasePattern(phrase, "[\\p{L}\\p{N}_]"), "iu");
+// One test per part of a query, all of which must hold: every phrase on its word boundaries, and
+// the free text as written anywhere.
+const segmentTests = ({ phrases, terms }: SearchQuery) => [
+  ...phrases.map((phrase) => {
+    const pattern = phrasePattern(phrase, "[[:alnum:]_]");
+    return (text: SQLWrapper) => sql`${text} ~* ${pattern}`;
+  }),
+  ...(terms ? [(text: SQLWrapper) => sql`${text} ILIKE ${likePattern(terms)}`] : []),
+];
+const searchedText = [
+  tickets.title,
+  tickets.description,
+  tickets.key,
+  tickets.acceptanceCriteria,
+  sql`array_to_string(${tickets.labels}, ' ')`,
+  sql`array_to_string(${tickets.scopes}, ' ')`,
+];
+const textMatch = (query: SearchQuery) =>
+  and(...segmentTests(query).map((test) => or(...searchedText.map(test))));
+export const postgresSearch = (query: string) => textMatch(parseQuery(query));
 // Title matches first, then tickets that matched only in other text.
 const postgresRank = (query: string) =>
   sql<number>`CASE WHEN ${and(
-    ...querySegments(parseQuery(query)).map((segment) =>
-      ilike(tickets.title, likePattern(segment)),
-    ),
+    ...segmentTests(parseQuery(query)).map((test) => test(tickets.title)),
   )} THEN 0 ELSE 1 END`;
 // `engine` says what matched: the external index only while it is current. `indexing` is set when
 // an index is configured but PostgreSQL answered because the index is behind or unavailable.
@@ -201,15 +207,19 @@ export function createTicketSearch(
       return fallback();
     const root = await instance.read();
     try {
+      const parsed = parseQuery(query);
       const hits = await factory({ provider: "elasticsearch", config: settings }).find(
         root.identity,
         projectIds,
-        parseQuery(query),
+        parsed,
       );
       const ids = hits.map((hit) => hit.id),
         ranks = hits.map((hit) => hit.rank);
       return {
-        where: ids.length ? inArray(tickets.id, ids) : sql`false`,
+        // The index tokenizes, so `"exp-v0.52.6"` also finds `exp v0.52.6`; phrases stay literal.
+        where: ids.length
+          ? and(inArray(tickets.id, ids), textMatch({ phrases: parsed.phrases, terms: "" }))
+          : sql`false`,
         // The index's rank of each ID, as two array parameters rather than one per ID; equally
         // relevant tickets tie so the caller's recency order decides between them.
         rank: sql<number>`(${`{${ranks.join(",")}}`}::int[])[array_position(${`{${ids.join(",")}}`}::uuid[], ${tickets.id})]`,

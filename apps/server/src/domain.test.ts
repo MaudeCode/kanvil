@@ -1371,6 +1371,58 @@ describe("ticket operations on PostgreSQL", () => {
     );
     expect(listed.items.map((row) => row.id).toSorted()).toEqual([live.id, titled.id].toSorted());
   });
+  it("matches quoted segments on word boundaries and unquoted text anywhere", async () => {
+    const create = (title: string, description = "") =>
+      domain.execute("create_ticket", { projectId: project.id, title, description }, owner);
+    const ime = await create("IME Enter handling", `${"sometime ".repeat(60)}IME composition`);
+    const time = await create(
+      "wall-clock time sweep",
+      "Keep exp-v0.52.61 and exp-v0x52x6 on the --source toolbox.",
+    );
+    const flag = await create("Pass --source tool to the exp-v0.52.6 build");
+    const cafe = await create("Order café au lait");
+    const described = await create("Commit text", "Only the description\nnames the ime.");
+    const mine = new Set([ime.id, time.id, flag.id, cafe.id, described.id]);
+    const listed = async (q: string) =>
+      (await domain.execute("list_tickets", { projectId: project.id, q, limit: 100 }, owner)).items
+        .map((row) => row.id)
+        .filter((id) => mine.has(id));
+    const searched = async (q: string) =>
+      (await domain.execute("search_tickets", { q, limit: 50 }, owner)).items
+        .map((item) => item.ticket.id)
+        .filter((id) => mine.has(id));
+    const cases: [string, { id: string }[]][] = [
+      ['"IME"', [ime, described]],
+      ['"ime"', [ime, described]],
+      ["IME", [ime, time, described]],
+      ['"enter handling"', [ime]],
+      ['"handling enter"', []],
+      ['"enter handl"', []],
+      ['"IME" "enter"', [ime]],
+      ['"IME" "sweep"', []],
+      ['"description names"', [described]],
+      ['"--source tool"', [flag]],
+      ['"exp-v0.52.6"', [flag]],
+      ['"caf"', []],
+      ['"(*[{\\+?^$|ime"', []],
+      [`"${ime.key}"`, [ime]],
+    ];
+    for (const [q, expected] of cases) {
+      const ids = expected.map((row) => row.id).toSorted();
+      expect((await listed(q)).toSorted(), `list_tickets ${q}`).toEqual(ids);
+      expect((await searched(q)).toSorted(), `search_tickets ${q}`).toEqual(ids);
+    }
+    // A title match still ranks above a more recent match elsewhere.
+    expect(await listed('"IME"')).toEqual([ime.id, described.id]);
+    expect(await searched('"IME"')).toEqual([ime.id, described.id]);
+    // The snippet shows the term itself, not the first word containing it.
+    const { items } = await domain.execute(
+      "search_tickets",
+      { q: '"IME"', limit: 50, view: "summary" },
+      owner,
+    );
+    expect(items.find((item) => item.ticket.id === ime.id)?.snippet).toContain("IME composition");
+  });
   it("returns compact summary rows with a snippet of the matching text", async () => {
     const token = `sum${crypto.randomUUID().slice(0, 8)}`;
     const body = "x".repeat(5000);

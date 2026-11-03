@@ -140,6 +140,8 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
     const titled = await create("End the live activity on completion");
     const native = await create("Refine native activity screens");
     const like = await create("Feels like activity tracking");
+    const flag = await create("Pass --source tool to exp-v0.52.6");
+    await create("Pass source tool to exp v0.52.6");
     await app.search.sync();
     const scope = { workspaceId: project.workspaceId };
     const ranked = await app.domain.execute("search_tickets", { q: "zephyrine", ...scope }, actor);
@@ -194,6 +196,13 @@ describe.skipIf(!endpoint)("external search against Elasticsearch", () => {
       ).items.map((item) => item.ticket.id),
     ).toContain(like.id);
     expect(await found('"activity"')).toContain(native.id);
+    // The index tokenizes on punctuation, but a quoted phrase still matches as written.
+    for (const q of ['"--source tool"', '"exp-v0.52.6"'])
+      expect(
+        (await app.domain.execute("search_tickets", { q, ...scope }, actor)).items.map(
+          (item) => item.ticket.id,
+        ),
+      ).toEqual([flag.id]);
   });
   it("reindexes every ticket of a project whose prefix changes", async () => {
     const project = await app.domain.execute(

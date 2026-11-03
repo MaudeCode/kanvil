@@ -63,7 +63,7 @@ import {
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
 import { endPosition, positionNear, ticketPositions } from "./ordering.ts";
 import { projectStates, resolveState } from "./workflow-operations.ts";
-import { likePattern, parseQuery, postgresSearch, querySegments } from "./search.ts";
+import { likePattern, parseQuery, phraseRegExp, postgresSearch } from "./search.ts";
 import {
   applyCustomFieldValues,
   assertCustomFieldFilters,
@@ -449,9 +449,9 @@ const relevanceOrder = (q: string, relevance: SQL<number>) => [
   desc(tickets.updatedAt),
 ];
 // A ticket list's `q` keeps what search_tickets matches on PostgreSQL on every engine: the exact key
-// or ID, or every quoted phrase and the free text as written. The external index's fuzzy terms would
-// let `oxlint` match `lint` and inflate `total`, so the index only ranks. Without `sort`, a query
-// orders by relevance.
+// or ID, or every quoted phrase on its word boundaries and the free text as written. The external
+// index's fuzzy terms would let `oxlint` match `lint` and inflate `total`, so the index only ranks.
+// Without `sort`, a query orders by relevance.
 async function listQuery(
   ctx: Context,
   projectIds: readonly string[],
@@ -599,13 +599,18 @@ const snippetLength = 240;
 function snippet(body: string | null, query: string) {
   const text = body?.replace(/\s+/gu, " ").trim() ?? "",
     lower = text.toLowerCase(),
-    parsed = parseQuery(query);
+    { phrases, terms } = parseQuery(query);
   let at = -1,
     size = 0;
-  for (const needle of [...querySegments(parsed), ...parsed.terms.split(" ")]) {
-    const found = needle ? lower.indexOf(needle.toLowerCase()) : -1;
-    if (found >= 0 && (at < 0 || found < at)) [at, size] = [found, needle.length];
+  const closest = (found: number, length: number) => {
+    if (found >= 0 && (at < 0 || found < at)) [at, size] = [found, length];
+  };
+  for (const phrase of phrases) {
+    const found = phraseRegExp(phrase).exec(text);
+    if (found) closest(found.index, found[0].length);
   }
+  for (const needle of [terms, ...terms.split(" ")])
+    if (needle) closest(lower.indexOf(needle.toLowerCase()), needle.length);
   if (at < 0) return "";
   if (text.length <= snippetLength) return text;
   const start = Math.max(
