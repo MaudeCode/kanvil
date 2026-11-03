@@ -2161,6 +2161,182 @@ describe("ticket operations on PostgreSQL", () => {
       );
     },
   );
+  it.each([
+    ["without a version", {}],
+    ["at the current version", { expectedVersion: 1 }],
+  ])(
+    "claims a ticket named by its keys %s and returns what get_ticket reads next",
+    async (_, form) => {
+      const current = await ticket();
+      const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+      const input = { projectId: project.key, ticketId: current.key };
+      const claimed = await domain.execute(
+        "claim_ticket",
+        { ...input, ...form, workerId: "one-call-worker" },
+        owner,
+      );
+      const { ticket: claimedTicket, ...claim } = claimed;
+      const read = await domain.execute("get_ticket", input, owner);
+      expect(claim).toEqual(read.claim);
+      expect(claimedTicket).toEqual(read.ticket);
+      expect(claimedTicket).toMatchObject({
+        id: current.id,
+        status: "in_progress",
+        claimRequired: true,
+        version: current.version + 1,
+        description: current.description,
+        acceptanceCriteria: current.acceptanceCriteria,
+      });
+      const events = (await domain.readEvents(owner, cursor, project.id)).items;
+      expect(
+        events.filter((event) => event.type === "ticket.claimed").map((event) => event.data),
+      ).toEqual([
+        {
+          claimId: claim.id,
+          workerId: "one-call-worker",
+          version: current.version + 1,
+          key: current.key,
+          title: current.title,
+          source: { id: owner.id, kind: "session" },
+        },
+      ]);
+    },
+  );
+  it("refuses a claim at a stale version", async () => {
+    const current = await ticket();
+    await domain.execute(
+      "update_ticket",
+      {
+        projectId: project.id,
+        ticketId: current.id,
+        expectedVersion: 1,
+        changes: { priority: "high" },
+      },
+      owner,
+    );
+    await expect(
+      domain.execute(
+        "claim_ticket",
+        {
+          projectId: project.id,
+          ticketId: current.id,
+          expectedVersion: 1,
+          workerId: "stale-worker",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict", details: { currentVersion: 2 } });
+  });
+  it.each([
+    [
+      "held",
+      async (id: string) => {
+        await domain.execute(
+          "update_ticket",
+          {
+            projectId: project.id,
+            ticketId: id,
+            expectedVersion: 1,
+            changes: { holdReason: "Waiting on a decision" },
+          },
+          owner,
+        );
+      },
+      ["hold"],
+    ],
+    [
+      "blocked",
+      async (id: string) => {
+        const blocker = await ticket("An open blocker");
+        await domain.execute(
+          "add_relation",
+          { projectId: project.id, ticketId: blocker.id, targetId: id, type: "blocks" },
+          owner,
+        );
+      },
+      ["dependency"],
+    ],
+    [
+      "already claimed",
+      async (id: string) => {
+        await domain.execute(
+          "claim_ticket",
+          { projectId: project.id, ticketId: id, workerId: "first-worker" },
+          owner,
+        );
+      },
+      ["not_open", "claimed"],
+    ],
+    [
+      "not in To do",
+      async (id: string) => {
+        await domain.execute(
+          "update_ticket",
+          {
+            projectId: project.id,
+            ticketId: id,
+            expectedVersion: 1,
+            changes: { status: "in_review" },
+          },
+          owner,
+        );
+      },
+      ["not_open"],
+    ],
+  ])(
+    "refuses a version-less claim of a %s ticket with its readiness reasons",
+    async (_, setUp, codes) => {
+      const current = await ticket();
+      await setUp(current.id);
+      const refused: unknown = await domain
+        .execute(
+          "claim_ticket",
+          { projectId: project.id, ticketId: current.id, workerId: "late-worker" },
+          owner,
+        )
+        .catch((error: unknown) => error);
+      expect(refused).toMatchObject({
+        status: 409,
+        code: "not_ready",
+        details: {
+          ready: false,
+          reasons: codes.map((code) => expect.objectContaining({ code })),
+        },
+      });
+    },
+  );
+  it("lets one of two concurrent version-less claims win", async () => {
+    const current = await ticket();
+    const outcomes = await Promise.allSettled(
+      ["worker-a", "worker-b"].map((workerId) =>
+        domain.execute(
+          "claim_ticket",
+          { projectId: project.id, ticketId: current.id, workerId },
+          owner,
+        ),
+      ),
+    );
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
+      reason: { code: "not_ready" },
+    });
+  });
+  it("replays a claim receipt, including one recorded before claims returned their ticket", async () => {
+    const current = await ticket();
+    const request = {
+      projectId: project.id,
+      ticketId: current.id,
+      workerId: "retrying-worker",
+      requestId: crypto.randomUUID(),
+    };
+    const claimed = await domain.execute("claim_ticket", request, owner);
+    expect(await domain.execute("claim_ticket", request, owner)).toEqual(claimed);
+    await fixture.database.pool.query(
+      "UPDATE mutation_receipts SET result = result - 'ticket' WHERE request_id = $1",
+      [request.requestId],
+    );
+    expect(await domain.execute("claim_ticket", request, owner)).toEqual(claimed);
+  });
   it("lets claim-authorized writers recover expired ownership without administrator access", async () => {
     const current = await ticket();
     await domain.execute(

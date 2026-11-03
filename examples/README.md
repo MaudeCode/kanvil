@@ -32,9 +32,9 @@ The server lists a small agent core plus `find_operation`, `read_operation`, and
 
 These examples do not execute tickets or run a scheduler. A consumer that performs work uses the same HTTP operations or MCP tools:
 
-1. Read `list_eligible_tickets` and the complete ticket context. Eligibility is advisory; another consumer can claim work before you do.
-2. Call `claim_ticket` with `projectId`, `ticketId`, the observed `expectedVersion`, your `workerId`, and a stable UUID `requestId`. Keep the returned claim ID. A competing or stale claim fails atomically.
-3. Read the ticket again after claiming, because claiming changes its version/status. Renew the unexpired claim using `renew_claim` and the same credential. Stop work if ownership is lost.
+1. Read `list_eligible_tickets` to choose work, or start from a ticket key you were given. Eligibility is advisory; another consumer can claim work before you do.
+2. Call `claim_ticket` with `projectId` (a ticket key's prefix works), `ticketId`, your `workerId`, and a stable UUID `requestId`. Send `expectedVersion` if you decided on content you read earlier. Keep the returned claim ID. A competing or stale claim fails atomically.
+3. Work from the returned `ticket`, which carries the claimed ticket's body, status, and new version. Renew the unexpired claim using `renew_claim` and the same credential. Stop work if ownership is lost.
 4. Submit explicit updates and evidence using the current ticket version and matching `claimId`. Reuse a write's original `requestId` only when retrying that same payload. Reconcile a version conflict before issuing a new write.
 5. Release ownership after the worker has stopped or completed. An expired claim is never silently reassigned: a caller with `claim` scope and write access confirms the old worker stopped and calls `recover_claim` (`kanvil claim recover` in the CLI) with the claim ID, a reason, and `confirmedStopped: true`. Release, and recovery that reschedules, retain the machine-write fence; recovery without `reschedule` lifts it, so a worker can finish a ticket left outside To do without a new claim. Recovery reschedules the ticket to To do only when it explicitly passes `reschedule: true` and the current `expectedVersion`; read the ticket again and call `claim_ticket` at the new version for a fresh claim. A ticket that still requires ownership after its claim is gone, such as one released outside To do, is recovered without a claim ID: pass the reason, `confirmedStopped: true`, and its current `expectedVersion`, with or without `reschedule`.
 

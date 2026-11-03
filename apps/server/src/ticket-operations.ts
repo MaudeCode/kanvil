@@ -1307,7 +1307,8 @@ export const ticketHandlers: Pick<
   },
   async claim_ticket(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
-    assertVersion(ticket, input.expectedVersion, "ticket", "claiming");
+    if (input.expectedVersion !== undefined)
+      assertVersion(ticket, input.expectedVersion, "ticket", "claiming");
     const eligible = await readiness(ctx, ticket);
     if (!eligible.ready) fail(409, "not_ready", "The ticket is not ready to claim", eligible);
     const claim = one(
@@ -1340,7 +1341,7 @@ export const ticketHandlers: Pick<
       workerId: claim.workerId,
       version: row.version,
     });
-    return claim;
+    return { ...claim, ticket: row };
   },
   async renew_claim(ctx, input) {
     const ticket = await getTicket(ctx, input.ticketId);
