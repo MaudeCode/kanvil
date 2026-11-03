@@ -433,9 +433,12 @@ describe("HTTP, realtime, and MCP", () => {
     const { key } = await credential(project.id),
       mcp = await mcpClient(key);
     try {
-      const result = await mcp.callTool({ name: "get_project", arguments: { projectId: remote } });
+      const result = await mcp.callTool({
+        name: "get_ticket",
+        arguments: { projectId: remote, ticketId: ticket.id },
+      });
       expect(result.isError).not.toBe(true);
-      expect(result.structuredContent).toMatchObject({ result: { id: project.id } });
+      expect(result.structuredContent).toMatchObject({ result: { ticket: { id: ticket.id } } });
     } finally {
       await mcp.close();
     }
