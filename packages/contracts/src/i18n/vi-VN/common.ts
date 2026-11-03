@@ -292,6 +292,8 @@ export default {
       time_entry_conflict: "Người dùng này đã có một bản ghi thời gian đang chạy trên phiếu.",
       claim_conflict: "Một tiến trình khác đang giữ phiếu này.",
       idempotency_conflict: "Yêu cầu này đã được dùng cho một thay đổi khác.",
+      duplicate_repository:
+        "Một dự án khác trong không gian làm việc này đã liên kết kho lưu trữ này.",
       project_archived: "Khôi phục dự án đã lưu trữ trước khi thay đổi.",
       rate_limited: "Quá nhiều thay đổi trong thời gian ngắn. Hãy chờ rồi thử lại.",
       snapshot_required: "Luồng trực tiếp bị chậm. Tải lại để tiếp tục.",

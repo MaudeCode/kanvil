@@ -188,6 +188,9 @@ export default {
     changePrefixDescription: "{{name}} 中的所有工单都将使用新前缀，并保留原编号。",
     changing: "更改中…",
     prefixChanged: "工单现在使用 {{key}}",
+    repositories: "仓库",
+    repositoriesDescription: "代理可以将其中一个 git 远程地址作为项目 ID 传入。",
+    repositoriesInvalid: "最多输入 20 个 git 远程地址,例如 git@github.com:owner/repo.git。",
     publicLink: "公开链接",
     publicDisclosure:
       "任何拥有链接的人都能查看此项目中所有未归档工单的标题、描述、验收标准、状态、优先级、类型、难度、标签、范围、日期以及指向其他工单的链接。人员、评论、动态、附件、证据和认领保持私密。",

@@ -298,6 +298,8 @@ export default {
       time_entry_conflict: "Für diesen Akteur läuft bereits ein Zeiteintrag für dieses Ticket.",
       claim_conflict: "Ein anderer Worker hat dieses Ticket übernommen.",
       idempotency_conflict: "Diese Anfrage wurde bereits für eine andere Änderung verwendet.",
+      duplicate_repository:
+        "Ein anderes Projekt in diesem Workspace verknüpft dieses Repository bereits.",
       project_archived: "Stellen Sie das archivierte Projekt wieder her, bevor Sie es ändern.",
       rate_limited: "Zu viele Änderungen in kurzer Zeit. Warten Sie und versuchen Sie es erneut.",
       snapshot_required: "Der Live-Feed ist zurückgefallen. Laden Sie neu, um fortzufahren.",

@@ -272,6 +272,7 @@ export default {
       time_entry_conflict: "此使用者在此工單上已有進行中的時間紀錄。",
       claim_conflict: "另一個執行者已認領此工單。",
       idempotency_conflict: "此要求已用於另一項變更。",
+      duplicate_repository: "此工作區的另一個專案已連結此存放庫。",
       project_archived: "請先還原已封存的專案再進行變更。",
       rate_limited: "短時間內變更過多。請稍候再試。",
       snapshot_required: "即時動態已落後。請重新載入以繼續。",

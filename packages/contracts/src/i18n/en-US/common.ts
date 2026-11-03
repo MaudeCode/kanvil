@@ -278,6 +278,7 @@ export default {
       time_entry_conflict: "This actor already has a running entry on the ticket.",
       claim_conflict: "Another worker holds this ticket.",
       idempotency_conflict: "This request was already used for another change.",
+      duplicate_repository: "Another project in this workspace links this repository.",
       project_archived: "Restore the archived project before changing it.",
       rate_limited: "Too many changes in a short time. Wait and retry.",
       snapshot_required: "The live feed fell behind. Reload to continue.",

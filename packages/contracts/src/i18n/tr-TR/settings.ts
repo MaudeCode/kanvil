@@ -201,6 +201,11 @@ export default {
     changePrefixDescription: "{{name}} içindeki her talep yeni öneki alır ve numarasını korur.",
     changing: "Değiştiriliyor…",
     prefixChanged: "Talepler artık {{key}} kullanıyor",
+    repositories: "Depolar",
+    repositoriesDescription:
+      "Ajanlar bu git uzak adreslerinden birini proje kimliği olarak iletebilir.",
+    repositoriesInvalid:
+      "En fazla 20 git uzak adresi girin, örneğin git@github.com:owner/repo.git.",
     publicLink: "Herkese açık bağlantı",
     publicDisclosure:
       "Bağlantıya sahip olan herkes bu projedeki arşivlenmemiş her talebin başlığını, açıklamasını, kabul kriterlerini, durumunu, önceliğini, türünü, zorluğunu, etiketlerini, kapsamlarını, tarihlerini ve diğer taleplere bağlantılarını okuyabilir. Kişiler, yorumlar, etkinlik, ekler, kanıtlar ve üstlenmeler gizli kalır.",

@@ -288,6 +288,7 @@ export default {
       time_entry_conflict: "Pengguna ini sudah memiliki entri waktu yang berjalan pada tiket.",
       claim_conflict: "Pekerja lain memegang tiket ini.",
       idempotency_conflict: "Permintaan ini sudah digunakan untuk perubahan lain.",
+      duplicate_repository: "Proyek lain di ruang kerja ini sudah menautkan repositori ini.",
       project_archived: "Pulihkan proyek yang diarsipkan sebelum mengubahnya.",
       rate_limited: "Terlalu banyak perubahan dalam waktu singkat. Tunggu dan coba lagi.",
       snapshot_required: "Feed langsung tertinggal. Muat ulang untuk melanjutkan.",

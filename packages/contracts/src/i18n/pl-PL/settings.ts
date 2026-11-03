@@ -221,6 +221,11 @@ export default {
     changePrefixDescription: "Każde zadanie w {{name}} otrzyma nowy prefiks i zachowa swój numer.",
     changing: "Zmienianie…",
     prefixChanged: "Zadania używają teraz {{key}}",
+    repositories: "Repozytoria",
+    repositoriesDescription:
+      "Agenci mogą podać jeden z tych zdalnych adresów git jako identyfikator projektu.",
+    repositoriesInvalid:
+      "Wpisz maksymalnie 20 zdalnych adresów git, na przykład git@github.com:owner/repo.git.",
     publicLink: "Link publiczny",
     publicDisclosure:
       "Każdy, kto ma link, może przeczytać tytuł, opis, kryteria akceptacji, status, priorytet, rodzaj, trudność, etykiety, zakresy, daty i linki do innych zadań każdego niezarchiwizowanego zadania w tym projekcie. Osoby, komentarze, aktywność, załączniki, dowody i przejęcia pozostają prywatne.",

@@ -193,6 +193,9 @@ export default {
     changePrefixDescription: "{{name}}의 모든 티켓이 번호를 유지한 채 새 접두사를 사용합니다.",
     changing: "변경하는 중…",
     prefixChanged: "이제 티켓에 {{key}}이(가) 사용됩니다",
+    repositories: "저장소",
+    repositoriesDescription: "에이전트는 이 git 원격 중 하나를 프로젝트 ID로 전달할 수 있습니다.",
+    repositoriesInvalid: "git 원격을 최대 20개까지 입력하세요(예: git@github.com:owner/repo.git).",
     publicLink: "공개 링크",
     publicDisclosure:
       "링크가 있는 사람은 누구나 보관되지 않은 모든 티켓의 제목, 설명, 인수 조건, 상태, 우선순위, 유형, 난이도, 레이블, 스코프, 날짜, 이 프로젝트의 다른 티켓으로 연결되는 링크를 볼 수 있습니다. 사람, 댓글, 활동, 첨부 파일, 증빙, 선점은 비공개로 유지됩니다.",

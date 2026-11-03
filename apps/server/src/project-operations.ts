@@ -1,6 +1,6 @@
 import { icons } from "@iconify-json/lucide";
 import { decodeImage } from "./blob-storage.ts";
-import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, arrayOverlaps, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { user } from "./auth-schema.ts";
 import { permissions, roles, ticketFilter } from "@kanvil/contracts";
 import { z } from "zod";
@@ -46,6 +46,31 @@ async function takePrefix(ctx: Context, prefix: string, projectId?: string) {
     fail(409, "duplicate_prefix", "This prefix is in use or reserved by another project");
   return (owner: string) =>
     ctx.db.insert(projectPrefixes).values({ prefix, projectId: owner }).onConflictDoNothing();
+}
+// Within a workspace only one unarchived project can hold a remote, so the remote names one project
+// there. The global write lock makes this check race-free. Callers skip it for an archived project.
+export async function assertRepositoriesFree(
+  ctx: Context,
+  projectId: string,
+  workspaceId: string,
+  repositories: string[],
+) {
+  if (!repositories.length) return;
+  const [holder] = await ctx.db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        isNull(projects.deletedAt),
+        isNull(projects.archivedAt),
+        ne(projects.id, projectId),
+        arrayOverlaps(projects.repositories, repositories),
+      ),
+    )
+    .limit(1);
+  if (holder)
+    fail(409, "duplicate_repository", "Another project in this workspace links this repository");
 }
 // Stores an uploaded project image; the previous one becomes an orphan for blob cleanup.
 async function storeImage(ctx: Context, image: { data: string; contentType: string }) {
@@ -270,6 +295,8 @@ export const projectHandlers: Pick<
         .set({ key: sql`${key}::text || '-' || ${tickets.number}` })
         .where(eq(tickets.projectId, current.id));
     }
+    if (input.repositories && !current.archivedAt)
+      await assertRepositoriesFree(ctx, current.id, current.workspaceId, input.repositories);
     const row = one(
       await ctx.db
         .update(projects)

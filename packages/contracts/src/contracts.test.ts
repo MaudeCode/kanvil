@@ -438,6 +438,14 @@ it("defaults legacy public authentication capabilities for web and native client
   );
 });
 
+const updateRepositories = (repositories: string[]) =>
+  operations.update_project.input.safeParse({
+    projectId: "KAN",
+    expectedVersion: 1,
+    name: "Kanvil",
+    description: "",
+    repositories,
+  });
 describe("normalizeRemote", () => {
   it.each([
     "https://github.com/MaudeCode/Kanvil.git",
@@ -475,21 +483,16 @@ describe("normalizeRemote", () => {
     expect(normalizeRemote(value)).toBeNull();
   });
   it("cleans `repositories` on the way in and refuses anything that is not a remote", () => {
-    const update = (repositories: string[]) =>
-      operations.update_project.input.safeParse({
-        projectId: "KAN",
-        expectedVersion: 1,
-        name: "Kanvil",
-        description: "",
-        repositories,
-      });
     expect(
-      update(["git@github.com:MaudeCode/kanvil.git", "https://github.com/maudecode/kanvil"]).data
-        ?.repositories,
+      updateRepositories([
+        "git@github.com:MaudeCode/kanvil.git",
+        "https://github.com/maudecode/kanvil",
+      ]).data?.repositories,
     ).toEqual(["github.com/maudecode/kanvil"]);
-    expect(update(["not a url"]).success).toBe(false);
+    expect(updateRepositories(["not a url"]).success).toBe(false);
     expect(
-      update(Array.from({ length: 21 }, (_, index) => `github.com/acme/${index}`)).success,
+      updateRepositories(Array.from({ length: 21 }, (_, index) => `github.com/acme/${index}`))
+        .success,
     ).toBe(false);
   });
   it("lets projectId carry a long remote and keeps other identifiers short", () => {

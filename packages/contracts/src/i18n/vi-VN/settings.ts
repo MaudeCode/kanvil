@@ -202,6 +202,9 @@ export default {
     changePrefixDescription: "Mọi phiếu trong {{name}} nhận tiền tố mới và giữ nguyên số.",
     changing: "Đang thay đổi…",
     prefixChanged: "Phiếu giờ dùng {{key}}",
+    repositories: "Kho lưu trữ",
+    repositoriesDescription: "Tác tử có thể truyền một trong các git remote này làm ID dự án.",
+    repositoriesInvalid: "Nhập tối đa 20 git remote, chẳng hạn git@github.com:owner/repo.git.",
     publicLink: "Liên kết công khai",
     publicDisclosure:
       "Bất kỳ ai có liên kết đều đọc được tiêu đề, mô tả, tiêu chí chấp nhận, trạng thái, mức ưu tiên, loại, độ khó, nhãn, phạm vi, ngày và liên kết tới phiếu khác của mọi phiếu chưa lưu trữ trong dự án này. Người, bình luận, hoạt động, tệp đính kèm, bằng chứng và việc nhận vẫn riêng tư.",

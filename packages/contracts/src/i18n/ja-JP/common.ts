@@ -289,6 +289,8 @@ export default {
       time_entry_conflict: "このユーザーには、このチケットで実行中の時間記録がすでにあります。",
       claim_conflict: "別のワーカーがこのチケットを引き受けています。",
       idempotency_conflict: "このリクエストはすでに別の変更に使用されています。",
+      duplicate_repository:
+        "このワークスペースの別のプロジェクトがこのリポジトリをすでにリンクしています。",
       project_archived: "変更する前にアーカイブ済みのプロジェクトを復元してください。",
       rate_limited: "短時間に変更が多すぎます。しばらく待ってから再試行してください。",
       snapshot_required: "ライブフィードが遅れています。再読み込みして続行してください。",

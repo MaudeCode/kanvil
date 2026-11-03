@@ -203,6 +203,10 @@ export default {
       "{{name}} layihəsindəki hər tiket yeni prefiksi alır və nömrəsini saxlayır.",
     changing: "Dəyişdirilir…",
     prefixChanged: "Tiketlər indi {{key}} istifadə edir",
+    repositories: "Repozitoriyalar",
+    repositoriesDescription:
+      "Agentlər bu git remote ünvanlarından birini layihə ID-si kimi ötürə bilər.",
+    repositoriesInvalid: "Ən çoxu 20 git remote daxil edin, məsələn git@github.com:owner/repo.git.",
     publicLink: "İctimai keçid",
     publicDisclosure:
       "Keçidə sahib olan hər kəs bu layihədəki hər arxivləşdirilməmiş tiketin başlığını, təsvirini, qəbul meyarlarını, statusunu, prioritetini, növünü, çətinliyini, etiketlərini, əhatələrini, tarixlərini və digər tiketlərə keçidlərini oxuya bilər. İnsanlar, şərhlər, fəaliyyət, qoşmalar, sübutlar və götürmələr gizli qalır.",

@@ -73,3 +73,29 @@ test("archives, restores, moves, and deletes a project from its settings", async
   await expect(page).toHaveURL(/\/$/);
   expect((await page.request.get(`/api/v1/projects/${project.id}`)).status()).toBe(404);
 });
+
+test("links a git remote in project settings and keeps it after a reload", async ({ page }) => {
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", {
+      data: { key: "LINKED", name: "Linked project" },
+    })
+  ).json();
+  await page.goto(`/projects/${project.id}/settings`);
+  const field = page.getByRole("textbox", { name: "Repositories", exact: true });
+  await field.fill("not a url");
+  await field.press("Enter");
+  await expect(page.getByText(/^Enter up to 20 git remotes/)).toBeVisible();
+  await field.fill("git@github.com:Acme/Widget.git");
+  await field.press("Enter");
+  const stored = page.getByText("github.com/acme/widget", { exact: true });
+  await expect(stored).toBeVisible();
+  await page.reload();
+  await expect(stored).toBeVisible();
+  const remote = encodeURIComponent("https://github.com/acme/widget.git");
+  expect(await (await page.request.get(`/api/v1/projects/${remote}`)).json()).toMatchObject({
+    id: project.id,
+  });
+  await page.getByRole("button", { name: /^Remove .*github\.com\/acme\/widget/ }).click();
+  await expect(stored).toHaveCount(0);
+});

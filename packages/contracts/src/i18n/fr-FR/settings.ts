@@ -211,6 +211,11 @@ export default {
       "Chaque ticket de {{name}} prend le nouveau préfixe et conserve son numéro.",
     changing: "Modification…",
     prefixChanged: "Les tickets utilisent désormais {{key}}",
+    repositories: "Dépôts",
+    repositoriesDescription:
+      "Les agents peuvent transmettre l’un de ces dépôts distants git comme ID de projet.",
+    repositoriesInvalid:
+      "Saisissez jusqu’à 20 dépôts distants git, par exemple git@github.com:owner/repo.git.",
     publicLink: "Lien public",
     publicDisclosure:
       "Toute personne disposant du lien peut lire, pour chaque ticket non archivé de ce projet, le titre, la description, les critères d’acceptation, le statut, la priorité, le type, la difficulté, les étiquettes, les périmètres, les dates et les liens vers d’autres tickets. Les personnes, commentaires, activités, pièces jointes, preuves et prises en charge restent privés.",

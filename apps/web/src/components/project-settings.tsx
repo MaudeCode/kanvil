@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, ImageUp } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { capabilitiesOf, type Output, type Project } from "@kanvil/contracts";
+import { capabilitiesOf, projectRepositories, type Output, type Project } from "@kanvil/contracts";
 import { Badge } from "@/components/ui/badge";
 import { api, useOperation, useProjectAccess, useWorkspace } from "../data.tsx";
 import {
@@ -36,6 +36,8 @@ import type { projectSections } from "../search.ts";
 import { Input as FileInput } from "@/components/ui/input";
 import { prepareImage } from "../lib/browser.ts";
 import { PrefixInput } from "./create-project.tsx";
+import { TagInput } from "./tag-input.tsx";
+import { TicketTag } from "./ticket-tags.tsx";
 import { t } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
 export function ProjectSettings({
@@ -157,6 +159,7 @@ export function ProjectSettings({
               </Select>
             </SettingRow>
             <TicketPrefix project={project} canAdmin={access.canManage} />
+            <ProjectRepositories project={project} canAdmin={access.canManage} />
             <PublicLink project={project} canAdmin={access.canShare} />
             <ProjectBackground project={project} canAdmin={access.canManage} />
             <SettingRow
@@ -235,6 +238,50 @@ export function ProjectSettings({
         </SettingsPanel>
       </SettingsLayout>
     </>
+  );
+}
+
+function parseRepositories(remotes: string[]) {
+  const parsed = projectRepositories.safeParse(remotes);
+  if (!parsed.success) throw new Error(t("settings.project.repositoriesInvalid"));
+  return parsed.data;
+}
+// Each save replaces the list; the tags show the stored spelling once the project refetches.
+function ProjectRepositories({ project, canAdmin }: { project: Project; canAdmin: boolean }) {
+  const update = useOperation("update_project"),
+    label = t("settings.project.repositories");
+  if (!canAdmin && !project.repositories.length) return null;
+  return (
+    <SettingRow title={label} description={t("settings.project.repositoriesDescription")}>
+      {canAdmin ? (
+        <div className="w-full max-w-md">
+          <TagInput
+            label={label}
+            labelHidden
+            kind="scope"
+            value={project.repositories}
+            parse={parseRepositories}
+            onChange={(repositories) => {
+              void update
+                .mutateAsync({
+                  projectId: project.id,
+                  expectedVersion: project.version,
+                  name: project.name,
+                  description: project.description,
+                  repositories,
+                })
+                .catch(reportError);
+            }}
+          />
+        </div>
+      ) : (
+        <div className="flex max-w-md flex-wrap justify-end gap-1.5">
+          {project.repositories.map((remote) => (
+            <TicketTag key={remote} tag={remote} kind="scope" />
+          ))}
+        </div>
+      )}
+    </SettingRow>
   );
 }
 

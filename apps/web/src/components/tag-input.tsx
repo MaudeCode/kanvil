@@ -18,7 +18,8 @@ import {
   CommandEmpty,
 } from "@/components/ui/command";
 // `choicesOnly` limits the value to the provided catalog, as rules naming defined labels need;
-// `emptyText` then says what no labels means.
+// `emptyText` then says what no labels means. `parse` replaces the ticket label rules for tags that
+// follow another contract, and throws what the field shows.
 export function TagInput({
   label,
   value,
@@ -26,6 +27,8 @@ export function TagInput({
   kind = "label",
   choicesOnly = false,
   emptyText,
+  labelHidden = false,
+  parse = (tags) => ticketFields.shape.labels.parse(tags),
 }: {
   label: string;
   value: string[];
@@ -33,6 +36,8 @@ export function TagInput({
   kind?: "label" | "scope";
   choicesOnly?: boolean;
   emptyText?: string;
+  labelHidden?: boolean;
+  parse?: (tags: string[]) => string[];
 }) {
   const labels = useProjectLabels();
   const [choosing, setChoosing] = useState(false);
@@ -45,7 +50,7 @@ export function TagInput({
   }
   function add(tags: string[]) {
     try {
-      onChange(ticketFields.shape.labels.parse([...new Set([...value, ...tags])]));
+      onChange(parse([...new Set([...value, ...tags])]));
       setText("");
       setError(undefined);
     } catch (cause) {
@@ -54,7 +59,12 @@ export function TagInput({
   }
   return (
     <Field className={fieldClass}>
-      <FieldLabel htmlFor={choicesOnly ? undefined : id}>{label}</FieldLabel>
+      <FieldLabel
+        htmlFor={choicesOnly ? undefined : id}
+        className={labelHidden ? "sr-only" : undefined}
+      >
+        {label}
+      </FieldLabel>
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         {value.map((tag) => (
           <TicketTag tag={tag} kind={kind} key={tag} className="max-w-full gap-1 pr-0.5">

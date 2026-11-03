@@ -201,6 +201,11 @@ export default {
       "{{name}}のすべてのチケットに新しいプレフィックスが付き、番号はそのまま維持されます。",
     changing: "変更中…",
     prefixChanged: "チケットは{{key}}を使用するようになりました",
+    repositories: "リポジトリ",
+    repositoriesDescription:
+      "エージェントは、これらの git リモートのいずれかをプロジェクト ID として渡せます。",
+    repositoriesInvalid:
+      "git リモートを 20 件まで入力してください(例: git@github.com:owner/repo.git)。",
     publicLink: "公開リンク",
     publicDisclosure:
       "リンクを知っている人は誰でも、アーカイブされていないすべてのチケットのタイトル、説明、受け入れ条件、ステータス、優先度、種類、難易度、ラベル、スコープ、日付、このプロジェクト内の他のチケットへのリンクを閲覧できます。ユーザー、コメント、アクティビティ、添付ファイル、エビデンス、引き受けは非公開のままです。",

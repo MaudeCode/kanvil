@@ -357,7 +357,11 @@ export function normalizeRemote(value: string): string | null {
   if (/\s/.test(remote)) return null;
   const { scheme, host, port, path } =
     remoteForms.map((form) => form.exec(remote)).find(Boolean)?.groups ?? {};
-  const segments = path?.replace(/\/+$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
+  const segments = path
+    ?.replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter(Boolean);
   if (!host || !segments?.length) return null;
   const explicitPort = port && port !== defaultRemotePorts[scheme ?? ""] ? `:${port}` : "";
   return `${host}${explicitPort}/${segments.join("/")}`;

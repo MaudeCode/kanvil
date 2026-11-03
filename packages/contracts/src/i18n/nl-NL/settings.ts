@@ -201,6 +201,9 @@ export default {
       "Elk ticket in {{name}} krijgt de nieuwe prefix en behoudt zijn nummer.",
     changing: "Wijzigen…",
     prefixChanged: "Tickets gebruiken nu {{key}}",
+    repositories: "Repository's",
+    repositoriesDescription: "Agents kunnen een van deze git-remotes als project-ID doorgeven.",
+    repositoriesInvalid: "Voer maximaal 20 git-remotes in, zoals git@github.com:owner/repo.git.",
     publicLink: "Openbare link",
     publicDisclosure:
       "Iedereen met de link kan van elk niet-gearchiveerd ticket in dit project de titel, beschrijving, acceptatiecriteria, status, prioriteit, soort, moeilijkheid, labels, bereiken, datums en links naar andere tickets lezen. Personen, opmerkingen, activiteit, bijlagen, bewijs en claims blijven privé.",

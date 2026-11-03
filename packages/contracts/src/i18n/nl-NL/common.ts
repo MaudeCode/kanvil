@@ -299,6 +299,7 @@ export default {
       time_entry_conflict: "Deze gebruiker heeft al een lopende tijdregistratie op het ticket.",
       claim_conflict: "Een andere worker heeft dit ticket geclaimd.",
       idempotency_conflict: "Dit verzoek is al voor een andere wijziging gebruikt.",
+      duplicate_repository: "Een ander project in deze workspace koppelt deze repository al.",
       project_archived: "Herstel het gearchiveerde project voordat je het wijzigt.",
       rate_limited: "Te veel wijzigingen in korte tijd. Wacht even en probeer het opnieuw.",
       snapshot_required: "De live feed loopt achter. Laad opnieuw om door te gaan.",
