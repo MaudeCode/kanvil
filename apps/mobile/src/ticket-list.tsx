@@ -17,14 +17,6 @@ import type {
   NativeStackHeaderItemMenu,
 } from "@react-navigation/native-stack";
 import {
-  states,
-  stateLabels,
-  priorities,
-  priorityLabels,
-  kinds,
-  kindLabels,
-  difficulties,
-  difficultyLabels,
   ticketFilter,
   filterFieldNames,
   filterFieldLabels,
@@ -86,6 +78,7 @@ import {
   useProjectNavigation,
   type ScreenProps,
 } from "./navigation.ts";
+import { fixedFilterChoices } from "./ticket-filters.ts";
 import { ticketSections, sectionEntries, sectionHeaderIndices } from "./ticket-sections.ts";
 
 function useTicketPages(input: Input<"list_tickets">, enabled: boolean) {
@@ -1206,13 +1199,7 @@ function TicketFilters({
     if (parsed.success) onChange(parsed.data);
   }
   const choices: Record<FilterField, { value: string; label: string }[]> = {
-    status: states.map((state) => ({ value: state, label: stateLabels[state] })),
-    priority: priorities.map((priority) => ({ value: priority, label: priorityLabels[priority] })),
-    kind: kinds.map((kind) => ({ value: kind, label: kindLabels[kind] })),
-    difficulty: difficulties.map((difficulty) => ({
-      value: difficulty,
-      label: difficultyLabels[difficulty],
-    })),
+    ...fixedFilterChoices(),
     label: labelOptions(labels.data ?? []),
     assigneeId: [
       { value: "none", label: t("common.state.unassigned") },

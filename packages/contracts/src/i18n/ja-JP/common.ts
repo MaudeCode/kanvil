@@ -79,9 +79,14 @@ export default {
     priority: "優先度",
     kind: "種類",
     difficulty: "難易度",
+    automation: "エージェント対応",
     label: "ラベル",
     assigneeId: "担当者",
     customField: "フィールド",
+  },
+  automationFilter: {
+    ready: "エージェント対応可",
+    manual: "人の対応が必要",
   },
   sort: {
     priority: "優先度",

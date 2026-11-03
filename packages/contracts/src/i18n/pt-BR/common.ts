@@ -83,9 +83,14 @@ export default {
     priority: "Prioridade",
     kind: "Tipo",
     difficulty: "Dificuldade",
+    automation: "Prontidão para agentes",
     label: "Etiqueta",
     assigneeId: "Responsável",
     customField: "Campo",
+  },
+  automationFilter: {
+    ready: "Pronto para agentes",
+    manual: "Precisa de uma pessoa",
   },
   sort: {
     priority: "Prioridade",

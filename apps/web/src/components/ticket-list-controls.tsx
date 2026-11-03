@@ -2,6 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronsUpDown, Columns3, SlidersHorizontal, X } from "lucide-react";
 import {
+  automationFilterLabels,
+  automationFilters,
   ticketFilter,
   states,
   priorities,
@@ -116,9 +118,13 @@ export function TicketListControls({
     );
   const projectKey = projectId ?? "";
   const choices: Record<
-    "status" | "priority" | "label" | "assigneeId" | "customField",
+    "status" | "priority" | "automation" | "label" | "assigneeId" | "customField",
     FilterChoice[]
   > = {
+    automation: automationFilters.map((value) => ({
+      value,
+      text: automationFilterLabels[value],
+    })),
     status: states.map((status) => ({
       value: status,
       text: stateLabels[status],
@@ -170,6 +176,7 @@ export function TicketListControls({
     priority: priorityLabels,
     kind: kindLabels,
     difficulty: difficultyLabels,
+    automation: automationFilterLabels,
     label: {},
     assigneeId: Object.fromEntries(choices.assigneeId.map((choice) => [choice.value, choice.text])),
     customField: Object.fromEntries(
@@ -254,6 +261,12 @@ export function TicketListControls({
                   field="assigneeId"
                   search={search}
                   choices={choices.assigneeId}
+                  onChange={setPredicate}
+                />
+                <FilterPicker
+                  field="automation"
+                  search={search}
+                  choices={choices.automation}
                   onChange={setPredicate}
                 />
                 {!!choices.customField.length && (

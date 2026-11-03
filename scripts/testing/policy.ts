@@ -350,8 +350,8 @@ export const families: readonly Family[] = [
   ),
   spec(
     "ticket-list.spec.ts",
-    11,
-    "List selection, the bulk toolbar, keyboard highlight, the preview sheet, labels, and saved views.",
+    12,
+    "List selection, the bulk toolbar, keyboard highlight, the preview sheet, labels, saved views, and the agent readiness filter.",
   ),
   spec(
     "ticket-list-scale.spec.ts",
