@@ -130,6 +130,37 @@ describe("MCP tool list", () => {
     });
   });
 
+  it("claims a named ticket in one tool call by its keys", async () => {
+    const created = await application.domain.execute(
+      "create_ticket",
+      {
+        projectId: project.id,
+        title: "One-call claim",
+        description: "Claim without a lookup.",
+        acceptanceCriteria: "The claim returns the ticket.",
+        difficulty: "low",
+        automationReady: true,
+      },
+      owner,
+    );
+    const claimed = resultOf(
+      await agent.callTool({
+        name: "claim_ticket",
+        arguments: { projectId: project.key, ticketId: created.key, workerId: "mcp-worker" },
+      }),
+    );
+    expect(claimed).toMatchObject({
+      ticketId: created.id,
+      ticket: {
+        status: "in_progress",
+        claimRequired: true,
+        version: created.version + 1,
+        description: created.description,
+        acceptanceCriteria: created.acceptanceCriteria,
+      },
+    });
+  });
+
   it("tells agents how to work a ticket and names only listed tools", async () => {
     const { tools } = await agent.listTools();
     const instructions = agent.getInstructions() ?? "";

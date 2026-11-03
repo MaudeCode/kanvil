@@ -3277,15 +3277,15 @@ export const operations = {
       .extend({
         ...mutation,
         workerId: text.max(200),
-        expectedVersion: version,
+        expectedVersion: version.optional(),
         leaseSeconds: claimLeaseSecondsSchema.optional(),
       })
       .strict(),
-    claimSchema,
+    claimSchema.extend({ ticket: ticketSchema }),
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/claim",
     "claim",
-    "Atomically claim ready work. Expired claims require explicit recovery.",
+    "Atomically claim ready work and return the claim with the claimed ticket. expectedVersion is optional; readiness always applies. Expired claims require explicit recovery.",
     { mcp: "core" },
   ),
   renew_claim: op(

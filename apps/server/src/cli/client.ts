@@ -37,7 +37,7 @@ profile list | profile remove <name> --yes
 --input <json|->       Operation input as a JSON object; - reads stdin
 --title <text>         Ticket title
 --body <markdown>      Comment body
---expected-version <n> Required version for update, delete, acquire and rescheduling recovery
+--expected-version <n> Required version for update, delete and rescheduling recovery; optional for acquire
 --changes <json>       Ticket update changes as a JSON object
 --request-id <uuid>    Reuse for a deliberate retry across invocations
 --json                Compact JSON output (default: indented JSON)

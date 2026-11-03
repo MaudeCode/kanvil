@@ -15,6 +15,7 @@ import {
   type SQLWrapper,
 } from "drizzle-orm";
 import {
+  claimSchema,
   closedStates,
   defaultClaimMaxLeaseSeconds,
   eventCategories,
@@ -1040,7 +1041,18 @@ export function createDomain(
           "ticketId" in input
         )
           await getTicket(ctx, input.ticketId);
-        const prior = parseOutput<K, I>(name, receipt.result);
+        // A claim recorded before claims returned their ticket replays with the ticket as it is now.
+        const prior = parseOutput<K, I>(
+          name,
+          name === "claim_ticket" &&
+            "ticketId" in input &&
+            !operations.claim_ticket.output.safeParse(receipt.result).success
+            ? json({
+                ...claimSchema.parse(receipt.result),
+                ticket: await getTicket(ctx, input.ticketId),
+              })
+            : receipt.result,
+        );
         // Creation has no input subject ID, so its stored result must also be authorized on replay.
         if (name === "create_project")
           await context(tx, actor, "read", projectSchema.parse(prior).id);
