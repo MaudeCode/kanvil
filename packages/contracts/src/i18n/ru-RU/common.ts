@@ -90,9 +90,14 @@ export default {
     priority: "Приоритет",
     kind: "Тип",
     difficulty: "Сложность",
+    automation: "Готовность для агентов",
     label: "Метка",
     assigneeId: "Исполнитель",
     customField: "Поле",
+  },
+  automationFilter: {
+    ready: "Готов для агентов",
+    manual: "Нужен человек",
   },
   sort: {
     priority: "Приоритет",

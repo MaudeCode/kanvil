@@ -82,9 +82,14 @@ export default {
     priority: "प्राथमिकता",
     kind: "प्रकार",
     difficulty: "कठिनाई",
+    automation: "एजेंट तैयारी",
     label: "लेबल",
     assigneeId: "असाइनी",
     customField: "फ़ील्ड",
+  },
+  automationFilter: {
+    ready: "एजेंटों के लिए तैयार",
+    manual: "व्यक्ति की ज़रूरत",
   },
   sort: {
     priority: "प्राथमिकता",

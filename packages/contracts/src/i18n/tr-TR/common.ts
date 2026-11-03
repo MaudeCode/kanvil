@@ -83,9 +83,14 @@ export default {
     priority: "Öncelik",
     kind: "Tür",
     difficulty: "Zorluk",
+    automation: "Ajan hazırlığı",
     label: "Etiket",
     assigneeId: "Atanan",
     customField: "Alan",
+  },
+  automationFilter: {
+    ready: "Ajanlar için hazır",
+    manual: "Bir kişi gerekli",
   },
   sort: {
     priority: "Öncelik",

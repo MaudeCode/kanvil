@@ -86,9 +86,14 @@ export default {
     priority: "Priorität",
     kind: "Art",
     difficulty: "Schwierigkeit",
+    automation: "Agentenbereitschaft",
     label: "Label",
     assigneeId: "Bearbeiter",
     customField: "Feld",
+  },
+  automationFilter: {
+    ready: "Bereit für Agenten",
+    manual: "Braucht einen Menschen",
   },
   sort: {
     priority: "Priorität",

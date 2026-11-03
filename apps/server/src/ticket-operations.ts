@@ -394,6 +394,11 @@ function predicateSQL({ field, operator, values }: TicketPredicate) {
     const overlap = sql`${tickets.labels} && ${sql.param(values)}::text[]`;
     return operator === "any" ? overlap : sql`NOT (${overlap})`;
   }
+  if (field === "automation") {
+    const ready = sql`(${tickets.automationReady} AND ${tickets.holdReason} IS NULL)`;
+    const match = or(...values.map((value) => (value === "ready" ? ready : sql`NOT ${ready}`)));
+    return operator === "any" ? match : sql`NOT (${match})`;
+  }
   const column = field === "assigneeId" ? tickets.assigneeId : filterColumns[field];
   const named = field === "assigneeId" ? values.filter((value) => value !== "none") : values,
     unset = field === "assigneeId" && values.includes("none");

@@ -83,9 +83,14 @@ export default {
     priority: "Prioriteit",
     kind: "Soort",
     difficulty: "Moeilijkheid",
+    automation: "Geschiktheid voor agents",
     label: "Label",
     assigneeId: "Toegewezene",
     customField: "Veld",
+  },
+  automationFilter: {
+    ready: "Klaar voor agents",
+    manual: "Heeft een persoon nodig",
   },
   sort: {
     priority: "Prioriteit",

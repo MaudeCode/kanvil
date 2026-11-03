@@ -87,9 +87,14 @@ export default {
     priority: "Prioritet",
     kind: "Növ",
     difficulty: "Çətinlik",
+    automation: "Agent hazırlığı",
     label: "Etiket",
     assigneeId: "İcraçı",
     customField: "Sahə",
+  },
+  automationFilter: {
+    ready: "Agentlər üçün hazırdır",
+    manual: "İnsan tələb edir",
   },
   sort: {
     priority: "Prioritet",
