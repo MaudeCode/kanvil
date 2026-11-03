@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "repositories" text[] DEFAULT '{}' NOT NULL;

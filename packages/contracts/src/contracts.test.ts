@@ -13,6 +13,7 @@ import {
   formatCustomFieldValue,
   eventCategories,
   mentionLink,
+  normalizeRemote,
   memberName,
   infoSchema,
   notificationPreferencesSchema,
@@ -437,6 +438,69 @@ it("defaults legacy public authentication capabilities for web and native client
   );
 });
 
+describe("normalizeRemote", () => {
+  it.each([
+    "https://github.com/MaudeCode/Kanvil.git",
+    "git@github.com:MaudeCode/kanvil.git",
+    "ssh://git@github.com:22/MaudeCode/kanvil",
+    "https://user:token@github.com/MaudeCode/kanvil/",
+    "https://github.com:443/MaudeCode/kanvil.git/",
+    "  github.com/maudecode/kanvil\n",
+  ])("reads %j as one remote", (spelling) => {
+    expect(normalizeRemote(spelling)).toBe("github.com/maudecode/kanvil");
+  });
+  it("keeps every subgroup segment and a port that is not the default", () => {
+    expect(normalizeRemote("git@gitlab.com:Group/Sub/Deep/app.git")).toBe(
+      "gitlab.com/group/sub/deep/app",
+    );
+    expect(normalizeRemote("ssh://git@git.example.com:2222/team/app.git")).toBe(
+      "git.example.com:2222/team/app",
+    );
+    expect(normalizeRemote("git.example.com:2222/team/app")).toBe("git.example.com:2222/team/app");
+  });
+  it.each([
+    "",
+    "not a url",
+    "KAN",
+    "http://github.com/maudecode/kanvil",
+    "git://github.com/maudecode/kanvil",
+    "https://github.com",
+    "https://github.com/",
+    "https://github.com/a/b?token=secret",
+    "github.com:maudecode/kanvil",
+    "./relative/path",
+    "../relative/path",
+    "git@github.com:",
+  ])("refuses %j", (value) => {
+    expect(normalizeRemote(value)).toBeNull();
+  });
+  it("cleans `repositories` on the way in and refuses anything that is not a remote", () => {
+    const update = (repositories: string[]) =>
+      operations.update_project.input.safeParse({
+        projectId: "KAN",
+        expectedVersion: 1,
+        name: "Kanvil",
+        description: "",
+        repositories,
+      });
+    expect(
+      update(["git@github.com:MaudeCode/kanvil.git", "https://github.com/maudecode/kanvil"]).data
+        ?.repositories,
+    ).toEqual(["github.com/maudecode/kanvil"]);
+    expect(update(["not a url"]).success).toBe(false);
+    expect(
+      update(Array.from({ length: 21 }, (_, index) => `github.com/acme/${index}`)).success,
+    ).toBe(false);
+  });
+  it("lets projectId carry a long remote and keeps other identifiers short", () => {
+    const long = `https://github.com/${"a".repeat(270)}/b.git`;
+    expect(operations.get_project.input.parse({ projectId: long }).projectId).toBe(long);
+    expect(() =>
+      operations.get_ticket.input.parse({ projectId: "KAN", ticketId: "t".repeat(81) }),
+    ).toThrow();
+    expect(() => operations.get_project.input.parse({ projectId: "a".repeat(301) })).toThrow();
+  });
+});
 describe("ticket filter predicates", () => {
   it("normalizes single and repeated values into one predicate catalog", () => {
     const filter = ticketFilter.parse({

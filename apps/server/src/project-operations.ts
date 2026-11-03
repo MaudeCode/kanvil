@@ -257,7 +257,8 @@ export const projectHandlers: Pick<
         key !== current.key ||
         input.name !== current.name ||
         input.description !== current.description ||
-        (!!input.visibility && input.visibility !== current.visibility);
+        (!!input.visibility && input.visibility !== current.visibility) ||
+        (!!input.repositories && input.repositories.join() !== current.repositories.join());
     if (sharing) requirePermission(ctx.permissions, "sharing.manage", "project");
     if (details || !sharing) requirePermission(ctx.permissions, "project.manage", "project");
     if (key !== current.key) {
@@ -279,6 +280,7 @@ export const projectHandlers: Pick<
           ...(input.publicReadEnabled === undefined
             ? {}
             : { publicReadEnabled: input.publicReadEnabled }),
+          ...(input.repositories ? { repositories: input.repositories } : {}),
           description: input.description,
           version: current.version + 1,
           updatedAt: new Date(),

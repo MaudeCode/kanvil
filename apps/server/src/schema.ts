@@ -116,6 +116,8 @@ export const projects = pgTable(
     key: text("key").notNull().unique(),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
+    // Linked git remotes in `normalizeRemote` spelling; `context()` resolves them as `projectId`.
+    repositories: text("repositories").array().notNull().default([]),
     nextNumber: integer("next_number").notNull().default(1),
     // Place in the workspace's shared project order; see ordering.ts.
     position: bigint("position", { mode: "number" }).notNull().default(0),

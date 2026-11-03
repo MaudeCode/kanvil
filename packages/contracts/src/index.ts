@@ -334,13 +334,44 @@ const mutation = { requestId: z.uuid().optional() };
 const placement = { before: id.optional(), after: id.optional() };
 const oneNeighbor = (input: { before?: string | undefined; after?: string | undefined }) =>
   input.before === undefined || input.after === undefined;
-const projectInput = z.object({ projectId: id });
+// Any spelling of a linked git remote also names a project, and remotes outgrow `id`.
+const projectInput = z.object({ projectId: z.string().min(1).max(300) });
 const ticketInput = projectInput.extend({ ticketId: id });
 // A ticket prefix. Each one a project ever had stays reserved for it, so issued keys keep resolving.
 const projectKey = z
   .string()
   .trim()
   .regex(/^[A-Z][A-Z0-9]{1,9}$/);
+// A git remote's one stored spelling, `host[:port]/path`. Reads an https or ssh URL, scp-style
+// `user@host:path`, and its own output, so a client can send a stored list back unchanged.
+const remoteHost = "(?<host>[a-z0-9][a-z0-9.-]*)";
+const remotePath = "(?<path>[^?#]+)";
+const remoteForms = [
+  new RegExp(`^(?<scheme>https|ssh)://(?:[^/]*@)?${remoteHost}(?::(?<port>\\d+))?/${remotePath}$`),
+  new RegExp(`^[^/:@]+@${remoteHost}:${remotePath}$`),
+  new RegExp(`^${remoteHost}(?::(?<port>\\d+))?/${remotePath}$`),
+];
+const defaultRemotePorts: Record<string, string> = { https: "443", ssh: "22" };
+export function normalizeRemote(value: string): string | null {
+  const remote = value.trim().toLowerCase();
+  if (/\s/.test(remote)) return null;
+  const { scheme, host, port, path } =
+    remoteForms.map((form) => form.exec(remote)).find(Boolean)?.groups ?? {};
+  const segments = path?.replace(/\/+$/, "").replace(/\.git$/, "").split("/").filter(Boolean);
+  if (!host || !segments?.length) return null;
+  const explicitPort = port && port !== defaultRemotePorts[scheme ?? ""] ? `:${port}` : "";
+  return `${host}${explicitPort}/${segments.join("/")}`;
+}
+const repositoryRemote = z
+  .string()
+  .max(300)
+  .refine((value) => normalizeRemote(value) !== null, "Enter a git remote URL")
+  .overwrite((value) => normalizeRemote(value) ?? value);
+// A project's linked git remotes as clients send them: read into stored spelling, without repeats.
+export const projectRepositories = z
+  .array(repositoryRemote)
+  .max(20)
+  .overwrite((remotes) => [...new Set(remotes)]);
 // Why a ticket is not ready, or cannot move; `ticketId` names the related ticket involved.
 const readinessCodes = [
   "project_archived",
@@ -629,6 +660,8 @@ export const projectSchema = z.object({
   key: z.string(),
   name: z.string(),
   description: z.string(),
+  // Linked git remotes in `normalizeRemote` spelling. Servers that predate linking omit it.
+  repositories: z.array(z.string()).default([]),
   version,
   // Set while the project is archived. Servers that predate archiving omit it.
   archivedAt: timestamp.nullable().default(null),
@@ -2306,13 +2339,14 @@ export const operations = {
         name: text.max(120),
         description: z.string().max(5000),
         key: projectKey.optional(),
+        repositories: projectRepositories.optional(),
       })
       .strict(),
     projectSchema,
     "PATCH",
     "/projects/{projectId}",
     "admin",
-    "Update project details. A new `key` re-keys every ticket of the project; the previous prefix stays reserved for the project, and the project and every key issued under it keep resolving. `publicReadEnabled` shares or stops sharing the project's read-only public view (see the public operations).",
+    "Update project details. A new `key` re-keys every ticket of the project; the previous prefix stays reserved for the project, and the project and every key issued under it keep resolving. `publicReadEnabled` shares or stops sharing the project's read-only public view (see the public operations). `repositories` replaces the project's linked git remotes (at most 20), and any `projectId` then accepts one of them; within a workspace only one unarchived project can hold a remote.",
   ),
   move_project: op(
     projectInput
@@ -3839,6 +3873,7 @@ const translatedErrors = [
   "claim_conflict",
   "idempotency_conflict",
   "project_archived",
+  "duplicate_repository",
   "rate_limited",
   "snapshot_required",
   "request_failed",
