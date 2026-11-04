@@ -35,11 +35,14 @@ export async function testflight(
   assert(command === "select" || command === "verify", "Expected select or verify");
   const apps = await list("/v1/apps", { "filter[bundleId]": config.ios!.bundleIdentifier! });
   assert.equal(apps.length, 1, "Expected one App Store Connect app for Kanvil");
+  // select spans every version: the upload action finds its build by number alone,
+  // so reusing an earlier version's number would match that old build instead.
   const builds = await list("/v1/builds", {
     "filter[app]": apps[0]!.id,
-    "filter[preReleaseVersion.version]": version,
     "filter[preReleaseVersion.platform]": "IOS",
-    ...(command === "verify" ? { "filter[version]": buildNumber } : {}),
+    ...(command === "verify"
+      ? { "filter[preReleaseVersion.version]": version, "filter[version]": buildNumber }
+      : {}),
   });
   if (command === "verify") {
     assert.equal(builds.length, 1, "Expected exactly one uploaded iOS build");
@@ -58,7 +61,7 @@ export async function testflight(
     return Number(value.split(".")[0]);
   });
   const next = Math.max(0, ...numbers) + 1;
-  assert(next <= 9999, "Apple build number exhausted; use a newer release version");
+  assert(next <= 9999, "Apple build number exhausted");
   return String(next);
 }
 
