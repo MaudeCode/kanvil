@@ -22,11 +22,22 @@ test("selects above every uploaded build, including later pages and dotted numbe
     }),
   ).toBe("27");
   expect(urls[0]!.searchParams.get("filter[bundleId]")).toBe("dev.kil.kanvil");
-  expect(urls[1]!.searchParams.get("filter[preReleaseVersion.version]")).toBe("1.2.3");
+  expect(urls[1]!.searchParams.get("filter[app]")).toBe("kanvil");
   expect(urls[1]!.searchParams.get("filter[preReleaseVersion.platform]")).toBe("IOS");
+  expect(urls[1]!.searchParams.has("filter[preReleaseVersion.version]")).toBe(false);
 });
 
-test("starts a new version at one and refuses missing apps or invalid numbers", async () => {
+test("numbers a new version above the builds of earlier versions", async () => {
+  const number = await testflight("select", "0.7.0", "", async (url) => {
+    if (url.pathname === "/v1/apps") return app;
+    // Apple honors the filter: build 1 belongs to 0.6.1, so 0.7.0 alone has no builds.
+    const version = url.searchParams.get("filter[preReleaseVersion.version]");
+    return { data: version === "0.7.0" ? [] : [build("1")] };
+  });
+  expect(number).toBe("2");
+});
+
+test("starts an app with no builds at one and refuses missing apps or invalid numbers", async () => {
   expect(await select([app, { data: [] }])).toBe("1");
   await expect(select([{ data: [] }])).rejects.toThrow("Expected one App Store Connect app");
   await expect(select([app, { data: [build("invalid")] }])).rejects.toThrow();
