@@ -263,6 +263,7 @@ export default {
     evidence: { added: "Preuve jointe" },
     resource: { added: "Lien ajouté", updated: "Lien modifié", removed: "Lien retiré" },
     calendar_feed: { created: "Flux de calendrier créé", revoked: "Flux de calendrier révoqué" },
+    public_board: { updated: "Tableau public mis à jour" },
     project: {
       created: "Projet créé",
       updated: "Projet modifié",

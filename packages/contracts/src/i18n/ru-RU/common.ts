@@ -259,6 +259,7 @@ export default {
     evidence: { added: "Подтверждение прикреплено" },
     resource: { added: "Ссылка добавлена", updated: "Ссылка изменена", removed: "Ссылка удалена" },
     calendar_feed: { created: "Календарная лента создана", revoked: "Календарная лента отозвана" },
+    public_board: { updated: "Публичная доска обновлена" },
     project: {
       created: "Проект создан",
       updated: "Проект обновлён",

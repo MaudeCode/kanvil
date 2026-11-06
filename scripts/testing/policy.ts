@@ -178,6 +178,7 @@ export const families: readonly Family[] = [
       "apps/server/src/outbox.test.ts": 14,
       "apps/server/src/project-lifecycle.test.ts": 6,
       "apps/server/src/project-repositories.test.ts": 8,
+      "apps/server/src/public-boards.test.ts": 18,
       "apps/server/src/public-read.test.ts": 7,
       "apps/server/src/relocation.test.ts": 11,
       "apps/server/src/reminders.test.ts": 5,

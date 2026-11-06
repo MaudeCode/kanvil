@@ -254,6 +254,7 @@ export default {
     evidence: { added: "Đã đính kèm bằng chứng" },
     resource: { added: "Đã thêm liên kết", updated: "Đã sửa liên kết", removed: "Đã xóa liên kết" },
     calendar_feed: { created: "Đã tạo nguồn lịch", revoked: "Đã thu hồi nguồn lịch" },
+    public_board: { updated: "Đã cập nhật bảng công khai" },
     project: {
       created: "Đã tạo dự án",
       updated: "Đã cập nhật dự án",

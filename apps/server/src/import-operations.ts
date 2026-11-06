@@ -178,7 +178,7 @@ async function exportBundle(ctx: Context) {
           content: "project settings",
           count: null,
           reason:
-            "Access, saved views, calendar feeds, destinations, the public link, icon, and background stay with the source project.",
+            "Access, saved views, calendar feeds, destinations, the public link, public board, icon, and background stay with the source project.",
         },
       ],
     },

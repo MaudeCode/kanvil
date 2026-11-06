@@ -251,6 +251,7 @@ export default {
     evidence: { added: "Bukti dilampirkan" },
     resource: { added: "Tautan ditambahkan", updated: "Tautan diedit", removed: "Tautan dihapus" },
     calendar_feed: { created: "Feed kalender dibuat", revoked: "Feed kalender dicabut" },
+    public_board: { updated: "Papan publik diperbarui" },
     project: {
       created: "Proyek dibuat",
       updated: "Proyek diperbarui",

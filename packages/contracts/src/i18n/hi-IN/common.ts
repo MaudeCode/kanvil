@@ -255,6 +255,7 @@ export default {
     evidence: { added: "साक्ष्य अटैच किया गया" },
     resource: { added: "लिंक जोड़ा गया", updated: "लिंक संपादित", removed: "लिंक हटाया गया" },
     calendar_feed: { created: "कैलेंडर फ़ीड बनाई गई", revoked: "कैलेंडर फ़ीड रद्द की गई" },
+    public_board: { updated: "सार्वजनिक बोर्ड अपडेट किया गया" },
     project: {
       created: "प्रोजेक्ट बनाया गया",
       updated: "प्रोजेक्ट अपडेट हुआ",

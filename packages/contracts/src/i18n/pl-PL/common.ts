@@ -272,6 +272,7 @@ export default {
       created: "Utworzono kanał kalendarza",
       revoked: "Odwołano kanał kalendarza",
     },
+    public_board: { updated: "Zaktualizowano tablicę publiczną" },
     project: {
       created: "Projekt utworzony",
       updated: "Projekt zaktualizowany",
