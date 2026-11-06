@@ -114,9 +114,11 @@ async function renameFilterLabel(ctx: Context, from: string, to: string) {
   const id = project(ctx).id;
   const names = (column: AnyColumn) => sql`${from} = ANY(${column})`;
   const renamed = (column: AnyColumn) =>
-    sql<
-      string[]
-    >`CASE WHEN ${to} = ANY(${column}) THEN array_remove(${column}, ${from}) ELSE array_replace(${column}, ${from}, ${to}) END`;
+    sql<string[]>`
+      CASE WHEN ${to} = ANY(${column})
+        THEN array_remove(${column}, ${from})
+        ELSE array_replace(${column}, ${from}, ${to})
+      END`;
   await ctx.db
     .update(calendarFeeds)
     .set({ labels: renamed(calendarFeeds.labels) })
@@ -151,9 +153,14 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
       ),
     ))
   )
-    fail(409, "label_in_use", "An enabled public board excludes this label.", {
-      projects: [project(ctx).key],
-    });
+    fail(
+      409,
+      "label_in_use",
+      "An enabled public board excludes this label. Remove it from the board first.",
+      {
+        projects: [project(ctx).key],
+      },
+    );
   const affected = await ctx.db
     .select()
     .from(tickets)
