@@ -118,6 +118,11 @@ describe("MCP tool list", () => {
     expect(tools.map((tool) => tool.name).toSorted()).toEqual([...core, ...discovery].toSorted());
     expect(tools.filter((tool) => tool.outputSchema).map((tool) => tool.name)).toEqual([]);
     expect(JSON.stringify(tools).length).toBeLessThan(25_000);
+    for (const tool of tools)
+      if (isOperation(tool.name))
+        expect(Object.keys(tool.inputSchema.properties ?? {}), tool.name).toEqual(
+          Object.keys(operations[tool.name].input.shape),
+        );
     const annotations = new Map(tools.map((tool) => [tool.name, tool.annotations]));
     expect(annotations.get("find_operation")).toMatchObject({ readOnlyHint: true });
     expect(annotations.get("read_operation")).toMatchObject({
@@ -228,7 +233,7 @@ describe("MCP tool list", () => {
     });
   });
 
-  it("refuses input keys an operation does not take in the runners, and leaves HTTP's refusal alone", async () => {
+  it("refuses input keys an operation does not take in every tool, and leaves HTTP's refusal alone", async () => {
     // `constructor` exists on every object, so a plain property lookup would accept it.
     for (const key of ["labels", "constructor"])
       expect(
@@ -261,6 +266,45 @@ describe("MCP tool list", () => {
     expect(
       await application.domain.execute("list_project_labels", { projectId: project.id }, owner),
     ).not.toContainEqual(expect.objectContaining({ name }));
+
+    // A direct tool refuses the same way, and its valid keys still arrive.
+    expect(
+      errorOf(
+        await agent.callTool({
+          name: "search_tickets",
+          arguments: { q: "zzz", labels: ["none"] },
+        }),
+      ),
+    ).toMatchObject({
+      status: 400,
+      code: "invalid_request",
+      message: expect.stringMatching(/take labels\b.*\bq\b/),
+    });
+    const ticket = { projectId: project.id, title: `Unwritten ${crypto.randomUUID()}` };
+    expect(
+      errorOf(
+        await agent.callTool({ name: "create_ticket", arguments: { ...ticket, labelz: ["x"] } }),
+      ),
+    ).toMatchObject({
+      status: 400,
+      code: "invalid_request",
+      message: expect.stringMatching(/take labelz\b.*\blabels\b/),
+    });
+    expect(
+      await application.domain.execute(
+        "list_tickets",
+        { projectId: project.id, q: ticket.title },
+        owner,
+      ),
+    ).toMatchObject({ total: 0 });
+    expect(
+      resultOf(
+        await agent.callTool({
+          name: "create_ticket",
+          arguments: { ...ticket, priority: "high" },
+        }),
+      ),
+    ).toMatchObject({ title: ticket.title, priority: "high" });
 
     const response = await application.app.fetch(
       new Request(
@@ -529,6 +573,14 @@ describe("MCP tool list", () => {
       );
       expect(
         errorOf(await run(oauth, "run_operation", "add_relation", { misspelled: true })).code,
+      ).toBe("invalid_request");
+      expect(
+        errorOf(
+          await oauth.callTool({
+            name: "create_ticket",
+            arguments: { projectId: project.id, title: "Refused", labelz: ["x"] },
+          }),
+        ).code,
       ).toBe("invalid_request");
     }
     for (let attempt = 0; attempt < writeLimit; attempt += 1)
