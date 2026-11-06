@@ -54,8 +54,8 @@ const known = (name: string) => {
   if (!isOperation(name)) throw new ApiError(404, "not_found", `No operation is named ${name}`);
   return name;
 };
-// A runner's input is a free-form record that reaches an operation's schema with no route validator
-// in front, and a schema may strip what it does not name: a misspelled filter would widen a read.
+// A tool's arguments reach an operation's schema with no route validator in front, and a schema may
+// strip what it does not name: a misspelled filter would widen a read.
 const refuseUnknownKeys = (name: Operation, input: Record<string, unknown>) => {
   const { shape } = toolInput(name);
   const unknown = Object.keys(input).filter((key) => !Object.hasOwn(shape, key));
@@ -128,6 +128,7 @@ export function createMcp(
   const serve = (request: Request, identity: Actor, limited = false) => {
     // Every operation call, from its own tool or a runner, passes through here.
     const execute = async (name: Operation, input: Record<string, unknown>) => {
+      refuseUnknownKeys(name, input);
       if (limited && operations[name].method !== "GET") limitWrite(identity.ownerId);
       const value =
         "view" in operations[name].input.shape ? { view: defaultView, ...input } : input;
@@ -143,7 +144,6 @@ export function createMcp(
             "invalid_request",
             `${name} ${write ? "only reads; use read_operation" : "writes; use run_operation"}`,
           );
-        refuseUnknownKeys(name, args.input);
         return execute(name, args.input);
       });
     return createMcpHandler(
@@ -154,12 +154,12 @@ export function createMcp(
         );
         for (const name of coreNames) {
           const spec = operations[name];
-          const inputSchema: Record<string, z.ZodType> = toolInput(name).shape;
           server.registerTool(
             name,
             {
               description: spec.description,
-              inputSchema,
+              // Loose, because the SDK would strip an unknown key before execute can refuse it.
+              inputSchema: toolInput(name).loose(),
               annotations: {
                 readOnlyHint: spec.method === "GET",
                 destructiveHint: false,

@@ -305,7 +305,7 @@ The authenticated Streamable HTTP endpoint is `/mcp`. Tool inputs use the shared
 | `read_operation` | `name`, `input` (defaults to `{}`) | Runs a `GET` operation. Hinted `readOnlyHint` and `idempotentHint`, so a client can approve reads automatically. A write operation returns `400 invalid_request` without running.                                                                                                                      |
 | `run_operation`  | `name`, `input` (defaults to `{}`) | Runs any other operation and counts against the OAuth write budget. Hinted `destructiveHint`. A read operation returns `400 invalid_request`.                                                                                                                                                          |
 
-The runners call the same implementation as a direct tool, so results, error envelopes, scopes, and permissions match. An unknown name returns `404 not_found` from all three tools. An `input` key the operation's schema does not name returns `400 invalid_request` from both runners, naming the key and listing the valid ones, without running the operation or counting against the OAuth write budget.
+The runners call the same implementation as a direct tool, so results, error envelopes, scopes, and permissions match. An unknown name returns `404 not_found` from all three tools. A key the operation's schema does not name, in a core tool's arguments or a runner's `input`, returns `400 invalid_request`, naming the key and listing the valid ones, without running the operation or counting against the OAuth write budget.
 
 Results from operations, through their own tools and the runners, are smaller than the same HTTP responses:
 
