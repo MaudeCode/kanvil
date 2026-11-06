@@ -263,6 +263,7 @@ export default {
       created: "Takvim akışı oluşturuldu",
       revoked: "Takvim akışı iptal edildi",
     },
+    public_board: { updated: "Herkese açık pano güncellendi" },
     project: {
       created: "Proje oluşturuldu",
       updated: "Proje güncellendi",

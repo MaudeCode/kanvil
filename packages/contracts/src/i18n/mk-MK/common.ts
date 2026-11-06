@@ -263,6 +263,7 @@ export default {
       created: "Креиран календарски извод",
       revoked: "Отповикан календарски извод",
     },
+    public_board: { updated: "Јавната табла е ажурирана" },
     project: {
       created: "Креиран проект",
       updated: "Ажуриран проект",

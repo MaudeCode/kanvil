@@ -266,6 +266,7 @@ export default {
       created: "Календарну стрічку створено",
       revoked: "Календарну стрічку відкликано",
     },
+    public_board: { updated: "Публічну дошку оновлено" },
     project: {
       created: "Проєкт створено",
       updated: "Проєкт оновлено",

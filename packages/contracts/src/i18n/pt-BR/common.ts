@@ -263,6 +263,7 @@ export default {
       created: "Feed de calendário criado",
       revoked: "Feed de calendário revogado",
     },
+    public_board: { updated: "Quadro público atualizado" },
     project: {
       created: "Projeto criado",
       updated: "Projeto atualizado",

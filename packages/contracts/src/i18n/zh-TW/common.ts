@@ -235,6 +235,7 @@ export default {
     evidence: { added: "已附加佐證" },
     resource: { added: "已新增連結", updated: "連結已編輯", removed: "已移除連結" },
     calendar_feed: { created: "行事曆訂閱已建立", revoked: "行事曆訂閱已撤銷" },
+    public_board: { updated: "公開看板已更新" },
     project: {
       created: "專案已建立",
       updated: "專案已更新",

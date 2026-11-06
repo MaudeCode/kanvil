@@ -266,6 +266,7 @@ export default {
       created: "Feed de calendario creado",
       revoked: "Feed de calendario revocado",
     },
+    public_board: { updated: "Tablero público actualizado" },
     project: {
       created: "Proyecto creado",
       updated: "Proyecto actualizado",

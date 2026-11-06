@@ -239,6 +239,7 @@ export default {
     evidence: { added: "Evidence attached" },
     resource: { added: "Link added", updated: "Link edited", removed: "Link removed" },
     calendar_feed: { created: "Calendar feed created", revoked: "Calendar feed revoked" },
+    public_board: { updated: "Public board updated" },
     project: {
       created: "Project created",
       updated: "Project updated",

@@ -260,6 +260,7 @@ export default {
     evidence: { added: "Bewijs bijgevoegd" },
     resource: { added: "Link toegevoegd", updated: "Link bewerkt", removed: "Link verwijderd" },
     calendar_feed: { created: "Agendafeed aangemaakt", revoked: "Agendafeed ingetrokken" },
+    public_board: { updated: "Openbaar bord bijgewerkt" },
     project: {
       created: "Project aangemaakt",
       updated: "Project bijgewerkt",

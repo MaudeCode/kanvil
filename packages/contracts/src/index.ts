@@ -1014,6 +1014,28 @@ export const calendarFeedSchema = z.object({
   active: z.boolean(),
 });
 export type CalendarFeed = z.output<typeof calendarFeedSchema>;
+export const publicBoardSchema = z.object({
+  projectId: z.uuid(),
+  enabled: z.boolean(),
+  title: text.max(80),
+  // Tickets with any of these labels; empty publishes nothing, unlike a calendar feed.
+  labels: tags,
+  // A ticket with any of these stays off the board even when `labels` selects it.
+  excludedLabels: tags,
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+// Everything a public board publishes about a ticket; the database views select the same columns.
+export const publicBoardTicketSchema = z.object({
+  projectId: z.uuid(),
+  key: z.string(),
+  title: z.string(),
+  kind: z.enum(kinds),
+  status: z.enum(states),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
 export const eventSchema = z.object({
   id: z.string().regex(/^\d+$/),
   projectId: z.uuid(),
@@ -1589,6 +1611,7 @@ export const namedEvents = [
   "resource.removed",
   "calendar_feed.created",
   "calendar_feed.revoked",
+  "public_board.updated",
   "project.created",
   "project.updated",
   "project.archived",
@@ -3378,6 +3401,32 @@ export const operations = {
     "/projects/{projectId}/calendar-feeds/{feedId}",
     "admin",
     "Revoke a calendar feed. Its link stops working immediately.",
+  ),
+  get_project_board: op(
+    projectInput,
+    z.object({ board: publicBoardSchema.nullable(), tickets: z.array(publicBoardTicketSchema) }),
+    "GET",
+    "/projects/{projectId}/public-board",
+    "read",
+    "Read the project's public board, or null, and the tickets it selects exactly as it publishes them, even while it is disabled.",
+  ),
+  update_project_board: op(
+    projectInput
+      .extend({
+        ...mutation,
+        // The version `get_project_board` read; null when the project has no board yet.
+        expectedVersion: version.nullable(),
+        enabled: z.boolean(),
+        title: text.max(80),
+        labels: tags,
+        excludedLabels: tags,
+      })
+      .strict(),
+    publicBoardSchema,
+    "PATCH",
+    "/projects/{projectId}/public-board",
+    "read",
+    "Create or replace the project's public board. It publishes the key, title, kind, status, and dates of unarchived, unheld tickets that carry any of `labels` and none of `excludedLabels`. Enabling requires at least one label.",
   ),
   list_views: op(
     projectInput,

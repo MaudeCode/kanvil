@@ -85,6 +85,7 @@ import { collaborationHandlers } from "./collaboration-operations.ts";
 import { timeEntryHandlers } from "./time-entry-operations.ts";
 import { deliveryHandlers } from "./delivery-operations.ts";
 import { calendarHandlers } from "./calendar-operations.ts";
+import { publicBoardHandlers } from "./public-board-operations.ts";
 import { invitationHandlers } from "./invitation-operations.ts";
 import { workflowHandlers } from "./workflow-operations.ts";
 import { publicHandlers } from "./public-operations.ts";
@@ -852,6 +853,7 @@ export function createDomain(
     ...timeEntryHandlers,
     ...deliveryHandlers,
     ...calendarHandlers,
+    ...publicBoardHandlers,
     ...invitationHandlers,
     ...workflowHandlers,
     ...customFieldHandlers,

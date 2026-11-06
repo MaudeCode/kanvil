@@ -251,6 +251,7 @@ export default {
       created: "カレンダーフィードを作成",
       revoked: "カレンダーフィードを無効化",
     },
+    public_board: { updated: "公開ボードを更新しました" },
     project: {
       created: "プロジェクトを作成",
       updated: "プロジェクトを更新",

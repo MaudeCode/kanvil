@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  pgView,
   primaryKey,
   text,
   timestamp,
@@ -639,6 +640,29 @@ export const calendarFeeds = pgTable(
   },
   (table) => [index("calendar_feed_project").on(table.projectId)],
 );
+// A project's public board. The views in migration 0042 are its only way out: a reader granted just
+// those views sees the published columns of the tickets the board selects, and nothing else.
+export const publicBoards = pgTable("public_boards", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  title: text("title").notNull(),
+  labels: text("labels").array().notNull().default([]),
+  excludedLabels: text("excluded_labels").array().notNull().default([]),
+  version: integer("version").notNull().default(1),
+  createdAt: time("created_at"),
+  updatedAt: time("updated_at"),
+});
+export const publicBoardCandidates = pgView("public_board_candidates", {
+  projectId: uuid("project_id").notNull(),
+  key: text("key").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(),
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}).existing();
 export const subscriptions = pgTable(
   "subscriptions",
   {

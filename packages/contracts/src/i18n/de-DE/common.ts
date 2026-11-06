@@ -259,6 +259,7 @@ export default {
     evidence: { added: "Nachweis angehängt" },
     resource: { added: "Link hinzugefügt", updated: "Link bearbeitet", removed: "Link entfernt" },
     calendar_feed: { created: "Kalender-Feed erstellt", revoked: "Kalender-Feed widerrufen" },
+    public_board: { updated: "Öffentliches Board aktualisiert" },
     project: {
       created: "Projekt erstellt",
       updated: "Projekt aktualisiert",

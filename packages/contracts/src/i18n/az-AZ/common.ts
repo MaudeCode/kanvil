@@ -260,6 +260,7 @@ export default {
       removed: "Keçid silindi",
     },
     calendar_feed: { created: "Təqvim lenti yaradıldı", revoked: "Təqvim lenti ləğv edildi" },
+    public_board: { updated: "İctimai lövhə yeniləndi" },
     project: {
       created: "Layihə yaradıldı",
       updated: "Layihə yeniləndi",

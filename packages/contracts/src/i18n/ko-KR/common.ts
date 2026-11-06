@@ -236,6 +236,7 @@ export default {
     evidence: { added: "증빙 첨부됨" },
     resource: { added: "링크 추가됨", updated: "링크 수정됨", removed: "링크 제거됨" },
     calendar_feed: { created: "캘린더 피드 생성됨", revoked: "캘린더 피드 취소됨" },
+    public_board: { updated: "공개 보드 업데이트됨" },
     project: {
       created: "프로젝트 생성됨",
       updated: "프로젝트 업데이트됨",
