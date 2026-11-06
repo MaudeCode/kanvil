@@ -228,6 +228,52 @@ describe("MCP tool list", () => {
     });
   });
 
+  it("refuses input keys an operation does not take in the runners, and leaves HTTP's refusal alone", async () => {
+    // `constructor` exists on every object, so a plain property lookup would accept it.
+    for (const key of ["labels", "constructor"])
+      expect(
+        errorOf(
+          await run(agent, "read_operation", "list_tickets", {
+            projectId: project.id,
+            [key]: ["none"],
+          }),
+        ),
+      ).toMatchObject({
+        status: 400,
+        code: "invalid_request",
+        message: expect.stringMatching(new RegExp(`take ${key}\\b.*\\blabel\\b`)),
+      });
+
+    const name = `Unwritten ${crypto.randomUUID()}`.slice(0, 40);
+    expect(
+      errorOf(
+        await run(agent, "run_operation", "create_project_label", {
+          projectId: project.id,
+          name,
+          colour: "red",
+        }),
+      ),
+    ).toMatchObject({
+      status: 400,
+      code: "invalid_request",
+      message: expect.stringMatching(/take colour\b.*\bcolor\b/),
+    });
+    expect(
+      await application.domain.execute("list_project_labels", { projectId: project.id }, owner),
+    ).not.toContainEqual(expect.objectContaining({ name }));
+
+    const response = await application.app.fetch(
+      new Request(
+        `${fixture.config.KANVIL_URL}/api/v1/projects/${project.id}/tickets?labels=none`,
+        {
+          headers: { Authorization: `Bearer ${await keyFor(["read"])}` },
+        },
+      ),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "validation_error" } });
+  });
+
   it("answers an unknown name with not_found in every discovery tool", async () => {
     // `constructor` exists on every object, so a plain property lookup would find it.
     for (const name of ["no_such_operation", "constructor"]) {
@@ -481,6 +527,9 @@ describe("MCP tool list", () => {
       expect(errorOf(await run(oauth, "run_operation", "list_projects", {})).code).toBe(
         "invalid_request",
       );
+      expect(
+        errorOf(await run(oauth, "run_operation", "add_relation", { misspelled: true })).code,
+      ).toBe("invalid_request");
     }
     for (let attempt = 0; attempt < writeLimit; attempt += 1)
       expect(errorOf(await write()).code).toBe("not_found");
