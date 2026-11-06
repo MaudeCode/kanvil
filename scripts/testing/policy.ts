@@ -172,7 +172,7 @@ export const families: readonly Family[] = [
       "apps/server/src/imports.test.ts": 9,
       "apps/server/src/invitations.test.ts": 10,
       "apps/server/src/lifecycle.postgres.test.ts": 1,
-      "apps/server/src/mcp.test.ts": 11,
+      "apps/server/src/mcp.test.ts": 12,
       "apps/server/src/mentions.test.ts": 5,
       "apps/server/src/notification-categories.test.ts": 4,
       "apps/server/src/outbox.test.ts": 14,

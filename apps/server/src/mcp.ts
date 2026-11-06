@@ -54,6 +54,18 @@ const known = (name: string) => {
   if (!isOperation(name)) throw new ApiError(404, "not_found", `No operation is named ${name}`);
   return name;
 };
+// A runner's input is a free-form record that reaches an operation's schema with no route validator
+// in front, and a schema may strip what it does not name: a misspelled filter would widen a read.
+const refuseUnknownKeys = (name: Operation, input: Record<string, unknown>) => {
+  const { shape } = toolInput(name);
+  const unknown = Object.keys(input).filter((key) => !Object.hasOwn(shape, key));
+  if (unknown.length > 0)
+    throw new ApiError(
+      400,
+      "invalid_request",
+      `${name} does not take ${unknown.join(", ")}. Valid keys: ${Object.keys(shape).join(", ") || "none"}.`,
+    );
+};
 const summary = (name: Operation) => ({
   name,
   description: operations[name].description,
@@ -131,6 +143,7 @@ export function createMcp(
             "invalid_request",
             `${name} ${write ? "only reads; use read_operation" : "writes; use run_operation"}`,
           );
+        refuseUnknownKeys(name, args.input);
         return execute(name, args.input);
       });
     return createMcpHandler(
