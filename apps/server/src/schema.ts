@@ -640,8 +640,8 @@ export const calendarFeeds = pgTable(
   },
   (table) => [index("calendar_feed_project").on(table.projectId)],
 );
-// A project's public board. The views in migration 0042 are its only way out: a reader granted just
-// those views sees the published columns of the tickets the board selects, and nothing else.
+// A project's public board. Its views, written by hand in the migration that adds this table, are
+// its only way out: a role granted just those sees the published columns of the selected tickets.
 export const publicBoards = pgTable("public_boards", {
   projectId: uuid("project_id")
     .primaryKey()

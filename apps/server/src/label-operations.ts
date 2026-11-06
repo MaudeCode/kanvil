@@ -1,9 +1,17 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type AnyColumn } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { filterKey, filterList, isHexColor, ticketFilter } from "@kanvil/contracts";
-import { renameFeedLabel } from "./calendar-operations.ts";
 import { accessibleProjectRows, projectRoleSQL } from "./project-access.ts";
-import { labelColors, projectLabels, projects, tickets, views, workspaceLabels } from "./schema.ts";
+import {
+  calendarFeeds,
+  labelColors,
+  projectLabels,
+  projects,
+  publicBoards,
+  tickets,
+  views,
+  workspaceLabels,
+} from "./schema.ts";
 import { labelOrder, labelUsage, updateTicketLabels } from "./ticket-operations.ts";
 import { publishWorkspace } from "./workspace-operations.ts";
 import {
@@ -99,9 +107,53 @@ export async function rememberLabelColor(ctx: Context, color: string) {
       .values({ value: color, createdBy: ctx.actor.id })
       .onConflictDoNothing();
 }
+// Label renames carry over to the label filters of feeds and public boards, and a merge leaves one
+// copy of the name. A deleted label stays in a filter and matches nothing, so deleting it never
+// widens what a filter selects; `changeLabelUsage` refuses the one case that would.
+async function renameFilterLabel(ctx: Context, from: string, to: string) {
+  const id = project(ctx).id;
+  const names = (column: AnyColumn) => sql`${from} = ANY(${column})`;
+  const renamed = (column: AnyColumn) =>
+    sql<
+      string[]
+    >`CASE WHEN ${to} = ANY(${column}) THEN array_remove(${column}, ${from}) ELSE array_replace(${column}, ${from}, ${to}) END`;
+  await ctx.db
+    .update(calendarFeeds)
+    .set({ labels: renamed(calendarFeeds.labels) })
+    .where(and(eq(calendarFeeds.projectId, id), names(calendarFeeds.labels)));
+  await ctx.db
+    .update(publicBoards)
+    .set({
+      labels: renamed(publicBoards.labels),
+      excludedLabels: renamed(publicBoards.excludedLabels),
+      version: sql`${publicBoards.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(publicBoards.projectId, id),
+        or(names(publicBoards.labels), names(publicBoards.excludedLabels)),
+      ),
+    );
+}
 // Definition administration propagates only labels through the shared versioned writer;
-// saved views and calendar feeds follow in the same transaction.
+// saved views and label filters follow in the same transaction.
 async function changeLabelUsage(ctx: Context, name: string, replacement?: string) {
+  // Stripping a label an enabled board excludes would publish every ticket it was hiding.
+  if (
+    !replacement &&
+    (await ctx.db.$count(
+      publicBoards,
+      and(
+        eq(publicBoards.projectId, project(ctx).id),
+        eq(publicBoards.enabled, true),
+        sql`${name} = ANY(${publicBoards.excludedLabels})`,
+      ),
+    ))
+  )
+    fail(409, "label_in_use", "An enabled public board excludes this label.", {
+      projects: [project(ctx).key],
+    });
   const affected = await ctx.db
     .select()
     .from(tickets)
@@ -126,7 +178,7 @@ async function changeLabelUsage(ctx: Context, name: string, replacement?: string
     );
   await publishMany(ctx, pending);
   await rewriteViewFilters(ctx, "label", (tag) => (tag !== name ? tag : (replacement ?? null)));
-  if (replacement) await renameFeedLabel(ctx, name, replacement);
+  if (replacement) await renameFilterLabel(ctx, name, replacement);
 }
 // Rewrites one filter field in the context project's saved views: `rename` maps each value to its
 // replacement, or to null to drop it. Saved filters hold a list, or a single value from before

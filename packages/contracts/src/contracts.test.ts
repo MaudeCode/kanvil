@@ -733,6 +733,8 @@ describe("roles and permissions", () => {
     expect(operationPermission("set_member")).toBe("member.manage");
     expect(operationPermission("create_invitation")).toBe("invitation.manage");
     expect(operationPermission("create_calendar_feed")).toBe("sharing.manage");
+    expect(operationPermission("get_project_board")).toBe("sharing.manage");
+    expect(operationPermission("update_project_board")).toBe("sharing.manage");
     expect(operationPermission("update_workspace_label")).toBe("workspace.manage");
     expect(operationPermission("create_workspace_role")).toBe("workspace.manage");
     // Checked in the handler, which sees what changed.

@@ -26,6 +26,7 @@ import {
   repositoryConnections,
   projectLabels,
   projects,
+  publicBoards,
   stagedUploads,
   subscriptions,
   tickets,
@@ -251,6 +252,7 @@ async function removeProject(ctx: Context) {
   await ctx.db.delete(projectDestinations).where(eq(projectDestinations.projectId, current.id));
   await ctx.db.delete(repositoryConnections).where(eq(repositoryConnections.projectId, current.id));
   await ctx.db.delete(calendarFeeds).where(eq(calendarFeeds.projectId, current.id));
+  await ctx.db.delete(publicBoards).where(eq(publicBoards.projectId, current.id));
   const removed = await ctx.db
     .select({ id: tickets.id, key: tickets.key, version: tickets.version })
     .from(tickets)

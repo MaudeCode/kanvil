@@ -24,19 +24,6 @@ function canonicalZone(timeZone: string) {
     ]);
   }
 }
-// Label renames carry over to feed filters. A deleted label stays in the filter and matches
-// nothing, so deleting it never widens what a feed shares.
-export async function renameFeedLabel(ctx: Context, from: string, to: string) {
-  await ctx.db
-    .update(calendarFeeds)
-    .set({ labels: sql`array_replace(${calendarFeeds.labels}, ${from}, ${to})` })
-    .where(
-      and(
-        eq(calendarFeeds.projectId, project(ctx).id),
-        sql`${from} = any(${calendarFeeds.labels})`,
-      ),
-    );
-}
 export const calendarHandlers: Pick<
   Handlers,
   "list_calendar_feeds" | "create_calendar_feed" | "revoke_calendar_feed"

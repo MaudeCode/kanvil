@@ -874,6 +874,7 @@ export function createDomain(
     "move_project",
     "set_member",
     "revoke_calendar_feed",
+    "update_project_board",
     "delete_project_destination",
     "delete_repository_connection",
   ]);

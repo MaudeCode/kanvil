@@ -2186,7 +2186,7 @@ export const operations = {
     "DELETE",
     "/workspaces/{workspaceId}/labels/{labelId}",
     "admin",
-    "Delete a workspace label and remove it from tickets and saved-view filters in every project of the workspace atomically.",
+    "Delete a workspace label and remove it from tickets and saved-view filters in every project of the workspace atomically. Fails with `label_in_use` while an enabled public board in the workspace excludes it.",
   ),
   list_invitations: op(
     z.object({ workspaceId: z.uuid() }),
@@ -2430,7 +2430,7 @@ export const operations = {
     "DELETE",
     "/projects/{projectId}",
     "admin",
-    "Permanently delete a project's tickets, comments, attachments, labels, feeds, and destinations. `confirmKey` must repeat the project prefix. Fails with `claim_conflict` while any ticket is claimed. The prefix stays reserved and the activity history and deletion events are kept.",
+    "Permanently delete a project's tickets, comments, attachments, labels, feeds, public board, and destinations. `confirmKey` must repeat the project prefix. Fails with `claim_conflict` while any ticket is claimed. The prefix stays reserved and the activity history and deletion events are kept.",
   ),
   export_project: op(
     projectInput,
@@ -2616,7 +2616,7 @@ export const operations = {
     "DELETE",
     "/projects/{projectId}/labels/{labelId}",
     "admin",
-    "Delete a project label and remove it from tickets and saved-view filters atomically.",
+    "Delete a project label and remove it from tickets and saved-view filters atomically. Fails with `label_in_use` while the project's enabled public board excludes it.",
   ),
   list_label_colors: op(
     z.object({}),
@@ -3407,7 +3407,7 @@ export const operations = {
     z.object({ board: publicBoardSchema.nullable(), tickets: z.array(publicBoardTicketSchema) }),
     "GET",
     "/projects/{projectId}/public-board",
-    "read",
+    "admin",
     "Read the project's public board, or null, and the tickets it selects exactly as it publishes them, even while it is disabled.",
   ),
   update_project_board: op(
@@ -3425,7 +3425,7 @@ export const operations = {
     publicBoardSchema,
     "PATCH",
     "/projects/{projectId}/public-board",
-    "read",
+    "admin",
     "Create or replace the project's public board. It publishes the key, title, kind, status, and dates of unarchived, unheld tickets that carry any of `labels` and none of `excludedLabels`. Enabling requires at least one label.",
   ),
   list_views: op(
@@ -3821,6 +3821,8 @@ const permissionOverrides: Partial<Record<Operation, Permission | null>> = {
   list_calendar_feeds: "sharing.manage",
   create_calendar_feed: "sharing.manage",
   revoke_calendar_feed: "sharing.manage",
+  get_project_board: "sharing.manage",
+  update_project_board: "sharing.manage",
   // Details need `project.manage` and the public link `sharing.manage`; the handler checks what
   // changed.
   update_project: null,
