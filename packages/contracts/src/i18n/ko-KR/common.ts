@@ -212,6 +212,7 @@ export default {
       updated: "시간 기록 업데이트됨",
       deleted: "시간 기록 삭제됨",
     },
+    epic: { created: "에픽 생성됨", updated: "에픽 업데이트됨" },
     label: { created: "레이블 생성됨", updated: "레이블 업데이트됨", deleted: "레이블 삭제됨" },
     workflow: {
       created: "워크플로 상태 추가됨",

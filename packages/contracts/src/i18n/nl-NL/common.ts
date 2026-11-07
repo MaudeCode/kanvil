@@ -220,6 +220,7 @@ export default {
       updated: "Tijdregistratie bijgewerkt",
       deleted: "Tijdregistratie verwijderd",
     },
+    epic: { created: "Epic aangemaakt", updated: "Epic bijgewerkt" },
     label: {
       created: "Label aangemaakt",
       updated: "Label bijgewerkt",

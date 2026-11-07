@@ -227,6 +227,7 @@ export default {
       updated: "Запис часу оновлено",
       deleted: "Запис часу видалено",
     },
+    epic: { created: "Епік створено", updated: "Епік оновлено" },
     label: { created: "Мітку створено", updated: "Мітку оновлено", deleted: "Мітку видалено" },
     workflow: {
       created: "Стан додано",

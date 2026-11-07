@@ -346,6 +346,8 @@ export default {
       kept: "Διατηρούνται",
       projects: "Έργα",
       members: "Μέλη",
+      epics: "Έπη",
+      epicTickets: "Δελτία που αποχωρούν από έπος",
       sharedLabels: "Κοινές ετικέτες",
       signIn: "Σύνδεση",
       sessions: "Συνεδρίες",

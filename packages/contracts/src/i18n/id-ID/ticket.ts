@@ -67,6 +67,8 @@ export default {
     kind: "Jenis",
     difficulty: "Tingkat kesulitan",
     assignee: "Penerima tugas",
+    epic: "Epik",
+    noEpic: "Tanpa epik",
     you: "{{name}} (Anda)",
     assignTo: "Tugaskan ke…",
     set: "Atur {{label, lowercase}}…",

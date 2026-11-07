@@ -1452,6 +1452,7 @@ describe("ticket operations on PostgreSQL", () => {
       "archived",
       "automationReady",
       "difficulty",
+      "epicId",
       "id",
       "key",
       "kind",

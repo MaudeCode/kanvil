@@ -67,6 +67,8 @@ export default {
     kind: "種類",
     difficulty: "難易度",
     assignee: "担当者",
+    epic: "エピック",
+    noEpic: "エピックなし",
     you: "{{name}}（自分）",
     assignTo: "担当者を割り当て…",
     set: "{{label}}を設定…",

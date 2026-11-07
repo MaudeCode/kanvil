@@ -69,6 +69,8 @@ export default {
     kind: "Tür",
     difficulty: "Zorluk",
     assignee: "Atanan",
+    epic: "Epik",
+    noEpic: "Epik yok",
     you: "{{name}} (siz)",
     assignTo: "Ata…",
     set: "{{label}} belirle…",

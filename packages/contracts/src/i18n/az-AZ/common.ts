@@ -224,6 +224,7 @@ export default {
       updated: "Vaxt qeydi yeniləndi",
       deleted: "Vaxt qeydi silindi",
     },
+    epic: { created: "Epik yaradıldı", updated: "Epik yeniləndi" },
     label: { created: "Etiket yaradıldı", updated: "Etiket yeniləndi", deleted: "Etiket silindi" },
     workflow: {
       created: "İş axını vəziyyəti əlavə edildi",

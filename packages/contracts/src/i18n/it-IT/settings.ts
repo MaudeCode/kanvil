@@ -356,6 +356,8 @@ export default {
       kept: "Conservati",
       projects: "Progetti",
       members: "Membri",
+      epics: "Epic",
+      epicTickets: "Ticket che lasciano una epic",
       sharedLabels: "Etichette condivise",
       signIn: "Accesso",
       sessions: "Sessioni",

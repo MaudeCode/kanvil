@@ -227,6 +227,7 @@ export default {
       updated: "Entrée de temps mise à jour",
       deleted: "Entrée de temps supprimée",
     },
+    epic: { created: "Épopée créée", updated: "Épopée mise à jour" },
     label: {
       created: "Étiquette créée",
       updated: "Étiquette modifiée",

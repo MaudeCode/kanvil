@@ -73,6 +73,8 @@ export default {
     kind: "Тип",
     difficulty: "Сложность",
     assignee: "Исполнитель",
+    epic: "Эпик",
+    noEpic: "Без эпика",
     you: "{{name}} (вы)",
     assignTo: "Назначить…",
     set: "Выбрать: {{label, lowercase}}…",

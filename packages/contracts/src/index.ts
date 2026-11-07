@@ -579,6 +579,8 @@ export const ticketFields = z
     scopes: tags,
     assigneeId: z.string().nullable(),
     parentId: z.uuid().nullable(),
+    // The one Epic the ticket belongs to, owned by the project's workspace.
+    epicId: z.uuid().nullable(),
     automationReady: z.boolean(),
     holdReason: z.string().trim().max(2000).nullable(),
     // Clients store a start as the beginning of the chosen day and a due date as its end, both in
@@ -703,6 +705,8 @@ export const projectImpactSchema = z.object({
       mergedLabels: z.array(z.string()),
       subscriptions: count,
       invitations: count,
+      // Tickets that leave their Epic, which stays behind in the source workspace.
+      epicTickets: count.default(0),
     })
     .nullable(),
 });
@@ -714,6 +718,7 @@ export const workspaceImpactSchema = projectImpactSchema.omit({ transfer: true }
   members: count,
   invitations: count,
   labels: count,
+  epics: count.default(0),
 });
 export type WorkspaceImpact = z.output<typeof workspaceImpactSchema>;
 // Deleted accounts keep their ID on the history they wrote and the server stores this name on
@@ -760,7 +765,8 @@ export type AccountImpact = z.output<typeof accountImpactSchema>;
 // order's position, are dropped, so this client keeps reading tickets from newer servers.
 export const ticketSchema = z.object({
   ...ticketFields.shape,
-  // Servers that predate start dates, workflows, or custom fields omit these fields.
+  // Servers that predate start dates, workflows, custom fields, or Epics omit these fields.
+  epicId: z.uuid().nullable().default(null),
   startAt: dueDate.nullable().default(null),
   stateId: z.uuid().nullable().default(null),
   customFields: z.record(z.string(), customFieldValue).default({}),
@@ -792,6 +798,7 @@ export const ticketSummarySchema = ticketSchema.pick({
   scopes: true,
   archived: true,
   automationReady: true,
+  epicId: true,
   updatedAt: true,
   version: true,
 });
@@ -800,6 +807,21 @@ export type TicketSummary = z.output<typeof ticketSummarySchema>;
 const ticketView = { view: z.enum(["summary", "full"]).default("full") };
 // A full ticket, or its summary when the request asked for `view: "summary"`.
 const ticketRow = z.union([ticketSchema, ticketSummarySchema]);
+// A workspace's group of tickets from any of its projects. There is no deletion; archive instead.
+export const epicSchema = z.object({
+  id: z.uuid(),
+  workspaceId: z.uuid(),
+  title: text.max(200),
+  description: z.string(),
+  archived: z.boolean(),
+  version,
+  createdBy: z.string(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+export type Epic = z.output<typeof epicSchema>;
+// An Epic with its unarchived tickets in the projects the caller can read.
+const epicRollupSchema = epicSchema.extend({ openTickets: count, closedTickets: count });
 export type Project = z.output<typeof projectSchema>;
 export const snapshotSchema = z.object({
   project: projectSchema,
@@ -1578,6 +1600,8 @@ export const namedEvents = [
   "label.created",
   "label.updated",
   "label.deleted",
+  "epic.created",
+  "epic.updated",
   "workflow.created",
   "workflow.updated",
   "workflow.deleted",
@@ -2136,6 +2160,78 @@ export const operations = {
     "write",
     "Delete an account: remove its sign-in methods, sessions, API keys, OAuth grants, devices, notification settings, memberships, and photo, release its claims, cancel its imports, and replace its name and email with a `Deleted account` tombstone. Tickets, comments, evidence, and activity keep the account ID. Only the account itself or an instance administrator, signed in within the last 15 minutes, can delete; `confirmEmail` must repeat the account's email. Fails with `workspace_owner` while it owns a workspace and `last_administrator` for the last active instance or workspace administrator.",
   ),
+  list_epics: op(
+    z.object({
+      workspaceId: z.uuid(),
+      archived: ticketFilter.shape.archived,
+      ...pagination,
+    }),
+    page(epicRollupSchema),
+    "GET",
+    "/workspaces/{workspaceId}/epics",
+    "read",
+    "List the workspace's Epics by title, each with open and closed ticket counts from the projects you can read, leaving out archived tickets. Archived Epics are left out unless `archived` is `include` or `only`.",
+  ),
+  get_epic: op(
+    z.object({ workspaceId: z.uuid(), epicId: z.uuid() }),
+    epicRollupSchema,
+    "GET",
+    "/workspaces/{workspaceId}/epics/{epicId}",
+    "read",
+    "Read one Epic with the same ticket counts as list_epics.",
+  ),
+  create_epic: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        title: epicSchema.shape.title,
+        description: z.string().max(100_000).default(""),
+      })
+      .strict(),
+    epicSchema,
+    "POST",
+    "/workspaces/{workspaceId}/epics",
+    "write",
+    "Create an Epic that groups tickets from any project in the workspace. Add a ticket by setting `epicId` through create_ticket, update_ticket, or bulk_update_tickets. Membership has no effect on readiness, eligibility, or claims. Reuse requestId when retrying this write.",
+  ),
+  update_epic: op(
+    z
+      .object({
+        ...mutation,
+        workspaceId: z.uuid(),
+        epicId: z.uuid(),
+        expectedVersion: version,
+        title: epicSchema.shape.title.optional(),
+        description: z.string().max(100_000).optional(),
+        archived: z.boolean().optional(),
+      })
+      .strict()
+      .refine(
+        ({ title, description, archived }) =>
+          title !== undefined || description !== undefined || archived !== undefined,
+        "Provide at least one change",
+      ),
+    epicSchema,
+    "PATCH",
+    "/workspaces/{workspaceId}/epics/{epicId}",
+    "write",
+    "Change an Epic's title or description, archive it, or restore it with `archived: false`. An archived Epic keeps its members and refuses new ones. There is no deletion. Reuse requestId when retrying this write.",
+  ),
+  list_epic_tickets: op(
+    z.object({
+      workspaceId: z.uuid(),
+      epicId: z.uuid(),
+      archived: ticketFilter.shape.archived,
+      ...pagination,
+      ...ticketView,
+    }),
+    page(ticketRow).extend({ restrictedCount: count }),
+    "GET",
+    "/workspaces/{workspaceId}/epics/{epicId}/tickets",
+    "read",
+    'List an Epic\'s tickets across projects, oldest first. Only tickets of projects you can read appear; `restrictedCount` counts the rest without naming them. With `view: "summary"`, rows omit the description and acceptance criteria.',
+  ),
   list_workspace_labels: op(
     z.object({ workspaceId: z.uuid() }),
     z.array(workspaceCatalogLabel),
@@ -2412,7 +2508,7 @@ export const operations = {
     "GET",
     "/projects/{projectId}/impact",
     "admin",
-    "Preview what deleting the project removes, or with `workspaceId`, what moving it to that workspace changes: who loses or gains access, labels copied or merged, follows and invitations dropped, and blockers such as claimed tickets.",
+    "Preview what deleting the project removes, or with `workspaceId`, what moving it to that workspace changes: who loses or gains access, labels copied or merged, follows and invitations dropped, tickets leaving their Epic, and blockers such as claimed tickets.",
   ),
   transfer_project: op(
     projectInput.extend({ ...mutation, expectedVersion: version, workspaceId: z.uuid() }).strict(),
@@ -2420,7 +2516,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/transfer",
     "admin",
-    "Move a project with its tickets, keys, and links to another workspace. Requires administration of both workspaces and applies the reconciliation `get_project_impact` previews in one transaction; blockers fail with their code.",
+    "Move a project with its tickets, keys, and links to another workspace. Requires administration of both workspaces and applies the reconciliation `get_project_impact` previews in one transaction, including clearing each ticket's `epicId`; blockers fail with their code.",
   ),
   delete_project: op(
     projectInput
@@ -2438,7 +2534,7 @@ export const operations = {
     "GET",
     "/projects/{projectId}/export",
     "read",
-    "Export the project's tickets, archived ones included, as a versioned `kanvil.tickets` bundle: workflow states, custom fields, labels, relationships, comments, evidence, and links, with the people they name. Records reference each other by source ID. `completeness.omitted` counts what the bundle leaves out, such as attachments and activity history.",
+    "Export the project's tickets, archived ones included, as a versioned `kanvil.tickets` bundle: workflow states, custom fields, labels, relationships, comments, evidence, and links, with the people they name. Records reference each other by source ID. `completeness.omitted` counts what the bundle leaves out, such as attachments, Epics, and activity history.",
   ),
   preview_import: op(
     z
@@ -2551,6 +2647,8 @@ export const operations = {
         relatedTo: id.optional(),
         // Only tickets in this workflow state.
         stateId: z.uuid().optional(),
+        // Only members of this Epic.
+        epicId: z.uuid().optional(),
         // Only tickets whose span, from the start (or due) date to the due (or start) date,
         // overlaps [scheduledFrom, scheduledTo). Either bound alone also excludes undated tickets.
         scheduledFrom: timestamp.optional(),
@@ -2802,6 +2900,7 @@ export const operations = {
         scopes: tags.default([]),
         assigneeId: z.string().nullable().default(null),
         parentId: z.uuid().nullable().default(null),
+        epicId: z.uuid().nullable().default(null),
         automationReady: z.boolean().default(false),
         holdReason: z.string().trim().max(2000).nullable().default(null),
         archived: z.boolean().default(false),
@@ -2822,7 +2921,7 @@ export const operations = {
     "POST",
     "/projects/{projectId}/tickets/{ticketId}/duplicate",
     "write",
-    "Copy a ticket into a new To do ticket in the same project, linked to the original by a clones relationship. Copies requirements, properties, labels, scopes, and parent; resets agent readiness and never copies claims, comments, evidence, attachments, or children. Reuse requestId when retrying this write.",
+    "Copy a ticket into a new To do ticket in the same project, linked to the original by a clones relationship. Copies requirements, properties, labels, scopes, parent, and an Epic the caller can still add to; resets agent readiness and never copies claims, comments, evidence, attachments, or children. Reuse requestId when retrying this write.",
   ),
   update_ticket: op(
     ticketInput

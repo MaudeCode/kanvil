@@ -188,6 +188,10 @@ const projectRows =
             impact.transfer.subscriptions ? String(impact.transfer.subscriptions) : "",
           ],
           [
+            t("settings.lifecycle.row.epicTickets"),
+            impact.transfer.epicTickets ? String(impact.transfer.epicTickets) : "",
+          ],
+          [
             t("settings.lifecycle.row.invitations"),
             impact.transfer.invitations
               ? t("settings.lifecycle.transferInvitations", { count: impact.transfer.invitations })
@@ -470,6 +474,7 @@ const workspaceRows =
         : "",
     ],
     [t("settings.lifecycle.row.sharedLabels"), impact.labels ? String(impact.labels) : ""],
+    [t("settings.lifecycle.row.epics"), impact.epics ? String(impact.epics) : ""],
     [
       t("settings.lifecycle.row.kept"),
       t("settings.lifecycle.keptWorkspace", { count: impact.events, slug: workspace.slug }),

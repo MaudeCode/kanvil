@@ -70,6 +70,8 @@ export default {
     kind: "Növ",
     difficulty: "Çətinlik",
     assignee: "İcraçı",
+    epic: "Epik",
+    noEpic: "Epik yoxdur",
     you: "{{name}} (siz)",
     assignTo: "Təyin et…",
     set: "{{label, lowercase}} təyin et…",

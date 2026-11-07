@@ -227,6 +227,7 @@ export default {
       updated: "Запись времени обновлена",
       deleted: "Запись времени удалена",
     },
+    epic: { created: "Эпик создан", updated: "Эпик обновлён" },
     label: { created: "Метка создана", updated: "Метка обновлена", deleted: "Метка удалена" },
     workflow: {
       created: "Состояние добавлено",

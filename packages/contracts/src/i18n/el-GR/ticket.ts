@@ -70,6 +70,8 @@ export default {
     kind: "Τύπος",
     difficulty: "Δυσκολία",
     assignee: "Υπεύθυνος",
+    epic: "Έπος",
+    noEpic: "Χωρίς έπος",
     you: "{{name}} (εσείς)",
     assignTo: "Ανάθεση σε…",
     set: "Ορισμός «{{label}}»…",

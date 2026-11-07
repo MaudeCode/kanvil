@@ -314,6 +314,8 @@ export default {
       kept: "保留",
       projects: "專案",
       members: "成員",
+      epics: "史詩",
+      epicTickets: "將離開史詩的工單",
       sharedLabels: "共用標籤",
       signIn: "登入",
       sessions: "工作階段",

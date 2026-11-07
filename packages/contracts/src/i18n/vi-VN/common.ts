@@ -218,6 +218,7 @@ export default {
       updated: "Đã cập nhật bản ghi thời gian",
       deleted: "Đã xóa bản ghi thời gian",
     },
+    epic: { created: "Đã tạo epic", updated: "Đã cập nhật epic" },
     label: { created: "Đã tạo nhãn", updated: "Đã cập nhật nhãn", deleted: "Đã xóa nhãn" },
     workflow: {
       created: "Đã thêm trạng thái quy trình",

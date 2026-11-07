@@ -70,6 +70,8 @@ export default {
     kind: "Soort",
     difficulty: "Moeilijkheid",
     assignee: "Toegewezene",
+    epic: "Epic",
+    noEpic: "Geen epic",
     you: "{{name}} (jij)",
     assignTo: "Toewijzen aan…",
     set: "{{label}} instellen…",

@@ -356,6 +356,8 @@ export default {
       kept: "Сохраняется",
       projects: "Проекты",
       members: "Участники",
+      epics: "Эпики",
+      epicTickets: "Тикеты, покидающие эпик",
       sharedLabels: "Общие метки",
       signIn: "Вход",
       sessions: "Сеансы",

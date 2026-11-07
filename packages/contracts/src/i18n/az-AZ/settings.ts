@@ -341,6 +341,8 @@ export default {
       kept: "Saxlanılır",
       projects: "Layihələr",
       members: "Üzvlər",
+      epics: "Epiklər",
+      epicTickets: "Epikdən çıxan tiketlər",
       sharedLabels: "Ümumi etiketlər",
       signIn: "Daxil olma",
       sessions: "Seanslar",

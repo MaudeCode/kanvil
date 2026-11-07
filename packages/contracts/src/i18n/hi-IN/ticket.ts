@@ -69,6 +69,8 @@ export default {
     kind: "प्रकार",
     difficulty: "कठिनाई",
     assignee: "असाइनी",
+    epic: "एपिक",
+    noEpic: "कोई एपिक नहीं",
     you: "{{name}} (आप)",
     assignTo: "इन्हें असाइन करें…",
     set: "{{label}} सेट करें…",

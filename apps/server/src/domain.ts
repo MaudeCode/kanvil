@@ -77,6 +77,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Connection, Database, Transaction } from "./database.ts";
 import { projectAccess, readsProject } from "./project-access.ts";
 import { workspaceHandlers, requireWorkspace, roleHandlers } from "./workspace-operations.ts";
+import { epicHandlers } from "./epic-operations.ts";
 import { projectHandlers } from "./project-operations.ts";
 import { lifecycleHandlers } from "./project-lifecycle.ts";
 import { labelHandlers } from "./label-operations.ts";
@@ -848,6 +849,7 @@ export function createDomain(
     ...projectHandlers,
     ...lifecycleHandlers,
     ...labelHandlers,
+    ...epicHandlers,
     ...ticketHandlers,
     ...collaborationHandlers,
     ...timeEntryHandlers,

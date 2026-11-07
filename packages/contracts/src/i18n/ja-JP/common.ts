@@ -216,6 +216,7 @@ export default {
       updated: "時間記録を更新しました",
       deleted: "時間記録を削除しました",
     },
+    epic: { created: "エピックを作成", updated: "エピックを更新" },
     label: { created: "ラベルを作成", updated: "ラベルを更新", deleted: "ラベルを削除" },
     workflow: {
       created: "ワークフローの状態を追加",

@@ -215,6 +215,7 @@ export default {
       updated: "Time entry updated",
       deleted: "Time entry deleted",
     },
+    epic: { created: "Epic created", updated: "Epic updated" },
     label: { created: "Label created", updated: "Label updated", deleted: "Label deleted" },
     workflow: {
       created: "Workflow state added",

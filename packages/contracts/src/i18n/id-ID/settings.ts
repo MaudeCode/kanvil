@@ -328,6 +328,8 @@ export default {
       kept: "Dipertahankan",
       projects: "Proyek",
       members: "Anggota",
+      epics: "Epik",
+      epicTickets: "Tiket yang keluar dari epik",
       sharedLabels: "Label bersama",
       signIn: "Proses masuk",
       sessions: "Sesi",

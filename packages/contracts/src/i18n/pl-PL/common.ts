@@ -229,6 +229,7 @@ export default {
       updated: "Zaktualizowano wpis czasu",
       deleted: "Usunięto wpis czasu",
     },
+    epic: { created: "Epik utworzony", updated: "Epik zaktualizowany" },
     label: {
       created: "Etykieta utworzona",
       updated: "Etykieta zaktualizowana",

@@ -332,6 +332,8 @@ export default {
       kept: "保持",
       projects: "プロジェクト",
       members: "メンバー",
+      epics: "エピック",
+      epicTickets: "エピックから外れるチケット",
       sharedLabels: "共有ラベル",
       signIn: "サインイン",
       sessions: "セッション",

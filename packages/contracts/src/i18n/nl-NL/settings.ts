@@ -338,6 +338,8 @@ export default {
       kept: "Bewaard",
       projects: "Projecten",
       members: "Leden",
+      epics: "Epics",
+      epicTickets: "Tickets die een epic verlaten",
       sharedLabels: "Gedeelde labels",
       signIn: "Inloggen",
       sessions: "Sessies",

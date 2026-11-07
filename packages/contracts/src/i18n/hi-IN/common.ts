@@ -219,6 +219,7 @@ export default {
       updated: "समय प्रविष्टि अपडेट की गई",
       deleted: "समय प्रविष्टि हटाई गई",
     },
+    epic: { created: "एपिक बनाया गया", updated: "एपिक अपडेट हुआ" },
     label: { created: "लेबल बनाया गया", updated: "लेबल अपडेट हुआ", deleted: "लेबल हटाया गया" },
     workflow: {
       created: "वर्कफ़्लो स्थिति जोड़ी गई",

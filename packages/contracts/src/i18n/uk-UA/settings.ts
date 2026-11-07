@@ -358,6 +358,8 @@ export default {
       kept: "Зберігається",
       projects: "Проєкти",
       members: "Учасники",
+      epics: "Епіки",
+      epicTickets: "Тікети, що залишають епік",
       sharedLabels: "Спільні мітки",
       signIn: "Вхід",
       sessions: "Сеанси",

@@ -393,6 +393,8 @@ export default {
       kept: "Zachowane",
       projects: "Projekty",
       members: "Członkowie",
+      epics: "Epiki",
+      epicTickets: "Zadania opuszczające epik",
       sharedLabels: "Wspólne etykiety",
       signIn: "Logowanie",
       sessions: "Sesje",

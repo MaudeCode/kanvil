@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import {
   hasAdminRole,
@@ -18,6 +18,7 @@ import {
   calendarFeeds,
   claims,
   comments,
+  epics,
   eventAudiences,
   events,
   invitations,
@@ -161,6 +162,8 @@ async function recordAudience(ctx: Context, event: { id: bigint }, userIds: stri
       .insert(eventAudiences)
       .values(userIds.map((userId) => ({ eventId: event.id, userId })));
 }
+const inEpic = (projectId: string) =>
+  and(eq(tickets.projectId, projectId), isNotNull(tickets.epicId));
 async function transferImpact(ctx: Context, workspaceId: string) {
   const current = project(ctx),
     affected = await projectPeople(ctx, workspaceId);
@@ -219,6 +222,7 @@ async function transferImpact(ctx: Context, workspaceId: string) {
     mergedLabels: [...inherited, ...own].filter((name) => destination.includes(name)).toSorted(),
     subscriptions: follows?.count ?? 0,
     invitations: invited?.count ?? 0,
+    epicTickets: await ctx.db.$count(tickets, inEpic(current.id)),
   };
 }
 async function projectImpact(ctx: Context, workspaceId?: string): Promise<ProjectImpact> {
@@ -322,6 +326,7 @@ async function workspaceImpact(ctx: Context, scoped: Context[]): Promise<Workspa
       and(eq(invitations.workspaceId, workspaceId), eq(invitations.status, "pending")),
     ),
     labels: await ctx.db.$count(workspaceLabels, eq(workspaceLabels.workspaceId, workspaceId)),
+    epics: await ctx.db.$count(epics, eq(epics.workspaceId, workspaceId)),
   };
   for (const inner of scoped) {
     const { id, key, name, archivedAt } = project(inner),
@@ -428,7 +433,24 @@ export const lifecycleHandlers: Pick<
         ),
       );
     await dropProjectFromInvitations(ctx, current);
-    const event = await publish({ ...ctx, project: toProject(row) }, "project.transferred", null, {
+    const moved = { ...ctx, project: toProject(row) };
+    // Epics stay in the source workspace, so their tickets here leave them.
+    const detached = await ctx.db
+      .update(tickets)
+      .set({ epicId: null, version: sql`${tickets.version} + 1`, updatedAt: new Date() })
+      .where(inEpic(current.id))
+      .returning({ id: tickets.id, version: tickets.version });
+    await publishMany(
+      moved,
+      detached.map((ticket) => ({
+        type: "ticket.updated",
+        ticketId: ticket.id,
+        data: { version: ticket.version, changedFields: ["epicId"], epicId: null },
+      })),
+      // A side effect of the move, which nobody following a ticket asked to hear about.
+      false,
+    );
+    const event = await publish(moved, "project.transferred", null, {
       version: row.version,
       fromWorkspaceId: current.workspaceId,
       workspaceId: row.workspaceId,
@@ -468,6 +490,7 @@ export const lifecycleHandlers: Pick<
     for (const inner of scoped) await removeProject(inner);
     await ctx.db.delete(invitations).where(eq(invitations.workspaceId, current.id));
     await ctx.db.delete(workspaceLabels).where(eq(workspaceLabels.workspaceId, current.id));
+    await ctx.db.delete(epics).where(eq(epics.workspaceId, current.id));
     await ctx.db.delete(workspaceMembers).where(eq(workspaceMembers.workspaceId, current.id));
     await ctx.db
       .update(workspaces)

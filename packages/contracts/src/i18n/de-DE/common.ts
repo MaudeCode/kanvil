@@ -223,6 +223,7 @@ export default {
       updated: "Zeiteintrag aktualisiert",
       deleted: "Zeiteintrag gelöscht",
     },
+    epic: { created: "Epic erstellt", updated: "Epic aktualisiert" },
     label: { created: "Label erstellt", updated: "Label aktualisiert", deleted: "Label gelöscht" },
     workflow: {
       created: "Workflow-Zustand hinzugefügt",

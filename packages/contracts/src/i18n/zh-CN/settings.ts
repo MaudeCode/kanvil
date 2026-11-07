@@ -312,6 +312,8 @@ export default {
       kept: "保留",
       projects: "项目",
       members: "成员",
+      epics: "史诗",
+      epicTickets: "将离开史诗的工单",
       sharedLabels: "共享标签",
       signIn: "登录",
       sessions: "会话",
