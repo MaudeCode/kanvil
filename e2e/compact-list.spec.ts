@@ -43,7 +43,7 @@ test("narrow ticket lists keep one toolbar, compact metadata, and accessible lab
     "low",
     "agent-compat",
     "bug",
-    "sf",
+    "ci",
     "web",
     "upstream",
     "compatibility-with-reconnected-workers",
