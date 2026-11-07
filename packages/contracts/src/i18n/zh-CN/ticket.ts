@@ -67,6 +67,8 @@ export default {
     kind: "类型",
     difficulty: "难度",
     assignee: "负责人",
+    epic: "史诗",
+    noEpic: "无史诗",
     you: "{{name}}（你）",
     assignTo: "分配给…",
     set: "设置{{label}}…",

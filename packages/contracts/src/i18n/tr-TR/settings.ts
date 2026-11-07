@@ -339,6 +339,8 @@ export default {
       kept: "Korunan",
       projects: "Projeler",
       members: "Üyeler",
+      epics: "Epikler",
+      epicTickets: "Epikten ayrılan talepler",
       sharedLabels: "Paylaşılan etiketler",
       signIn: "Oturum açma",
       sessions: "Oturumlar",

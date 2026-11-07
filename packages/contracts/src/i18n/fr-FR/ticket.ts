@@ -71,6 +71,8 @@ export default {
     kind: "Type",
     difficulty: "Difficulté",
     assignee: "Responsable",
+    epic: "Épopée",
+    noEpic: "Aucune épopée",
     you: "{{name}} (vous)",
     assignTo: "Attribuer à…",
     set: "Définir : {{label, lowercase}}…",

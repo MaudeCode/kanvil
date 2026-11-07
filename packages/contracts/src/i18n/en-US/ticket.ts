@@ -80,6 +80,8 @@ export default {
     kind: "Kind",
     difficulty: "Difficulty",
     assignee: "Assignee",
+    epic: "Epic",
+    noEpic: "No epic",
     // The signed-in person among the assignees.
     you: "{{name}} (you)",
     assignTo: "Assign to…",

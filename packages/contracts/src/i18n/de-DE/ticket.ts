@@ -70,6 +70,8 @@ export default {
     kind: "Art",
     difficulty: "Schwierigkeit",
     assignee: "Bearbeiter",
+    epic: "Epic",
+    noEpic: "Kein Epic",
     you: "{{name}} (Sie)",
     assignTo: "Zuweisen an…",
     set: "{{label}} festlegen…",

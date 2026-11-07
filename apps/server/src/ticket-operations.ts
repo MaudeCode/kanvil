@@ -4,6 +4,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   getTableColumns,
   gt,
   inArray,
@@ -21,10 +22,12 @@ import {
   comments,
   events,
   evidence,
+  epics,
   projectPrefixes,
   projects,
   projectLabels,
   workspaceLabels,
+  workspaceMembers,
   relations,
   resources,
   timeEntries,
@@ -231,12 +234,53 @@ async function registerLabels(ctx: Context, labels: readonly string[] | undefine
       .values(own.map((name) => ({ projectId: project(ctx).id, name })))
       .onConflictDoNothing();
 }
+// An Epic of the project's workspace that the caller can read. Direct project members outside the
+// workspace and project-bound credentials read none, as they cannot read list_epics.
+async function readableEpic(ctx: Context, epicId: string) {
+  if (ctx.actor.projectIds) return undefined;
+  const [epic] = await ctx.db
+    .select()
+    .from(epics)
+    .where(
+      and(
+        eq(epics.id, epicId),
+        eq(epics.workspaceId, project(ctx).workspaceId),
+        ctx.actor.admin
+          ? undefined
+          : exists(
+              ctx.db
+                .select({ userId: workspaceMembers.userId })
+                .from(workspaceMembers)
+                .where(
+                  and(
+                    eq(workspaceMembers.workspaceId, epics.workspaceId),
+                    eq(workspaceMembers.userId, ctx.actor.id),
+                  ),
+                ),
+            ),
+      ),
+    );
+  return epic;
+}
+// `currentEpicId` is what the ticket holds now: keeping it is not a new membership.
 async function validateReferences(
   ctx: Context,
   ticketId: string,
-  changes: Pick<ParsedInput<"update_ticket">["changes"], "assigneeId" | "parentId" | "labels">,
+  changes: Pick<
+    ParsedInput<"update_ticket">["changes"],
+    "assigneeId" | "parentId" | "labels" | "epicId"
+  >,
+  currentEpicId?: string | null,
 ) {
   await registerLabels(ctx, changes.labels);
+  if (changes.epicId && changes.epicId !== currentEpicId) {
+    const epic = await readableEpic(ctx, changes.epicId);
+    if (!epic) fail(404, "not_found", "Epic was not found");
+    if (epic.archived) {
+      const message = "Restore this Epic before adding tickets to it";
+      fail(400, "validation_error", message, [{ path: "epicId", message }]);
+    }
+  }
   if (changes.assigneeId && !(await projectMember(ctx, changes.assigneeId)))
     fail(400, "invalid_assignee", "Assign a project member");
   if (changes.parentId) {
@@ -295,7 +339,7 @@ async function persistTicketChanges(
   current: typeof tickets.$inferSelect,
   changes: ParsedInput<"update_ticket">["changes"],
 ) {
-  await validateReferences(ctx, current.id, changes);
+  await validateReferences(ctx, current.id, changes, current.epicId);
   const state = await resolveState(ctx, changes, current);
   const { startAt, dueAt, customFields, ...values } = changes,
     dates = dateColumns({ startAt, dueAt });
@@ -334,6 +378,7 @@ async function persistTicketChanges(
       changedFields: [
         ...new Set([...Object.keys(changes), ...(state ? ["status", "stateId"] : [])]),
       ],
+      ...(changes.epicId !== undefined && { epicId: row.epicId }),
     },
   };
   return { row, event };
@@ -464,7 +509,7 @@ async function listQuery(
   return { where, order: [...relevanceOrder(input.q, match.rank), asc(tickets.number)] };
 }
 // One round trip returns the page and its total; a second count runs only for an empty page past the start.
-async function pageOf(
+export async function pageOf(
   ctx: Context,
   where: ReturnType<typeof and>,
   order: SQL[],
@@ -592,7 +637,8 @@ const hitRow = z.object({
   status: z.enum(states).nullable(),
 });
 // The row `view: "summary"` returns in place of the whole ticket.
-const summarize = (ticket: typeof tickets.$inferSelect) => ticketSummarySchema.parse(json(ticket));
+export const summarize = (ticket: typeof tickets.$inferSelect) =>
+  ticketSummarySchema.parse(json(ticket));
 const snippetLength = 240;
 // Up to 240 characters of `body` centred on the earliest literal match of a quoted phrase, the
 // free text, or one of its words; nothing when only the title, key, or a fuzzy term matched.
@@ -832,6 +878,7 @@ export const ticketHandlers: Pick<
     const where = and(
       eq(tickets.projectId, project(ctx).id),
       parent ? eq(tickets.parentId, parent.id) : undefined,
+      input.epicId ? eq(tickets.epicId, input.epicId) : undefined,
       related
         ? or(
             inArray(
@@ -913,6 +960,7 @@ export const ticketHandlers: Pick<
         stateId: undefined,
         assigneeId: null,
         parentId: null,
+        epicId: null,
         archived: false,
         dueAt: null,
         startAt: null,
@@ -936,7 +984,8 @@ export const ticketHandlers: Pick<
     return row;
   },
   async duplicate_ticket(ctx, input) {
-    const source = await getTicket(ctx, input.ticketId);
+    const source = await getTicket(ctx, input.ticketId),
+      epic = source.epicId ? await readableEpic(ctx, source.epicId) : undefined;
     // Parsing narrows the stored text columns to the contract's enums.
     const copy = operations.create_ticket.input.parse({
       projectId: source.projectId,
@@ -958,6 +1007,8 @@ export const ticketHandlers: Pick<
           ? source.assigneeId
           : null,
       parentId: source.parentId,
+      // A copy is a new member: an Epic the caller cannot add to no longer takes it.
+      epicId: epic && !epic.archived ? epic.id : null,
       customFields: source.customFields,
       automationReady: false,
       holdReason: null,

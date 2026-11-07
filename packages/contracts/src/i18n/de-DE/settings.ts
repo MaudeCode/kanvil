@@ -342,6 +342,8 @@ export default {
       kept: "Erhalten",
       projects: "Projekte",
       members: "Mitglieder",
+      epics: "Epics",
+      epicTickets: "Tickets, die ein Epic verlassen",
       sharedLabels: "Gemeinsame Labels",
       signIn: "Anmeldung",
       sessions: "Sitzungen",

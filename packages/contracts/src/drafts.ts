@@ -44,6 +44,8 @@ export const ticketDraftSchema = z.object({
   fields: ticketFields.extend({
     title: z.string().max(500),
     parentId: z.string().nullable(),
+    // Drafts saved before Epics omit it.
+    epicId: ticketFields.shape.epicId.default(null),
     // Null until a state is chosen, and in drafts saved before workflows: `status` then decides.
     stateId: z.uuid().nullable().default(null),
     startAt: dueDate.nullable().default(null),

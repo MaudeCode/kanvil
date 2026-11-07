@@ -211,6 +211,7 @@ export default {
       updated: "已更新时间记录",
       deleted: "已删除时间记录",
     },
+    epic: { created: "史诗已创建", updated: "史诗已更新" },
     label: { created: "标签已创建", updated: "标签已更新", deleted: "标签已删除" },
     workflow: {
       created: "工作流状态已添加",

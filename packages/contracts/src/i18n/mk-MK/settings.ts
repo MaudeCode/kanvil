@@ -342,6 +342,8 @@ export default {
       kept: "Задржано",
       projects: "Проекти",
       members: "Членови",
+      epics: "Епици",
+      epicTickets: "Тикети што го напуштаат епикот",
       sharedLabels: "Заеднички ознаки",
       signIn: "Најава",
       sessions: "Сесии",

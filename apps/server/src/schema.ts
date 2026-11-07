@@ -190,6 +190,26 @@ export const workspaceLabels = pgTable(
   },
   (table) => [unique("workspace_label_name").on(table.workspaceId, table.name)],
 );
+// A workspace's group of tickets from any of its projects; a ticket names its one Epic in epic_id.
+export const epics = pgTable(
+  "epics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    archived: boolean("archived").notNull().default(false),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    version: integer("version").notNull().default(1),
+    createdAt: time("created_at"),
+    updatedAt: time("updated_at"),
+  },
+  (table) => [index("epic_workspace").on(table.workspaceId)],
+);
 // A project's typed ticket field. Option IDs stay stable so ticket values survive renames; tickets
 // keep values in `tickets.custom_fields` by field ID.
 export const customFields = pgTable(
@@ -270,6 +290,8 @@ export const tickets = pgTable(
     scopes: text("scopes").array().notNull().default([]),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     parentId: uuid("parent_id"),
+    // At most one Epic, of the project's workspace; the handlers keep them in one workspace.
+    epicId: uuid("epic_id").references(() => epics.id, { onDelete: "set null" }),
     automationReady: boolean("automation_ready").notNull().default(false),
     claimRequired: boolean("claim_required").notNull().default(false),
     holdReason: text("hold_reason"),
@@ -296,6 +318,9 @@ export const tickets = pgTable(
     unique("ticket_project_number").on(table.projectId, table.number),
     index("ticket_project_status").on(table.projectId, table.status),
     index("ticket_parent").on(table.parentId),
+    index("ticket_epic")
+      .on(table.epicId)
+      .where(sql`${table.epicId} IS NOT NULL`),
     index("ticket_project_position").on(table.projectId, table.position),
     index("ticket_state").on(table.stateId),
     index("ticket_intake_credential")

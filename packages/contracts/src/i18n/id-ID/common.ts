@@ -215,6 +215,7 @@ export default {
       updated: "Entri waktu diperbarui",
       deleted: "Entri waktu dihapus",
     },
+    epic: { created: "Epik dibuat", updated: "Epik diperbarui" },
     label: { created: "Label dibuat", updated: "Label diperbarui", deleted: "Label dihapus" },
     workflow: {
       created: "Status alur kerja ditambahkan",

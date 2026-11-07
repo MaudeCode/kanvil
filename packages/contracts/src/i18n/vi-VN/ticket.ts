@@ -67,6 +67,8 @@ export default {
     kind: "Loại",
     difficulty: "Độ khó",
     assignee: "Người được giao",
+    epic: "Epic",
+    noEpic: "Không có epic",
     you: "{{name}} (bạn)",
     assignTo: "Giao cho…",
     set: "Đặt {{label, lowercase}}…",

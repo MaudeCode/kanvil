@@ -71,6 +71,8 @@ export default {
     kind: "Tipo",
     difficulty: "Dificuldade",
     assignee: "Responsável",
+    epic: "Épico",
+    noEpic: "Sem épico",
     you: "{{name}} (você)",
     assignTo: "Atribuir a…",
     set: "Definir {{label, lowercase}}…",

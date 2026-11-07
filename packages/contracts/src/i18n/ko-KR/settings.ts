@@ -322,6 +322,8 @@ export default {
       kept: "유지",
       projects: "프로젝트",
       members: "멤버",
+      epics: "에픽",
+      epicTickets: "에픽에서 제외되는 티켓",
       sharedLabels: "공유 레이블",
       signIn: "로그인",
       sessions: "세션",

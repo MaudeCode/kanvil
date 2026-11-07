@@ -29,7 +29,7 @@ import {
   reportError,
 } from "../ui.tsx";
 import { SettingRow } from "./settings-layout.tsx";
-import { t, formatList } from "@kanvil/contracts/i18n";
+import { formatList, formatNumber, t } from "@kanvil/contracts/i18n";
 import { Trans } from "react-i18next";
 
 function useArchive(project: Project) {
@@ -186,6 +186,10 @@ const projectRows =
           [
             t("settings.lifecycle.row.followsRemoved"),
             impact.transfer.subscriptions ? String(impact.transfer.subscriptions) : "",
+          ],
+          [
+            t("settings.lifecycle.row.epicTickets"),
+            impact.transfer.epicTickets ? formatNumber(impact.transfer.epicTickets) : "",
           ],
           [
             t("settings.lifecycle.row.invitations"),
@@ -470,6 +474,7 @@ const workspaceRows =
         : "",
     ],
     [t("settings.lifecycle.row.sharedLabels"), impact.labels ? String(impact.labels) : ""],
+    [t("settings.lifecycle.row.epics"), impact.epics ? formatNumber(impact.epics) : ""],
     [
       t("settings.lifecycle.row.kept"),
       t("settings.lifecycle.keptWorkspace", { count: impact.events, slug: workspace.slug }),

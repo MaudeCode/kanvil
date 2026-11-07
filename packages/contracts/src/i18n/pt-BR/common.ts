@@ -220,6 +220,7 @@ export default {
       updated: "Registro de tempo atualizado",
       deleted: "Registro de tempo excluído",
     },
+    epic: { created: "Épico criado", updated: "Épico atualizado" },
     label: {
       created: "Etiqueta criada",
       updated: "Etiqueta atualizada",

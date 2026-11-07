@@ -9,6 +9,7 @@ import {
   and,
   asc,
   count,
+  countDistinct,
   desc,
   eq,
   inArray,
@@ -159,6 +160,16 @@ async function exportBundle(ctx: Context) {
       content: "follows",
       count: await tally(subscriptions.ticketId),
       reason: "Follows are personal; the importer and assignees follow imported tickets.",
+    },
+    {
+      content: "epics",
+      count: one(
+        await ctx.db
+          .select({ count: countDistinct(tickets.epicId) })
+          .from(tickets)
+          .where(eq(tickets.projectId, current.id)),
+      ).count,
+      reason: "Epics belong to the workspace; imported tickets start outside any Epic.",
     },
   ].filter((item) => item.count > 0);
   return {

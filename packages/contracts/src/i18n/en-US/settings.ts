@@ -362,6 +362,8 @@ export default {
       kept: "Kept",
       projects: "Projects",
       members: "Members",
+      epics: "Epics",
+      epicTickets: "Tickets leaving an epic",
       sharedLabels: "Shared labels",
       signIn: "Sign-in",
       sessions: "Sessions",

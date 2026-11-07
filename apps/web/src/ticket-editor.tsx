@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { ApiError, type Ticket } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
 import { z } from "zod";
-import { api, useIdentity, useOperation } from "./data.tsx";
+import { api, useAllProjects, useIdentity, useOperation } from "./data.tsx";
 import { Button, ErrorNotice, Input, Textarea, reportError, useModalBusy } from "./ui.tsx";
 import {
   Maximize2,
@@ -36,6 +36,7 @@ import { TagInput } from "./components/tag-input.tsx";
 import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import {
   CustomFieldProperties,
+  EpicProperty,
   ProjectProperty,
   TagsProperty,
   TicketProperty,
@@ -112,6 +113,7 @@ export function TicketEditor({
     update = useOperation("update_ticket"),
     discard = useOperation("discard_upload"),
     cache = useQueryClient(),
+    projects = useAllProjects().data,
     titleField = useRef<HTMLTextAreaElement>(null),
     submitting = useRef(false),
     switches = useRef(0),
@@ -149,6 +151,7 @@ export function TicketEditor({
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => setFields({ [key]: value });
   const setCustomField = (fieldId: string, value: Fields["customFields"][string]) =>
     set("customFields", { ...latest.current.fields.customFields, [fieldId]: value });
+  const workspaceOf = (id: string) => projects?.find((row) => row.id === id)?.workspaceId;
   // A new ticket may target another writable project; its parent and assignee must belong there.
   // The target applies at once, and submitting waits until the assignee is checked against the
   // latest choice, so a ticket never goes to the previous project or with a stale assignee.
@@ -158,8 +161,14 @@ export function TicketEditor({
       ...latest.current,
       projectId: next === projectId ? undefined : next,
       // A state and custom fields belong to one project; the status category carries over and the
-      // new project's field defaults apply.
-      fields: { ...latest.current.fields, parentId: null, stateId: null, customFields: {} },
+      // new project's field defaults apply. An Epic carries over within its workspace.
+      fields: {
+        ...latest.current.fields,
+        parentId: null,
+        stateId: null,
+        customFields: {},
+        epicId: workspaceOf(next) === workspaceOf(target) ? latest.current.fields.epicId : null,
+      },
     });
     setSwitching(true);
     let members: { userId: string }[] = [];
@@ -322,6 +331,11 @@ export function TicketEditor({
         projectId={target}
         value={fields.difficulty}
         onChange={(difficulty) => set("difficulty", difficulty)}
+      />
+      <EpicProperty
+        projectId={target}
+        value={fields.epicId}
+        onChange={(epic) => set("epicId", epic)}
       />
       <TagsProperty value={fields.labels} onChange={(value) => set("labels", value)} />
       <ScheduleDates variant="pill" value={fields} onChange={setFields} />
@@ -540,6 +554,12 @@ export function TicketEditor({
                 projectId={target}
                 value={fields.difficulty}
                 onChange={(difficulty) => set("difficulty", difficulty)}
+              />
+              <EpicProperty
+                variant="row"
+                projectId={target}
+                value={fields.epicId}
+                onChange={(epic) => set("epicId", epic)}
               />
               <ScheduleDates variant="row" value={fields} onChange={setFields} />
               <CustomFieldProperties

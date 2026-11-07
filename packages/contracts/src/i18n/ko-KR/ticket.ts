@@ -67,6 +67,8 @@ export default {
     kind: "유형",
     difficulty: "난이도",
     assignee: "담당자",
+    epic: "에픽",
+    noEpic: "에픽 없음",
     you: "{{name}} (나)",
     assignTo: "담당자 지정…",
     set: "{{label}} 설정…",

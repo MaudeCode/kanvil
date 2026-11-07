@@ -354,6 +354,8 @@ export default {
       kept: "Mantido",
       projects: "Projetos",
       members: "Membros",
+      epics: "Épicos",
+      epicTickets: "Tickets que saem de um épico",
       sharedLabels: "Etiquetas compartilhadas",
       signIn: "Login",
       sessions: "Sessões",

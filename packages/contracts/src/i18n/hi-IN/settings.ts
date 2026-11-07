@@ -330,6 +330,8 @@ export default {
       kept: "बनाए रखा गया",
       projects: "प्रोजेक्ट",
       members: "सदस्य",
+      epics: "एपिक",
+      epicTickets: "एपिक छोड़ने वाले टिकट",
       sharedLabels: "साझा लेबल",
       signIn: "साइन-इन",
       sessions: "सत्र",

@@ -220,6 +220,7 @@ export default {
       updated: "Zaman kaydı güncellendi",
       deleted: "Zaman kaydı silindi",
     },
+    epic: { created: "Epik oluşturuldu", updated: "Epik güncellendi" },
     label: {
       created: "Etiket oluşturuldu",
       updated: "Etiket güncellendi",

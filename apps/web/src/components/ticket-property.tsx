@@ -14,6 +14,7 @@ import {
   CircleDot,
   CircleUserRound,
   Flag,
+  Layers,
   Shapes,
   Tag,
   UserRound,
@@ -31,6 +32,7 @@ import {
   type CustomField,
   type CustomFieldType,
   type CustomFieldValue as StoredValue,
+  type Epic,
   type Ticket,
   type Output,
   type OutputOf,
@@ -44,8 +46,10 @@ import {
   useIdentity,
   useOperation,
   usePerson,
+  useProject,
   useProjectAccess,
   useProjects,
+  useWorkspaces,
 } from "../data.tsx";
 import { ticketSymbols, difficultySegments, ticketPropertyOrder } from "@kanvil/contracts/icons";
 import { Input, TicketIndicator, ticketGlyphs, reportError } from "../ui.tsx";
@@ -89,11 +93,12 @@ export type PropertyValues = {
   kind: Ticket["kind"];
   difficulty: Ticket["difficulty"];
   assignee: string | null;
+  epic: string | null;
 };
 export type PropertyName = keyof PropertyValues;
-// The order every property toolbar and menu lists them in.
+// The order every property toolbar and menu lists them in. An Epic is set per ticket only.
 export const propertyOrder = ticketPropertyOrder;
-export const propertyLabels = labelTable<PropertyName>(propertyOrder, (property) =>
+export const propertyLabels = labelTable<PropertyName>([...propertyOrder, "epic"], (property) =>
   t(`ticket.property.${property}`),
 );
 export const propertyIcons: Record<PropertyName, typeof Bug> = {
@@ -102,6 +107,7 @@ export const propertyIcons: Record<PropertyName, typeof Bug> = {
   kind: Shapes,
   difficulty: ChartNoAxesColumnIncreasing,
   assignee: UserRound,
+  epic: Layers,
 };
 const readers: { [P in PropertyName]: (ticket: Ticket) => PropertyValues[P] } = {
   status: statusValue,
@@ -109,6 +115,7 @@ const readers: { [P in PropertyName]: (ticket: Ticket) => PropertyValues[P] } = 
   kind: (ticket) => ticket.kind,
   difficulty: (ticket) => ticket.difficulty,
   assignee: (ticket) => ticket.assigneeId,
+  epic: (ticket) => ticket.epicId,
 };
 export function propertyOf<P extends PropertyName>(ticket: Ticket, property: P) {
   return readers[property](ticket);
@@ -131,6 +138,7 @@ const writers: {
   kind: (kind) => ({ kind }),
   difficulty: (difficulty) => ({ difficulty }),
   assignee: (assigneeId) => ({ assigneeId }),
+  epic: (epicId) => ({ epicId }),
 };
 export function propertyChange<P extends PropertyName>(property: P, value: PropertyValues[P]) {
   return writers[property](value);
@@ -146,6 +154,57 @@ function DifficultyBars({ level, className }: { level: Ticket["difficulty"]; cla
   );
 }
 
+// Every Epic of a project's workspace, archived ones included so a ticket's Epic keeps its title.
+// Only workspace members read them: a direct project member outside the workspace has none.
+function useEpics(projectId: string, enabled = true) {
+  const workspaceId = useProject(projectId).data?.workspaceId ?? "",
+    workspaces = useWorkspaces().data,
+    readable = !!workspaces?.find((workspace) => workspace.id === workspaceId)?.role;
+  const { queryKey } = api.query("list_epics", { workspaceId, archived: "include" });
+  const epics = useQuery({
+    queryKey,
+    enabled: enabled && readable,
+    queryFn: async ({ signal }) => {
+      const items: Output<"list_epics">["items"] = [];
+      for (let total = Infinity; items.length < total;) {
+        const page = await api.call(
+          "list_epics",
+          { workspaceId, archived: "include", limit: 100, offset: items.length },
+          signal,
+        );
+        items.push(...page.items);
+        total = page.items.length ? page.total : items.length;
+      }
+      return items;
+    },
+  });
+  return { readable, epics: epics.data ?? [] };
+}
+function EpicValue({
+  projectId,
+  value,
+  iconOnly,
+}: {
+  projectId: string;
+  value: string | null;
+  iconOnly: boolean;
+}) {
+  const { epics } = useEpics(projectId, !!value),
+    title = epics.find((epic) => epic.id === value)?.title;
+  return (
+    <span
+      className={cn("inline-flex min-w-0 items-center gap-1.5", !value && "text-muted-foreground")}
+      title={title}
+    >
+      <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      {!iconOnly && (
+        <span dir="auto" className="truncate">
+          {value ? (title ?? t("ticket.property.epic")) : t("ticket.property.noEpic")}
+        </span>
+      )}
+    </span>
+  );
+}
 type PropertyProps = {
   [P in PropertyName]: { property: P; value: PropertyValues[P] };
 }[PropertyName];
@@ -160,6 +219,8 @@ export function PropertyValue({
   const workflow =
     useWorkflow(projectId, props.property === "status" && props.value.includes(":")).data ?? [];
   switch (props.property) {
+    case "epic":
+      return <EpicValue projectId={projectId} value={props.value} iconOnly={iconOnly} />;
     case "status": {
       const { status, stateId } = parseStatus(props.value),
         state = stateId ? workflow.find((item) => item.id === stateId) : undefined;
@@ -230,6 +291,7 @@ const optionsFor: {
   [P in PropertyName]: (
     members: Member[],
     workflow: Output<"list_workflow_states">,
+    epics: Pick<Epic, "id" | "title" | "archived">[],
   ) => Option<PropertyValues[P]>[];
 } = {
   // A server without workflows offers the categories themselves.
@@ -259,6 +321,12 @@ const optionsFor: {
       keywords: [member.email],
     })),
   ],
+  epic: (_, __, epics) => [
+    { value: null, label: t("ticket.property.noEpic") },
+    ...epics
+      .filter((epic) => !epic.archived)
+      .map((epic) => ({ value: epic.id, label: epic.title })),
+  ],
 };
 export function usePropertyOptions<P extends PropertyName>(
   property: P,
@@ -270,7 +338,8 @@ export function usePropertyOptions<P extends PropertyName>(
     enabled: enabled && property === "assignee",
   });
   const workflow = useWorkflow(projectId, enabled && property === "status").data ?? [];
-  return optionsFor[property](members.data ?? [], workflow);
+  const { epics } = useEpics(projectId, enabled && property === "epic");
+  return optionsFor[property](members.data ?? [], workflow, epics);
 }
 
 // Pairs a generic property with its value as the discriminated union PropertyValue renders.
@@ -281,6 +350,7 @@ export function pair<P extends PropertyName>(property: P, value: PropertyValues[
     kind: (next) => ({ property: "kind", value: next }),
     difficulty: (next) => ({ property: "difficulty", value: next }),
     assignee: (next) => ({ property: "assignee", value: next }),
+    epic: (next) => ({ property: "epic", value: next }),
   };
   return pairs[property](value);
 }
@@ -367,6 +437,14 @@ export function TicketProperty<P extends PropertyName>({
       </PopoverContent>
     </Popover>
   );
+}
+// A ticket's Epic, for those who can read its workspace's Epics.
+export function EpicProperty({
+  projectId,
+  ...props
+}: Omit<Parameters<typeof TicketProperty<"epic">>[0], "property">) {
+  const { readable } = useEpics(projectId, false);
+  return readable ? <TicketProperty property="epic" projectId={projectId} {...props} /> : null;
 }
 // Extends the picker content so closed controls do not subscribe to option queries.
 function PropertyChoices<P extends PropertyName>({
@@ -471,11 +549,12 @@ export function useTicketChange(ticket?: Pick<Ticket, "id" | "projectId" | "vers
       target: Pick<Ticket, "id" | "projectId" | "version"> | undefined = ticket,
     ) => {
       if (!target) return Promise.resolve();
-      const { assignee, status, ...rest } = changes;
+      const { assignee, epic, status, ...rest } = changes;
       const patch = {
         ...rest,
         ...(status === undefined ? {} : writers.status(status)),
         ...(assignee === undefined ? {} : { assigneeId: assignee }),
+        ...(epic === undefined ? {} : { epicId: epic }),
       };
       // Show the edit at once in project lists and My work; the success invalidation or the
       // failure refetch settles it.

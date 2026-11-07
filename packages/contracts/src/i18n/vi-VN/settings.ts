@@ -331,6 +331,8 @@ export default {
       kept: "Được giữ lại",
       projects: "Dự án",
       members: "Thành viên",
+      epics: "Epic",
+      epicTickets: "Phiếu rời khỏi epic",
       sharedLabels: "Nhãn dùng chung",
       signIn: "Đăng nhập",
       sessions: "Phiên",

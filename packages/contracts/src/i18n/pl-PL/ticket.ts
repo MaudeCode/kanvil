@@ -84,6 +84,8 @@ export default {
     kind: "Rodzaj",
     difficulty: "Trudność",
     assignee: "Osoba przypisana",
+    epic: "Epik",
+    noEpic: "Bez epika",
     // The signed-in person among the assignees.
     you: "{{name}} (Ty)",
     assignTo: "Przypisz do…",

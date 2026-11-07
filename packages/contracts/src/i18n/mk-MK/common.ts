@@ -224,6 +224,7 @@ export default {
       updated: "Ажуриран запис за време",
       deleted: "Избришан запис за време",
     },
+    epic: { created: "Креиран епик", updated: "Ажуриран епик" },
     label: { created: "Креирана ознака", updated: "Ажурирана ознака", deleted: "Избришана ознака" },
     workflow: {
       created: "Додадена состојба",

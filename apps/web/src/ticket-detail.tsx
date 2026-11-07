@@ -45,6 +45,7 @@ import { Discussion } from "./discussion.tsx";
 import { Attachments, Evidence, Activity, Links } from "./ticket-resources.tsx";
 import {
   CustomFieldProperties,
+  EpicProperty,
   PropertyValue,
   TagsProperty,
   TicketProperty,
@@ -382,6 +383,13 @@ export function TicketDetail({
               value={ticket.difficulty}
               disabled={!editable}
               onChange={(difficulty) => void change({ difficulty })}
+            />
+            <EpicProperty
+              variant="row"
+              projectId={projectId}
+              value={ticket.epicId}
+              disabled={!editable}
+              onChange={(epic) => void change({ epic })}
             />
             <ScheduleDates
               variant="row"
