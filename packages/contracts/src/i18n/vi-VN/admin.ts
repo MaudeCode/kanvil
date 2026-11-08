@@ -89,12 +89,15 @@ export default {
     pathStyle: "Dùng URL bucket kiểu đường dẫn",
     storageVerified: "Đã xác minh kết nối lưu trữ",
     testStorage: "Kiểm tra kết nối lưu trữ",
+    filesWaiting_one:
+      "{{count, number}} tệp đang chờ chuyển. Các tệp đang chờ vẫn đọc được từ PostgreSQL.",
     filesWaiting_other:
       "{{count, number}} tệp đang chờ chuyển. Các tệp đang chờ vẫn đọc được từ PostgreSQL.",
     transfersComplete: "Đã chuyển xong mọi tệp.",
     storageDeployment:
       "Lưu trữ được cấu hình bởi KANVIL_STORAGE_PROVIDER và các biến triển khai S3_*.",
     locations: "Vị trí lưu trữ hiện có",
+    locationFiles_one: "{{count, number}} tệp",
     locationFiles_other: "{{count, number}} tệp",
     cleanUp: "Dọn tệp không dùng",
     cleanUpConfirm:
@@ -199,6 +202,7 @@ export default {
     signInMethods: "Phương thức đăng nhập",
     setPassword: "Đặt mật khẩu cục bộ",
     activeSessions: "Phiên đang hoạt động",
+    sessions_one: "{{count, number}} phiên",
     sessions_other: "{{count, number}} phiên",
     revokeSessions: "Thu hồi phiên",
     revokeConfirm: "Đăng xuất {{name}} khỏi mọi thiết bị? Khóa API vẫn hoạt động.",
@@ -367,7 +371,9 @@ export default {
       claimConflict: "Phiếu đã được nhận",
       invalidContent: "Issue dài hơn mức một phiếu cho phép",
     },
+    issuesSyncing_one: "{{count, number}} issue đang đồng bộ",
     issuesSyncing_other: "{{count, number}} issue đang đồng bộ",
+    linksStopped_one: "{{count, number}} liên kết đã dừng",
     linksStopped_other: "{{count, number}} liên kết đã dừng",
     match: "Khớp",
     matchAny: "Bất kỳ nhãn nào trong số này",
@@ -427,7 +433,10 @@ export default {
       links: "Liên kết",
     },
     notExport: "Tệp này không phải bản xuất phiếu của Kanvil.",
+    progress_one: "{{status}} · {{done, number}} trên {{count, number}} bản ghi",
     progress_other: "{{status}} · {{done, number}} trên {{count, number}} bản ghi",
+    progressFailed_one:
+      "{{status}} · {{done, number}} trên {{count, number}} bản ghi · {{failed, number}} thất bại",
     progressFailed_other:
       "{{status}} · {{done, number}} trên {{count, number}} bản ghi · {{failed, number}} thất bại",
     title: "Nhập",

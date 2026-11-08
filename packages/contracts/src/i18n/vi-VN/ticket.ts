@@ -42,7 +42,9 @@ export default {
     board: "Bảng phiếu",
     tickets: "Phiếu",
     resizeColumn: "Đổi kích thước cột {{column}}",
+    count_one: "{{count, number}} phiếu",
     count_other: "{{count, number}} phiếu",
+    scheduledCount_one: "{{count, number}} phiếu đã lên lịch",
     scheduledCount_other: "{{count, number}} phiếu đã lên lịch",
   },
   move: {
@@ -202,9 +204,13 @@ export default {
   selection: {
     region: "Phiếu đã chọn",
     clear: "Bỏ chọn",
+    selected_one: "Đã chọn {{count, number}}",
     selected_other: "Đã chọn {{count, number}}",
+    selectedOf_one: "{{count, number}} trên {{total}}<wide> đã chọn</wide>",
     selectedOf_other: "{{count, number}} trên {{total}}<wide> đã chọn</wide>",
+    applied_one: "Đã áp dụng {{label}} cho {{count, number}} phiếu",
     applied_other: "Đã áp dụng {{label}} cho {{count, number}} phiếu",
+    partlyApplied_one: "Đã áp dụng cho {{done, number}} trên {{count, number}} phiếu",
     partlyApplied_other: "Đã áp dụng cho {{done, number}} trên {{count, number}} phiếu",
     mixedDue: "Hạn chót khác nhau",
     fields: "Trường",
@@ -215,9 +221,13 @@ export default {
     archive: "Lưu trữ mục đã chọn",
     delete: "Xóa mục đã chọn",
     deleteLimit: "Xóa tối đa {{limit, number}} phiếu mỗi lần",
+    archiveConfirm_one: "Lưu trữ {{count, number}} phiếu từ {{collection}}?",
     archiveConfirm_other: "Lưu trữ {{count, number}} phiếu từ {{collection}}?",
+    deleteConfirm_one:
+      "Xóa vĩnh viễn {{count, number}} phiếu từ {{collection}}, cùng bình luận, quan hệ và tệp đính kèm của chúng? Phiếu con ngoài phần đã chọn sẽ mất phiếu cha.",
     deleteConfirm_other:
       "Xóa vĩnh viễn {{count, number}} phiếu từ {{collection}}, cùng bình luận, quan hệ và tệp đính kèm của chúng? Phiếu con ngoài phần đã chọn sẽ mất phiếu cha.",
+    deleted_one: "Đã xóa {{count, number}} phiếu",
     deleted_other: "Đã xóa {{count, number}} phiếu",
   },
   menu: {
@@ -259,7 +269,9 @@ export default {
     nextWeeks: "Hai tuần sau",
     emptyWeeks: "Không có gì được lên lịch trong các tuần này",
     monthTickets: "Phiếu trong {{title}}",
+    showDay_one: "Hiện tất cả {{count, number}} phiếu vào {{day}}",
     showDay_other: "Hiện tất cả {{count, number}} phiếu vào {{day}}",
+    more_one: "Thêm {{count, number}}",
     more_other: "Thêm {{count, number}}",
     ticketColumn: "Phiếu",
     scheduledTickets: "Phiếu đã lên lịch",
