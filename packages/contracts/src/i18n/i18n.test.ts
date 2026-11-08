@@ -66,8 +66,16 @@ const placeholders = (value: string) =>
   counts([...value.matchAll(/\{\{\s*([\w.]+)[^}]*\}\}/g)].map((match) => match[1]));
 const tags = (value: string) =>
   counts([...value.matchAll(/<\/?([\w-]+)\s*\/?>/g)].map((match) => match[0]));
+// Forms a locale must carry for engines whose CLDR reports more categories than this runtime.
+// CLDR 49 gives Vietnamese `one` for 0 and 1; CLDR 48 reports only `other`.
+const requiredForms: Partial<Record<Locale, string[]>> = { "vi-VN": ["one"] };
 const pluralCategories = (locale: Locale) =>
-  counts(new Intl.PluralRules(locale).resolvedOptions().pluralCategories);
+  counts(
+    new Set([
+      ...new Intl.PluralRules(locale).resolvedOptions().pluralCategories,
+      ...(requiredForms[locale] ?? []),
+    ]),
+  );
 const source = shape(en);
 const catalog = loadCatalog;
 // The platform's first day of the week (Monday is 1, Sunday 7), where the runtime reports it.
@@ -207,6 +215,10 @@ describe("presentation in another language", () => {
     await applyLocale("en-US");
     expect(t("ticket.list.count", { count: 1234 })).toBe("1,234 tickets");
     expect(t("ticket.list.count", { count: 1 })).toBe("1 ticket");
+    // Vietnamese reads the same for every count, whether the engine's CLDR reports `one` or not.
+    await applyLocale("vi-VN");
+    for (const count of [0, 1, 2])
+      expect(t("shell.app.openCount", { count }), `count ${count}`).toBe(`${count} đang mở`);
   });
   it("keeps English server messages and English fallback for keys a catalog lacks", async () => {
     expect(

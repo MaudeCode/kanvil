@@ -106,6 +106,7 @@ export default {
   attachment: {
     heading: "Tệp đính kèm",
     tooLarge: "Chọn các tệp không lớn hơn 10 MB mỗi tệp.",
+    attached_one: "Đã đính kèm {{count, number}} tệp",
     attached_other: "Đã đính kèm {{count, number}} tệp",
     attach: "Đính kèm tệp",
     emptyWritable: "Không có tệp đính kèm. Thả tệp vào đây.",
