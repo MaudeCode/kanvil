@@ -130,7 +130,7 @@ jobs:
           codesign --verify --deep --strict "$RELEASE_DIRECTORY/ipa/Payload/Kanvil.app"
           node scripts/verify-ios-tabs.ts "$RELEASE_DIRECTORY/ipa/Payload/Kanvil.app/Kanvil"
       - name: Upload and wait for Apple processing
-        uses: apple-actions/upload-testflight-build@b5270248e0ee7f200475125bddf7c0e5616386b5 # v4
+        uses: apple-actions/upload-testflight-build@665328adbecbc3ad929d3da710696d928b8a7ba9 # v5.9.0
         with:
           app-path: ${{ env.RELEASE_DIRECTORY }}/export/Kanvil.ipa
           app-type: ios
