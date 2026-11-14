@@ -138,9 +138,25 @@ describe("staged inline uploads", () => {
     await expect(
       domain.execute("discard_upload", { projectId: project.id, uploadId: mine.id }, writer),
     ).rejects.toMatchObject({ status: 404 });
+    // A blocker that cannot be read fails the whole creation, upload claim included.
+    await expect(
+      domain.execute(
+        "create_ticket",
+        {
+          projectId: project.id,
+          title: "Unknown blocker",
+          uploads: [mine.id],
+          blockedBy: ["STAGE-999"],
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
     // A failed claim creates no ticket and leaves the upload with its owner.
     expect(await count()).toBe(tickets);
     expect(await blobExists(mine.id)).toBe(true);
+    expect(
+      await fixture.database.db.select().from(stagedUploads).where(eq(stagedUploads.id, mine.id)),
+    ).toHaveLength(1);
   });
 
   it("removes discarded and expired uploads with their bytes", async () => {

@@ -32,7 +32,7 @@ export function sharedTicketValue<T>(selected: Ticket[], read: (ticket: Ticket) 
 }
 
 export const ticketDefaults = operations.create_ticket.input
-  .omit({ projectId: true, requestId: true, uploads: true })
+  .omit({ projectId: true, requestId: true, uploads: true, blockedBy: true })
   .extend({
     title: z.string().default(""),
     status: z.enum(states).default("todo"),

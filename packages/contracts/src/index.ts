@@ -2906,13 +2906,15 @@ export const operations = {
         archived: z.boolean().default(false),
         uploads: z.array(z.uuid()).max(50).default([]),
         customFields: customFieldValues.default({}),
+        // Tickets that block the new one, by ID or key in any project the caller can read.
+        blockedBy: z.array(id).max(50).default([]),
       })
       .strict(),
     ticketSchema,
     "POST",
     "/projects/{projectId}/tickets",
     "write",
-    "Create a ticket. `customFields` maps field IDs from list_custom_fields to values; omitted fields take their default, and a required field must end with a value. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. Reuse requestId when retrying this write.",
+    "Create a ticket. `customFields` maps field IDs from list_custom_fields to values; omitted fields take their default, and a required field must end with a value. `uploads` lists your staged inline uploads in this project; they become its attachments in the same write, or nothing is created. `blockedBy` lists up to 50 tickets, by ID or key in any project you can read, that block the new one; the ticket and those `blocks` edges commit together, so it is never eligible without them, and an unreadable ticket or a cycle creates nothing. Reuse requestId when retrying this write.",
     { mcp: "core" },
   ),
   duplicate_ticket: op(

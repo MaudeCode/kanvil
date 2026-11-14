@@ -528,16 +528,27 @@ describe("ticket operations on PostgreSQL", () => {
     ).toBe(true);
   });
   it("deduplicates retried writes and rejects reuse for different work", async () => {
-    const requestId = crypto.randomUUID(),
-      input = { projectId: project.id, title: "Retry me", requestId };
+    const blocker = await ticket("Prerequisite"),
+      requestId = crypto.randomUUID(),
+      input = { projectId: project.id, title: "Retry me", requestId, blockedBy: [blocker.key] };
     const first = await domain.execute("create_ticket", input, owner),
       second = await domain.execute("create_ticket", input, owner);
     expect(first).toEqual(second);
-    expect((await domain.execute("list_tickets", { projectId: project.id }, owner)).total).toBe(1);
+    expect((await domain.execute("list_tickets", { projectId: project.id }, owner)).total).toBe(2);
+    expect(
+      await domain.execute("list_relations", { projectId: project.id, ticketId: first.id }, owner),
+    ).toHaveLength(1);
+    expect(
+      (
+        await domain.execute("list_activity", { projectId: project.id, ticketId: first.id }, owner)
+      ).items
+        .map((event) => event.type)
+        .toSorted(),
+    ).toEqual(["relation.added", "ticket.created"]);
     await expect(
       domain.execute("create_ticket", { ...input, title: "Different work" }, owner),
     ).rejects.toMatchObject({ code: "idempotency_conflict" });
-    expect((await ticket("Next ticket")).number).toBe(2);
+    expect((await ticket("Next ticket")).number).toBe(3);
   });
   it("duplicates requirements and properties once per request and resets ownership", async () => {
     await domain.execute(
@@ -923,6 +934,67 @@ describe("ticket operations on PostgreSQL", () => {
     await move("B", { status: "in_review" }, writer);
     expect(await inbox()).toBe(before + 1);
     expect(await manual()).toEqual(["B", "A"]);
+  });
+  it("commits a ticket with its blockers so no reader or feed sees it unblocked first", async () => {
+    const blocker = await ticket("Unfinished prerequisite"),
+      cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    // Holding the blocker's row stalls the creation at its edge, after the ticket row is written.
+    const holder = await fixture.database.pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM tickets WHERE id = $1 FOR UPDATE", [blocker.id]);
+      const { rows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      const pending = domain.execute(
+        "create_ticket",
+        {
+          projectId: project.id,
+          title: "Follow-up",
+          description: "Implement the described behavior.",
+          acceptanceCriteria: "The regression is covered and checks pass.",
+          difficulty: "low",
+          automationReady: true,
+          blockedBy: [blocker.key],
+        },
+        owner,
+      );
+      await expect
+        .poll(
+          async () =>
+            (
+              await fixture.database.pool.query(
+                "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+                [rows[0]!.pid],
+              )
+            ).rowCount,
+        )
+        .toBe(1);
+      expect(
+        (await domain.execute("list_tickets", { projectId: project.id }, owner)).items,
+      ).toEqual([expect.objectContaining({ id: blocker.id })]);
+      expect(
+        (await domain.execute("list_eligible_tickets", { projectId: project.id }, owner)).items.map(
+          (item) => item.ticket.id,
+        ),
+      ).toEqual([blocker.id]);
+      expect((await domain.readEvents(owner, cursor, project.id)).items).toEqual([]);
+      await holder.query("COMMIT");
+      const created = await pending;
+      expect(
+        (await domain.execute("get_ticket", { projectId: project.id, ticketId: created.id }, owner))
+          .readiness,
+      ).toMatchObject({ ready: false, reasons: [{ code: "dependency", ticketId: blocker.id }] });
+      // The feed delivers the ticket and its edge as one consecutive batch.
+      const delivered = (await domain.readEvents(owner, cursor, project.id)).items;
+      expect(delivered.map((event) => [event.type, event.ticketId])).toEqual([
+        ["ticket.created", created.id],
+        ["relation.added", blocker.id],
+        ["relation.added", created.id],
+      ]);
+      expect(delivered.map((event) => event.id - delivered[0]!.id)).toEqual([0n, 1n, 2n]);
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
   });
   it("allows only one concurrent update to the same version", async () => {
     const current = await ticket();
@@ -1922,6 +1994,50 @@ describe("ticket operations on PostgreSQL", () => {
         .readiness,
     ).toMatchObject({ ready: false, reasons: [{ code: "dependency", ticketId: blocker.id }] });
     expect(await eligible()).toMatchObject({ ready: false });
+    // A new ticket can name a blocker in another workspace, by key or ID, and join an Epic in the
+    // same write; each project's feed records its side of the one edge.
+    const prerequisite = await projectTicket(far.id, "Prerequisite in another workspace"),
+      epic = await domain.execute(
+        "create_epic",
+        { workspaceId: project.workspaceId, title: "Follow-ups" },
+        owner,
+      );
+    const feeds = await Promise.all(
+      [project, far].map(async (item) => (await domain.readEvents(owner, 0n, item.id)).cursor),
+    );
+    const followUp = await domain.execute(
+      "create_ticket",
+      {
+        projectId: project.id,
+        title: "Follow-up created with its blocker",
+        description: "Implement the described behavior.",
+        acceptanceCriteria: "The regression is covered and checks pass.",
+        difficulty: "low",
+        automationReady: true,
+        epicId: epic.id,
+        blockedBy: [prerequisite.key, prerequisite.id],
+      },
+      owner,
+    );
+    expect(followUp).toMatchObject({ epicId: epic.id, automationReady: true });
+    for (const [index, item] of [project, far].entries())
+      expect(
+        (await domain.readEvents(owner, feeds[index]!, item.id)).items.map((event) => [
+          event.type,
+          event.ticketId,
+        ]),
+      ).toEqual(
+        item.id === project.id
+          ? [
+              ["ticket.created", followUp.id],
+              ["relation.added", followUp.id],
+            ]
+          : [["relation.added", prerequisite.id]],
+      );
+    expect(
+      (await domain.execute("get_ticket", { projectId: project.id, ticketId: followUp.id }, owner))
+        .readiness,
+    ).toMatchObject({ ready: false, reasons: [{ code: "dependency", ticketId: prerequisite.id }] });
     // A cycle through a third project in another workspace, named by its key, is still a cycle.
     await domain.execute(
       "add_relation",
@@ -2011,7 +2127,10 @@ describe("ticket operations on PostgreSQL", () => {
       scopes: ["read", "write"],
       projectIds: [project.id],
     });
-    for (const caller of [writer, bound])
+    const total = async () =>
+      (await domain.execute("list_tickets", { projectId: project.id }, owner)).total;
+    const before = await total();
+    for (const caller of [writer, bound]) {
       await expect(
         domain.execute(
           "add_relation",
@@ -2019,6 +2138,16 @@ describe("ticket operations on PostgreSQL", () => {
           caller,
         ),
       ).rejects.toMatchObject({ status: 404, code: "not_found" });
+      // Naming an unreadable blocker at creation creates nothing.
+      await expect(
+        domain.execute(
+          "create_ticket",
+          { projectId: project.id, title: "Blocked by the unknown", blockedBy: [hidden.id] },
+          caller,
+        ),
+      ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    }
+    expect(await total()).toBe(before);
     expect(
       await domain.execute(
         "list_relations",
@@ -2091,6 +2220,20 @@ describe("ticket operations on PostgreSQL", () => {
       },
       writer,
     );
+    const created = await domain.execute(
+      "create_ticket",
+      { projectId: project.id, title: "Created after theirs", blockedBy: [theirs.key] },
+      writer,
+    );
+    expect(
+      await domain.execute(
+        "list_relations",
+        { projectId: project.id, ticketId: created.id },
+        writer,
+      ),
+    ).toEqual([
+      expect.objectContaining({ type: "blocks", sourceId: theirs.id, targetId: created.id }),
+    ]);
     await domain.execute(
       "add_relation",
       { projectId: project.id, ticketId: mine.id, targetId: theirs.id, type: "related" },
@@ -2108,8 +2251,10 @@ describe("ticket operations on PostgreSQL", () => {
           { projectId: sibling.id, ticketId: theirs.id },
           owner,
         )
-      ).map((relation) => relation.type),
-    ).toEqual(["related"]);
+      )
+        .map((relation) => relation.type)
+        .toSorted(),
+    ).toEqual(["blocks", "related"]);
   });
   it("rejects cycles across blockers and parent relationships and explains readiness", async () => {
     const first = await ticket(),
@@ -2138,6 +2283,33 @@ describe("ticket operations on PostgreSQL", () => {
         owner,
       ),
     ).rejects.toMatchObject({ code: "dependency_cycle" });
+    // A new child blocked by its own parent, or by a missing ticket, leaves no ticket or event.
+    const cursor = (await domain.readEvents(owner, 0n, project.id)).cursor;
+    await expect(
+      domain.execute(
+        "create_ticket",
+        {
+          projectId: project.id,
+          title: "Waits on its parent",
+          parentId: first.id,
+          blockedBy: [first.id],
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "dependency_cycle" });
+    await expect(
+      domain.execute(
+        "create_ticket",
+        {
+          projectId: project.id,
+          title: "Waits on nothing",
+          blockedBy: [first.id, `${project.key}-999`],
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    expect((await domain.readEvents(owner, cursor, project.id)).items).toEqual([]);
+    expect((await domain.execute("list_tickets", { projectId: project.id }, owner)).total).toBe(2);
     expect(
       (await domain.execute("get_ticket", { projectId: project.id, ticketId: second.id }, owner))
         .readiness,

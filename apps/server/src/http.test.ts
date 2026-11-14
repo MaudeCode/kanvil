@@ -604,6 +604,7 @@ describe("HTTP, realtime, and MCP", () => {
         startAt: "2030-01-01T00:00:00.000Z",
         customFields: { [field.id]: "untrusted" },
         uploads: [upload.id],
+        blockedBy: [parent.id],
       };
       const create = async (args: typeof input) => {
         if (!mcp) return api.call("create_ticket", args);
@@ -633,6 +634,10 @@ describe("HTTP, realtime, and MCP", () => {
         customFields: {},
       });
       expect(created.stateId).not.toBe(state.id);
+      // Intake cannot write relationships, not even through creation.
+      expect(
+        await human.call("list_relations", { projectId: project.id, ticketId: created.id }),
+      ).toEqual([]);
       expect(await create(input)).toEqual(created);
       expect((await human.call("list_tickets", { projectId: project.id })).total).toBe(2);
       const fullLabels = Array.from({ length: 30 }, (_, index) => `label-${index}`);
