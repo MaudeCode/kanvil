@@ -49,12 +49,11 @@ import {
 } from "./schema.ts";
 import { apikey } from "./auth-schema.ts";
 import { accessibleProjectRows } from "./project-access.ts";
-import { assertNoCycle, readableTicket } from "./ticket-operations.ts";
+import { addRelation, assertMayConstrain } from "./ticket-operations.ts";
 import { mentionedUserIds } from "./mentions.ts";
 import {
   assertVersion,
   assertWorkerClaim,
-  context,
   fail,
   getTicket,
   json,
@@ -65,7 +64,6 @@ import {
   can,
   publishMany,
   relationEvents,
-  requireRow,
   subscribe,
   type Context,
   type Domain,
@@ -77,24 +75,6 @@ const sourceTicket = alias(tickets, "source_ticket"),
   sourceProject = alias(projects, "source_project"),
   targetProject = alias(projects, "target_project");
 
-// Reading another project lets a writer here depend on its tickets and link to them. An edge that
-// constrains one of its tickets, as the blocked side of `blocks` or the duplicate, needs write
-// there too, to add or to remove.
-async function assertMayConstrain(
-  ctx: Context,
-  relation: { type: string; sourceId: string; targetId: string },
-  sides: readonly { id: string; projectId: string }[],
-) {
-  const constrained =
-    relation.type === "blocks"
-      ? relation.targetId
-      : relation.type === "duplicate"
-        ? relation.sourceId
-        : null;
-  const side = sides.find((item) => item.id === constrained);
-  if (side && side.projectId !== project(ctx).id)
-    await context(ctx.db, ctx.actor, "write", side.projectId);
-}
 async function editableComment(ctx: Context, commentId: string, expectedVersion: number) {
   const row = one(
     await ctx.db
@@ -386,34 +366,9 @@ export const collaborationHandlers: Pick<
   },
   async add_relation(ctx, input) {
     // The other ticket may live in any project the caller can read.
-    const current = await getTicket(ctx, input.ticketId),
-      { ticket: other } = await readableTicket(ctx, input.targetId);
-    const [source, target] = input.direction === "incoming" ? [other, current] : [current, other];
-    if (source.id === target.id) fail(409, "invalid_relation", "Choose a different ticket");
-    await assertMayConstrain(ctx, { type: input.type, sourceId: source.id, targetId: target.id }, [
-      current,
-      other,
-    ]);
-    if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
-    const [sourceId, targetId] =
-      input.type === "related" ? [source.id, target.id].toSorted() : [source.id, target.id];
-    const row = one(
-      await ctx.db
-        .insert(relations)
-        .values({
-          projectId: project(ctx).id,
-          sourceId: requireRow(sourceId),
-          targetId: requireRow(targetId),
-          type: input.type,
-        })
-        .onConflictDoUpdate({
-          target: [relations.sourceId, relations.targetId, relations.type],
-          set: { type: input.type },
-        })
-        .returning(),
-    );
-    await publishMany(ctx, relationEvents("relation.added", row, [current, other]));
-    return row;
+    const added = await addRelation(ctx, await getTicket(ctx, input.ticketId), input);
+    await publishMany(ctx, added.events);
+    return added.row;
   },
   // Either ticket's project can remove an edge; one that constrains a ticket elsewhere needs write
   // there too.

@@ -305,6 +305,58 @@ export async function assertNoCycle(ctx: Context, sourceId: string, targetId: st
   if (rows.length)
     fail(409, "dependency_cycle", "This relationship would create a dependency cycle");
 }
+// Reading another project lets a writer here depend on its tickets and link to them. An edge that
+// constrains one of its tickets, as the blocked side of `blocks` or the duplicate, needs write
+// there too, to add or to remove.
+export async function assertMayConstrain(
+  ctx: Context,
+  relation: { type: string; sourceId: string; targetId: string },
+  sides: readonly { id: string; projectId: string }[],
+) {
+  const constrained =
+    relation.type === "blocks"
+      ? relation.targetId
+      : relation.type === "duplicate"
+        ? relation.sourceId
+        : null;
+  const side = sides.find((item) => item.id === constrained);
+  if (side && side.projectId !== project(ctx).id)
+    await context(ctx.db, ctx.actor, "write", side.projectId);
+}
+// Relates a ticket of this project to one in any project the caller can read and returns the
+// edge with its events, so add_relation and create_ticket share one implementation.
+export async function addRelation(
+  ctx: Context,
+  current: typeof tickets.$inferSelect,
+  input: Pick<ParsedInput<"add_relation">, "targetId" | "type" | "direction">,
+) {
+  const { ticket: other } = await readableTicket(ctx, input.targetId);
+  const [source, target] = input.direction === "incoming" ? [other, current] : [current, other];
+  if (source.id === target.id) fail(409, "invalid_relation", "Choose a different ticket");
+  await assertMayConstrain(ctx, { type: input.type, sourceId: source.id, targetId: target.id }, [
+    current,
+    other,
+  ]);
+  if (input.type === "blocks") await assertNoCycle(ctx, source.id, target.id);
+  const [sourceId, targetId] =
+    input.type === "related" ? [source.id, target.id].toSorted() : [source.id, target.id];
+  const row = one(
+    await ctx.db
+      .insert(relations)
+      .values({
+        projectId: project(ctx).id,
+        sourceId: requireRow(sourceId),
+        targetId: requireRow(targetId),
+        type: input.type,
+      })
+      .onConflictDoUpdate({
+        target: [relations.sourceId, relations.targetId, relations.type],
+        set: { type: input.type },
+      })
+      .returning(),
+  );
+  return { row, events: relationEvents("relation.added", row, [current, other]) };
+}
 // Applies one update and returns its event so callers can publish singly or in a batch.
 export async function updateTicketRow(ctx: Context, input: ParsedInput<"update_ticket">) {
   const current = await getTicket(ctx, input.ticketId);
@@ -556,6 +608,7 @@ export async function createTicketRow(ctx: Context, input: ParsedInput<"create_t
       projectId: _projectId,
       requestId: _requestId,
       uploads: _uploads,
+      blockedBy: _blockedBy,
       startAt,
       dueAt,
       customFields,
@@ -966,15 +1019,28 @@ export const ticketHandlers: Pick<
         startAt: null,
         customFields: {},
         uploads: [],
+        blockedBy: [],
         labels: operations.create_ticket.input.shape.labels.parse([
           ...new Set([...input.labels, "intake"]),
         ]),
       };
     }
     const { row, event } = await createTicketRow(ctx, input);
+    // The ticket and its blockers commit together, so no reader sees it eligible without them.
+    // Two spellings of one blocker name one edge.
+    const blockers = new Map<string, PendingEvent[]>();
+    for (const targetId of input.blockedBy) {
+      const added = await addRelation(ctx, row, {
+        targetId,
+        type: "blocks",
+        direction: "incoming",
+      });
+      blockers.set(added.row.id, added.events);
+    }
     const claimed = await claimStagedUploads(ctx, row.id, input.uploads);
     await publishMany(ctx, [
       event,
+      ...[...blockers.values()].flat(),
       ...claimed.map((item) => ({
         type: "attachment.created",
         ticketId: row.id,
