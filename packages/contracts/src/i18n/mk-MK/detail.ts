@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Отвори епик",
+    create: "Нов епик",
+    edit: "Уреди епик",
+    archive: "Архивирај епик",
+    restore: "Врати епик",
+    empty: "Нема епици",
+    noTickets: "Нема тикети",
+    progress: "Затворени {{closed, number}} / {{total, number}}",
+    restricted: "Тикети со ограничен пристап: {{total}}",
+  },
   field: {
     title: "Наслов",
     description: "Опис",

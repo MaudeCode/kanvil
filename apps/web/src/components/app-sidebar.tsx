@@ -10,6 +10,7 @@ import {
   Bell,
   ChevronsUpDown,
   House,
+  Layers,
   LogOut,
   Moon,
   Plus,
@@ -104,6 +105,7 @@ export function useUnreadNotifications() {
   );
 }
 export function AppSidebar() {
+  const workspace = useWorkspace();
   const projects = useProjects(),
     pathname = useRouterState({ select: (state) => state.location.pathname }),
     { setOpenMobile } = useSidebar(),
@@ -158,6 +160,23 @@ export function AppSidebar() {
                     <span>{t("shell.page.myWork")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                {workspace.active?.role && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname.includes("/epics")}
+                      tooltip={t("settings.lifecycle.row.epics")}
+                      render={
+                        <Link
+                          to="/workspaces/$workspaceId/epics"
+                          params={{ workspaceId: workspace.active.id }}
+                        />
+                      }
+                    >
+                      <Layers />
+                      <span>{t("settings.lifecycle.row.epics")}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname === "/inbox"}
@@ -642,21 +661,23 @@ export function WorkspaceHeader() {
     planning = !!project && pathname === `/projects/${project.id}/planning`;
   const { section } = useSearch({ strict: false }),
     place = settingsLocation(useSettingsGroups(), pathname, section);
-  const page = place
-    ? place.group.title
-    : pathname === "/inbox"
-      ? t("shell.page.inbox")
-      : pathname === "/my-work"
-        ? t("shell.page.myWork")
-        : pathname === "/search"
-          ? t("shell.page.search")
-          : planning
-            ? t("shell.page.planning")
-            : pathname === "/admin" || pathname.endsWith("/settings")
-              ? t("shell.page.settings")
-              : ticketId
-                ? (ticket.data?.ticket.key ?? t("shell.page.ticket"))
-                : t("shell.page.tickets");
+  const page = /^\/workspaces\/[^/]+\/epics(?:\/|$)/.test(pathname)
+    ? t("settings.lifecycle.row.epics")
+    : place
+      ? place.group.title
+      : pathname === "/inbox"
+        ? t("shell.page.inbox")
+        : pathname === "/my-work"
+          ? t("shell.page.myWork")
+          : pathname === "/search"
+            ? t("shell.page.search")
+            : planning
+              ? t("shell.page.planning")
+              : pathname === "/admin" || pathname.endsWith("/settings")
+                ? t("shell.page.settings")
+                : ticketId
+                  ? (ticket.data?.ticket.key ?? t("shell.page.ticket"))
+                  : t("shell.page.tickets");
   return (
     <header className="workspace-header sticky top-0 z-20 flex h-11 shrink-0 items-center gap-3 rounded-t-lg border-b bg-background/95 px-4 backdrop-blur-sm max-[650px]:[&_[data-slot=breadcrumb-item]]:min-w-0 max-[650px]:[&_[data-slot=breadcrumb-link]]:max-w-28 max-[650px]:[&_[data-slot=breadcrumb-link]]:truncate max-[650px]:[&_[data-slot=breadcrumb-list]]:gap-1.5 max-[650px]:[&_[data-slot=breadcrumb-list]]:text-xs md:px-6">
       <SidebarTrigger />

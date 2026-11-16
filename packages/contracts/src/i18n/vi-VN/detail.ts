@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Mở epic",
+    create: "Epic mới",
+    edit: "Sửa epic",
+    archive: "Lưu trữ epic",
+    restore: "Khôi phục epic",
+    empty: "Không có epic",
+    noTickets: "Không có phiếu",
+    progress: "Đã đóng {{closed, number}} / {{total, number}}",
+    restricted: "Phiếu bị hạn chế: {{total}}",
+  },
   field: {
     title: "Tiêu đề",
     description: "Mô tả",

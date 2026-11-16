@@ -1,6 +1,17 @@
 // The ticket page and composer on the web: details, the editor, links, relations, discussion,
 // and the Markdown and visual editors.
 export default {
+  epic: {
+    open: "Open epic",
+    create: "New epic",
+    edit: "Edit epic",
+    archive: "Archive epic",
+    restore: "Restore epic",
+    empty: "No epics",
+    noTickets: "No tickets",
+    progress: "{{closed, number}} / {{total, number}} closed",
+    restricted: "Restricted tickets: {{total}}",
+  },
   // Ticket fields named on the page and in the composer.
   field: {
     title: "Title",

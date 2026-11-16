@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Відкрити епік",
+    create: "Новий епік",
+    edit: "Редагувати епік",
+    archive: "Архівувати епік",
+    restore: "Відновити епік",
+    empty: "Немає епіків",
+    noTickets: "Немає тікетів",
+    progress: "Закрито: {{closed, number}} / {{total, number}}",
+    restricted: "Тікети з обмеженим доступом: {{total}}",
+  },
   field: {
     title: "Назва",
     description: "Опис",

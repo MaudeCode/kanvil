@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Epiki aç",
+    create: "Yeni epik",
+    edit: "Epiki redaktə et",
+    archive: "Epiki arxivlə",
+    restore: "Epiki bərpa et",
+    empty: "Epik yoxdur",
+    noTickets: "Tiket yoxdur",
+    progress: "Bağlı: {{closed, number}} / {{total, number}}",
+    restricted: "Məhdud girişli tiketlər: {{total}}",
+  },
   field: {
     title: "Başlıq",
     description: "Təsvir",

@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Buka epic",
+    create: "Epic baru",
+    edit: "Edit epic",
+    archive: "Arsipkan epic",
+    restore: "Pulihkan epic",
+    empty: "Tidak ada epic",
+    noTickets: "Tidak ada tiket",
+    progress: "{{closed, number}} / {{total, number}} ditutup",
+    restricted: "Tiket terbatas: {{total}}",
+  },
   field: {
     title: "Judul",
     description: "Deskripsi",

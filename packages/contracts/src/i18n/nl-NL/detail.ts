@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Epic openen",
+    create: "Nieuwe epic",
+    edit: "Epic bewerken",
+    archive: "Epic archiveren",
+    restore: "Epic herstellen",
+    empty: "Geen epics",
+    noTickets: "Geen tickets",
+    progress: "{{closed, number}} / {{total, number}} gesloten",
+    restricted: "Afgeschermde tickets: {{total}}",
+  },
   field: {
     title: "Titel",
     description: "Beschrijving",

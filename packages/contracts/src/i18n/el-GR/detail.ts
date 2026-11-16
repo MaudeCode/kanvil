@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Άνοιγμα έπους",
+    create: "Νέο έπος",
+    edit: "Επεξεργασία έπους",
+    archive: "Αρχειοθέτηση έπους",
+    restore: "Επαναφορά έπους",
+    empty: "Δεν υπάρχουν έπη",
+    noTickets: "Δεν υπάρχουν δελτία",
+    progress: "Κλειστά {{closed, number}} / {{total, number}}",
+    restricted: "Δελτία με περιορισμένη πρόσβαση: {{total}}",
+  },
   field: {
     title: "Τίτλος",
     description: "Περιγραφή",

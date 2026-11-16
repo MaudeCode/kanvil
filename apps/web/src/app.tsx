@@ -96,6 +96,10 @@ import { ProjectLabelProvider } from "./components/project-label-provider.tsx";
 import { PropertyValue, statusValue } from "./components/ticket-property.tsx";
 import { preferences, usePreference } from "./hooks/use-preference.ts";
 
+const Epics = lazy(() => import("./epics.tsx").then((module) => ({ default: module.Epics })));
+const EpicDetail = lazy(() =>
+  import("./epics.tsx").then((module) => ({ default: module.EpicDetail })),
+);
 const TicketList = lazy(() =>
   import("./ticket-list.tsx").then((module) => ({ default: module.TicketList })),
 );
@@ -828,6 +832,16 @@ const WorkspaceSettings = lazy(() =>
     default: module.WorkspaceSettings,
   })),
 );
+const epicList = createRoute({
+  getParentRoute: () => shell,
+  path: "/workspaces/$workspaceId/epics",
+  component: Epics,
+});
+const epicDetail = createRoute({
+  getParentRoute: () => shell,
+  path: "/workspaces/$workspaceId/epics/$epicId",
+  component: EpicDetail,
+});
 const workspaceSettings = createRoute({
   getParentRoute: () => shell,
   path: "/workspaces/$workspaceId/settings",
@@ -869,6 +883,8 @@ const router = createRouter({
       ticket,
       projectSettings,
       workspaceSettings,
+      epicList,
+      epicDetail,
       inbox,
       settings,
       admin,

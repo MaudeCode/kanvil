@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "エピックを開く",
+    create: "新しいエピック",
+    edit: "エピックを編集",
+    archive: "エピックをアーカイブ",
+    restore: "エピックを復元",
+    empty: "エピックなし",
+    noTickets: "チケットなし",
+    progress: "完了 {{closed, number}} / {{total, number}}",
+    restricted: "アクセス制限のあるチケット: {{total}}",
+  },
   field: {
     title: "タイトル",
     description: "説明",

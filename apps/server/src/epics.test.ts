@@ -79,6 +79,215 @@ describe("Epics", () => {
       )
     ).rows;
 
+  it("persists ticket-style Epic fields with workspace assignees and version checks, separately from tickets", async () => {
+    const workspace = await newWorkspace(),
+      project = await newProject(workspace);
+    const defaults = await newEpic(workspace);
+    expect(defaults).toMatchObject({
+      status: "todo",
+      priority: "none",
+      assigneeId: null,
+      acceptanceCriteria: "",
+    });
+    const fields = {
+      status: "in_progress",
+      priority: "high",
+      assigneeId: owner.id,
+      acceptanceCriteria: "- [ ] Ship the whole outcome",
+    };
+    const epic = await execute(
+      "create_epic",
+      { workspaceId: workspace.id, title: "A real outcome", ...fields },
+      owner,
+    );
+    expect(
+      await execute("get_epic", { workspaceId: workspace.id, epicId: epic.id }, owner),
+    ).toMatchObject(fields);
+    expect(
+      (await execute("list_epics", { workspaceId: workspace.id }, owner)).items.find(
+        (row) => row.id === epic.id,
+      ),
+    ).toMatchObject(fields);
+    const changed = await execute(
+      "update_epic",
+      {
+        workspaceId: workspace.id,
+        epicId: epic.id,
+        expectedVersion: epic.version,
+        status: "done",
+        priority: "low",
+        acceptanceCriteria: "Complete",
+        assigneeId: null,
+      },
+      owner,
+    );
+    expect(changed).toMatchObject({
+      status: "done",
+      priority: "low",
+      acceptanceCriteria: "Complete",
+      assigneeId: null,
+      version: epic.version + 1,
+    });
+    await expect(
+      execute(
+        "update_epic",
+        {
+          workspaceId: workspace.id,
+          epicId: epic.id,
+          expectedVersion: epic.version,
+          status: "todo",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    for (const assigneeId of [colleague.id, "missing-user"]) {
+      await expect(
+        execute(
+          "update_epic",
+          {
+            workspaceId: workspace.id,
+            epicId: epic.id,
+            expectedVersion: changed.version,
+            assigneeId,
+          },
+          owner,
+        ),
+      ).rejects.toMatchObject({ code: "invalid_assignee" });
+    }
+    const ticket = await newTicket(project.id, epic.id, {
+      title: "Actual work",
+      description: "Implement",
+      acceptanceCriteria: "Verified",
+      automationReady: true,
+      difficulty: "low",
+      assigneeId: owner.id,
+    });
+    expect(
+      (await execute("list_tickets", { projectId: project.id }, owner)).items.map((row) => row.id),
+    ).toEqual([ticket.id]);
+    expect((await execute("search_tickets", { q: "A real outcome" }, owner)).items).toEqual([]);
+    expect(
+      (await execute("list_my_work", { workspaceId: workspace.id }, owner)).items.map(
+        (row) => row.id,
+      ),
+    ).toEqual([ticket.id]);
+    expect(
+      (await execute("list_eligible_tickets", { projectId: project.id }, owner)).items.map(
+        (row) => row.ticket.id,
+      ),
+    ).toEqual([ticket.id]);
+  });
+
+  it("keeps Epic discussion workspace-authorized, attributed, versioned, idempotent and durable", async () => {
+    const workspace = await newWorkspace(),
+      project = await newProject(workspace),
+      epic = await newEpic(workspace);
+    await execute(
+      "set_workspace_member",
+      { workspaceId: workspace.id, email: colleagueEmail, role: "writer" },
+      owner,
+    );
+    const scope = { workspaceId: workspace.id, epicId: epic.id };
+    const input = { ...scope, body: "Discuss the outcome", requestId: uuid() };
+    const { key } = await fixture.auth.api.createApiKey({
+      body: {
+        userId: colleague.id,
+        name: "Epic discussion",
+        metadata: { projectIds: null },
+        permissions: { kanvil: ["read", "write"] },
+        expiresIn: 3600,
+        rateLimitEnabled: false,
+      },
+    });
+    const response = await application.app.fetch(
+      new Request(
+        new URL(
+          `/api/v1/workspaces/${workspace.id}/epics/${epic.id}/comments`,
+          fixture.config.KANVIL_URL,
+        ),
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ body: input.body, requestId: input.requestId }),
+        },
+      ),
+    );
+    expect(response.status).toBe(200);
+    const comment = await execute("add_epic_comment", input, colleague);
+    expect(await response.json()).toEqual(comment);
+    expect(await execute("add_epic_comment", input, colleague)).toEqual(comment);
+    expect(comment).toMatchObject({
+      ...scope,
+      actorId: colleague.id,
+      body: input.body,
+      version: 1,
+    });
+    expect((await execute("list_epic_comments", scope, owner)).items).toEqual([comment]);
+    await expect(execute("list_epic_comments", scope, guest)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      execute("add_epic_comment", { ...scope, body: "Intrusion" }, guest),
+    ).rejects.toMatchObject({ status: 404 });
+    const own = await execute("add_epic_comment", { ...scope, body: "Owner note" }, owner);
+    await expect(
+      execute(
+        "update_epic_comment",
+        { ...scope, commentId: own.id, expectedVersion: own.version, body: "Impersonation" },
+        colleague,
+      ),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    const edited = await execute(
+      "update_epic_comment",
+      { ...scope, commentId: comment.id, expectedVersion: comment.version, body: "Revised" },
+      colleague,
+    );
+    expect(edited).toMatchObject({ body: "Revised", version: 2 });
+    await expect(
+      execute(
+        "delete_epic_comment",
+        { ...scope, commentId: edited.id, expectedVersion: 1 },
+        colleague,
+      ),
+    ).rejects.toMatchObject({ code: "version_conflict" });
+    const other = await newWorkspace();
+    await expect(
+      execute(
+        "update_epic_comment",
+        {
+          workspaceId: other.id,
+          epicId: epic.id,
+          commentId: edited.id,
+          expectedVersion: edited.version,
+          body: "Wrong workspace",
+        },
+        owner,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await execute(
+      "delete_epic_comment",
+      { ...scope, commentId: edited.id, expectedVersion: edited.version },
+      owner,
+    );
+    const writes = await events(project.id, "epic.updated");
+    expect(
+      writes
+        .filter((row) => Reflect.get(row.data, "commentId") === comment.id)
+        .map((row) => Reflect.get(row.data, "change")),
+    ).toEqual(["created", "updated", "deleted"]);
+    expect((await execute("list_epic_comments", scope, owner)).items.map((row) => row.id)).toEqual([
+      own.id,
+    ]);
+    await execute(
+      "set_workspace_member",
+      { workspaceId: workspace.id, email: colleagueEmail, role: "reader" },
+      owner,
+    );
+    await expect(
+      execute("add_epic_comment", { ...scope, body: "Read only" }, colleague),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
   it("lets an MCP client create an Epic, add tickets from two projects, and read them back", async () => {
     const workspace = await newWorkspace(),
       first = await newProject(workspace),

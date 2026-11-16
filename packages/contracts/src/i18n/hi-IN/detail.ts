@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "एपिक खोलें",
+    create: "नया एपिक",
+    edit: "एपिक संपादित करें",
+    archive: "एपिक संग्रहित करें",
+    restore: "एपिक बहाल करें",
+    empty: "कोई एपिक नहीं",
+    noTickets: "कोई टिकट नहीं",
+    progress: "बंद {{closed, number}} / {{total, number}}",
+    restricted: "प्रतिबंधित टिकट: {{total}}",
+  },
   field: {
     title: "शीर्षक",
     description: "विवरण",

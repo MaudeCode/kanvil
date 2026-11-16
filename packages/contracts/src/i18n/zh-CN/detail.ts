@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "打开史诗",
+    create: "新建史诗",
+    edit: "编辑史诗",
+    archive: "归档史诗",
+    restore: "恢复史诗",
+    empty: "没有史诗",
+    noTickets: "没有工单",
+    progress: "已关闭 {{closed, number}} / {{total, number}}",
+    restricted: "受限工单：{{total}}",
+  },
   field: {
     title: "标题",
     description: "描述",

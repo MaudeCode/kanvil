@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Открыть эпик",
+    create: "Новый эпик",
+    edit: "Изменить эпик",
+    archive: "Архивировать эпик",
+    restore: "Восстановить эпик",
+    empty: "Нет эпиков",
+    noTickets: "Нет тикетов",
+    progress: "Закрыто: {{closed, number}} / {{total, number}}",
+    restricted: "Тикеты с ограниченным доступом: {{total}}",
+  },
   field: {
     title: "Название",
     description: "Описание",

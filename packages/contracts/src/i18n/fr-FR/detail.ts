@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Ouvrir l’épopée",
+    create: "Nouvelle épopée",
+    edit: "Modifier l’épopée",
+    archive: "Archiver l’épopée",
+    restore: "Restaurer l’épopée",
+    empty: "Aucune épopée",
+    noTickets: "Aucun ticket",
+    progress: "{{closed, number}} / {{total, number}} fermés",
+    restricted: "Tickets restreints : {{total}}",
+  },
   field: {
     title: "Titre",
     description: "Description",
