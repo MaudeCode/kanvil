@@ -4,9 +4,16 @@ import { useInlineUpload } from "./ticket-resources.tsx";
 import { submitOnModEnter } from "./forms.ts";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Output, Ticket } from "@kanvil/contracts";
+import type { Output, Ticket, Epic } from "@kanvil/contracts";
 import { t } from "@kanvil/contracts/i18n";
-import { api, ActorName, useIdentity, useOperation, useProjectAccess } from "./data.tsx";
+import {
+  api,
+  ActorName,
+  useIdentity,
+  useOperation,
+  useProjectAccess,
+  useWorkspaceAccess,
+} from "./data.tsx";
 import {
   Button,
   IconButton,
@@ -22,12 +29,26 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { MessageSquare } from "lucide-react";
 
 // `anchor` is the URL hash, which names a comment when a search result links one.
-export function Discussion({ ticket, anchor: hash }: { ticket: Ticket; anchor: string }) {
+export function Discussion({
+  ticket,
+  epic,
+  anchor: hash = "",
+}: { anchor?: string } & ({ ticket: Ticket; epic?: never } | { epic: Epic; ticket?: never })) {
+  const projectId = ticket?.projectId ?? "",
+    ticketId = ticket?.id ?? "";
+  const workspaceId = epic?.workspaceId ?? "",
+    epicId = epic?.id ?? "";
   const [offset, setOffset] = useState(0),
     [body, setBody] = useState("");
-  const comments = useQuery(
-    api.query("list_comments", { projectId: ticket.projectId, ticketId: ticket.id, offset }),
-  );
+  const ticketComments = useQuery({
+    ...api.query("list_comments", { projectId, ticketId, offset }),
+    enabled: !!ticket,
+  });
+  const epicComments = useQuery({
+    ...api.query("list_epic_comments", { workspaceId, epicId, offset }),
+    enabled: !!epic,
+  });
+  const comments = epic ? epicComments : ticketComments;
   // A search result links a comment by anchor. Page forward until it loads, once per anchor;
   // paging after that stays with the reader.
   const anchored = hash.startsWith("comment-") ? hash.slice("comment-".length) : null;
@@ -42,9 +63,18 @@ export function Discussion({ ticket, anchor: hash }: { ticket: Ticket; anchor: s
     else if (offset + 50 < comments.data.total) setOffset(offset + 50);
     else setSeeking(false);
   }
-  const inlineUpload = useInlineUpload(ticket.projectId, { ticketId: ticket.id });
-  const add = useOperation("add_comment"),
-    access = useProjectAccess(ticket.projectId);
+  const upload = useInlineUpload(projectId, { ticketId });
+  const inlineUpload = ticket ? upload : undefined;
+  const addTicket = useOperation("add_comment"),
+    addEpic = useOperation("add_epic_comment"),
+    ticketAccess = useProjectAccess(projectId, !!ticket),
+    workspaceAccess = useWorkspaceAccess(workspaceId);
+  const access = epic ? workspaceAccess : ticketAccess,
+    add = epic ? addEpic : addTicket;
+  const post = (content: string) =>
+    epic
+      ? addEpic.mutateAsync({ workspaceId, epicId, body: content })
+      : addTicket.mutateAsync({ projectId, ticketId, body: content });
   return (
     <section>
       <ErrorNotice error={comments.error ?? add.error} />
@@ -76,8 +106,7 @@ export function Discussion({ ticket, anchor: hash }: { ticket: Ticket; anchor: s
           className="mt-6"
           onSubmit={(event) => {
             event.preventDefault();
-            void add
-              .mutateAsync({ projectId: ticket.projectId, ticketId: ticket.id, body })
+            void post(body)
               .then(() => setBody((current) => (current === body ? "" : current)))
               .catch(() => {});
           }}
@@ -89,8 +118,8 @@ export function Discussion({ ticket, anchor: hash }: { ticket: Ticket; anchor: s
             rows={3}
             required
             maxLength={50000}
-            mentions={ticket.projectId}
-            onUpload={inlineUpload}
+            {...(ticket ? { mentions: ticket.projectId } : {})}
+            {...(inlineUpload ? { onUpload: inlineUpload } : {})}
             placeholder={t("detail.discussion.placeholder")}
             footer={
               <Button type="submit" variant="default" disabled={add.isPending || !body.trim()}>
@@ -114,14 +143,46 @@ function Comment({
   comment,
   linked,
 }: {
-  comment: Output<"list_comments">["items"][number];
+  comment: Output<"list_comments">["items"][number] | Output<"list_epic_comments">["items"][number];
   linked: boolean;
 }) {
+  const epic = "workspaceId" in comment;
+  const projectId = epic ? "" : comment.projectId,
+    workspaceId = epic ? comment.workspaceId : "";
   const identity = useIdentity(),
-    access = useProjectAccess(comment.projectId),
-    update = useOperation("update_comment"),
-    inlineUpload = useInlineUpload(comment.projectId, { ticketId: comment.ticketId }),
-    remove = useOperation("delete_comment");
+    ticketAccess = useProjectAccess(projectId, !epic),
+    workspaceAccess = useWorkspaceAccess(workspaceId),
+    updateTicket = useOperation("update_comment"),
+    updateEpic = useOperation("update_epic_comment"),
+    upload = useInlineUpload(projectId, { ticketId: epic ? "" : comment.ticketId }),
+    removeTicket = useOperation("delete_comment"),
+    removeEpic = useOperation("delete_epic_comment");
+  const access = epic ? workspaceAccess : ticketAccess,
+    update = epic ? updateEpic : updateTicket;
+  const inlineUpload = epic ? undefined : upload;
+  const save = (body: string, expectedVersion: number) =>
+    epic
+      ? updateEpic.mutateAsync({
+          workspaceId,
+          epicId: comment.epicId,
+          commentId: comment.id,
+          expectedVersion,
+          body,
+        })
+      : updateTicket.mutateAsync({ projectId, commentId: comment.id, expectedVersion, body });
+  const remove = () =>
+    epic
+      ? removeEpic.mutateAsync({
+          workspaceId,
+          epicId: comment.epicId,
+          commentId: comment.id,
+          expectedVersion: comment.version,
+        })
+      : removeTicket.mutateAsync({
+          projectId,
+          commentId: comment.id,
+          expectedVersion: comment.version,
+        });
   const [editing, setEditing] = useState(false),
     [body, setBody] = useState(comment.body),
     [editingVersion, setEditingVersion] = useState(comment.version);
@@ -140,7 +201,12 @@ function Comment({
     >
       <div className="mb-3 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pr-20 text-xs text-muted-foreground">
         <strong className="text-foreground">
-          <ActorName projectId={comment.projectId} actorId={comment.actorId} avatar />
+          <ActorName
+            projectId={projectId}
+            workspaceId={epic ? workspaceId : undefined}
+            actorId={comment.actorId}
+            avatar
+          />
         </strong>
         <RelativeTime value={comment.createdAt} />
         {comment.updatedAt !== comment.createdAt && <span>{t("detail.discussion.edited")}</span>}
@@ -150,13 +216,7 @@ function Comment({
           onKeyDown={submitOnModEnter}
           onSubmit={(event) => {
             event.preventDefault();
-            void update
-              .mutateAsync({
-                projectId: comment.projectId,
-                commentId: comment.id,
-                expectedVersion: editingVersion,
-                body,
-              })
+            void save(body, editingVersion)
               .then(() => setEditing(false))
               .catch(() => {});
           }}
@@ -168,8 +228,8 @@ function Comment({
             rows={4}
             required
             maxLength={50000}
-            mentions={comment.projectId}
-            onUpload={inlineUpload}
+            {...(!epic ? { mentions: projectId } : {})}
+            {...(inlineUpload ? { onUpload: inlineUpload } : {})}
             footer={
               <>
                 <Button size="sm" disabled={update.isPending} onClick={() => setEditing(false)}>
@@ -191,7 +251,7 @@ function Comment({
       ) : (
         <Markdown>{comment.body}</Markdown>
       )}
-      {!editing && access.canWrite && (own || identity.admin) && (
+      {!editing && access.canWrite && (own || access.canAdmin) && (
         <div className="absolute top-3 right-0 flex items-center gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-md:opacity-100">
           <IconButton
             label={t("detail.discussion.edit")}
@@ -209,17 +269,11 @@ function Comment({
             icon={<Trash2 />}
             danger
             description={t("detail.discussion.deleteConfirm")}
-            onConfirm={() =>
-              remove.mutateAsync({
-                projectId: comment.projectId,
-                commentId: comment.id,
-                expectedVersion: comment.version,
-              })
-            }
+            onConfirm={remove}
           />
         </div>
       )}
-      <ErrorNotice error={update.error} />
+      <ErrorNotice error={update.error ?? removeEpic.error ?? removeTicket.error} />
     </article>
   );
 }

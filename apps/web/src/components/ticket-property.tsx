@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,6 +16,7 @@ import {
   CircleUserRound,
   Flag,
   Layers,
+  ExternalLink,
   Shapes,
   Tag,
   UserRound,
@@ -52,7 +54,7 @@ import {
   useWorkspaces,
 } from "../data.tsx";
 import { ticketSymbols, difficultySegments, ticketPropertyOrder } from "@kanvil/contracts/icons";
-import { Input, TicketIndicator, ticketGlyphs, reportError } from "../ui.tsx";
+import { Input, IconButton, TicketIndicator, ticketGlyphs, reportError } from "../ui.tsx";
 import { UserAvatar } from "./user-avatar.tsx";
 import { TicketTag } from "./ticket-tags.tsx";
 import { TagInput } from "./tag-input.tsx";
@@ -160,10 +162,14 @@ function useEpics(projectId: string, enabled = true) {
   const workspaceId = useProject(projectId).data?.workspaceId ?? "",
     workspaces = useWorkspaces().data,
     readable = !!workspaces?.find((workspace) => workspace.id === workspaceId)?.role;
+  const epics = useWorkspaceEpics(workspaceId, enabled && readable);
+  return { readable, epics: epics.data ?? [] };
+}
+export function useWorkspaceEpics(workspaceId: string, enabled = true) {
   const { queryKey } = api.query("list_epics", { workspaceId, archived: "include" });
-  const epics = useQuery({
+  return useQuery({
     queryKey,
-    enabled: enabled && readable,
+    enabled: enabled && !!workspaceId,
     queryFn: async ({ signal }) => {
       const items: Output<"list_epics">["items"] = [];
       for (let total = Infinity; items.length < total;) {
@@ -178,7 +184,6 @@ function useEpics(projectId: string, enabled = true) {
       return items;
     },
   });
-  return { readable, epics: epics.data ?? [] };
 }
 function EpicValue({
   projectId,
@@ -211,11 +216,16 @@ type PropertyProps = {
 // One renderer for every ticket property value, so lists, menus, and details share icons and wording.
 export function PropertyValue({
   projectId,
+  workspaceId,
   iconOnly = false,
   ...props
-}: PropertyProps & { projectId: string; iconOnly?: boolean }) {
+}: PropertyProps & { projectId: string; workspaceId?: string | undefined; iconOnly?: boolean }) {
   const identity = useIdentity();
-  const person = usePerson(projectId, props.property === "assignee" ? props.value : null);
+  const person = usePerson(
+    projectId,
+    props.property === "assignee" ? props.value : null,
+    workspaceId,
+  );
   const workflow =
     useWorkflow(projectId, props.property === "status" && props.value.includes(":")).data ?? [];
   switch (props.property) {
@@ -332,14 +342,25 @@ export function usePropertyOptions<P extends PropertyName>(
   property: P,
   projectId: string,
   enabled: boolean,
+  workspaceId?: string,
 ): Option<PropertyValues[P]>[] {
   const members = useQuery({
     ...api.query("list_members", { projectId }),
-    enabled: enabled && property === "assignee",
+    enabled: enabled && property === "assignee" && !workspaceId && !!projectId,
   });
-  const workflow = useWorkflow(projectId, enabled && property === "status").data ?? [];
+  const workspaceMembers = useQuery({
+    ...api.query("list_workspace_members", { workspaceId: workspaceId ?? "" }),
+    enabled: enabled && property === "assignee" && !!workspaceId,
+  });
+  const workflow =
+    useWorkflow(projectId, enabled && property === "status" && !workspaceId).data ?? [];
   const { epics } = useEpics(projectId, enabled && property === "epic");
-  return optionsFor[property](members.data ?? [], workflow, epics);
+  return optionsFor[property](
+    (workspaceId ? workspaceMembers.data?.filter((member) => !member.disabled) : members.data) ??
+      [],
+    workflow,
+    epics,
+  );
 }
 
 // Pairs a generic property with its value as the discriminated union PropertyValue renders.
@@ -372,7 +393,8 @@ export function TicketProperty<P extends PropertyName>({
   property,
   value,
   onChange,
-  projectId,
+  projectId = "",
+  workspaceId,
   disabled = false,
   variant = "pill",
   iconOnly = false,
@@ -385,7 +407,8 @@ export function TicketProperty<P extends PropertyName>({
   property: P;
   value: PropertyValues[P];
   onChange: (value: PropertyValues[P]) => void;
-  projectId: string;
+  projectId?: string;
+  workspaceId?: string;
   disabled?: boolean;
   variant?: "pill" | "row" | "cell";
   iconOnly?: boolean;
@@ -414,7 +437,12 @@ export function TicketProperty<P extends PropertyName>({
       }
     >
       {children ?? (
-        <PropertyValue {...pair(property, value)} projectId={projectId} iconOnly={iconOnly} />
+        <PropertyValue
+          {...pair(property, value)}
+          projectId={projectId}
+          workspaceId={workspaceId}
+          iconOnly={iconOnly}
+        />
       )}
     </PopoverTrigger>
   );
@@ -427,6 +455,7 @@ export function TicketProperty<P extends PropertyName>({
             property={property}
             value={value}
             projectId={projectId}
+            workspaceId={workspaceId}
             mixed={mixed}
             onPick={(next) => {
               setOpen(false);
@@ -443,24 +472,48 @@ export function EpicProperty({
   projectId,
   ...props
 }: Omit<Parameters<typeof TicketProperty<"epic">>[0], "property">) {
-  const { readable } = useEpics(projectId, false);
-  return readable ? <TicketProperty property="epic" projectId={projectId} {...props} /> : null;
+  const { readable } = useEpics(projectId ?? "", false);
+  const workspaceId = useProject(projectId ?? "").data?.workspaceId;
+  if (!readable) return null;
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">
+        <TicketProperty property="epic" projectId={projectId ?? ""} {...props} />
+      </div>
+      {props.variant === "row" && props.value && workspaceId && (
+        <IconButton
+          label={t("detail.epic.open")}
+          size="icon-sm"
+          render={
+            <Link
+              to="/workspaces/$workspaceId/epics/$epicId"
+              params={{ workspaceId, epicId: props.value }}
+            />
+          }
+        >
+          <ExternalLink />
+        </IconButton>
+      )}
+    </div>
+  );
 }
 // Extends the picker content so closed controls do not subscribe to option queries.
 function PropertyChoices<P extends PropertyName>({
   property,
   value,
   projectId,
+  workspaceId,
   mixed,
   onPick,
 }: {
   property: P;
   value: PropertyValues[P];
   projectId: string;
+  workspaceId?: string | undefined;
   mixed: boolean;
   onPick: (next: PropertyValues[P]) => void;
 }) {
-  const options = usePropertyOptions(property, projectId, true);
+  const options = usePropertyOptions(property, projectId, true, workspaceId);
   const label = propertyLabels[property];
   return (
     <ChoiceList
@@ -472,7 +525,13 @@ function PropertyChoices<P extends PropertyName>({
       searchLabel={t("ticket.property.search", { label })}
       choices={options.map((option) => ({
         ...option,
-        node: <PropertyValue {...pair(property, option.value)} projectId={projectId} />,
+        node: (
+          <PropertyValue
+            {...pair(property, option.value)}
+            projectId={projectId}
+            workspaceId={workspaceId}
+          />
+        ),
         checked: !mixed && option.value === value,
       }))}
       onPick={onPick}

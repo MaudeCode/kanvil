@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Apri epic",
+    create: "Nuova epic",
+    edit: "Modifica epic",
+    archive: "Archivia epic",
+    restore: "Ripristina epic",
+    empty: "Nessuna epic",
+    noTickets: "Nessun ticket",
+    progress: "{{closed, number}} / {{total, number}} chiusi",
+    restricted: "Ticket con accesso limitato: {{total}}",
+  },
   field: {
     title: "Titolo",
     description: "Descrizione",

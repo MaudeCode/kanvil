@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "에픽 열기",
+    create: "새 에픽",
+    edit: "에픽 편집",
+    archive: "에픽 보관",
+    restore: "에픽 복원",
+    empty: "에픽 없음",
+    noTickets: "티켓 없음",
+    progress: "종료 {{closed, number}} / {{total, number}}",
+    restricted: "접근이 제한된 티켓: {{total}}",
+  },
   field: {
     title: "제목",
     description: "설명",

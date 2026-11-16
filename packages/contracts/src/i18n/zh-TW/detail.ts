@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "開啟史詩",
+    create: "新增史詩",
+    edit: "編輯史詩",
+    archive: "封存史詩",
+    restore: "還原史詩",
+    empty: "沒有史詩",
+    noTickets: "沒有工單",
+    progress: "已關閉 {{closed, number}} / {{total, number}}",
+    restricted: "受限工單：{{total}}",
+  },
   field: {
     title: "標題",
     description: "說明",

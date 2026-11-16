@@ -309,6 +309,13 @@
       "when": 1794070902985,
       "tag": "0043_epics",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794798923461,
+      "tag": "0044_epic_details",
+      "breakpoints": true
     }
   ]
 }

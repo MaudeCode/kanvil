@@ -200,6 +200,10 @@ export const epics = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
+    acceptanceCriteria: text("acceptance_criteria").notNull().default(""),
+    status: text("status").notNull().default("todo"),
+    priority: text("priority").notNull().default("none"),
+    assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     archived: boolean("archived").notNull().default(false),
     createdBy: text("created_by")
       .notNull()
@@ -365,23 +369,40 @@ export const relations = pgTable(
     index("relation_target").on(table.targetId),
   ],
 );
+const discussionColumns = () => ({
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorId: actor(),
+  body: text("body").notNull(),
+  version: integer("version").notNull().default(1),
+  createdAt: time("created_at"),
+  updatedAt: time("updated_at"),
+});
 export const comments = pgTable(
   "comments",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    ...discussionColumns(),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     ticketId: uuid("ticket_id")
       .notNull()
       .references(() => tickets.id, { onDelete: "cascade" }),
-    actorId: actor(),
-    body: text("body").notNull(),
-    version: integer("version").notNull().default(1),
-    createdAt: time("created_at"),
-    updatedAt: time("updated_at"),
   },
   (table) => [index("comment_ticket").on(table.ticketId)],
+);
+// Epic discussion has workspace authorization; project comments retain their ticket-only keys.
+export const epicComments = pgTable(
+  "epic_comments",
+  {
+    ...discussionColumns(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    epicId: uuid("epic_id")
+      .notNull()
+      .references(() => epics.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("epic_comment_epic").on(table.epicId)],
 );
 export const claims = pgTable("claims", {
   id: uuid("id").primaryKey().defaultRandom(),

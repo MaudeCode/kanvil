@@ -150,33 +150,54 @@ export function useProjectAccess(projectId: string, enabled = true) {
     canShare: holds("sharing.manage"),
   };
 }
+// Workspace actions follow the same server-reported capabilities as project actions.
+export function useWorkspaceAccess(workspaceId: string) {
+  const identity = useIdentity(),
+    spaces = useWorkspaces();
+  const space = spaces.data?.find((row) => row.id === workspaceId);
+  const granted = identity.admin ? permissions : capabilitiesOf({ ...space, role: space?.role });
+  return {
+    canWrite: granted.includes("ticket.write"),
+    canAdmin: granted.includes("workspace.manage"),
+  };
+}
 // The name and photo for an account ID in a project: you, a member, a deleted account, or someone
 // who left. The deleted-account list loads only for an ID no member has.
-export function usePerson(projectId: string, id: string | null) {
+export function usePerson(projectId: string, id: string | null, workspaceId?: string) {
   const identity = useIdentity(),
     own = id === identity.id,
-    members = useQuery({ ...api.query("list_members", { projectId }), enabled: !!id && !own }),
-    member = members.data?.find((person) => person.userId === id),
+    members = useQuery({
+      ...api.query("list_members", { projectId }),
+      enabled: !!id && !own && !workspaceId && !!projectId,
+    }),
+    workspaceMembers = useQuery({
+      ...api.query("list_workspace_members", { workspaceId: workspaceId ?? "" }),
+      enabled: !!id && !own && !!workspaceId,
+    }),
+    people = workspaceId ? workspaceMembers.data : members.data,
+    member = people?.find((person) => person.userId === id),
     deleted = useQuery({
       ...api.query("list_deleted_accounts", {}),
-      enabled: !!id && !own && !!members.data && !member,
+      enabled: !!id && !own && !!people && !member,
     });
   if (id === null) return { name: "Kanvil", image: undefined };
   if (own) return { name: identity.name, image: identity.image };
-  return { name: memberName(members.data, deleted.data, id), image: member?.image };
+  return { name: memberName(people, deleted.data, id), image: member?.image };
 }
 export function ActorName({
   projectId,
   actorId,
   avatar = false,
+  workspaceId,
 }: {
   projectId: string;
+  workspaceId?: string | undefined;
   // Null for events the server raises on its own clock, such as due-date reminders.
   actorId: string | null;
   avatar?: boolean;
 }) {
   const identity = useIdentity(),
-    { name, image } = usePerson(projectId, actorId);
+    { name, image } = usePerson(projectId, actorId, workspaceId);
   return (
     <span className={avatar ? "inline-flex items-center gap-2" : ""} title={actorId ?? undefined}>
       {avatar && <UserAvatar name={name} image={image} className="size-7 text-[10px]" />}

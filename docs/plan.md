@@ -125,6 +125,10 @@ Start with Markdown editing and an established renderer. Markdown fields carry a
 - Replay coverage for interrupted streams, service restarts, concurrent commits, and expired cursors.
 - Protocol validation using representative MCP clients and the reference realtime consumer.
 
+## Epics
+
+Workspace Epics remain separate from project tickets. They have a dedicated list and directly linkable detail, description, acceptance criteria, canonical status, priority, workspace-member assignee, member progress and discussion. They reuse the ticket property pickers, Markdown editor and renderer, comment presentation, and ticket preview for member links. Their metadata does not change ticket eligibility or claims. The API registry owns workspace-scoped discussion operations and their transactionally published events; Factory adopts these documented interfaces.
+
 ## Build order
 
 1. Establish the workspace, self-hosted service, shared contracts, and both login methods. Prove web and iPhone sign-in, plus an authenticated MCP handshake.

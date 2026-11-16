@@ -1,4 +1,15 @@
 export default {
+  epic: {
+    open: "Epiği aç",
+    create: "Yeni epik",
+    edit: "Epiği düzenle",
+    archive: "Epiği arşivle",
+    restore: "Epiği geri yükle",
+    empty: "Epik yok",
+    noTickets: "Talep yok",
+    progress: "{{closed, number}} / {{total, number}} kapalı",
+    restricted: "Kısıtlı talepler: {{total}}",
+  },
   field: {
     title: "Başlık",
     description: "Açıklama",

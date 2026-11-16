@@ -813,6 +813,10 @@ export const epicSchema = z.object({
   workspaceId: z.uuid(),
   title: text.max(200),
   description: z.string(),
+  acceptanceCriteria: z.string().default(""),
+  status: z.enum(states).default("todo"),
+  priority: z.enum(priorities).default("none"),
+  assigneeId: id.nullable().default(null),
   archived: z.boolean(),
   version,
   createdBy: z.string(),
@@ -903,6 +907,10 @@ export const commentSchema = z.object({
   version,
   createdAt: timestamp,
   updatedAt: timestamp,
+});
+export const epicCommentSchema = commentSchema.omit({ projectId: true, ticketId: true }).extend({
+  workspaceId: z.uuid(),
+  epicId: z.uuid(),
 });
 // A comment mentions a member with a link to `mention:<user id>`; without a renderer that knows the
 // scheme, the Markdown still reads as "@Name".
@@ -2187,6 +2195,10 @@ export const operations = {
         workspaceId: z.uuid(),
         title: epicSchema.shape.title,
         description: z.string().max(100_000).default(""),
+        acceptanceCriteria: z.string().max(100_000).default(""),
+        status: epicSchema.shape.status,
+        priority: epicSchema.shape.priority,
+        assigneeId: epicSchema.shape.assigneeId,
       })
       .strict(),
     epicSchema,
@@ -2204,19 +2216,28 @@ export const operations = {
         expectedVersion: version,
         title: epicSchema.shape.title.optional(),
         description: z.string().max(100_000).optional(),
+        acceptanceCriteria: z.string().max(100_000).optional(),
+        status: z.enum(states).optional(),
+        priority: z.enum(priorities).optional(),
+        assigneeId: id.nullable().optional(),
         archived: z.boolean().optional(),
       })
       .strict()
       .refine(
-        ({ title, description, archived }) =>
-          title !== undefined || description !== undefined || archived !== undefined,
+        ({
+          workspaceId: _workspaceId,
+          epicId: _epicId,
+          expectedVersion: _version,
+          requestId: _requestId,
+          ...changes
+        }) => Object.values(changes).some((value) => value !== undefined),
         "Provide at least one change",
       ),
     epicSchema,
     "PATCH",
     "/workspaces/{workspaceId}/epics/{epicId}",
     "write",
-    "Change an Epic's title or description, archive it, or restore it with `archived: false`. An archived Epic keeps its members and refuses new ones. There is no deletion. Reuse requestId when retrying this write.",
+    "Change an Epic's title, description, acceptance criteria, status, priority or workspace-member assignee, archive it, or restore it with `archived: false`. An archived Epic keeps its members and refuses new ones. There is no deletion. Reuse requestId when retrying this write.",
   ),
   list_epic_tickets: op(
     z.object({
@@ -2231,6 +2252,57 @@ export const operations = {
     "/workspaces/{workspaceId}/epics/{epicId}/tickets",
     "read",
     'List an Epic\'s tickets across projects, oldest first. Only tickets of projects you can read appear; `restrictedCount` counts the rest without naming them. With `view: "summary"`, rows omit the description and acceptance criteria.',
+  ),
+  list_epic_comments: op(
+    z.object({ workspaceId: z.uuid(), epicId: z.uuid(), ...pagination }),
+    page(epicCommentSchema),
+    "GET",
+    "/workspaces/{workspaceId}/epics/{epicId}/comments",
+    "read",
+    "Read an Epic's workspace discussion, oldest first.",
+  ),
+  add_epic_comment: op(
+    z
+      .object({ workspaceId: z.uuid(), epicId: z.uuid(), ...mutation, body: text.max(50_000) })
+      .strict(),
+    epicCommentSchema,
+    "POST",
+    "/workspaces/{workspaceId}/epics/{epicId}/comments",
+    "write",
+    "Add a workspace-authorized Epic comment with authenticated attribution. Reuse requestId when retrying.",
+  ),
+  update_epic_comment: op(
+    z
+      .object({
+        workspaceId: z.uuid(),
+        epicId: z.uuid(),
+        commentId: z.uuid(),
+        ...mutation,
+        expectedVersion: version,
+        body: text.max(50_000),
+      })
+      .strict(),
+    epicCommentSchema,
+    "PATCH",
+    "/workspaces/{workspaceId}/epics/{epicId}/comments/{commentId}",
+    "write",
+    "Edit your Epic comment or moderate as a workspace administrator, with optimistic concurrency.",
+  ),
+  delete_epic_comment: op(
+    z
+      .object({
+        workspaceId: z.uuid(),
+        epicId: z.uuid(),
+        commentId: z.uuid(),
+        ...mutation,
+        expectedVersion: version,
+      })
+      .strict(),
+    okSchema,
+    "DELETE",
+    "/workspaces/{workspaceId}/epics/{epicId}/comments/{commentId}",
+    "write",
+    "Delete your Epic comment or moderate as a workspace administrator, with optimistic concurrency.",
   ),
   list_workspace_labels: op(
     z.object({ workspaceId: z.uuid() }),
