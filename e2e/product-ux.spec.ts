@@ -1005,6 +1005,27 @@ test("My work moves a ticket into Overdue when its due time passes while the pag
   ).toBeVisible();
 });
 
+test("Recent activity times count up from now while the page stays open", async ({ page }) => {
+  await page.clock.install({ time: new Date() });
+  await signIn(page);
+  const project = await (
+    await page.request.post("/api/v1/projects", { data: { key: "LIVETIME", name: "Live time" } })
+  ).json();
+  await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+    data: { title: "Freshly written" },
+  });
+  await page.goto("/");
+  const entry = page
+    .getByRole("region", { name: "Recent activity" })
+    .getByRole("listitem")
+    .filter({ hasText: "Freshly written" });
+  await expect(entry.locator("time")).toHaveText("now");
+  await page.clock.fastForward("00:20");
+  await expect(entry.locator("time")).toHaveText(/^2\d seconds ago$/);
+  await page.clock.fastForward("00:40");
+  await expect(entry.locator("time")).toHaveText("1 minute ago");
+});
+
 test("ticket links are added, edited, and removed beside attachments, with remote state unknown", async ({
   page,
 }) => {

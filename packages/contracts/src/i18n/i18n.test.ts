@@ -232,6 +232,14 @@ describe("presentation in another language", () => {
     expect(t("common.language.label")).not.toBe("Language");
   });
 
+  it("reads a time within ten seconds of now, either side, as now", () => {
+    const now = Date.now();
+    // A server clock slightly ahead of the browser must not put a fresh event in the future.
+    expect(formatRelativeTime(now + 1_000, now)).toBe("now");
+    expect(formatRelativeTime(now - 9_000, now)).toBe("now");
+    expect(formatRelativeTime(now - 18_000, now)).toBe("18 seconds ago");
+  });
+
   it("uses compact localized calendar values when relative formatting is unavailable", () => {
     const relative = Object.getOwnPropertyDescriptor(Intl, "RelativeTimeFormat");
     Object.defineProperty(Intl, "RelativeTimeFormat", { value: undefined, configurable: true });

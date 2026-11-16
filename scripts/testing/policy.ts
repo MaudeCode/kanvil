@@ -313,7 +313,7 @@ export const families: readonly Family[] = [
   ),
   spec(
     "product-ux.spec.ts",
-    16,
+    17,
     "Ticket writing, Inbox, mentions, notifications, composer, and preview interactions with real focus and keyboard.",
   ),
   spec(
