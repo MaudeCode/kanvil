@@ -38,9 +38,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { isPast } from "date-fns";
 import { copyText } from "./lib/browser.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
+import { useClock } from "./hooks/use-clock.ts";
 import { toggleTask } from "./lib/markdown.ts";
 import ReactMarkdown, {
   defaultUrlTransform,
@@ -742,11 +742,12 @@ export function Confirm({
 
 export const fileSize = (bytes: number) =>
   formatNumber(bytes / 1000, { style: "unit", unit: "kilobyte", maximumFractionDigits: 1 });
+// Counts on with the shared clock, so "18 seconds ago" becomes "19 seconds ago" on its own.
 export function RelativeTime({ value, className }: { value: string; className?: string }) {
-  const parsed = new Date(value);
+  const text = useClock((now) => formatRelativeTime(value, now));
   return (
     <time dateTime={value} title={formatTimestamp(value)} className={className}>
-      {formatRelativeTime(parsed)}
+      {text}
     </time>
   );
 }
@@ -761,8 +762,8 @@ export function DueDate({
   open?: boolean;
   className?: string;
 }) {
+  const overdue = useClock((now) => !!value && open && new Date(value).getTime() < now);
   if (!value) return null;
-  const overdue = open && isPast(new Date(value));
   return (
     <span
       className={cn(

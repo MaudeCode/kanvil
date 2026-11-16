@@ -227,7 +227,9 @@ const relativeUnits: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1],
 ];
 // "3 minutes ago" or "in 2 days": the largest whole unit, rounded, like date-fns' strict distance.
-// Runtimes without RelativeTimeFormat use a compact calendar value; full timestamps remain available.
+// Within ten seconds either side it reads "now", so a server clock slightly ahead of the browser
+// never puts a fresh event in the future. Runtimes without RelativeTimeFormat use a compact
+// calendar value; full timestamps remain available.
 export function formatRelativeTime(value: Date | string | number, now = Date.now()): string {
   if (typeof Intl.RelativeTimeFormat !== "function") {
     const date = new Date(value),
@@ -243,8 +245,12 @@ export function formatRelativeTime(value: Date | string | number, now = Date.now
           },
     );
   }
-  const seconds = (new Date(value).getTime() - now) / 1000,
-    [unit, size] = relativeUnits.find(([, length]) => Math.abs(seconds) >= length) ?? ["second", 1];
+  const seconds = (new Date(value).getTime() - now) / 1000;
+  if (Math.abs(seconds) < 10) return relativeFormats({ numeric: "auto" }).format(0, "second");
+  const [unit, size] = relativeUnits.find(([, length]) => Math.abs(seconds) >= length) ?? [
+    "second",
+    1,
+  ];
   return relativeFormats({ numeric: "always" }).format(Math.round(seconds / size), unit);
 }
 // The interface language's first day of the week, for pickers left on the language default.

@@ -113,6 +113,7 @@ import { neighborFor, placeNear, writeListOrder } from "./lib/list-order.ts";
 import { moveCommandNames, type MoveCommand } from "./lib/actions.ts";
 import { useShortcut } from "./hooks/use-shortcut.ts";
 import { useReorderDrag } from "./hooks/use-reorder-drag.ts";
+import { useClock } from "./hooks/use-clock.ts";
 import { cn } from "@/lib/utils";
 import { ArchivedNotice } from "./components/project-lifecycle.tsx";
 
@@ -749,13 +750,8 @@ export function TicketList({
   );
   const total = groups.reduce((sum, group) => sum + (group.data?.total ?? 0), 0);
   // Due windows move with the clock, so a ticket passes into Overdue while the list stays open.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (grouping === "due") setNow(Date.now());
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [grouping]);
+  // Whole minutes keep the sections from regrouping every tick.
+  const now = useClock((current) => (grouping === "due" ? current - (current % 60_000) : 0));
   const sections: Section[] = useMemo(
     () =>
       grouping === "project"
