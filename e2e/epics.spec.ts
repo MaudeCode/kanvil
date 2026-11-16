@@ -111,6 +111,39 @@ test("opens and edits a workspace Epic with discussion while member tickets use 
   await expect(page.getByRole("combobox", { name: "Priority", exact: true })).toContainText("High");
   await expect(page.getByText("Updated acceptance for the Epic.", { exact: true })).toBeVisible();
   await expect(page.getByText("An Epic discussion note.", { exact: true })).toBeVisible();
+  // A refreshed parent must not let an older form overwrite another writer's changes.
+  await page.getByRole("button", { name: "Edit epic", exact: true }).click();
+  await editor.getByRole("textbox", { name: "Title", exact: true }).fill("My unsaved Epic title");
+  const epicPath = `/api/v1/workspaces/${project.workspaceId}/epics/${epicId}`;
+  const current = z
+    .object({ version: z.number() })
+    .parse(await (await page.request.get(epicPath)).json());
+  const remote = await page.request.patch(epicPath, {
+    data: {
+      expectedVersion: current.version,
+      description: "Another writer's Epic description.",
+    },
+  });
+  expect(remote.ok()).toBe(true);
+  await expect(page.locator("#main")).toContainText("Another writer's Epic description.");
+  const saved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === epicPath && response.request().method() === "PATCH",
+  );
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  expect((await saved).status()).toBe(409);
+  await expect(editor.getByRole("alert")).toBeVisible();
+  await expect(editor.getByRole("textbox", { name: "Title", exact: true })).toHaveValue(
+    "My unsaved Epic title",
+  );
+  const retained = z
+    .object({ title: z.string(), description: z.string() })
+    .parse(await (await page.request.get(epicPath)).json());
+  expect(retained).toMatchObject({
+    title: "Ship the outcome",
+    description: "Another writer's Epic description.",
+  });
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("link", { name: `${ticket.key} Deliver the member`, exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Deliver the member");
   await page.keyboard.press("Escape");

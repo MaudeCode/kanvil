@@ -146,7 +146,11 @@ export function EpicDetail() {
         </IconButton>
         {access.canWrite && (
           <>
-            <IconButton label={t("detail.epic.edit")} onClick={() => setEditing(true)}>
+            <IconButton
+              label={t("detail.epic.edit")}
+              disabled={update.isPending}
+              onClick={() => setEditing(true)}
+            >
               <Pencil />
             </IconButton>
             <IconButton
@@ -269,7 +273,8 @@ function EpicEditor({
   epic?: Epic;
   onClose: () => void;
 }) {
-  const [title, setTitle] = useState(epic?.title ?? ""),
+  const [editingVersion] = useState(epic?.version ?? 1),
+    [title, setTitle] = useState(epic?.title ?? ""),
     [description, setDescription] = useState(epic?.description ?? ""),
     [acceptanceCriteria, setAcceptanceCriteria] = useState(epic?.acceptanceCriteria ?? "");
   const create = useOperation("create_epic"),
@@ -293,7 +298,7 @@ function EpicEditor({
           event.preventDefault();
           const fields = { workspaceId, title, description, acceptanceCriteria };
           const save = epic
-            ? update.mutateAsync({ ...fields, epicId: epic.id, expectedVersion: epic.version })
+            ? update.mutateAsync({ ...fields, epicId: epic.id, expectedVersion: editingVersion })
             : create.mutateAsync(fields);
           void save
             .then((saved) => {
