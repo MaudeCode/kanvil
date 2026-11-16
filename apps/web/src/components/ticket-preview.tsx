@@ -30,7 +30,7 @@ export interface PreviewTarget {
 export interface PreviewCollection {
   order: string[];
   open: (ticketId: string) => void;
-  returnFocus: () => HTMLElement | null;
+  returnFocus: (ticketId: string) => HTMLElement | null;
 }
 // What the detail inside the sheet can do: step through the collection it came from, follow a
 // moved ticket, and close.
@@ -73,7 +73,7 @@ export function usePreviewClick(shared = false) {
 export function usePreviewCollection(
   order: string[],
   open: (ticketId: string) => void,
-  returnFocus: () => HTMLElement | null,
+  returnFocus: (ticketId: string) => HTMLElement | null,
 ) {
   const register = useTicketPreview()?.register;
   const handlers = useRef({ open, returnFocus });
@@ -86,7 +86,7 @@ export function usePreviewCollection(
       register?.({
         order: key ? key.split("\n") : [],
         open: (id) => handlers.current.open(id),
-        returnFocus: () => handlers.current.returnFocus(),
+        returnFocus: (id) => handlers.current.returnFocus(id),
       }),
     [register, key],
   );
@@ -224,7 +224,7 @@ export function TicketPreviewController({
   // Focus returns to the collection's row of the ticket last shown, which J and K may have
   // changed, then to the control that opened the sheet, then to the page.
   const returnFocus = () =>
-    (listed ? collection?.returnFocus() : null) ??
+    (listed && shown ? collection?.returnFocus(shown.id) : null) ??
     (origin?.isConnected ? origin : null) ??
     document.getElementById("main");
   return (

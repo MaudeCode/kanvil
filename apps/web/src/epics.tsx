@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useNavigate } from "@tanstack/react-router";
 import { Archive, ArrowLeft, Layers, Pencil, Plus } from "lucide-react";
@@ -107,22 +107,14 @@ export function EpicDetail() {
       return { items, restrictedCount };
     },
   });
-  const preview = useTicketPreview(),
-    list = useRef<HTMLUListElement>(null),
-    activeTicket = useRef<string | null>(null);
+  const preview = useTicketPreview();
   usePreviewCollection(
     members.data?.items.map((ticket) => ticket.id) ?? [],
     (id) => {
       const ticket = members.data?.items.find((row) => row.id === id);
-      activeTicket.current = id;
       if (ticket) preview?.open({ projectId: ticket.projectId, ticketId: ticket.id });
     },
-    () =>
-      (activeTicket.current
-        ? document
-            .getElementById(`epic-ticket-${activeTicket.current}`)
-            ?.querySelector<HTMLElement>("a")
-        : list.current?.querySelector<HTMLElement>("a")) ?? null,
+    (id) => document.getElementById(`epic-ticket-${id}`)?.querySelector<HTMLElement>("a") ?? null,
   );
   const epic = result.data;
   const change = (
@@ -221,7 +213,7 @@ export function EpicDetail() {
                   </p>
                 )}
                 {members.data.items.length ? (
-                  <ul ref={list} className="m-0 list-none divide-y border-y p-0">
+                  <ul className="m-0 list-none divide-y border-y p-0">
                     {members.data.items.map((ticket) => (
                       <li
                         id={`epic-ticket-${ticket.id}`}

@@ -84,13 +84,16 @@ test("opens and edits a workspace Epic with discussion while member tickets use 
   await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Ship the outcome", exact: true })).toBeVisible();
   const epicId = z.uuid().parse(new URL(page.url()).pathname.split("/").at(-1));
-  const ticket = z.object({ id: z.uuid(), key: z.string() }).parse(
-    await (
-      await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
-        data: { title: "Deliver the member", epicId },
-      })
-    ).json(),
-  );
+  const newMember = async (title: string) =>
+    z.object({ id: z.uuid(), key: z.string() }).parse(
+      await (
+        await page.request.post(`/api/v1/projects/${project.id}/tickets`, {
+          data: { title, epicId },
+        })
+      ).json(),
+    );
+  const ticket = await newMember("Deliver the member"),
+    second = await newMember("Review the second member");
   await choose(page, "Status", "In progress");
   await choose(page, "Priority", "High");
   await page.getByRole("button", { name: "Edit epic", exact: true }).click();
@@ -148,9 +151,38 @@ test("opens and edits a workspace Epic with discussion while member tickets use 
   await expect(page.getByRole("dialog")).toContainText("Deliver the member");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "Ship the outcome", exact: true })).toBeVisible();
+  const firstLink = page.getByRole("link", {
+    name: `${ticket.key} Deliver the member`,
+    exact: true,
+  });
+  const secondLink = page.getByRole("link", {
+    name: `${second.key} Review the second member`,
+    exact: true,
+  });
+  await secondLink.click();
+  await expect(page.getByRole("dialog")).toContainText("Review the second member");
+  await page.keyboard.press("Escape");
+  await expect(secondLink).toBeFocused();
+  await page.screenshot({
+    path: test.info().outputPath("epic-member-focus.png"),
+    animations: "disabled",
+  });
+  await firstLink.click();
+  await expect(page.getByRole("dialog")).toContainText("Deliver the member");
+  await page.keyboard.press("j");
+  await expect(page.getByRole("dialog")).toContainText("Review the second member");
+  await page.keyboard.press("Escape");
+  await expect(secondLink).toBeFocused();
+  await firstLink.click();
+  await expect(page.getByRole("dialog")).toContainText("Deliver the member");
+  await page.keyboard.press("Escape");
+  await expect(firstLink).toBeFocused();
   await page.goto(`/projects/${project.id}`);
-  await expect(page.locator(".ticket-row")).toHaveCount(1);
-  await expect(page.locator(".ticket-row")).toContainText("Deliver the member");
+  await expect(page.locator(".ticket-row")).toHaveCount(2);
+  await expect(page.locator(".ticket-row")).toContainText([
+    "Deliver the member",
+    "Review the second member",
+  ]);
   await page.goto(`/projects/${project.id}/tickets/${ticket.id}`);
   await page.getByRole("link", { name: "Open epic", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Ship the outcome", exact: true })).toBeVisible();

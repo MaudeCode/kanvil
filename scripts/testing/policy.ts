@@ -283,7 +283,7 @@ export const families: readonly Family[] = [
   spec(
     "epics.spec.ts",
     2,
-    "Epic assignment and workspace detail navigation, content editing, discussion persistence, member previews and ticket-list separation in the real DOM.",
+    "Epic assignment, workspace detail navigation, conflict-safe editing, discussion persistence, ticket-list separation and member-preview keyboard/focus behavior in the real DOM.",
   ),
   spec(
     "import-export.spec.ts",
