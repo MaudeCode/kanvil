@@ -1,11 +1,12 @@
 name: Release
 run-name: Release ${{ inputs.tag }}
 
-# Tag last (RELEASES.md in MaudeCode/.github): a dispatch names the version and, optionally, the
-# main commit (empty releases main's head when the run started; jobs read preflight's sha output),
-# every publisher accepts what an earlier attempt already published from that commit, and the
-# vX.Y.Z tag is created only after all of them succeed. A failed release leaves no tag, so the
-# same version is released again. See docs/releasing.md.
+# Tag last (RELEASES.md in MaudeCode/.github): a dispatch names the version and, optionally, any
+# main commit after the last release (empty releases main's head when the run started; jobs read
+# preflight's sha output, never github.sha), every publisher accepts what an earlier attempt
+# already published from that commit, and the vX.Y.Z tag is created only after all of them
+# succeed. A failed release leaves no tag, so the same version is released again. See
+# docs/releasing.md.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +15,7 @@ on:
         required: true
         type: string
       sha:
-        description: Full SHA of the main commit to release; empty for the head of main
+        description: Full SHA of the main commit to release, after the last release; empty for the head of main
         required: false
         type: string
 
@@ -28,26 +29,34 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to find the commit's CI Checks that already passed
     outputs:
       version: ${{ steps.check.outputs.version }}
       sha: ${{ steps.check.outputs.sha }}
+      verified: ${{ steps.check.outputs.verified }}
     steps:
       - id: check
-        uses: MaudeCode/.github/actions/release-preflight@3e8fc1995784e2d3004e4de05205a767472efb7c
+        uses: MaudeCode/.github/actions/release-preflight@7142f8bc63e5e63cdc7d0c4605f3a283de59624c
         with:
           tag: ${{ inputs.tag }}
           sha: ${{ inputs.sha }}
+          checks: |
+            ci.yml: Checks
 
-  # CI builds the release version through scripts/release-version.ts, which refuses prerelease
-  # versions and v0.0.0, so they fail here before any publisher starts. It checks out the run's
-  # own commit, which preflight proved is its sha output; the image publisher checks the tested
-  # images' revision label against that sha again. Passing the sha in as a checkout ref instead
-  # trips CodeQL's cache-poisoning rule for the shared setup cache.
+  # CI on the commit preflight resolved. When the commit's push run already passed Checks, only
+  # the jobs that build and test what this release publishes run (verified): the npm tarball and
+  # the native images carry the release version, so no push run built them. Otherwise the whole
+  # workflow runs here; the release never waits on the push run. scripts/release-version.ts
+  # refuses prerelease versions and v0.0.0 in the build, before any publisher starts.
   validate:
     needs: preflight
     uses: ./.github/workflows/ci.yml
     with:
       tag: ${{ inputs.tag }}
+      revision: ${{ needs.preflight.outputs.sha }}
+      verified: ${{ needs.preflight.outputs.verified == 'true' }}
 
   npm:
     name: Publish npm
@@ -102,7 +111,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c
+      - uses: MaudeCode/.github/actions/release-tag@7142f8bc63e5e63cdc7d0c4605f3a283de59624c
         with:
           tag: ${{ inputs.tag }}
           sha: ${{ needs.preflight.outputs.sha }}
