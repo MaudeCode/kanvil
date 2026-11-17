@@ -37,19 +37,9 @@ jobs:
         with:
           tag: ${{ inputs.tag }}
           sha: ${{ inputs.sha }}
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.check.outputs.sha }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          install: "false"
-      # Kanvil publishes stable, nonzero versions only; refuse the rest before CI starts.
-      - name: Require a stable Kanvil version
-        env:
-          KANVIL_RELEASE_TAG: ${{ inputs.tag }}
-        run: node scripts/release-version.ts
 
+  # CI builds the release version through scripts/release-version.ts, which refuses prerelease
+  # versions and v0.0.0, so they fail here before any publisher starts.
   validate:
     needs: preflight
     uses: ./.github/workflows/ci.yml
