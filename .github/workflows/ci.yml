@@ -7,6 +7,16 @@ on:
         description: The vX.Y.Z a release run builds; empty outside a release.
         type: string
         default: ""
+      revision:
+        description: The commit a release builds, from its preflight; empty builds the run's commit.
+        type: string
+        default: ""
+      verified:
+        description: >-
+          The release's preflight found this workflow's Checks already passed on the commit: run only
+          the jobs that build and test what the release publishes (build, npm, docker).
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -32,6 +42,7 @@ env:
 jobs:
   static:
     name: ${{ matrix.command }}
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -39,15 +50,19 @@ jobs:
       matrix:
         command: ["fmt:check", lint, typecheck]
     steps:
+      # A release's revision is a main commit preflight accepted: one that main's own push run
+      # already built with the same cache scope, so checking it out runs no untrusted code.
       - &checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.revision }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm ${{ matrix.command }}
 
   tests:
     name: Unit and database tests
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -78,6 +93,7 @@ jobs:
 
   broker:
     name: RabbitMQ integration
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -103,6 +119,7 @@ jobs:
 
   search:
     name: Elasticsearch integration
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -168,6 +185,7 @@ jobs:
   browser:
     name: Browser (${{ matrix.shard }}/4)
     needs: build
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -202,6 +220,7 @@ jobs:
   oidc:
     name: PocketID browser login
     needs: build
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -241,6 +260,7 @@ jobs:
 
   mobile:
     name: iOS bundle
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -279,7 +299,7 @@ jobs:
           version="$(node scripts/release-version.ts)"
           docker buildx create --driver docker-container --use --bootstrap
           docker buildx build --platform "linux/$ARCH" --load --tag kanvil:local \
-            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$GITHUB_SHA" \
+            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$(git rev-parse HEAD)" \
             --cache-from "type=gha,scope=docker-$ARCH" \
             --cache-to "type=gha,scope=docker-$ARCH,mode=max" .
       - name: Verify image, MCP, and database restoration
@@ -298,6 +318,7 @@ jobs:
 
   renovate:
     name: Renovate tag selection
+    if: ${{ !inputs.verified }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -308,9 +329,11 @@ jobs:
       - run: node scripts/renovate-tags.ts
       - *accounting
 
+  # A release that reuses its commit's Checks runs only the publishing jobs; their failure fails
+  # the call, and the accounting below needs every suite.
   check:
     name: Checks
-    if: always()
+    if: ${{ always() && !inputs.verified }}
     needs: [static, tests, broker, search, build, npm, browser, oidc, mobile, docker, renovate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
