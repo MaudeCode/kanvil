@@ -63,8 +63,6 @@ try {
     ...options,
     env: {
       ...process.env,
-      GITHUB_REF_TYPE: "branch",
-      GITHUB_REF_NAME: "main",
       KANVIL_VERSION: "1.0.0",
     },
     stdio: "inherit",

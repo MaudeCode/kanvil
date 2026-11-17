@@ -39,9 +39,8 @@ if (process.argv[2] === "view") {
         PATH: `${directory}:${process.env.PATH}`,
         SCENARIO: scenario,
         INTEGRITY: integrity,
-        GITHUB_REF_TYPE: "tag",
-        GITHUB_REF_NAME: "v1.2.3",
-        // A stable tag release, even when the suite runs inside a main CI build.
+        KANVIL_RELEASE_TAG: "v1.2.3",
+        // A stable release run, even when the suite runs inside a main CI build.
         KANVIL_RELEASE_CHANNEL: "",
       },
     });

@@ -6,6 +6,10 @@ on:
       version:
         type: string
         required: true
+      sha:
+        description: The commit to publish, from the release preflight.
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.sha }}
           persist-credentials: false
       - name: Check signing configuration
         env:
@@ -37,7 +42,6 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_TYPE" = tag
           for name in TEAM_ID APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID \
             APP_STORE_CONNECT_PRIVATE_KEY IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 \
             IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; do
@@ -121,7 +125,7 @@ jobs:
           with open(env['RELEASE_DIRECTORY'] + '/ipa/Payload/Kanvil.app/Info.plist', 'rb') as source:
               info = plistlib.load(source)
           assert info['CFBundleIdentifier'] == env['BUNDLE_ID']
-          assert info['CFBundleShortVersionString'] == env['GITHUB_REF_NAME'][1:]
+          assert info['CFBundleShortVersionString'] == env['KANVIL_IOS_VERSION']
           assert info['CFBundleVersion'] == env['KANVIL_IOS_BUILD_NUMBER']
           assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
           assert info['ITSAppUsesNonExemptEncryption'] is False
