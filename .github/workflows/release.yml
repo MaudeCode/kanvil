@@ -1,9 +1,22 @@
 name: Release
+run-name: Release ${{ inputs.tag }}
 
+# Tag last (RELEASES.md in MaudeCode/.github): a dispatch names the version and, optionally, the
+# main commit (empty releases main's head when the run started; jobs read preflight's sha output),
+# every publisher accepts what an earlier attempt already published from that commit, and the
+# vX.Y.Z tag is created only after all of them succeed. A failed release leaves no tag, so the
+# same version is released again. See docs/releasing.md.
 on:
-  push:
-    tags:
-      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version to release, such as v1.2.3
+        required: true
+        type: string
+      sha:
+        description: Full SHA of the main commit to release; empty for the head of main
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -16,26 +29,25 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.check.outputs.version }}
+      sha: ${{ steps.check.outputs.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: check
+        uses: MaudeCode/.github/actions/release-preflight@3e8fc1995784e2d3004e4de05205a767472efb7c
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          install: "false"
-      - name: Verify release tag and main ancestry
-        id: version
-        run: |
-          test "$GITHUB_REF_TYPE" = tag
-          version="$(node scripts/release-version.ts)"
-          git merge-base --is-ancestor HEAD origin/main
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          tag: ${{ inputs.tag }}
+          sha: ${{ inputs.sha }}
 
+  # CI builds the release version through scripts/release-version.ts, which refuses prerelease
+  # versions and v0.0.0, so they fail here before any publisher starts. It checks out the run's
+  # own commit, which preflight proved is its sha output; the image publisher checks the tested
+  # images' revision label against that sha again. Passing the sha in as a checkout ref instead
+  # trips CodeQL's cache-poisoning rule for the shared setup cache.
   validate:
     needs: preflight
     uses: ./.github/workflows/ci.yml
+    with:
+      tag: ${{ inputs.tag }}
 
   npm:
     name: Publish npm
@@ -47,6 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.preflight.outputs.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
@@ -56,6 +69,8 @@ jobs:
           name: npm-release
           path: release
       - name: Publish tested tarball with npm OIDC
+        env:
+          KANVIL_RELEASE_TAG: ${{ inputs.tag }}
         run: node scripts/publish-npm.mjs
 
   images:
@@ -68,27 +83,35 @@ jobs:
     with:
       channel: stable
       version: ${{ needs.preflight.outputs.version }}
-      revision: ${{ github.sha }}
+      revision: ${{ needs.preflight.outputs.sha }}
 
+  # TestFlight records no source commit, so iOS waits for the publishers that do: once npm and
+  # the images accept this commit for the version, an upload cannot be from another commit.
   ios:
-    needs: [preflight, validate]
+    needs: [preflight, npm, images]
     uses: ./.github/workflows/testflight.yml
     with:
       version: ${{ needs.preflight.outputs.version }}
+      sha: ${{ needs.preflight.outputs.sha }}
     secrets: inherit
 
   release:
-    name: Create GitHub release
-    needs: [npm, images, ios]
+    name: Tag and create GitHub release
+    needs: [preflight, npm, images, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c
+        with:
+          tag: ${{ inputs.tag }}
+          sha: ${{ needs.preflight.outputs.sha }}
+          message: Kanvil ${{ needs.preflight.outputs.version }}
       - name: Create release with generated notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes

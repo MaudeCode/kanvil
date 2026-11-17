@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      tag:
+        description: The vX.Y.Z a release run builds; empty outside a release.
+        type: string
+        default: ""
   pull_request:
   push:
     branches: [main]
@@ -10,14 +15,17 @@ permissions:
   contents: read
 
 # A newer push cancels an older run of the same PR. Each main commit runs in its own group, so
-# every pushed tip is verified and can publish its experimental build.
+# every pushed tip is verified and can publish its experimental build. A release run, dispatched
+# on main, is grouped by its version so it never cancels that commit's push run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  group: ci-${{ inputs.tag || github.event.pull_request.number || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: true
 
 env:
   # Main pushes build, test, and keep the experimental identity they would publish.
   KANVIL_RELEASE_CHANNEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'experimental' || '' }}
+  # A release run builds and tests the version it publishes; scripts/release-version.ts reads it.
+  KANVIL_RELEASE_TAG: ${{ inputs.tag }}
   TEST_DATABASE_URL: postgres://kanvil:kanvil@127.0.0.1:5432/kanvil
   EXPO_NO_TELEMETRY: "1"
 
@@ -278,10 +286,10 @@ jobs:
         run: node scripts/docker-smoke.ts
       - *accounting
       - name: Save tested release image
-        if: startsWith(github.ref, 'refs/tags/v') || env.KANVIL_RELEASE_CHANNEL == 'experimental'
+        if: env.KANVIL_RELEASE_TAG != '' || env.KANVIL_RELEASE_CHANNEL == 'experimental'
         run: docker save kanvil:local | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: startsWith(github.ref, 'refs/tags/v') || env.KANVIL_RELEASE_CHANNEL == 'experimental'
+        if: env.KANVIL_RELEASE_TAG != '' || env.KANVIL_RELEASE_CHANNEL == 'experimental'
         with:
           name: docker-release-${{ matrix.arch }}
           path: ${{ runner.temp }}/image.tar.gz
