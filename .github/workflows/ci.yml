@@ -7,10 +7,6 @@ on:
         description: The vX.Y.Z a release run builds; empty outside a release.
         type: string
         default: ""
-      sha:
-        description: The commit a release run builds, from its preflight; empty builds the run's commit.
-        type: string
-        default: ""
   pull_request:
   push:
     branches: [main]
@@ -46,7 +42,6 @@ jobs:
       - &checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm ${{ matrix.command }}
@@ -280,12 +275,11 @@ jobs:
       - name: Build and load the native image
         env:
           ARCH: ${{ matrix.arch }}
-          REVISION: ${{ inputs.sha || github.sha }}
         run: |
           version="$(node scripts/release-version.ts)"
           docker buildx create --driver docker-container --use --bootstrap
           docker buildx build --platform "linux/$ARCH" --load --tag kanvil:local \
-            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$REVISION" \
+            --build-arg "KANVIL_VERSION=$version" --build-arg "KANVIL_REVISION=$GITHUB_SHA" \
             --cache-from "type=gha,scope=docker-$ARCH" \
             --cache-to "type=gha,scope=docker-$ARCH,mode=max" .
       - name: Verify image, MCP, and database restoration

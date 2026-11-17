@@ -39,13 +39,15 @@ jobs:
           sha: ${{ inputs.sha }}
 
   # CI builds the release version through scripts/release-version.ts, which refuses prerelease
-  # versions and v0.0.0, so they fail here before any publisher starts.
+  # versions and v0.0.0, so they fail here before any publisher starts. It checks out the run's
+  # own commit, which preflight proved is its sha output; the image publisher checks the tested
+  # images' revision label against that sha again. Passing the sha in as a checkout ref instead
+  # trips CodeQL's cache-poisoning rule for the shared setup cache.
   validate:
     needs: preflight
     uses: ./.github/workflows/ci.yml
     with:
       tag: ${{ inputs.tag }}
-      sha: ${{ needs.preflight.outputs.sha }}
 
   npm:
     name: Publish npm
