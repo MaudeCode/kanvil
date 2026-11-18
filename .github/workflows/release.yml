@@ -45,6 +45,19 @@ jobs:
           checks: |
             ci.yml: Checks
 
+  # GitHub refuses this run's token to tag a commit whose workflow files differ from main's, so
+  # fail the release-freeze status on every open PR that changes a workflow file until thaw. The
+  # first publishers (npm, images) need it, and ios and release need them: a release that could
+  # not freeze publishes nothing.
+  freeze:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
+        with: { mode: start }
+
   # CI on the commit preflight resolved. When the commit's push run already passed Checks, only
   # the jobs that build and test what this release publishes run (verified): the npm tarball and
   # the native images carry the release version, so no push run built them. Otherwise the whole
@@ -60,7 +73,7 @@ jobs:
 
   npm:
     name: Publish npm
-    needs: [preflight, validate]
+    needs: [preflight, freeze, validate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,7 +96,7 @@ jobs:
         run: node scripts/publish-npm.mjs
 
   images:
-    needs: [preflight, validate]
+    needs: [preflight, freeze, validate]
     uses: ./.github/workflows/publish-images.yml
     permissions:
       actions: read
@@ -125,3 +138,14 @@ jobs:
           if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes
           fi
+
+  # Pass release-freeze again however the release ended.
+  thaw:
+    needs: [freeze, release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
+        with: { mode: end }
