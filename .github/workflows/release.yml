@@ -46,13 +46,16 @@ jobs:
             ci.yml: Checks
 
   # GitHub refuses this run's token to tag a commit whose workflow files differ from main's, so
-  # fail the release-freeze status on every open PR that changes a workflow file until thaw.
+  # fail the release-freeze status on every open PR that changes a workflow file until thaw. The
+  # first publishers (npm, images) need it, and ios and release need them: a release that could
+  # not freeze publishes nothing.
   freeze:
     needs: preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: { statuses: write, pull-requests: read, actions: read }
     steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
         with: { mode: start }
 
   # CI on the commit preflight resolved. When the commit's push run already passed Checks, only
@@ -62,8 +65,6 @@ jobs:
   # refuses prerelease versions and v0.0.0 in the build, before any publisher starts.
   validate:
     needs: preflight
-    # Ceiling for ci.yml's jobs; its release-freeze job asks for these and runs only on PRs.
-    permissions: { contents: read, statuses: write, pull-requests: read, actions: read }
     uses: ./.github/workflows/ci.yml
     with:
       tag: ${{ inputs.tag }}
@@ -72,7 +73,7 @@ jobs:
 
   npm:
     name: Publish npm
-    needs: [preflight, validate]
+    needs: [preflight, freeze, validate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -95,7 +96,7 @@ jobs:
         run: node scripts/publish-npm.mjs
 
   images:
-    needs: [preflight, validate]
+    needs: [preflight, freeze, validate]
     uses: ./.github/workflows/publish-images.yml
     permissions:
       actions: read
@@ -143,7 +144,8 @@ jobs:
     needs: [freeze, release]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: { statuses: write, pull-requests: read, actions: read }
     steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
         with: { mode: end }

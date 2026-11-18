@@ -329,17 +329,6 @@ jobs:
       - run: node scripts/renovate-tags.ts
       - *accounting
 
-  # Holds a PR that changes a workflow file while a release runs (release.yml's freeze and thaw),
-  # through the release-freeze commit status rather than this job's result, which Checks ignores.
-  release-freeze:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: { statuses: write, pull-requests: read, actions: read }
-    steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
-        with: { mode: pull-request }
-
   # A release that reuses its commit's Checks runs only the publishing jobs; their failure fails
   # the call, and the accounting below needs every suite.
   check:
