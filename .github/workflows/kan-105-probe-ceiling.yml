@@ -1,0 +1,17 @@
+name: KAN-105 probe (ceiling)
+
+# Temporary: calls ci.yml the way release.yml's validate job does, with caller permissions
+# { contents: read, statuses: write, pull-requests: read, actions: read }. Removed before merge.
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    permissions: { contents: read, statuses: write, pull-requests: read, actions: read }
+    uses: ./.github/workflows/ci.yml
+    with:
+      tag: v9.9.7
+      revision: ${{ github.event.pull_request.head.sha }}
+      verified: true
