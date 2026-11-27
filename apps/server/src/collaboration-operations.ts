@@ -56,7 +56,6 @@ import { mentionedUserIds } from "./mentions.ts";
 import {
   assertVersion,
   assertWorkerClaim,
-  context,
   fail,
   getTicket,
   json,
@@ -73,6 +72,7 @@ import {
   type Domain,
   type Handlers,
   one,
+  requireRow,
 } from "./domain.ts";
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket"),
@@ -306,15 +306,34 @@ export async function receiveUpload(
     throw error;
   }
 }
-export async function getAttachedFile(ctx: Context, attachmentId: string) {
-  const row = one(
-    await ctx.db
-      .select()
-      .from(attachments)
-      .where(and(eq(attachments.id, attachmentId), eq(attachments.projectId, project(ctx).id))),
+async function findAttachedFile(db: Context["db"], attachmentId: string, projectId?: string) {
+  const [file] = await db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.id, attachmentId),
+        projectId ? eq(attachments.projectId, projectId) : undefined,
+      ),
+    );
+  return file;
+}
+
+export async function readAttachedFile(
+  domain: Domain,
+  actor: Actor,
+  attachmentId: string,
+  projectId?: string,
+) {
+  const file = await findAttachedFile(domain.database.db, attachmentId, projectId);
+  if (!file) return undefined;
+  const allowed = await domain.execute(
+    "list_attachments",
+    { projectId: file.projectId, ticketId: file.ticketId },
+    actor,
   );
-  await getTicket(ctx, row.ticketId);
-  return row;
+  requireRow(allowed.find((item) => item.id === file.id));
+  return file;
 }
 
 export async function redeemDownload(domain: Domain, token: string) {
@@ -327,10 +346,7 @@ export async function redeemDownload(domain: Domain, token: string) {
   if (row.usedAt || row.expiresAt.getTime() <= Date.now())
     fail(410, "download_url_unavailable", "This download URL was used or expired");
   const actor = await transferIssuer(domain, row);
-  const file = await getAttachedFile(
-    await context(db, actor, "read", row.projectId),
-    row.attachmentId,
-  );
+  const file = requireRow(await readAttachedFile(domain, actor, row.attachmentId, row.projectId));
   // The conditional UPDATE admits one GET across concurrent requests and server processes.
   const usedAt = new Date();
   const [used] = await db
@@ -564,7 +580,8 @@ export const collaborationHandlers: Pick<
       .orderBy(asc(attachments.createdAt));
   },
   async create_download_url(ctx, input) {
-    const file = await getAttachedFile(ctx, input.attachmentId);
+    const file = requireRow(await findAttachedFile(ctx.db, input.attachmentId, project(ctx).id));
+    await getTicket(ctx, file.ticketId);
     const token = `kvdown_${randomBytes(32).toString("base64url")}`,
       expiresAt = new Date(Date.now() + transferUrlLifetime);
     await ctx.db.insert(downloadUrls).values({

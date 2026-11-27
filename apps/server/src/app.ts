@@ -41,7 +41,6 @@ import {
 } from "./access.ts";
 import {
   createDomain,
-  context,
   errorEnvelope,
   fail,
   intakeOnly,
@@ -58,14 +57,13 @@ import { deliverBatch } from "./outbox.ts";
 import { processImports } from "./import-operations.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import { receiveRepositoryWebhook } from "./repository-operations.ts";
-import { getAttachedFile, receiveUpload, redeemDownload } from "./collaboration-operations.ts";
+import { readAttachedFile, receiveUpload, redeemDownload } from "./collaboration-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
   workspaces,
   workspaceMembers,
   attachmentContent,
-  attachments,
   eventClock,
   events,
   notifications,
@@ -597,18 +595,9 @@ async function initializeApplication(
     async (c) => {
       const { attachmentId: id, projectId } = c.req.valid("param"),
         actor = c.get("actor");
-      const attached = (
-        await database.db
-          .select({ projectId: attachments.projectId })
-          .from(attachments)
-          .where(eq(attachments.id, id))
-      )[0];
-      if (attached) {
-        // Authorized in the ticket's current project, so files embedded before a move keep working.
-        const ctx = await context(database.db, actor, "read", attached.projectId);
-        const file = await getAttachedFile(ctx, id);
-        return attachmentResponse(file, file.objectId);
-      }
+      // Files embedded before a ticket move are authorized in the ticket's current project.
+      const attached = await readAttachedFile(domain, actor, id);
+      if (attached) return attachmentResponse(attached, attached.objectId);
       // Before create_ticket claims it, the same address serves a staged upload to its uploader.
       const visible = await domain.execute("get_project", { projectId }, actor);
       const file = one(
