@@ -101,8 +101,9 @@ export const scopes = ["read", "write", "claim", "admin", "intake"] as const;
 export const attachmentLimit = 10_000_000;
 // An inline upload staged before its ticket exists stays claimable for this long.
 export const stagedUploadLifetime = 86_400_000;
-// An upload URL from create_upload_url accepts its one PUT for this long.
-export const uploadUrlLifetime = 15 * 60_000;
+// An upload or download URL accepts one transfer for this long.
+export const transferUrlLifetime = 15 * 60_000;
+export const uploadUrlLifetime = transferUrlLifetime;
 export const stateLabels = labelTable(states, (value) => t(`common.status.${value}`));
 export const priorityLabels = labelTable(priorities, (value) => t(`common.priority.${value}`));
 export const stateTones: Record<(typeof states)[number], keyof typeof palettes.light> = {
@@ -930,11 +931,11 @@ export const attachmentSchema = z.object({
 export const stagedUploadSchema = attachmentSchema
   .omit({ ticketId: true })
   .extend({ expiresAt: timestamp });
-export const uploadUrlSchema = z.object({
-  uploadId: z.uuid(),
+export const downloadUrlSchema = z.object({
   url: z.url(),
   expiresAt: timestamp,
 });
+export const uploadUrlSchema = downloadUrlSchema.extend({ uploadId: z.uuid() });
 // The authorized address of an attachment's bytes. A staged upload keeps this address once
 // create_ticket claims it, so Markdown that embeds it needs no rewrite.
 export const attachmentPath = (projectId: string, attachmentId: string) =>
@@ -3320,7 +3321,15 @@ export const operations = {
     "GET",
     "/projects/{projectId}/tickets/{ticketId}/attachments",
     "read",
-    "List authorized attachment metadata. An intake credential can list them on a quarantined ticket it created.",
+    "List authorized attachment metadata. Download the file with create_download_url. An intake credential can list attachments on a quarantined ticket it created.",
+  ),
+  create_download_url: op(
+    projectInput.extend({ attachmentId: z.uuid() }).strict(),
+    downloadUrlSchema,
+    "GET",
+    "/projects/{projectId}/attachments/{attachmentId}/download-url",
+    "read",
+    "Get a single-use attachment download URL and its expiry. GET `url` within 15 minutes with `curl -o <path> <url>`. The URL serves only this attachment and needs no other credential. A missing attachment or one outside the readable project returns 404.",
   ),
   delete_attachment: op(
     projectInput.extend({ ...mutation, attachmentId: z.uuid() }).strict(),

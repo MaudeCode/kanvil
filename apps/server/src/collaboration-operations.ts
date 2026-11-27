@@ -11,6 +11,7 @@ import {
   scopes,
   stagedUploadLifetime,
   stagedUploadSchema,
+  transferUrlLifetime,
   uploadUrlLifetime,
   type ParsedInput,
 } from "@kanvil/contracts";
@@ -42,6 +43,7 @@ import {
   subscriptions,
   notifications,
   deliveries,
+  downloadUrls,
   projects,
   stagedUploads,
   tickets,
@@ -65,10 +67,12 @@ import {
   publishMany,
   relationEvents,
   subscribe,
+  type Actor,
   type Context,
   type Domain,
   type Handlers,
   one,
+  requireRow,
 } from "./domain.ts";
 const sourceTicket = alias(tickets, "source_ticket"),
   targetTicket = alias(tickets, "target_ticket"),
@@ -200,16 +204,42 @@ async function stageFile(ctx: Context, id: string, bytes: Buffer, file: FileMeta
   return { ...row, expiresAt: new Date(row.createdAt.getTime() + stagedUploadLifetime) };
 }
 const uploadToken = /^kvup_[A-Za-z0-9_-]{43}$/;
-const hashUploadToken = (token: string) => createHash("sha256").update(token).digest("hex");
-const uploadCredential = z
+const downloadToken = /^kvdown_[A-Za-z0-9_-]{43}$/;
+const hashTransferToken = (token: string) => createHash("sha256").update(token).digest("hex");
+const transferCredential = z
   .object({
     ownerId: z.string(),
     scopes: z.array(z.enum(scopes)),
     projectIds: z.array(z.string()).optional(),
-    // An API key, as opposed to an MCP OAuth grant: the PUT checks it was not revoked since.
+    // API keys can be revoked between issuance and redemption.
     apiKey: z.boolean(),
   })
   .nullable();
+function captureTransferCredential({
+  ownerId,
+  scopes: granted,
+  projectIds,
+  machine,
+  apiKey,
+}: Actor) {
+  return machine ? { ownerId, scopes: granted, projectIds, apiKey: apiKey === true } : null;
+}
+async function transferIssuer(domain: Domain, row: { actorId: string; credential: unknown }) {
+  const credential = transferCredential.parse(row.credential);
+  if (credential?.apiKey) {
+    const [key] = await domain.database.db
+      .select()
+      .from(apikey)
+      .where(eq(apikey.id, credential.ownerId));
+    if (!key?.enabled || (key.expiresAt && key.expiresAt <= new Date()))
+      fail(
+        401,
+        "unauthorized",
+        "The API credential that requested this URL was revoked or expired",
+      );
+  }
+  return domain.actor(row.actorId, credential ?? undefined);
+}
 function assertUploadUrlOpen(row: { usedAt: Date | null; expiresAt: Date }) {
   if (row.usedAt) fail(410, "upload_url_unavailable", "This upload URL was already used");
   if (row.expiresAt.getTime() <= Date.now())
@@ -234,7 +264,7 @@ export async function receiveUpload(
           await db
             .select()
             .from(uploadUrls)
-            .where(eq(uploadUrls.tokenHash, hashUploadToken(token)))
+            .where(eq(uploadUrls.tokenHash, hashTransferToken(token)))
         )[0]
       : undefined;
   if (!row) return fail(404, "not_found", "This upload URL does not exist");
@@ -259,22 +289,7 @@ export async function receiveUpload(
     const bytes = await read(row.size);
     if (bytes.length !== row.size)
       wrongSize(bytes.length > row.size ? "more" : String(bytes.length));
-    const credential = uploadCredential.parse(row.credential);
-    if (credential?.apiKey) {
-      const key = (await db.select().from(apikey).where(eq(apikey.id, credential.ownerId)))[0];
-      if (!key?.enabled || (key.expiresAt && key.expiresAt <= new Date()))
-        fail(401, "unauthorized", "The API credential that requested this upload URL was revoked");
-    }
-    const actor = await domain.actor(
-      row.actorId,
-      credential
-        ? {
-            ownerId: credential.ownerId,
-            scopes: credential.scopes,
-            ...(credential.projectIds ? { projectIds: credential.projectIds } : {}),
-          }
-        : undefined,
-    );
+    const actor = await transferIssuer(domain, row);
     return await domain.transact(async (tx, as) => {
       const ctx = await as(actor, row.projectId);
       return row.ticketId
@@ -291,6 +306,63 @@ export async function receiveUpload(
     throw error;
   }
 }
+async function findAttachedFile(db: Context["db"], attachmentId: string, projectId?: string) {
+  const [file] = await db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.id, attachmentId),
+        projectId ? eq(attachments.projectId, projectId) : undefined,
+      ),
+    );
+  return file;
+}
+
+export async function readAttachedFile(
+  domain: Domain,
+  actor: Actor,
+  attachmentId: string,
+  projectId?: string,
+) {
+  const file = await findAttachedFile(domain.database.db, attachmentId, projectId);
+  if (!file) return undefined;
+  const allowed = await domain.execute(
+    "list_attachments",
+    { projectId: file.projectId, ticketId: file.ticketId },
+    actor,
+  );
+  requireRow(allowed.find((item) => item.id === file.id));
+  return file;
+}
+
+export async function redeemDownload(domain: Domain, token: string) {
+  if (!downloadToken.test(token)) fail(404, "not_found", "This download URL does not exist");
+  const { db } = domain.database,
+    tokenHash = hashTransferToken(token);
+  const row = one(
+    await db.select().from(downloadUrls).where(eq(downloadUrls.tokenHash, tokenHash)),
+  );
+  if (row.usedAt || row.expiresAt.getTime() <= Date.now())
+    fail(410, "download_url_unavailable", "This download URL was used or expired");
+  const actor = await transferIssuer(domain, row);
+  const file = requireRow(await readAttachedFile(domain, actor, row.attachmentId, row.projectId));
+  // The conditional UPDATE admits one GET across concurrent requests and server processes.
+  const usedAt = new Date();
+  const [used] = await db
+    .update(downloadUrls)
+    .set({ usedAt })
+    .where(
+      and(
+        eq(downloadUrls.tokenHash, tokenHash),
+        isNull(downloadUrls.usedAt),
+        gt(downloadUrls.expiresAt, usedAt),
+      ),
+    )
+    .returning({ tokenHash: downloadUrls.tokenHash });
+  if (!used) fail(410, "download_url_unavailable", "This download URL was used or expired");
+  return file;
+}
 export const collaborationHandlers: Pick<
   Handlers,
   | "list_relations"
@@ -306,6 +378,7 @@ export const collaborationHandlers: Pick<
   | "create_upload_url"
   | "discard_upload"
   | "list_attachments"
+  | "create_download_url"
   | "delete_attachment"
   | "list_evidence"
   | "add_evidence"
@@ -456,12 +529,7 @@ export const collaborationHandlers: Pick<
   // keep the URL's token.
   async create_upload_url(ctx, input) {
     const ticket = input.ticketId ? await getTicket(ctx, input.ticketId) : undefined,
-      token = `kvup_${randomBytes(32).toString("base64url")}`,
-      { id, ownerId, scopes: granted, projectIds, machine } = ctx.actor,
-      apiKey =
-        machine &&
-        (await ctx.db.select({ id: apikey.id }).from(apikey).where(eq(apikey.id, ownerId))).length >
-          0;
+      token = `kvup_${randomBytes(32).toString("base64url")}`;
     const row = one(
       await ctx.db
         .insert(uploadUrls)
@@ -469,12 +537,12 @@ export const collaborationHandlers: Pick<
           id: crypto.randomUUID(),
           projectId: project(ctx).id,
           ticketId: ticket?.id ?? null,
-          actorId: id,
-          credential: machine ? { ownerId, scopes: granted, projectIds, apiKey } : null,
+          actorId: ctx.actor.id,
+          credential: captureTransferCredential(ctx.actor),
           name: input.name,
           contentType: input.contentType,
           size: input.size,
-          tokenHash: hashUploadToken(token),
+          tokenHash: hashTransferToken(token),
           expiresAt: new Date(Date.now() + uploadUrlLifetime),
         })
         .returning(),
@@ -510,6 +578,21 @@ export const collaborationHandlers: Pick<
       .from(attachments)
       .where(eq(attachments.ticketId, ticket.id))
       .orderBy(asc(attachments.createdAt));
+  },
+  async create_download_url(ctx, input) {
+    const file = requireRow(await findAttachedFile(ctx.db, input.attachmentId, project(ctx).id));
+    await getTicket(ctx, file.ticketId);
+    const token = `kvdown_${randomBytes(32).toString("base64url")}`,
+      expiresAt = new Date(Date.now() + transferUrlLifetime);
+    await ctx.db.insert(downloadUrls).values({
+      tokenHash: hashTransferToken(token),
+      attachmentId: file.id,
+      projectId: file.projectId,
+      actorId: ctx.actor.id,
+      credential: captureTransferCredential(ctx.actor),
+      expiresAt,
+    });
+    return { url: new URL(`/api/downloads/${token}`, ctx.publicUrl).href, expiresAt };
   },
   async delete_attachment(ctx, input) {
     const row = one(

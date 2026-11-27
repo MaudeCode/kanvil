@@ -19,6 +19,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { APIError as AuthAPIError } from "better-auth/api";
 import {
   ApiError,
+  attachmentPath,
   errorSchema,
   operations,
   isOperation,
@@ -56,14 +57,13 @@ import { deliverBatch } from "./outbox.ts";
 import { processImports } from "./import-operations.ts";
 import { readCalendarFeed } from "./calendar-operations.ts";
 import { receiveRepositoryWebhook } from "./repository-operations.ts";
-import { receiveUpload } from "./collaboration-operations.ts";
+import { readAttachedFile, receiveUpload, redeemDownload } from "./collaboration-operations.ts";
 import { apikey } from "./auth-schema.ts";
 import {
   projects,
   workspaces,
   workspaceMembers,
   attachmentContent,
-  attachments,
   eventClock,
   events,
   notifications,
@@ -361,6 +361,60 @@ async function initializeApplication(
       ),
     ),
   );
+  const binaryContent = { "*/*": { schema: z.string().openapi({ format: "binary" }) } };
+  async function attachmentResponse(
+    file: { id: string; name: string; contentType: string; size: number },
+    objectId: string | null,
+  ) {
+    const bytes = objectId
+      ? (await blobs.get(objectId)).data
+      : one(
+          await database.db
+            .select({ data: attachmentContent.data })
+            .from(attachmentContent)
+            .where(eq(attachmentContent.id, file.id)),
+        ).data;
+    if (bytes.length !== file.size)
+      fail(500, "attachment_corrupt", "Attachment integrity check failed");
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": file.contentType,
+        "Content-Length": String(file.size),
+        "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "sandbox",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/downloads/{token}",
+      description: "Redeem a single-use attachment URL. The secret path is its credential.",
+      security: [],
+      request: { params: z.object({ token: z.string() }) },
+      responses: {
+        200: {
+          description: "Attachment bytes with the stored Content-Type",
+          content: binaryContent,
+        },
+        401: { description: "The issuing API credential was revoked or expired" },
+        403: { description: "The issuing account is disabled" },
+        404: { description: "The URL or readable attachment was not found" },
+        410: { description: "The download URL was used or expired" },
+      },
+    }),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      c.header("Referrer-Policy", "no-referrer");
+      // Hono dispatches HEAD to GET routes. A metadata probe must leave the URL unused.
+      if (c.req.method === "HEAD")
+        return new Response(null, { status: 405, headers: { Allow: "GET" } });
+      const file = await redeemDownload(domain, c.req.valid("param").token);
+      return attachmentResponse(file, file.objectId);
+    },
+  );
   // Repository webhooks authenticate by their signature under the connection's saved secret.
   app.openAPIRegistry.registerPath({
     method: "post",
@@ -519,28 +573,34 @@ async function initializeApplication(
     const row = one(await database.db.select().from(eventClock).where(eq(eventClock.id, 1)));
     return Response.json({ cursor: row.value.toString() });
   });
-  app.get("/api/v1/projects/:projectId/attachments/:id/content", async (c) => {
-    const id = z.uuid().parse(c.req.param("id")),
-      projectId = c.req.param("projectId"),
-      actor = c.get("actor");
-    const attached = (
-      await database.db.select().from(attachments).where(eq(attachments.id, id))
-    )[0];
-    let row: { name: string; contentType: string; size: number }, objectId: string | null;
-    if (attached) {
-      // Authorized in the ticket's current project, so files embedded before a move keep working.
-      const authorized = await domain.execute(
-        "list_attachments",
-        { projectId: attached.projectId, ticketId: attached.ticketId },
-        actor,
-      );
-      requireRow(authorized.find((item) => item.id === id));
-      row = attached;
-      objectId = attached.objectId;
-    } else {
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: attachmentPath("{projectId}", "{attachmentId}"),
+      description:
+        "Read attachment bytes using a credential with read access or a signed-in session. An uploader can also read their unclaimed staged file.",
+      security: [{ bearerAuth: [] }],
+      request: { params: z.object({ projectId: z.string(), attachmentId: z.uuid() }) },
+      responses: {
+        200: {
+          description: "Attachment bytes with the stored Content-Type",
+          content: binaryContent,
+        },
+        400: { description: "Invalid attachment ID" },
+        401: { description: "Authentication required" },
+        403: { description: "Insufficient read scope" },
+        404: { description: "Attachment not found or unavailable to the caller" },
+      },
+    }),
+    async (c) => {
+      const { attachmentId: id, projectId } = c.req.valid("param"),
+        actor = c.get("actor");
+      // Files embedded before a ticket move are authorized in the ticket's current project.
+      const attached = await readAttachedFile(domain, actor, id);
+      if (attached) return attachmentResponse(attached, attached.objectId);
       // Before create_ticket claims it, the same address serves a staged upload to its uploader.
       const visible = await domain.execute("get_project", { projectId }, actor);
-      row = one(
+      const file = one(
         await database.db
           .select()
           .from(stagedUploads)
@@ -553,28 +613,9 @@ async function initializeApplication(
             ),
           ),
       );
-      objectId = id;
-    }
-    const bytes = objectId
-      ? (await blobs.get(objectId)).data
-      : one(
-          await database.db
-            .select({ data: attachmentContent.data })
-            .from(attachmentContent)
-            .where(eq(attachmentContent.id, id)),
-        ).data;
-    if (bytes.length !== row.size)
-      fail(500, "attachment_corrupt", "Attachment integrity check failed");
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": row.contentType,
-        "Content-Length": String(row.size),
-        "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(row.name)}`,
-        "Cache-Control": "no-store",
-        "Content-Security-Policy": "sandbox",
-      },
-    });
-  });
+      return attachmentResponse(file, id);
+    },
+  );
   app.get("/api/v1/notifications/preferences", async (c) => {
     const row = (
       await database.db
@@ -857,6 +898,7 @@ async function initializeApplication(
       },
     });
     app.openapi(route, async (c) => {
+      if (name === "create_download_url") c.header("Cache-Control", "no-store");
       // A repeated query parameter carries a list, such as `status=todo&status=done`.
       const values =
         spec.method === "GET"
