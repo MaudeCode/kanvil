@@ -11,6 +11,7 @@ import {
   stagedUploads,
   tickets,
   uploadUrls,
+  downloadUrls,
 } from "./schema.ts";
 import type { Database, Connection, Transaction } from "./database.ts";
 import type { Instance } from "./instance.ts";
@@ -205,6 +206,7 @@ export function createBlobStorage(
       await tx.delete(stagedUploads).where(lt(stagedUploads.createdAt, stagedUploadCutoff()));
       // An expired upload URL accepts nothing more; its upload, if any, lives on as its own row.
       await tx.delete(uploadUrls).where(lt(uploadUrls.expiresAt, new Date()));
+      await tx.delete(downloadUrls).where(lt(downloadUrls.expiresAt, new Date()));
       const rows = await tx
         .select({ object: blobObjects })
         .from(blobObjects)

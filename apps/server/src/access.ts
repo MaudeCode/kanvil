@@ -70,6 +70,7 @@ export function createAccess(auth: Auth, domain: Domain, config: Config, databas
       fail(403, "invalid_credential_scope", "This credential has no valid project permissions");
     return domain.actor(key.referenceId, {
       ownerId: key.id,
+      apiKey: true,
       scopes: permissions.data.kanvil,
       ...(metadata.data.projectIds === null ? {} : { projectIds: metadata.data.projectIds }),
     });

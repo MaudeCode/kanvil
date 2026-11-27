@@ -100,6 +100,7 @@ export interface Actor {
   id: string;
   admin: boolean;
   machine: boolean;
+  apiKey?: boolean;
   ownerId: string;
   scopes: readonly (typeof scopes)[number][];
   projectIds?: readonly string[];
@@ -1092,8 +1093,9 @@ export function createDomain(
     id: string,
     credential?: {
       ownerId: string;
+      apiKey?: boolean;
       scopes: readonly (typeof scopes)[number][];
-      projectIds?: readonly string[];
+      projectIds?: readonly string[] | undefined;
     },
     signedInAt?: Date,
   ): Promise<Actor> {
@@ -1104,6 +1106,7 @@ export function createDomain(
       admin: hasAdminRole(row.role),
       machine: !!credential,
       ownerId: credential?.ownerId ?? id,
+      ...(credential?.apiKey ? { apiKey: true } : {}),
       scopes: credential?.scopes ?? scopes,
       ...(credential?.projectIds ? { projectIds: credential.projectIds } : {}),
       ...(signedInAt && !credential ? { signedInAt } : {}),

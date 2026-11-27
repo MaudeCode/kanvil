@@ -88,7 +88,7 @@ describe("HTTP, realtime, and MCP", () => {
     cookie: string;
   const url = (path: string) => `${fixture.config.KANVIL_URL}${path}`;
   const request = (path: string, init?: RequestInit) =>
-    application.app.fetch(new Request(url(path), init));
+    application.app.fetch(new Request(new URL(path, fixture.config.KANVIL_URL), init));
   const sessionHeaders = () => ({
     Cookie: cookie,
     Origin: fixture.config.KANVIL_URL,
@@ -1831,7 +1831,21 @@ describe("HTTP, realtime, and MCP", () => {
       data: bytes.toString("base64"),
     };
     const uploaded = await api.call("upload_attachment", input);
-    const path = `/api/v1/projects/${project.id}/attachments/${uploaded.id}/content`;
+    const document = z
+      .object({ paths: z.record(z.string(), z.unknown()) })
+      .parse(await (await request("/api/openapi.json")).json());
+    const template = attachmentPath("{projectId}", "{attachmentId}");
+    expect(document.paths[template]).toMatchObject({
+      get: {
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { content: { "*/*": { schema: { type: "string", format: "binary" } } } },
+          401: expect.any(Object),
+          404: expect.any(Object),
+        },
+      },
+    });
+    const path = template.replace("{projectId}", project.id).replace("{attachmentId}", uploaded.id);
     expect((await request(path)).status).toBe(401);
     const content = await request(path, { headers: sessionHeaders() });
     expect(content.status).toBe(200);
@@ -1861,6 +1875,98 @@ describe("HTTP, realtime, and MCP", () => {
         ])
       ).rowCount,
     ).toBe(0);
+  });
+  it("lets an MCP reader download an attachment once before its URL expires", async () => {
+    const api = client(),
+      project = await newProject(),
+      other = await newProject(),
+      bytes = Buffer.from([0, 13, 10, 255]);
+    const attach = async (projectId: string) => {
+      const ticket = await api.call("create_ticket", { projectId, title: "Has a design" });
+      return api.call("upload_attachment", {
+        projectId,
+        ticketId: ticket.id,
+        name: "design.png",
+        contentType: "image/png",
+        data: bytes.toString("base64"),
+      });
+    };
+    const attachment = await attach(project.id),
+      elsewhere = await attach(other.id),
+      token = await credential(project.id, ["read"]),
+      sdk = await mcpClient(token.key);
+    try {
+      expect(
+        (
+          await sdk.callTool({
+            name: "find_operation",
+            arguments: { query: "attachment download" },
+          })
+        ).structuredContent,
+      ).toMatchObject({
+        result: {
+          operations: expect.arrayContaining([
+            { name: "create_download_url", access: "read", description: expect.any(String) },
+          ]),
+        },
+      });
+      const issue = (input: { projectId: string; attachmentId: string }) =>
+        sdk.callTool({ name: "read_operation", arguments: { name: "create_download_url", input } });
+      for (const input of [
+        { projectId: project.id, attachmentId: crypto.randomUUID() },
+        { projectId: project.id, attachmentId: elsewhere.id },
+        { projectId: other.id, attachmentId: elsewhere.id },
+      ]) {
+        const response = await issue(input);
+        expect(response.isError).toBe(true);
+        expect(response.content).toEqual([
+          { type: "text", text: expect.stringContaining('"code":"not_found"') },
+        ]);
+      }
+      const issueForAttachment = async () =>
+        z
+          .object({ result: z.object({ url: z.url(), expiresAt: z.iso.datetime() }) })
+          .parse(
+            (await issue({ projectId: project.id, attachmentId: attachment.id })).structuredContent,
+          ).result;
+      const once = await issueForAttachment();
+      expect((await request(once.url, { method: "HEAD" })).status).toBe(405);
+      // Both GETs race through the real handler and database. One receives bytes.
+      const responses = await Promise.all([request(once.url), request(once.url)]);
+      expect(responses.map(({ status }) => status)).toEqual(expect.arrayContaining([200, 410]));
+      const content = responses.find(({ status }) => status === 200)!;
+      expect(content.headers.get("content-type")).toBe("image/png");
+      expect(content.headers.get("cache-control")).toBe("no-store");
+      expect(Buffer.from(await content.arrayBuffer())).toEqual(bytes);
+
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const issuedAt = Date.now(),
+        late = await issueForAttachment();
+      expect(Date.parse(late.expiresAt)).toBe(issuedAt + 15 * 60_000);
+      vi.setSystemTime(issuedAt + 15 * 60_000);
+      expect(await failure(await request(late.url))).toEqual({
+        status: 410,
+        code: "download_url_unavailable",
+      });
+      vi.useRealTimers();
+
+      const revoked = await issueForAttachment();
+      expect(
+        (
+          await request(`/api/v1/credentials/${token.id}`, {
+            method: "DELETE",
+            headers: sessionHeaders(),
+          })
+        ).status,
+      ).toBe(200);
+      expect(await failure(await request(revoked.url))).toEqual({
+        status: 401,
+        code: "unauthorized",
+      });
+    } finally {
+      vi.useRealTimers();
+      await sdk.close();
+    }
   });
   it("serves a staged upload only to its uploader at the address it keeps once claimed", async () => {
     const project = await newProject(),

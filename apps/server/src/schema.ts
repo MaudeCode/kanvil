@@ -593,6 +593,29 @@ export const uploadUrls = pgTable(
   },
   (table) => [index("upload_urls_expires").on(table.expiresAt)],
 );
+// A hashed capability for one GET of an attachment in the project that issued it.
+export const downloadUrls = pgTable(
+  "download_urls",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    attachmentId: uuid("attachment_id")
+      .notNull()
+      .references(() => attachments.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credential: jsonb("credential"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("download_urls_expires").on(table.expiresAt),
+    index("download_urls_attachment").on(table.attachmentId),
+  ],
+);
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 export const attachmentContent = pgTable("attachment_content", {
   id: uuid("id")
